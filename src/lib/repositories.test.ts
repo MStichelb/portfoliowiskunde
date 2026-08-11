@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
-import { createErrorReport, getAdminErrorReports, getAdminExercise, getLatestWarnings, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, persistIndex, recordFailedSync, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, toggleErrorReportPin } from "./repositories";
+import { createErrorReport, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getLatestWarnings, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, persistIndex, recordFailedSync, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, toggleErrorReportPin } from "./repositories";
 import { indexSource } from "./storage/portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./storage/provider";
 
@@ -93,6 +93,22 @@ describe("persistIndex", () => {
     updated = (await getAdminErrorReports())[0];
     expect(updated.completedAt).toBeNull();
     expect(await getOpenErrorReportCount()).toBe(1);
+  });
+
+  it("deletes individual reports and only old completed reports in bulk", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-delete-")); process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db"); resetDatabaseForTests();
+    await persistIndex(await indexSource(createTwoPortfolioProvider()), "local"); await setPortfolioPublication("portfolio-3", "visible", false, null, null);
+    const database = await getDatabase(); const exercise = String((await database.execute("SELECT id FROM exercises WHERE portfolio_id = 'portfolio-3' LIMIT 1")).rows[0].id);
+    for (const key of ["old", "edge", "recent", "todo"]) await createErrorReport({ exerciseId: exercise, variant: "standard", message: `Melding ${key}`, rateLimitKey: key });
+    const reports = await getAdminErrorReports(); const byMessage = new Map(reports.map((report) => [report.message, report]));
+    await deleteErrorReport(byMessage.get("Melding recent")!.id); expect((await getAdminErrorReports()).some((report) => report.message === "Melding recent")).toBe(false);
+    const now = new Date("2026-08-20T12:00:00.000Z");
+    await database.batch([
+      { sql: "UPDATE error_reports SET status = 'DONE', completed_at = ? WHERE id = ?", args: ["2026-08-06T11:59:59.999Z", byMessage.get("Melding old")!.id] },
+      { sql: "UPDATE error_reports SET status = 'DONE', completed_at = ? WHERE id = ?", args: ["2026-08-06T12:00:00.000Z", byMessage.get("Melding edge")!.id] },
+    ]);
+    expect(await getOldDoneErrorReportCount(now)).toBe(1); await deleteOldDoneErrorReports(now);
+    const remaining = await getAdminErrorReports(); expect(remaining.map((report) => report.message)).toContain("Melding edge"); expect(remaining.map((report) => report.message)).toContain("Melding todo"); expect(remaining.map((report) => report.message)).not.toContain("Melding old");
   });
 
   it("only permits a solution asset when its full publication chain is effective", async () => {
