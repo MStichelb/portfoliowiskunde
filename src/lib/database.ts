@@ -68,6 +68,11 @@ const schema = [
     relative_path TEXT NOT NULL,
     message TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`,
 ];
 
 export async function getDatabase(): Promise<Client> {

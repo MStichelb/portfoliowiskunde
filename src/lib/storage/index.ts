@@ -1,11 +1,10 @@
 import { LocalFilesystemProvider } from "@/lib/storage/local-filesystem-provider";
 import type { StorageProvider } from "@/lib/storage/provider";
+import { getLocalSourcePath } from "@/lib/repositories";
+import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 
-const DEFAULT_SOURCE_PATH =
-  "C:\\Users\\mathi\\OneDrive - EDUGO Scholengroep\\6WIS - Wiskunde\\testmapapplicatie";
+export { DEFAULT_LOCAL_SOURCE_PATH };
 
-export function getStorageProvider(): StorageProvider {
-  return new LocalFilesystemProvider(
-    process.env.PORTFOLIO_SOURCE_PATH ?? DEFAULT_SOURCE_PATH,
-  );
+export async function getStorageProvider(): Promise<StorageProvider> {
+  return new LocalFilesystemProvider(await getLocalSourcePath());
 }

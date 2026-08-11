@@ -1,6 +1,9 @@
 import type { InStatement, Row } from "@libsql/client";
 import { randomUUID } from "node:crypto";
+import { stat } from "node:fs/promises";
+import path from "node:path";
 
+import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 import type { IndexedPortfolio } from "@/lib/domain";
 import { executeBatch, getDatabase } from "@/lib/database";
 
@@ -46,8 +49,70 @@ export interface StudentPortfolio {
   }>;
 }
 
+export interface LocalStorageSettings {
+  sourcePath: string;
+  sourcePathOrigin: "database" | "environment" | "default";
+}
+
+export interface SyncSummary {
+  startedAt: string;
+  finishedAt: string | null;
+  portfolioCount: number;
+  warningCount: number;
+  status: string;
+}
+
 const bool = (value: unknown) => Number(value) === 1;
 const text = (row: Row, field: string) => String(row[field] ?? "");
+
+export async function getLocalStorageSettings(): Promise<LocalStorageSettings> {
+  const database = await getDatabase();
+  const result = await database.execute({ sql: "SELECT value FROM app_settings WHERE key = 'local_source_path'", args: [] });
+  const sourcePath = result.rows[0]?.value;
+  if (typeof sourcePath === "string" && sourcePath.trim()) {
+    return { sourcePath, sourcePathOrigin: "database" };
+  }
+  if (process.env.PORTFOLIO_SOURCE_PATH?.trim()) {
+    return { sourcePath: process.env.PORTFOLIO_SOURCE_PATH.trim(), sourcePathOrigin: "environment" };
+  }
+  return { sourcePath: DEFAULT_LOCAL_SOURCE_PATH, sourcePathOrigin: "default" };
+}
+
+export async function getLocalSourcePath(): Promise<string> {
+  return (await getLocalStorageSettings()).sourcePath;
+}
+
+export async function setLocalSourcePath(sourcePath: string): Promise<void> {
+  const normalizedPath = path.resolve(sourcePath.trim());
+  const sourceStats = await stat(normalizedPath);
+  if (!sourceStats.isDirectory()) throw new Error("De opgegeven bronmap bestaat niet of is geen map.");
+
+  const database = await getDatabase();
+  await database.execute({
+    sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('local_source_path', ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    args: [normalizedPath, new Date().toISOString()],
+  });
+}
+
+export async function resetLocalSourcePath(): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "DELETE FROM app_settings WHERE key = 'local_source_path'", args: [] });
+}
+
+export async function getLatestSyncSummary(): Promise<SyncSummary | null> {
+  const database = await getDatabase();
+  const result = await database.execute("SELECT started_at, finished_at, portfolio_count, warning_count, status FROM sync_runs ORDER BY started_at DESC LIMIT 1");
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  return {
+    startedAt: text(row, "started_at"),
+    finishedAt: (row.finished_at as string | null) ?? null,
+    portfolioCount: Number(row.portfolio_count),
+    warningCount: Number(row.warning_count),
+    status: text(row, "status"),
+  };
+}
 
 export async function persistIndex(portfolios: IndexedPortfolio[]): Promise<{ warnings: number }> {
   const startedAt = new Date().toISOString();

@@ -14,7 +14,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   if (!asset) return new Response("Niet gevonden.", { status: 404 });
 
   try {
-    const content = await getStorageProvider().readFile(asset.relativePath);
+    const content = await (await getStorageProvider()).readFile(asset.relativePath);
     return new Response(new Uint8Array(content), {
       headers: {
         "Content-Type": mimeTypes[asset.extension] ?? "application/octet-stream",

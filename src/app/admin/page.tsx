@@ -1,11 +1,15 @@
-import { getAdminPortfolios, getLatestWarnings } from "@/lib/repositories";
+import Link from "next/link";
 
-import { exerciseVisibilityAction, portfolioVisibilityAction, syncAction } from "./actions";
+import { requireAdmin } from "@/lib/auth";
+import { getAdminPortfolios, getLatestSyncSummary, getLatestWarnings } from "@/lib/repositories";
+
+import { exerciseVisibilityAction, logoutAction, portfolioVisibilityAction, syncAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
-  const [portfolios, warnings] = await Promise.all([getAdminPortfolios(), getLatestWarnings()]);
+  await requireAdmin();
+  const [portfolios, warnings, latestSync] = await Promise.all([getAdminPortfolios(), getLatestWarnings(), getLatestSyncSummary()]);
 
   return (
     <main className="page-shell admin-page">
@@ -14,14 +18,21 @@ export default async function AdminPage() {
           <p className="eyebrow">Beheer</p>
           <h1>Portfolio-index</h1>
           <p>Bronbestanden worden alleen gelezen. Nieuwe portfolio&apos;s en oefeningen starten verborgen.</p>
+          <p className="file-reference">
+            {latestSync
+              ? `Laatste synchronisatie: ${formatDate(latestSync.finishedAt ?? latestSync.startedAt)} - ${latestSync.portfolioCount} portfolio(s), ${latestSync.warningCount} waarschuwing(en).`
+              : "Nog niet gesynchroniseerd."}
+          </p>
         </div>
-        <form action={syncAction}>
-          <button className="primary-button" type="submit">Opnieuw synchroniseren</button>
-        </form>
+        <div className="admin-actions">
+          <Link className="secondary-button link-button" href="/admin/instellingen">Instellingen</Link>
+          <form action={syncAction}><button className="primary-button" type="submit">Opnieuw synchroniseren</button></form>
+          <form action={logoutAction}><button className="secondary-button" type="submit">Uitloggen</button></form>
+        </div>
       </header>
 
       {portfolios.length === 0 ? (
-        <p className="empty-state">Nog geen inhoud geïndexeerd. Kies “Opnieuw synchroniseren”.</p>
+        <p className="empty-state">Nog geen inhoud geindexeerd. Kies Opnieuw synchroniseren.</p>
       ) : (
         <div className="admin-portfolios">
           {portfolios.map((portfolio) => (
@@ -72,6 +83,10 @@ export default async function AdminPage() {
       </section>
     </main>
   );
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("nl-BE", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Brussels" }).format(new Date(value));
 }
 
 function VisibilityForm({

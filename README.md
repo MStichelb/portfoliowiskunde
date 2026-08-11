@@ -6,19 +6,22 @@ Een lokale, read-only index en publicatielaag voor wiskundeportfolio's. De bronm
 
 1. Installeer Node.js 20 of nieuwer en pnpm 10 of nieuwer.
 2. Open een terminal in deze map en voer `pnpm install` uit.
-3. Maak optioneel een bestand `.env.local` met onderstaande variabele. Zonder variabele gebruikt de app de huidige lokale testmap.
+3. Kopieer `.env.example` naar `.env.local` en kies een eigen `ADMIN_PASSWORD`. Zonder dat wachtwoord is de beheeromgeving bewust niet toegankelijk. `ADMIN_SESSION_SECRET` is aanbevolen wanneer je de app buiten je eigen computer draait.
 
 ```dotenv
 PORTFOLIO_SOURCE_PATH=C:\Users\mathi\OneDrive - EDUGO Scholengroep\6WIS - Wiskunde\testmapapplicatie
+ADMIN_PASSWORD=vervang-door-een-lang-uniek-wachtwoord
+# Optioneel maar aanbevolen:
+# ADMIN_SESSION_SECRET=vervang-door-een-aparte-lange-geheime-sleutel
 # Optioneel: standaard is .data/portfolio.db in deze repository
 # PORTFOLIO_DATABASE_PATH=C:\pad\naar\portfolio.db
 ```
 
 4. Start de app met `pnpm dev`.
-5. Open `http://localhost:3000/admin` en kies **Opnieuw synchroniseren**.
+5. Open `http://localhost:3000/admin`, log in en kies **Opnieuw synchroniseren**.
 6. Zet eerst een portfolio en vervolgens de gewenste oefeningen op zichtbaar. De leerlingweergave staat op `http://localhost:3000`.
 
-De SQLite-database wordt automatisch gemaakt in `.data/portfolio.db`. Verwijder uitsluitend die database als je de metadata en alle zichtbaarheidinstellingen lokaal wilt resetten; de bronmap wordt door de applicatie nooit gewijzigd.
+De SQLite-database wordt automatisch gemaakt in `.data/portfolio.db`. Verwijder uitsluitend die database als je de metadata en alle zichtbaarheidinstellingen lokaal wilt resetten; de bronmap wordt door de applicatie nooit gewijzigd. Je kunt de lokale bronmap later ook veilig wijzigen in **Beheer > Instellingen**; het pad wordt gevalideerd, maar nooit beschreven.
 
 ## Wat V0.1 herkent
 
@@ -35,6 +38,7 @@ De SQLite-database wordt automatisch gemaakt in `.data/portfolio.db`. Verwijder 
 - `src/lib/parser.ts`: pure, geteste naamparser.
 - `src/lib/storage/portfolio-indexer.ts`: provider-onafhankelijke herkenning en warnings.
 - `src/lib/database.ts` en `src/lib/repositories.ts`: portable lokale SQLite-metadata. Educatieve broninhoud wordt niet gekopieerd.
+- `src/lib/auth.ts`: server-side wachtwoordcontrole, ondertekende httpOnly-sessie en bescherming van elke beheeractie.
 - `src/app/api/solution-assets/[id]`: levert uitsluitend bestanden van zichtbare portfolio's en oefeningen, binnen de geconfigureerde bronmap.
 
 ## Kwaliteitscontroles
