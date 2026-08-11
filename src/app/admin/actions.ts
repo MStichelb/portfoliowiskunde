@@ -15,6 +15,8 @@ import {
   setPortfolioTitle,
   setErrorReportStatus,
   saveErrorReportNote,
+  deleteErrorReport,
+  deleteOldDoneErrorReports,
   setSectionPublication,
   setSectionVisibility,
   toggleErrorReportPin,
@@ -38,7 +40,9 @@ export async function savePortfolioAction(formData: FormData) {
   const mode = portfolioModeSchema.safeParse(stringValue(formData, "mode"));
   const limited = stringValue(formData, "publicationMode") === "limited";
   if (!id || !mode.success || title.length > 180) throw new Error("Ongeldige portfolio-invoer.");
-  const window = parsePublicationWindow(formData);
+  const existing = await getAdminPortfolio(id);
+  if (!existing) throw new Error("Portfolio niet gevonden.");
+  const window = limited ? parsePublicationWindow(formData) : { publishFrom: existing.publishFrom, publishUntil: existing.publishUntil };
   await Promise.all([setPortfolioTitle(id, title), setPortfolioPublication(id, mode.data, limited, window.publishFrom, window.publishUntil)]);
   refreshPublicationPaths(id);
 }
@@ -51,8 +55,9 @@ export async function saveSectionPublicationAction(formData: FormData) {
   const limited = stringValue(formData, "publicationMode") === "scheduled";
   if (!id || !portfolioId || !mode.success) throw new Error("Ongeldige onderdeel-invoer.");
   const portfolio = await getAdminPortfolio(portfolioId);
-  if (!portfolio?.sections.some((section) => section.id === id)) throw new Error("Onderdeel niet gevonden.");
-  const window = parsePublicationWindow(formData);
+  const existing = portfolio?.sections.find((section) => section.id === id);
+  if (!existing) throw new Error("Onderdeel niet gevonden.");
+  const window = limited ? parsePublicationWindow(formData) : { publishFrom: existing.publishFrom, publishUntil: existing.publishUntil };
   await setSectionPublication(id, mode.data, limited, window.publishFrom, window.publishUntil);
   refreshPublicationPaths(portfolioId);
 }
@@ -146,6 +151,22 @@ export async function errorReportNoteAction(formData: FormData) {
   if (!id) return;
   await saveErrorReportNote(id, stringValue(formData, "note"));
   revalidatePath("/admin/meldingen");
+}
+
+export async function deleteErrorReportAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  if (!id) return;
+  await deleteErrorReport(id);
+  revalidatePath("/admin/meldingen");
+  revalidatePath("/admin");
+}
+
+export async function deleteOldDoneErrorReportsAction() {
+  await requireAdmin();
+  await deleteOldDoneErrorReports();
+  revalidatePath("/admin/meldingen");
+  revalidatePath("/admin");
 }
 
 export async function hideReportedExerciseAction(formData: FormData) {

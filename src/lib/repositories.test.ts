@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
-import { createErrorReport, getAdminErrorReports, getAdminExercise, getLatestWarnings, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, persistIndex, recordFailedSync, saveErrorReportNote, setErrorReportStatus, setExercisePublication, setPortfolioPublication, toggleErrorReportPin } from "./repositories";
+import { createErrorReport, getAdminErrorReports, getAdminExercise, getLatestWarnings, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, persistIndex, recordFailedSync, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, toggleErrorReportPin } from "./repositories";
 import { indexSource } from "./storage/portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./storage/provider";
 
@@ -112,6 +112,20 @@ describe("persistIndex", () => {
     await setExercisePublication([exerciseId], "visible", null, null);
     await setPortfolioPublication("portfolio-3", "visible", true, "2030-01-01T00:00:00.000Z", null);
     expect(await getPublicAsset(assetId)).toBeNull();
+  });
+
+  it("keeps alternative solution assets private when their student flag is disabled", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-alternatives-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await persistIndex(await indexSource(createTwoPortfolioProvider()), "local");
+    await setPortfolioPublication("portfolio-3", "visible", false, null, null);
+    const database = await getDatabase();
+    const row = (await database.execute("SELECT solution_assets.id AS asset_id, exercises.id AS exercise_id FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id JOIN exercises ON exercises.id = solution_variants.exercise_id WHERE solution_variants.kind = 'alternative' LIMIT 1")).rows[0];
+    expect(await getPublicAsset(String(row.asset_id))).not.toBeNull();
+    await setExerciseAlternativeVisibility(String(row.exercise_id), false);
+    expect(await getPublicAsset(String(row.asset_id))).toBeNull();
+    expect(await getAdminExercise(String(row.exercise_id))).not.toBeNull();
   });
 
   it("shows only warnings from the latest successful sync and keeps them after a failed run", async () => {

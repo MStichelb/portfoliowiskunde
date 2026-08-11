@@ -189,4 +189,8 @@ export const migrations: DatabaseMigration[] = [
       "UPDATE sections SET publication_limited = CASE WHEN publish_from IS NOT NULL OR publish_until IS NOT NULL THEN 1 ELSE 0 END",
     ],
   },
+  {
+    version: "009_alternative_solution_visibility",
+    statements: ["ALTER TABLE exercises ADD COLUMN show_alternative_to_students INTEGER NOT NULL DEFAULT 1"],
+  },
 ];

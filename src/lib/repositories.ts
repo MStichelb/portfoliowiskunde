@@ -34,6 +34,9 @@ export interface AdminExercise {
   effectiveStatus: EffectivePublication;
   effectivePublished: boolean;
   isIndexed: boolean;
+  showAlternativeToStudents: boolean;
+  standardAssets: number;
+  alternativeAssets: number;
   assets: AdminAsset[];
 }
 
@@ -373,6 +376,9 @@ export async function getAdminPortfolios(): Promise<AdminPortfolio[]> {
               effectiveStatus: exerciseStatus,
               effectivePublished: exerciseStatus.state === "visible",
               isIndexed: bool(exercise.is_indexed),
+              showAlternativeToStudents: bool(exercise.show_alternative_to_students),
+              standardAssets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
+              alternativeAssets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
               assets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId).map((asset) => ({
                 id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"),
                 step: Number(asset.step), variant: text(asset, "kind") as AdminAsset["variant"],
@@ -442,6 +448,11 @@ export async function setPortfolioVisibility(id: string, visible: boolean): Prom
 export async function setExerciseVisibility(id: string, visible: boolean): Promise<void> {
   const database = await getDatabase();
   await database.execute({ sql: "UPDATE exercises SET visibility_mode = ?, visible = ? WHERE id = ?", args: [visible ? "visible" : "hidden", visible ? 1 : 0, id] });
+}
+
+export async function setExerciseAlternativeVisibility(id: string, showAlternativeToStudents: boolean): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "UPDATE exercises SET show_alternative_to_students = ? WHERE id = ?", args: [showAlternativeToStudents ? 1 : 0, id] });
 }
 
 export async function getStudentPortfolios(): Promise<StudentPortfolio[]> {
@@ -518,7 +529,7 @@ export async function getVisibleExercise(id: string) {
   return {
     id, code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"),
     portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
-    assets: assets.rows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label"), lastModifiedAt: nullableText(asset, "last_modified_at") })),
+    assets: assets.rows.filter((asset) => text(asset, "kind") !== "alternative" || bool(exercise.show_alternative_to_students)).map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label"), lastModifiedAt: nullableText(asset, "last_modified_at") })),
   };
 }
 
@@ -549,7 +560,7 @@ export async function getPublicAsset(id: string) {
   const database = await getDatabase();
   const result = await database.execute({
     sql: `SELECT solution_assets.relative_path, solution_assets.source_id, solution_assets.file_name, solution_assets.extension,
-      exercises.*, sections.visibility_mode AS section_visibility_mode, sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from,
+      exercises.*, solution_variants.kind AS variant_kind, sections.visibility_mode AS section_visibility_mode, sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from,
       sections.publish_until AS section_publish_until, sections.is_indexed AS section_is_indexed,
       portfolios.visible AS portfolio_visible, portfolios.publication_limited, portfolios.publish_from AS portfolio_publish_from,
       portfolios.publish_until AS portfolio_publish_until, portfolios.is_indexed AS portfolio_is_indexed
@@ -560,7 +571,7 @@ export async function getPublicAsset(id: string) {
     args: [id],
   });
   const row = result.rows[0];
-  if (!row || !bool(row.is_indexed) || !bool(row.section_is_indexed) || !bool(row.portfolio_is_indexed)) return null;
+  if (!row || !bool(row.is_indexed) || !bool(row.section_is_indexed) || !bool(row.portfolio_is_indexed) || (text(row, "variant_kind") === "alternative" && !bool(row.show_alternative_to_students))) return null;
   const now = new Date();
   const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
   const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now);
@@ -672,4 +683,22 @@ export async function toggleErrorReportPin(id: string): Promise<void> {
 export async function saveErrorReportNote(id: string, note: string): Promise<void> {
   const database = await getDatabase();
   await database.execute({ sql: "UPDATE error_reports SET admin_note = ?, updated_at = ? WHERE id = ?", args: [note.slice(0, 4000), new Date().toISOString(), id] });
+}
+
+export async function deleteErrorReport(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "DELETE FROM error_reports WHERE id = ?", args: [id] });
+}
+
+export async function getOldDoneErrorReportCount(now = new Date()): Promise<number> {
+  const database = await getDatabase();
+  const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  const result = await database.execute({ sql: "SELECT COUNT(*) AS count FROM error_reports WHERE status = 'DONE' AND completed_at < ?", args: [cutoff] });
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+export async function deleteOldDoneErrorReports(now = new Date()): Promise<void> {
+  const database = await getDatabase();
+  const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  await database.execute({ sql: "DELETE FROM error_reports WHERE status = 'DONE' AND completed_at < ?", args: [cutoff] });
 }
