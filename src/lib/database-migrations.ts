@@ -89,7 +89,7 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE sections ADD COLUMN publish_from TEXT",
       "ALTER TABLE sections ADD COLUMN publish_until TEXT",
       "ALTER TABLE sections ADD COLUMN last_seen_at TEXT",
-      "ALTER TABLE exercises ADD COLUMN visibility_mode TEXT NOT NULL DEFAULT 'hidden' CHECK(visibility_mode IN ('inherit', 'hidden', 'visible'))",
+      "ALTER TABLE exercises ADD COLUMN visibility_mode TEXT NOT NULL DEFAULT 'inherit' CHECK(visibility_mode IN ('inherit', 'hidden', 'visible'))",
       "ALTER TABLE exercises ADD COLUMN publish_from TEXT",
       "ALTER TABLE exercises ADD COLUMN publish_until TEXT",
       "ALTER TABLE exercises ADD COLUMN last_seen_at TEXT",
@@ -133,9 +133,15 @@ export const migrations: DatabaseMigration[] = [
     ],
   },
   {
-    version: "004_preserve_v02_visibility",
+    version: "004_migrate_v02_visibility_to_inheritance",
     statements: [
-      "UPDATE exercises SET visibility_mode = CASE WHEN visible = 1 THEN 'visible' ELSE 'hidden' END",
+      "UPDATE exercises SET visibility_mode = CASE WHEN visible = 1 THEN 'visible' ELSE 'inherit' END",
+    ],
+  },
+  {
+    version: "005_correct_early_v1_exercise_default",
+    statements: [
+      "UPDATE exercises SET visibility_mode = 'inherit' WHERE visibility_mode = 'hidden' AND visible = 0 AND publish_from IS NULL AND publish_until IS NULL",
     ],
   },
 ];

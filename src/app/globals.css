@@ -61,5 +61,47 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .report-form input, .report-form textarea, .report-form select { width: 100%; min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; font: inherit; }
 .report-form label { display: grid; gap: 5px; font-weight: 700; }
 .honeypot { position: absolute; left: -10000px; }
+.portfolio-admin-page { max-width: 1180px; }
+.portfolio-detail-heading { padding-bottom: 28px; margin-bottom: 28px; border-bottom: 1px solid #c9d0cc; }
+.portfolio-detail-heading h1 { margin-bottom: 6px; }
+.admin-card { margin: 24px 0; padding: 24px; border: 1px solid #d5ddda; border-radius: 6px; background: #fff; box-shadow: 0 1px 2px rgba(23,34,43,.04); }
+.card-heading { display: flex; gap: 20px; align-items: start; justify-content: space-between; margin-bottom: 20px; }
+.card-heading h2 { margin-bottom: 6px; }
+.card-heading p { max-width: 720px; margin: 0; color: #52616a; }
+.portfolio-settings-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; max-width: 780px; }
+.portfolio-settings-form label, .section-settings-form label, .bulk-toolbar label { display: grid; gap: 6px; font-size: 14px; font-weight: 700; color: #314149; }
+.portfolio-settings-form input, .portfolio-settings-form select, .section-settings-form input, .section-settings-form select, .bulk-toolbar input, .bulk-toolbar select { min-height: 40px; width: 100%; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; color: #17222b; font: inherit; }
+.field-wide, .form-action-row { grid-column: 1 / -1; }
+.form-action-row { padding-top: 4px; }
+.document-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.document-item { display: flex; gap: 16px; justify-content: space-between; align-items: center; padding: 16px; border: 1px solid #d9dfdb; border-radius: 4px; background: #fbfcfb; }
+.document-item div { display: grid; gap: 4px; }
+.document-item span { color: #52616a; font-size: 14px; }
+.section-card-list { display: grid; gap: 12px; }
+.section-settings-card { padding: 18px; border: 1px solid #d9dfdb; border-radius: 4px; background: #fbfcfb; }
+.section-card-title { display: flex; justify-content: space-between; gap: 16px; align-items: center; margin-bottom: 16px; }
+.section-card-title h3 { margin: 0; }
+.section-settings-form { display: grid; grid-template-columns: minmax(190px, 1.15fr) minmax(170px, 1fr) minmax(170px, 1fr) auto; align-items: end; gap: 12px; }
+.bulk-toolbar { display: grid; grid-template-columns: minmax(170px, 1fr) auto minmax(190px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto; align-items: end; gap: 12px; margin: 18px 0; padding: 16px; border: 1px solid #a9c3bc; border-radius: 4px; background: #eef6f2; }
+.bulk-toolbar > div { display: grid; gap: 4px; }
+.bulk-toolbar > div span { color: #52616a; font-size: 13px; }
+.form-message { margin: 0 0 16px; padding: 10px 12px; border-left: 3px solid #9b5b2f; background: #fff7ed; color: #6b3415; font-weight: 700; }
+.bulk-exercise-form .admin-summary-table { margin-top: 0; }
+.admin-summary-table { overflow-x: auto; border: 1px solid #d9dfdb; border-radius: 4px; background: #fff; }
+.admin-summary-table table { width: 100%; min-width: 680px; border-collapse: collapse; }
+.admin-summary-table th, .admin-summary-table td { padding: 13px 14px; border-bottom: 1px solid #e2e7e4; text-align: left; vertical-align: middle; }
+.admin-summary-table thead th { background: #f3f6f4; color: #405058; font-size: 13px; }
+.admin-summary-table tbody tr:last-child td { border-bottom: 0; }
+.section-table-row th, .section-table-row td { border-top: 2px solid #a8bbb4; background: #f7faf8; font-size: 14px; }
+.section-table-row th { color: #17222b; }
+.status-badge { display: inline-flex; align-items: center; min-height: 26px; padding: 3px 8px; border-radius: 4px; font-size: 13px; font-weight: 700; white-space: nowrap; }
+.status-badge.published { background: #dcefe5; color: #174a36; }
+.status-badge.hidden { background: #ecefed; color: #4f5c62; }
+.status-badge.inherit { background: #e2edf2; color: #23566a; }
+.status-badge.missing { background: #fff0df; color: #824015; }
+.missing-row { opacity: .72; }
+.text-button { border: 0; padding: 8px 0; background: transparent; color: #075c75; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 :focus-visible { outline: 3px solid #e6a23c; outline-offset: 2px; }
 @media (max-width: 640px) { .site-nav { padding: 0 16px; } .page-shell { width: min(100% - 24px, 1080px); padding-top: 28px; } .admin-header, .admin-row, .admin-exercise { display: block; } .admin-actions, .admin-header form, .visibility-form { margin-top: 14px; justify-content: start; } .exercise-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .exercise-link, .exercise-hidden { min-width: 0; width: 100%; } }
+@media (max-width: 900px) { .bulk-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } .section-settings-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .admin-card { margin: 16px 0; padding: 16px; } .card-heading, .section-card-title, .document-item { display: grid; } .portfolio-settings-form, .document-grid, .section-settings-form, .bulk-toolbar { grid-template-columns: 1fr; } .document-item .secondary-button { justify-self: start; } .section-settings-form .secondary-button, .bulk-toolbar .primary-button { width: 100%; } }

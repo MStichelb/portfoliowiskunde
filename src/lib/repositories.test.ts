@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
-import { persistIndex, setExercisePublication } from "./repositories";
+import { getStudentPortfolios, persistIndex, setExercisePublication, setPortfolioPublication } from "./repositories";
 import { indexSource } from "./storage/portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./storage/provider";
 
@@ -49,6 +49,25 @@ describe("persistIndex", () => {
     const updated = await database.execute({ sql: "SELECT source_version FROM solution_assets WHERE relative_path = ?", args: ["Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png"] });
     expect(updated.rows[0].source_version).toBe("replacement-v2");
     expect(Number((await database.execute("SELECT COUNT(*) AS count FROM solution_assets")).rows[0].count)).toBe(5);
+  });
+
+  it("lets inherited sections and exercises follow a visible portfolio without resetting overrides", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-visibility-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const source = createTwoPortfolioProvider();
+    await persistIndex(await indexSource(source), "local");
+    await setPortfolioPublication("portfolio-3", "visible", null, null);
+    const visiblePortfolio = (await getStudentPortfolios()).find((portfolio) => portfolio.id === "portfolio-3");
+    expect(visiblePortfolio?.sections.flatMap((section) => section.exercises).every((exercise) => exercise.visible)).toBe(true);
+
+    const database = await getDatabase();
+    const exerciseId = String((await database.execute("SELECT id FROM exercises WHERE portfolio_id = 'portfolio-3' ORDER BY id LIMIT 1")).rows[0].id);
+    await setExercisePublication([exerciseId], "hidden", null, null);
+    expect((await getStudentPortfolios()).find((portfolio) => portfolio.id === "portfolio-3")?.sections.flatMap((section) => section.exercises).find((exercise) => exercise.id === exerciseId)?.visible).toBe(false);
+    await persistIndex(await indexSource(source), "local");
+    expect((await database.execute({ sql: "SELECT visibility_mode FROM exercises WHERE id = ?", args: [exerciseId] })).rows[0].visibility_mode).toBe("hidden");
+    expect((await database.execute("SELECT COUNT(*) AS count FROM exercises WHERE visibility_mode = 'inherit'")).rows[0].count).not.toBe(0);
   });
 });
 

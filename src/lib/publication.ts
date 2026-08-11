@@ -16,9 +16,10 @@ export interface ChildPublication extends PublicationWindow {
 
 export function isWithinPublicationWindow(window: PublicationWindow, now = new Date()): boolean {
   const current = now.getTime();
-  const from = window.publishFrom ? Date.parse(window.publishFrom) : Number.NEGATIVE_INFINITY;
-  const until = window.publishUntil ? Date.parse(window.publishUntil) : Number.POSITIVE_INFINITY;
-  return Number.isFinite(from) && Number.isFinite(until) && current >= from && current <= until;
+  const from = window.publishFrom ? Date.parse(window.publishFrom) : null;
+  const until = window.publishUntil ? Date.parse(window.publishUntil) : null;
+  if ((from !== null && !Number.isFinite(from)) || (until !== null && !Number.isFinite(until))) return false;
+  return (from === null || current >= from) && (until === null || current <= until);
 }
 
 export function isPortfolioPublished(publication: PortfolioPublication, now = new Date()): boolean {

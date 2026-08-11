@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 
 import { endAdminSession, requireAdmin } from "@/lib/auth";
+import { bulkSelectionError } from "@/lib/admin-validation";
 import { parseBrusselsDateTime, type ChildVisibilityMode, type PortfolioVisibilityMode } from "@/lib/publication";
 import {
   getAdminPortfolio,
@@ -50,20 +51,28 @@ export async function saveSectionPublicationAction(formData: FormData) {
   refreshPublicationPaths(portfolioId);
 }
 
-export async function bulkExercisePublicationAction(formData: FormData) {
+export async function bulkExercisePublicationAction(_previousState: { error: string | null }, formData: FormData): Promise<{ error: string | null }> {
   await requireAdmin();
   const portfolioId = stringValue(formData, "portfolioId");
   const mode = childModeSchema.safeParse(stringValue(formData, "mode"));
   const requestedIds = formData.getAll("exerciseIds").map(String).filter(Boolean);
-  if (!portfolioId || !mode.success || requestedIds.length === 0) throw new Error("Kies minstens een oefening en een geldige status.");
+  const emptySelection = bulkSelectionError(requestedIds.length);
+  if (emptySelection) return { error: emptySelection };
+  if (!portfolioId || !mode.success) return { error: "Kies een geldige publicatiestatus." };
   const portfolio = await getAdminPortfolio(portfolioId);
-  if (!portfolio) throw new Error("Portfolio niet gevonden.");
+  if (!portfolio) return { error: "Portfolio niet gevonden." };
   const validIds = new Set(portfolio.sections.flatMap((section) => section.exercises.map((exercise) => exercise.id)));
   const exerciseIds = [...new Set(requestedIds)].filter((id) => validIds.has(id));
-  if (exerciseIds.length !== requestedIds.length) throw new Error("Ongeldige oefeningselectie.");
-  const window = parsePublicationWindow(formData);
+  if (exerciseIds.length !== requestedIds.length) return { error: "Ongeldige oefeningselectie." };
+  let window: { publishFrom: string | null; publishUntil: string | null };
+  try {
+    window = parsePublicationWindow(formData);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Ongeldige planning." };
+  }
   await setExercisePublication(exerciseIds, mode.data, window.publishFrom, window.publishUntil);
   refreshPublicationPaths(portfolioId);
+  return { error: null };
 }
 
 export async function logoutAction() {

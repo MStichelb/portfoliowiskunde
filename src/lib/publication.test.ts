@@ -10,6 +10,7 @@ describe("publication rules", () => {
   });
 
   it("honours scheduled publication boundaries", () => {
+    expect(isPortfolioPublished({ visible: true, publishFrom: null, publishUntil: null }, now)).toBe(true);
     expect(isPortfolioPublished({ visible: true, publishFrom: "2026-08-11T09:59:00.000Z", publishUntil: "2026-08-11T10:01:00.000Z" }, now)).toBe(true);
     expect(isPortfolioPublished({ visible: true, publishFrom: "2026-08-11T10:01:00.000Z", publishUntil: null }, now)).toBe(false);
   });
