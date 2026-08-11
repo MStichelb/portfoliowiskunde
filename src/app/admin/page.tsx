@@ -1,3 +1,4 @@
+import { TriangleAlert } from "lucide-react";
 import Link from "next/link";
 
 import { PublicationStatus } from "@/app/components/publication-status";
@@ -40,7 +41,7 @@ export default async function AdminPage() {
                 <td><strong>{portfolio.code}</strong></td><td>{portfolio.title}{!portfolio.isIndexed && <small>Ontbreekt in bron</small>}</td>
                 <td>{portfolio.isIndexed ? <PublicationStatus status={portfolio.effectiveStatus} /> : <span className="status-badge missing">Bron ontbreekt</span>}</td>
                 <td>{portfolio.sections.length}</td><td>{exerciseCount}</td>
-                <td>{warningCounts.get(portfolio.id) ? <Link className="warning-count" href={`/admin/portfolio/${encodeURIComponent(portfolio.id)}#portfolio-warnings-title`} aria-label={`${warningCounts.get(portfolio.id)} waarschuwingen`}>! <span>{warningCounts.get(portfolio.id)}</span></Link> : null}</td>
+                <td>{warningCounts.get(portfolio.id) ? <Link className="warning-count" href={`/admin/portfolio/${encodeURIComponent(portfolio.id)}#portfolio-warnings-title`} aria-label={`${warningCounts.get(portfolio.id)} waarschuwingen`}><TriangleAlert size={16} aria-hidden /><span>{warningCounts.get(portfolio.id)}</span></Link> : null}</td>
                 <td><Link className="secondary-button link-button" href={`/admin/portfolio/${encodeURIComponent(portfolio.id)}`}>Open beheer</Link></td>
               </tr>;
             })}</tbody>

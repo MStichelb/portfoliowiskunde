@@ -11,6 +11,7 @@ import {
   getAdminPortfolio,
   setExercisePublication,
   setExerciseVisibility,
+  setExerciseAlternativeVisibility,
   setPortfolioPublication,
   setPortfolioTitle,
   setErrorReportStatus,
@@ -120,6 +121,18 @@ export async function toggleExerciseVisibilityAction(formData: FormData) {
   await setExerciseVisibility(id, visible);
   refreshPublicationPaths(portfolioId);
   revalidatePath("/admin/meldingen");
+}
+
+export async function toggleExerciseAlternativeVisibilityAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  const portfolioId = stringValue(formData, "portfolioId");
+  const visible = stringValue(formData, "visible") === "true";
+  const portfolio = await getAdminPortfolio(portfolioId);
+  const exercise = portfolio?.sections.flatMap((section) => section.exercises).find((item) => item.id === id);
+  if (!exercise || !exercise.assets.some((asset) => asset.variant === "alternative" && asset.isIndexed)) throw new Error("Alternatieve uitwerking niet gevonden.");
+  await setExerciseAlternativeVisibility(id, visible);
+  refreshPublicationPaths(portfolioId);
 }
 
 export async function logoutAction() {

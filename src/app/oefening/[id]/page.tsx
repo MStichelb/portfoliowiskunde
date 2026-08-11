@@ -15,7 +15,7 @@ export default async function ExercisePage({ params }: { params: Promise<{ id: s
   if (!exercise) notFound();
   const standard = exercise.assets.filter((asset) => asset.kind === "standard");
   const alternative = exercise.assets.filter((asset) => asset.kind === "alternative");
-  return <main className="page-shell solution-page"><Link href={`/portfolio/${encodeURIComponent(`portfolio-${exercise.portfolioCode}`)}`} className="back-link">Terug naar portfolio</Link><p className="eyebrow">Portfolio {exercise.portfolioCode} · {exercise.sectionTitle}</p><h1>Oefening {exercise.code}</h1><p>{exercise.portfolioTitle}</p><SolutionVariant title="Standaard" assets={standard} />{alternative.length > 0 && <SolutionVariant title="Alternatief" assets={alternative} />}<ErrorReportForm exerciseId={exercise.id} variants={alternative.length > 0 ? ["standard", "alternative"] : ["standard"]} /></main>;
+  return <main className="page-shell solution-page"><Link href={`/portfolio/${encodeURIComponent(`portfolio-${exercise.portfolioCode}`)}`} className="back-link">Terug naar portfolio</Link><p className="eyebrow">Portfolio {exercise.portfolioCode} · {exercise.sectionTitle}</p><h1>Oefening {exercise.code}</h1><p>{exercise.portfolioTitle}</p><SolutionVariant title="Uitwerking" assets={standard} />{alternative.length > 0 && <SolutionVariant title="Alternatieve uitwerking" assets={alternative} />}<ErrorReportForm exerciseId={exercise.id} variants={alternative.length > 0 ? ["standard", "alternative"] : ["standard"]} /></main>;
 }
 
 function SolutionVariant({ title, assets }: { title: string; assets: Array<{ id: string; fileName: string; extension: string; step: number }> }) {
