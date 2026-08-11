@@ -42,7 +42,7 @@ function earliestDate(a: string | null, b: string | null): string | null { if (!
 export function formatPublicationLabel(status: EffectivePublication, now = new Date()): string {
   if (status.state === "hidden") return status.reason === "expired" && status.effectiveUntil ? `Zichtbaar tot ${formatDate(status.effectiveUntil)}` : "Verborgen";
   if (status.state === "will-remain-hidden") return "Wordt verborgen";
-  if (status.state === "will-be-visible") return status.effectiveFrom && status.effectiveUntil ? `Zichtbaar van ${formatDate(status.effectiveFrom)} tot ${formatDate(status.effectiveUntil)}` : status.effectiveFrom ? `Zichtbaar vanaf ${formatDate(status.effectiveFrom)}` : "Wordt zichtbaar";
+  if (status.state === "will-be-visible" && status.effectiveFrom && Date.parse(status.effectiveFrom) > now.getTime()) return status.effectiveUntil ? `Zichtbaar van ${formatDate(status.effectiveFrom)} tot ${formatDate(status.effectiveUntil)}` : `Zichtbaar vanaf ${formatDate(status.effectiveFrom)}`;
   return status.effectiveUntil && Date.parse(status.effectiveUntil) > now.getTime() ? `Zichtbaar tot ${formatDate(status.effectiveUntil)}` : "Zichtbaar";
 }
 function formatDate(value: string): string { return new Intl.DateTimeFormat("nl-BE", { timeZone: BRUSSELS_TIME_ZONE, day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(value)); }
