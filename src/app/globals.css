@@ -37,6 +37,12 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .warnings .file-reference { display: block; }
 .solution-page { max-width: 760px; }
 .admin-preview-banner { display: flex; gap: 10px; align-items: baseline; margin: 0 0 20px; padding: 12px 14px; border: 1px solid #c9aeb2; border-radius: 4px; background: #f4e8e9; color: #5c353b; }
+.danger-button { min-height: 34px; border: 1px solid #a14d57; border-radius: 4px; padding: 7px 12px; background: #fff; color: #813a43; font: inherit; font-weight: 700; cursor: pointer; }
+.confirm-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(23,34,43,.38); }
+.confirm-dialog { width: min(420px, 100%); padding: 22px; border-radius: 6px; background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.22); }
+.confirm-dialog h2 { font-size: 20px; }
+.confirm-dialog > div { display: flex; justify-content: end; gap: 8px; margin-top: 18px; }
+.confirm-dialog form { margin: 0; }
 .back-link { display: inline-block; margin-bottom: 30px; }
 .solution-variant { margin-top: 28px; padding-top: 20px; border-top: 1px solid #c9d0cc; }
 .solution-variant li { margin: 10px 0; overflow-wrap: anywhere; }
