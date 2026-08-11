@@ -6,7 +6,7 @@ export type EffectivePublicationReason = "self-hidden" | "parent-hidden" | "pare
 export interface PublicationWindow { publishFrom: string | null; publishUntil: string | null; }
 export interface PortfolioPublication extends PublicationWindow { visible: boolean; limited: boolean; }
 export interface ChildPublication extends PublicationWindow { mode: ChildVisibilityMode; limited: boolean; }
-export interface EffectivePublication { configuredVisibility: ChildVisibilityMode; state: EffectivePublicationState; reason: EffectivePublicationReason; }
+export interface EffectivePublication { configuredVisibility: ChildVisibilityMode; state: EffectivePublicationState; reason: EffectivePublicationReason; effectiveFrom: string | null; effectiveUntil: string | null; }
 
 export function resolvePortfolioPublication(publication: PortfolioPublication, now = new Date()): EffectivePublication {
   return resolvePublication(publication.visible ? "visible" : "hidden", publication.limited, publication, null, now);
@@ -20,19 +20,32 @@ export function isPortfolioPublished(publication: PortfolioPublication, now = ne
 export function isChildPublished(parent: EffectivePublication, publication: ChildPublication, now = new Date()): boolean { return resolveChildPublication(publication, parent, now).state === "visible"; }
 
 function resolvePublication(configuredVisibility: ChildVisibilityMode, limited: boolean, window: PublicationWindow, parent: EffectivePublication | null, now: Date): EffectivePublication {
-  if (configuredVisibility === "hidden") return { configuredVisibility, state: "hidden", reason: "self-hidden" };
+  const ownFrom = limited ? validDate(window.publishFrom) : null;
+  const ownUntil = limited ? validDate(window.publishUntil) : null;
+  const effectiveFrom = latestDate(parent?.effectiveFrom ?? null, ownFrom);
+  const effectiveUntil = earliestDate(parent?.effectiveUntil ?? null, ownUntil);
+  if (configuredVisibility === "hidden") return { configuredVisibility, state: "hidden", reason: "self-hidden", effectiveFrom, effectiveUntil };
   if (parent && parent.state !== "visible") {
     const scheduled = parent.state === "will-be-visible";
-    return { configuredVisibility, state: scheduled ? "will-be-visible" : "will-remain-hidden", reason: scheduled ? "parent-scheduled" : "parent-hidden" };
+    return { configuredVisibility, state: scheduled ? "will-be-visible" : "will-remain-hidden", reason: scheduled ? "parent-scheduled" : "parent-hidden", effectiveFrom, effectiveUntil };
   }
-  if (!limited) return { configuredVisibility, state: "visible", reason: null };
   const current = now.getTime();
-  const from = window.publishFrom ? Date.parse(window.publishFrom) : null;
-  const until = window.publishUntil ? Date.parse(window.publishUntil) : null;
-  if ((from !== null && !Number.isFinite(from)) || (until !== null && !Number.isFinite(until)) || (from !== null && current < from)) return { configuredVisibility, state: "will-be-visible", reason: "self-scheduled" };
-  if (until !== null && current > until) return { configuredVisibility, state: "will-remain-hidden", reason: "expired" };
-  return { configuredVisibility, state: "visible", reason: null };
+  if (effectiveFrom && current < Date.parse(effectiveFrom)) return { configuredVisibility, state: "will-be-visible", reason: parent?.effectiveFrom === effectiveFrom ? "parent-scheduled" : "self-scheduled", effectiveFrom, effectiveUntil };
+  if (effectiveUntil && current > Date.parse(effectiveUntil)) return { configuredVisibility, state: "hidden", reason: "expired", effectiveFrom, effectiveUntil };
+  return { configuredVisibility, state: "visible", reason: null, effectiveFrom, effectiveUntil };
 }
+
+function validDate(value: string | null): string | null { return value && Number.isFinite(Date.parse(value)) ? value : null; }
+function latestDate(a: string | null, b: string | null): string | null { if (!a) return b; if (!b) return a; return Date.parse(a) >= Date.parse(b) ? a : b; }
+function earliestDate(a: string | null, b: string | null): string | null { if (!a) return b; if (!b) return a; return Date.parse(a) <= Date.parse(b) ? a : b; }
+
+export function formatPublicationLabel(status: EffectivePublication, now = new Date()): string {
+  if (status.state === "hidden") return status.reason === "expired" && status.effectiveUntil ? `Zichtbaar tot ${formatDate(status.effectiveUntil)}` : "Verborgen";
+  if (status.state === "will-remain-hidden") return "Wordt verborgen";
+  if (status.state === "will-be-visible") return status.effectiveFrom && status.effectiveUntil ? `Zichtbaar van ${formatDate(status.effectiveFrom)} tot ${formatDate(status.effectiveUntil)}` : status.effectiveFrom ? `Zichtbaar vanaf ${formatDate(status.effectiveFrom)}` : "Wordt zichtbaar";
+  return status.effectiveUntil && Date.parse(status.effectiveUntil) > now.getTime() ? `Zichtbaar tot ${formatDate(status.effectiveUntil)}` : "Zichtbaar";
+}
+function formatDate(value: string): string { return new Intl.DateTimeFormat("nl-BE", { timeZone: BRUSSELS_TIME_ZONE, day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(value)); }
 
 const BRUSSELS_TIME_ZONE = "Europe/Brussels";
 export function parseBrusselsDateTime(value: string): string | null { const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/); if (!match) return null; const [, year, month, day, hour, minute] = match; const localAsUtc = Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)); let candidate = localAsUtc - timeZoneOffset(localAsUtc); candidate = localAsUtc - timeZoneOffset(candidate); const date = new Date(candidate); return formatBrusselsDateTimeInput(date) === value ? date.toISOString() : null; }
