@@ -1,3 +1,4 @@
+import { maybeAutoSynchronize } from "@/lib/auto-sync";
 import { getPublicAsset } from "@/lib/repositories";
 import { getStorageProvider } from "@/lib/storage";
 
@@ -9,6 +10,7 @@ const mimeTypes: Record<string, string> = {
 };
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  await maybeAutoSynchronize();
   const { id } = await params;
   const asset = await getPublicAsset(id);
   if (!asset) return new Response("Niet gevonden.", { status: 404 });

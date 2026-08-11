@@ -3,12 +3,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ErrorReportForm } from "@/app/components/error-report-form";
+import { maybeAutoSynchronize } from "@/lib/auto-sync";
 import { getVisibleExercise } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function ExercisePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  await maybeAutoSynchronize();
   const exercise = await getVisibleExercise(id);
   if (!exercise) notFound();
   const standard = exercise.assets.filter((asset) => asset.kind === "standard");

@@ -18,10 +18,14 @@ ADMIN_PASSWORD=vervang-door-een-lang-uniek-wachtwoord
 ```
 
 4. Start de app met `pnpm dev`.
-5. Open `http://localhost:3000/admin`, log in en kies **Opnieuw synchroniseren**.
+5. Open `http://localhost:3000/admin`, log in en kies **Synchroniseren** voor een onmiddellijke eerste indexering.
 6. Zet eerst een portfolio en vervolgens de gewenste oefeningen op zichtbaar. De leerlingweergave staat op `http://localhost:3000`.
 
 De SQLite-database wordt automatisch gemaakt in `.data/portfolio.db`. Verwijder uitsluitend die database als je de metadata en alle zichtbaarheidinstellingen lokaal wilt resetten; de bronmap wordt door de applicatie nooit gewijzigd. Je kunt de lokale bronmap later ook veilig wijzigen in **Beheer > Instellingen**; het pad wordt gevalideerd, maar nooit beschreven.
+
+## Synchronisatie
+
+De knop **Synchroniseren** voert onmiddellijk een volledige, read-only indexering uit. Leerlingroutes controleren daarnaast of de laatste succesvolle synchronisatie ouder is dan drie minuten (instelbaar met `PORTFOLIO_AUTO_SYNC_TTL_SECONDS`) en starten dan maximaal een synchronisatie per applicatieproces. Gewone requests lezen uitsluitend de lokale metadata. Nieuwe portfolio's starten verborgen; nieuwe onderdelen en oefeningen nemen hun ouderinstelling over. In een serverless productieomgeving geldt de deduplicatie per actieve instantie; voor striktere, centrale planning kan later een scheduler of provider-delta-sync worden toegevoegd.
 
 ## Wat V0.1 herkent
 
@@ -50,4 +54,4 @@ pnpm test
 pnpm build
 ```
 
-V0.1 bevat bewust nog geen Microsoft Graph/OAuth, deployment, Docker, foutmeldingen of adminauth. Die blijven voorzien voor latere V1.0-stappen.
+Microsoft Graph/OAuth en deployment blijven afzonderlijke productiestappen; Docker en uitgebreide foutafhandeling blijven bewust buiten deze lokale basis.

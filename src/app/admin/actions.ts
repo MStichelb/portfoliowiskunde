@@ -13,7 +13,9 @@ import {
   setPortfolioPublication,
   setPortfolioTitle,
   setErrorReportStatus,
+  saveErrorReportNote,
   setSectionPublication,
+  toggleErrorReportPin,
 } from "@/lib/repositories";
 import { synchronizeSource } from "@/lib/sync";
 
@@ -75,6 +77,19 @@ export async function bulkExercisePublicationAction(_previousState: { error: str
   return { error: null };
 }
 
+export async function saveExercisePublicationAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  const portfolioId = stringValue(formData, "portfolioId");
+  const mode = childModeSchema.safeParse(stringValue(formData, "mode"));
+  if (!id || !portfolioId || !mode.success) throw new Error("Ongeldige oefening-invoer.");
+  const portfolio = await getAdminPortfolio(portfolioId);
+  if (!portfolio?.sections.some((section) => section.exercises.some((exercise) => exercise.id === id))) throw new Error("Oefening niet gevonden.");
+  const window = parsePublicationWindow(formData);
+  await setExercisePublication([id], mode.data, window.publishFrom, window.publishUntil);
+  refreshPublicationPaths(portfolioId);
+}
+
 export async function logoutAction() {
   await endAdminSession();
   redirect("/admin/login");
@@ -84,8 +99,35 @@ export async function errorReportStatusAction(formData: FormData) {
   await requireAdmin();
   const id = stringValue(formData, "id");
   const status = stringValue(formData, "status");
-  if (!id || (status !== "VIEWED" && status !== "RESOLVED")) throw new Error("Ongeldige meldingsstatus.");
+  if (!id || (status !== "TODO" && status !== "DONE")) throw new Error("Ongeldige meldingsstatus.");
   await setErrorReportStatus(id, status);
+  revalidatePath("/admin/meldingen");
+  revalidatePath("/admin");
+}
+
+export async function errorReportPinAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  if (!id) return;
+  await toggleErrorReportPin(id);
+  revalidatePath("/admin/meldingen");
+}
+
+export async function errorReportNoteAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  if (!id) return;
+  await saveErrorReportNote(id, stringValue(formData, "note"));
+  revalidatePath("/admin/meldingen");
+}
+
+export async function hideReportedExerciseAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "exerciseId");
+  const portfolioId = stringValue(formData, "portfolioId");
+  if (!id || !portfolioId) return;
+  await setExercisePublication([id], "hidden", null, null);
+  refreshPublicationPaths(portfolioId);
   revalidatePath("/admin/meldingen");
 }
 

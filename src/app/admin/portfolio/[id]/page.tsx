@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { SubmitButton } from "@/app/components/submit-button";
 import { requireAdmin } from "@/lib/auth";
 import { formatBrusselsDateTimeInput } from "@/lib/publication";
-import { getAdminPortfolio } from "@/lib/repositories";
+import { getAdminPortfolio, getPortfolioWarnings } from "@/lib/repositories";
 
 import { ExerciseBulkTable } from "../../../components/exercise-bulk-table";
 import { savePortfolioAction, saveSectionPublicationAction } from "../../actions";
@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
 export default async function PortfolioAdminPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
   const { id } = await params;
-  const portfolio = await getAdminPortfolio(id);
+  const [portfolio, warnings] = await Promise.all([getAdminPortfolio(id), getPortfolioWarnings(id)]);
   if (!portfolio) notFound();
   const assignmentUrl = portfolio.assignmentPdfPath ? `/api/admin/portfolio-assets/${encodeURIComponent(portfolio.id)}/assignment` : null;
   const finalSolutionsUrl = portfolio.finalSolutionsPdfPath ? `/api/admin/portfolio-assets/${encodeURIComponent(portfolio.id)}/final-solutions` : null;
@@ -41,20 +41,24 @@ export default async function PortfolioAdminPage({ params }: { params: Promise<{
 
     <section className="admin-card" aria-labelledby="sections-title">
       <div className="card-heading"><div><h2 id="sections-title">Onderdelen</h2><p>Alle onderdelen volgen standaard het portfolio. Geef alleen uitzonderingen een eigen status of planning.</p></div></div>
-      <div className="section-card-list">{portfolio.sections.map((section) => <article className="section-settings-card" key={section.id}>
-        <div className="section-card-title"><h3>{section.order}. {section.title}</h3><EffectiveStatus visible={section.effectivePublished} inherited={section.visibilityMode === "inherit"} /></div>
+      <div className="section-card-list">{portfolio.sections.map((section) => <details className="section-settings-card" key={section.id}>
+        <summary className="section-card-title"><span><strong>{section.order}. {section.title}</strong><small>{section.exercises.length} oefeningen</small></span><EffectiveStatus visible={section.effectivePublished} inherited={section.visibilityMode === "inherit"} /></summary>
         <form action={saveSectionPublicationAction} className="section-settings-form"><input type="hidden" name="id" value={section.id} /><input type="hidden" name="portfolioId" value={portfolio.id} />
           <label>Status<select name="mode" defaultValue={section.visibilityMode}><option value="inherit">Overnemen van portfolio</option><option value="visible">Zichtbaar</option><option value="hidden">Verborgen</option></select></label>
           <label>Publiceren vanaf<input name="publishFrom" type="datetime-local" defaultValue={formatBrusselsDateTimeInput(section.publishFrom)} /></label>
           <label>Verbergen na<input name="publishUntil" type="datetime-local" defaultValue={formatBrusselsDateTimeInput(section.publishUntil)} /></label>
           <SubmitButton className="secondary-button" pendingLabel="Opslaan...">Opslaan</SubmitButton>
         </form>
-      </article>)}</div>
+      </details>)}</div>
     </section>
 
     <section className="admin-card exercises-card" aria-labelledby="exercises-title">
       <div className="card-heading"><div><h2 id="exercises-title">Oefeningen</h2><p>Alternatieven horen bij dezelfde oefening. De tabel volgt de volgorde van de onderdelen.</p></div></div>
-      <ExerciseBulkTable portfolioId={portfolio.id} sections={portfolio.sections.map((section) => ({ id: section.id, title: section.title, order: section.order, exercises: section.exercises.map((exercise) => ({ id: exercise.id, code: exercise.code, status: exercise.effectivePublished ? "published" : exercise.visibilityMode === "inherit" ? "inherit" : exercise.visibilityMode, statusLabel: exercise.effectivePublished ? (exercise.visibilityMode === "inherit" ? "Overnemen · zichtbaar" : "Zichtbaar") : exercise.visibilityMode === "inherit" ? "Overnemen · verborgen" : "Verborgen", assets: exercise.assets.filter((asset) => asset.isIndexed).length, hasAlternative: exercise.assets.some((asset) => asset.variant === "alternative" && asset.isIndexed), isIndexed: exercise.isIndexed })) }))} />
+      <ExerciseBulkTable portfolioId={portfolio.id} sections={portfolio.sections.map((section) => ({ id: section.id, title: section.title, order: section.order, exercises: section.exercises.map((exercise) => ({ id: exercise.id, code: exercise.code, visibilityMode: exercise.visibilityMode, status: exercise.effectivePublished ? "published" : exercise.visibilityMode === "inherit" ? "inherit" : exercise.visibilityMode, statusLabel: exercise.effectivePublished ? (exercise.visibilityMode === "inherit" ? "Overnemen van onderdeel - zichtbaar" : "Zichtbaar") : exercise.visibilityMode === "inherit" ? "Overnemen van onderdeel - verborgen" : "Verborgen", assets: exercise.assets.filter((asset) => asset.isIndexed).length, hasAlternative: exercise.assets.some((asset) => asset.variant === "alternative" && asset.isIndexed), isIndexed: exercise.isIndexed })) }))} />
+    </section>
+    <section className="admin-card portfolio-warnings" aria-labelledby="portfolio-warnings-title">
+      <div className="card-heading"><div><h2 id="portfolio-warnings-title">Synchronisatiewaarschuwingen ({warnings.length})</h2><p>Alleen waarschuwingen die bij dit portfolio horen.</p></div></div>
+      {warnings.length === 0 ? <p className="empty-state">Geen waarschuwingen in de laatste geslaagde synchronisatie.</p> : <ul>{warnings.map((warning, index) => <li key={`${warning.relativePath}-${index}`}><strong>{warning.severity === "warning" ? "Waarschuwing" : "Info"}:</strong> {warning.message}<span className="file-reference">{warning.relativePath}</span></li>)}</ul>}
     </section>
   </main>;
 }

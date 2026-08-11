@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { maybeAutoSynchronize } from "@/lib/auto-sync";
 import { getStudentPortfolio } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function PortfolioPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  await maybeAutoSynchronize();
   const portfolio = await getStudentPortfolio(id);
   if (!portfolio) notFound();
   return <main className="page-shell student-page"><Link href="/" className="back-link">Terug naar portfolio&apos;s</Link><header className="page-header"><p className="eyebrow">Portfolio {portfolio.code}</p><h1>{portfolio.title}</h1><div className="document-actions"><a className="secondary-button" href={`/api/portfolio-assets/${encodeURIComponent(portfolio.id)}/assignment`} target="_blank" rel="noreferrer">Opgaven</a><a className="secondary-button" href={`/api/portfolio-assets/${encodeURIComponent(portfolio.id)}/final-solutions`} target="_blank" rel="noreferrer">Eindoplossingen</a></div></header>

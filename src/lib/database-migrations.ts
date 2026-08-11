@@ -144,4 +144,33 @@ export const migrations: DatabaseMigration[] = [
       "UPDATE exercises SET visibility_mode = 'inherit' WHERE visibility_mode = 'hidden' AND visible = 0 AND publish_from IS NULL AND publish_until IS NULL",
     ],
   },
+  {
+    version: "006_simplify_error_report_workflow",
+    statements: [
+      `CREATE TABLE error_reports_v2 (
+        id TEXT PRIMARY KEY,
+        portfolio_id TEXT NOT NULL REFERENCES portfolios(id),
+        section_id TEXT NOT NULL REFERENCES sections(id),
+        exercise_id TEXT NOT NULL REFERENCES exercises(id),
+        variant_kind TEXT NOT NULL CHECK(variant_kind IN ('standard', 'alternative')),
+        asset_snapshot TEXT NOT NULL,
+        source_last_modified_at TEXT,
+        message TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'TODO' CHECK(status IN ('TODO', 'DONE')),
+        pinned INTEGER NOT NULL DEFAULT 0,
+        admin_note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        completed_at TEXT,
+        updated_at TEXT NOT NULL
+      )`,
+      `INSERT INTO error_reports_v2 (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message, status, created_at, completed_at, updated_at)
+        SELECT id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message,
+          CASE WHEN status = 'RESOLVED' THEN 'DONE' ELSE 'TODO' END, created_at,
+          CASE WHEN status = 'RESOLVED' THEN updated_at ELSE NULL END, updated_at FROM error_reports`,
+      "DROP TABLE error_reports",
+      "ALTER TABLE error_reports_v2 RENAME TO error_reports",
+      "CREATE INDEX IF NOT EXISTS error_reports_status_index ON error_reports(status)",
+      "CREATE INDEX IF NOT EXISTS error_reports_exercise_index ON error_reports(exercise_id)",
+    ],
+  },
 ];

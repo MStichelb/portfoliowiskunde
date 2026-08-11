@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
-import { getStudentPortfolios, persistIndex, setExercisePublication, setPortfolioPublication } from "./repositories";
+import { createErrorReport, getAdminErrorReports, getOpenErrorReportCount, getStudentPortfolios, persistIndex, saveErrorReportNote, setErrorReportStatus, setExercisePublication, setPortfolioPublication, toggleErrorReportPin } from "./repositories";
 import { indexSource } from "./storage/portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./storage/provider";
 
@@ -68,6 +68,30 @@ describe("persistIndex", () => {
     await persistIndex(await indexSource(source), "local");
     expect((await database.execute({ sql: "SELECT visibility_mode FROM exercises WHERE id = ?", args: [exerciseId] })).rows[0].visibility_mode).toBe("hidden");
     expect((await database.execute("SELECT COUNT(*) AS count FROM exercises WHERE visibility_mode = 'inherit'")).rows[0].count).not.toBe(0);
+  });
+
+  it("keeps error reports actionable with TODO, DONE, pinning and notes", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-reports-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await persistIndex(await indexSource(createTwoPortfolioProvider()), "local");
+    await setPortfolioPublication("portfolio-3", "visible", null, null);
+    const database = await getDatabase();
+    const exerciseId = String((await database.execute("SELECT id FROM exercises WHERE portfolio_id = 'portfolio-3' ORDER BY id LIMIT 1")).rows[0].id);
+    await createErrorReport({ exerciseId, variant: "standard", message: "Stap twee bevat een fout.", rateLimitKey: "test-report" });
+    expect(await getOpenErrorReportCount()).toBe(1);
+    const report = (await getAdminErrorReports())[0];
+    await toggleErrorReportPin(report.id);
+    await saveErrorReportNote(report.id, "Later nakijken.");
+    await setErrorReportStatus(report.id, "DONE");
+    let updated = (await getAdminErrorReports())[0];
+    expect(updated).toMatchObject({ status: "DONE", pinned: true, adminNote: "Later nakijken." });
+    expect(updated.completedAt).toBeTruthy();
+    expect(await getOpenErrorReportCount()).toBe(0);
+    await setErrorReportStatus(report.id, "TODO");
+    updated = (await getAdminErrorReports())[0];
+    expect(updated.completedAt).toBeNull();
+    expect(await getOpenErrorReportCount()).toBe(1);
   });
 });
 

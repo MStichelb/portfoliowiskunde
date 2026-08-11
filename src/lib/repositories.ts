@@ -387,6 +387,12 @@ export async function getLatestWarnings() {
   return result.rows.map((row) => ({ severity: text(row, "severity"), relativePath: text(row, "relative_path"), message: text(row, "message") }));
 }
 
+export async function getPortfolioWarnings(portfolioId: string) {
+  const portfolio = await getAdminPortfolio(portfolioId);
+  if (!portfolio) return [];
+  return (await getLatestWarnings()).filter((warning) => warning.relativePath.includes(`Portfolio ${portfolio.code} -`));
+}
+
 export async function setPortfolioPublication(id: string, mode: PortfolioVisibilityMode, publishFrom: string | null, publishUntil: string | null): Promise<void> {
   const database = await getDatabase();
   await database.execute({ sql: "UPDATE portfolios SET visible = ?, publish_from = ?, publish_until = ? WHERE id = ?", args: [mode === "visible" ? 1 : 0, publishFrom, publishUntil, id] });
@@ -565,19 +571,63 @@ export async function createErrorReport(input: { exerciseId: string; variant: "s
     { sql: `INSERT INTO error_report_rate_limits (key, window_started_at, attempts) VALUES (?, ?, 1)
       ON CONFLICT(key) DO UPDATE SET attempts = error_report_rate_limits.attempts + 1, window_started_at = excluded.window_started_at`, args: [input.rateLimitKey, windowStartedAt] },
     { sql: `INSERT INTO error_reports (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NEW', ?, ?)`, args: [randomUUID(), text(row, "portfolio_id"), text(row, "section_id"), input.exerciseId, input.variant, JSON.stringify(snapshot), matchingAssets.map((asset) => asset.lastModifiedAt).filter(Boolean).sort().at(-1) ?? null, input.message.trim(), now.toISOString(), now.toISOString()] },
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'TODO', ?, ?)`, args: [randomUUID(), text(row, "portfolio_id"), text(row, "section_id"), input.exerciseId, input.variant, JSON.stringify(snapshot), matchingAssets.map((asset) => asset.lastModifiedAt).filter(Boolean).sort().at(-1) ?? null, input.message.trim(), now.toISOString(), now.toISOString()] },
   ]);
 }
 
-export async function getAdminErrorReports() {
-  const database = await getDatabase();
-  const result = await database.execute(`SELECT error_reports.*, portfolios.code AS portfolio_code, sections.title AS section_title, exercises.exercise_code
-    FROM error_reports JOIN portfolios ON portfolios.id = error_reports.portfolio_id JOIN sections ON sections.id = error_reports.section_id
-    JOIN exercises ON exercises.id = error_reports.exercise_id ORDER BY CASE error_reports.status WHEN 'NEW' THEN 0 WHEN 'VIEWED' THEN 1 ELSE 2 END, error_reports.created_at DESC`);
-  return result.rows.map((row) => ({ id: text(row, "id"), portfolioCode: text(row, "portfolio_code"), sectionTitle: text(row, "section_title"), exerciseCode: text(row, "exercise_code"), variant: text(row, "variant_kind"), message: text(row, "message"), status: text(row, "status"), createdAt: text(row, "created_at") }));
+export interface AdminErrorReport {
+  id: string;
+  portfolioId: string;
+  portfolioCode: string;
+  portfolioTitle: string;
+  sectionTitle: string;
+  exerciseId: string;
+  exerciseCode: string;
+  variant: string;
+  message: string;
+  status: "TODO" | "DONE";
+  pinned: boolean;
+  adminNote: string;
+  createdAt: string;
+  completedAt: string | null;
+  solutionVisible: boolean;
 }
 
-export async function setErrorReportStatus(id: string, status: "VIEWED" | "RESOLVED"): Promise<void> {
+export async function getOpenErrorReportCount(): Promise<number> {
   const database = await getDatabase();
-  await database.execute({ sql: "UPDATE error_reports SET status = ?, updated_at = ? WHERE id = ?", args: [status, new Date().toISOString(), id] });
+  const result = await database.execute("SELECT COUNT(*) AS count FROM error_reports WHERE status = 'TODO'");
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+export async function getAdminErrorReports(): Promise<AdminErrorReport[]> {
+  const database = await getDatabase();
+  const result = await database.execute(`SELECT error_reports.*, portfolios.code AS portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override,
+    sections.title AS section_title, exercises.exercise_code, exercises.visibility_mode AS exercise_visibility_mode,
+    exercises.publish_from AS exercise_publish_from, exercises.publish_until AS exercise_publish_until,
+    sections.visibility_mode AS section_visibility_mode, sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
+    portfolios.visible AS portfolio_visible, portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until
+    FROM error_reports JOIN portfolios ON portfolios.id = error_reports.portfolio_id JOIN sections ON sections.id = error_reports.section_id
+    JOIN exercises ON exercises.id = error_reports.exercise_id`);
+  const now = new Date();
+  return result.rows.map((row) => {
+    const portfolioVisible = isPortfolioPublished({ visible: bool(row.portfolio_visible), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
+    const sectionVisible = isChildPublished(portfolioVisible, { mode: childMode({ visibility_mode: row.section_visibility_mode }), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, now);
+    return { id: text(row, "id"), portfolioId: text(row, "portfolio_id"), portfolioCode: text(row, "portfolio_code"), portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"), sectionTitle: text(row, "section_title"), exerciseId: text(row, "exercise_id"), exerciseCode: text(row, "exercise_code"), variant: text(row, "variant_kind"), message: text(row, "message"), status: text(row, "status") === "DONE" ? "DONE" : "TODO", pinned: bool(row.pinned), adminNote: nullableText(row, "admin_note") ?? "", createdAt: text(row, "created_at"), completedAt: nullableText(row, "completed_at"), solutionVisible: isChildPublished(sectionVisible, { mode: childMode({ visibility_mode: row.exercise_visibility_mode }), publishFrom: nullableText(row, "exercise_publish_from"), publishUntil: nullableText(row, "exercise_publish_until") }, now) };
+  });
+}
+
+export async function setErrorReportStatus(id: string, status: "TODO" | "DONE"): Promise<void> {
+  const database = await getDatabase();
+  const now = new Date().toISOString();
+  await database.execute({ sql: "UPDATE error_reports SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?", args: [status, status === "DONE" ? now : null, now, id] });
+}
+
+export async function toggleErrorReportPin(id: string): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "UPDATE error_reports SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END, updated_at = ? WHERE id = ?", args: [new Date().toISOString(), id] });
+}
+
+export async function saveErrorReportNote(id: string, note: string): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "UPDATE error_reports SET admin_note = ?, updated_at = ? WHERE id = ?", args: [note.slice(0, 4000), new Date().toISOString(), id] });
 }

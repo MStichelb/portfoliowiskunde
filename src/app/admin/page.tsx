@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import { requireAdmin } from "@/lib/auth";
-import { getAdminPortfolios, getLatestSyncSummary, getLatestWarnings } from "@/lib/repositories";
+import { getAdminPortfolios, getLatestSyncSummary, getLatestWarnings, getOpenErrorReportCount } from "@/lib/repositories";
 
 import { logoutAction, syncAction } from "./actions";
 import { SubmitButton } from "../components/submit-button";
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
   await requireAdmin();
-  const [portfolios, warnings, latestSync] = await Promise.all([getAdminPortfolios(), getLatestWarnings(), getLatestSyncSummary()]);
+  const [portfolios, warnings, latestSync, openReports] = await Promise.all([getAdminPortfolios(), getLatestWarnings(), getLatestSyncSummary(), getOpenErrorReportCount()]);
 
   return (
     <main className="page-shell admin-page">
@@ -23,7 +23,7 @@ export default async function AdminPage() {
         </div>
         <div className="admin-actions">
           <Link className="secondary-button link-button" href="/admin/instellingen">Instellingen</Link>
-          <Link className="secondary-button link-button" href="/admin/meldingen">Meldingen</Link>
+          <Link className="secondary-button link-button notification-link" href="/admin/meldingen">Foutmeldingen{openReports > 0 && <span className="notification-badge" aria-label={`${openReports} openstaande meldingen`}>{openReports}</span>}</Link>
           <form action={syncAction}><SubmitButton pendingLabel="Synchroniseren...">Synchroniseren</SubmitButton></form>
           <form action={logoutAction}><button className="secondary-button" type="submit">Uitloggen</button></form>
         </div>
@@ -32,14 +32,14 @@ export default async function AdminPage() {
       {portfolios.length === 0 ? <p className="empty-state">Nog geen inhoud geindexeerd. Kies Synchroniseren.</p> : (
         <div className="admin-summary-table" role="region" aria-label="Portfolio-overzicht" tabIndex={0}>
           <table>
-            <thead><tr><th>Portfolio</th><th>Status</th><th>Onderdelen</th><th>Oefeningen</th><th>Actie</th></tr></thead>
+            <thead><tr><th>Portfolio</th><th>Titel</th><th>Status</th><th>Onderdelen</th><th>Oefeningen</th><th>Actie</th></tr></thead>
             <tbody>{portfolios.map((portfolio) => {
               const exerciseCount = portfolio.sections.reduce((total, section) => total + section.exercises.length, 0);
               return <tr key={portfolio.id}>
-                <td><strong>{portfolio.code}</strong><span>{portfolio.title}</span>{!portfolio.isIndexed && <small>Ontbreekt in bron</small>}</td>
+                <td><strong>{portfolio.code}</strong></td><td>{portfolio.title}{!portfolio.isIndexed && <small>Ontbreekt in bron</small>}</td>
                 <td><StatusBadge visible={portfolio.effectivePublished} indexed={portfolio.isIndexed} /></td>
                 <td>{portfolio.sections.length}</td><td>{exerciseCount}</td>
-                <td><Link className="table-link" href={`/admin/portfolio/${encodeURIComponent(portfolio.id)}`}>Open beheer</Link></td>
+                <td><Link className="secondary-button link-button" href={`/admin/portfolio/${encodeURIComponent(portfolio.id)}`}>Open beheer</Link></td>
               </tr>;
             })}</tbody>
           </table>
