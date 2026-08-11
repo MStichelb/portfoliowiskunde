@@ -48,11 +48,12 @@ export async function saveSectionPublicationAction(formData: FormData) {
   const id = stringValue(formData, "id");
   const portfolioId = stringValue(formData, "portfolioId");
   const mode = childModeSchema.safeParse(stringValue(formData, "mode"));
+  const limited = stringValue(formData, "publicationMode") === "scheduled";
   if (!id || !portfolioId || !mode.success) throw new Error("Ongeldige onderdeel-invoer.");
   const portfolio = await getAdminPortfolio(portfolioId);
   if (!portfolio?.sections.some((section) => section.id === id)) throw new Error("Onderdeel niet gevonden.");
   const window = parsePublicationWindow(formData);
-  await setSectionPublication(id, mode.data, window.publishFrom, window.publishUntil);
+  await setSectionPublication(id, mode.data, limited, window.publishFrom, window.publishUntil);
   refreshPublicationPaths(portfolioId);
 }
 

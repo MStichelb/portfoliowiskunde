@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
-import { createErrorReport, getAdminErrorReports, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, persistIndex, saveErrorReportNote, setErrorReportStatus, setExercisePublication, setPortfolioPublication, toggleErrorReportPin } from "./repositories";
+import { createErrorReport, getAdminErrorReports, getAdminExercise, getLatestWarnings, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, persistIndex, recordFailedSync, saveErrorReportNote, setErrorReportStatus, setExercisePublication, setPortfolioPublication, toggleErrorReportPin } from "./repositories";
 import { indexSource } from "./storage/portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./storage/provider";
 
@@ -108,9 +108,31 @@ describe("persistIndex", () => {
     expect(await getPublicAsset(assetId)).not.toBeNull();
     await setExercisePublication([exerciseId], "hidden", null, null);
     expect(await getPublicAsset(assetId)).toBeNull();
+    expect(await getAdminExercise(exerciseId)).not.toBeNull();
     await setExercisePublication([exerciseId], "visible", null, null);
     await setPortfolioPublication("portfolio-3", "visible", true, "2030-01-01T00:00:00.000Z", null);
     expect(await getPublicAsset(assetId)).toBeNull();
+  });
+
+  it("shows only warnings from the latest successful sync and keeps them after a failed run", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-warnings-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const database = await getDatabase();
+    await database.batch([
+      { sql: "INSERT INTO sync_runs (id, started_at, finished_at, status) VALUES ('sync-a', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:01.000Z', 'completed')" },
+      { sql: "INSERT INTO sync_warnings (id, sync_run_id, severity, relative_path, message) VALUES ('warning-a', 'sync-a', 'warning', 'Portfolio 3 - Test/file.png', 'Oud probleem')" },
+    ]);
+    expect(await getLatestWarnings()).toHaveLength(1);
+    await database.execute("INSERT INTO sync_runs (id, started_at, finished_at, status) VALUES ('sync-b', '2026-01-02T00:00:00.000Z', '2026-01-02T00:00:01.000Z', 'completed')");
+    expect(await getLatestWarnings()).toHaveLength(0);
+    await database.batch([
+      { sql: "INSERT INTO sync_runs (id, started_at, finished_at, status) VALUES ('sync-c', '2026-01-03T00:00:00.000Z', '2026-01-03T00:00:01.000Z', 'completed')" },
+      { sql: "INSERT INTO sync_warnings (id, sync_run_id, severity, relative_path, message) VALUES ('warning-c', 'sync-c', 'warning', 'Portfolio 3 - Test/file.png', 'Blijvend probleem')" },
+    ]);
+    expect(await getLatestWarnings()).toMatchObject([{ message: "Blijvend probleem" }]);
+    await recordFailedSync("local", new Error("Testfout"));
+    expect(await getLatestWarnings()).toMatchObject([{ message: "Blijvend probleem" }]);
   });
 });
 

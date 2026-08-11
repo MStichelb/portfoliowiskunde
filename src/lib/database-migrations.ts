@@ -182,4 +182,11 @@ export const migrations: DatabaseMigration[] = [
       "UPDATE exercises SET visibility_mode = 'visible' WHERE visibility_mode = 'inherit'",
     ],
   },
+  {
+    version: "008_section_publication_windows",
+    statements: [
+      "ALTER TABLE sections ADD COLUMN publication_limited INTEGER NOT NULL DEFAULT 0",
+      "UPDATE sections SET publication_limited = CASE WHEN publish_from IS NOT NULL OR publish_until IS NOT NULL THEN 1 ELSE 0 END",
+    ],
+  },
 ];

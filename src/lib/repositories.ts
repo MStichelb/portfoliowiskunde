@@ -44,6 +44,7 @@ export interface AdminSection {
   visibilityMode: ChildVisibilityMode;
   publishFrom: string | null;
   publishUntil: string | null;
+  limited: boolean;
   effectiveStatus: EffectivePublication;
   effectivePublished: boolean;
   isIndexed: boolean;
@@ -345,7 +346,7 @@ export async function getAdminPortfolios(): Promise<AdminPortfolio[]> {
       finalSolutionsPdfPath: nullableText(portfolio, "final_solutions_pdf_path"),
       sections: sections.rows.filter((section) => text(section, "portfolio_id") === portfolioId).map((section) => {
         const sectionId = text(section, "id");
-        const sectionPublication = { mode: childMode(section), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
+        const sectionPublication = { mode: childMode(section), limited: bool(section.publication_limited), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
         const sectionStatus = resolveChildPublication(sectionPublication, portfolioStatus, now);
         return {
           id: sectionId,
@@ -354,12 +355,13 @@ export async function getAdminPortfolios(): Promise<AdminPortfolio[]> {
           visibilityMode: sectionPublication.mode,
           publishFrom: sectionPublication.publishFrom,
           publishUntil: sectionPublication.publishUntil,
+          limited: sectionPublication.limited,
           effectiveStatus: sectionStatus,
           effectivePublished: sectionStatus.state === "visible",
           isIndexed: bool(section.is_indexed),
           exercises: exercises.rows.filter((exercise) => text(exercise, "section_id") === sectionId).map((exercise) => {
             const exerciseId = text(exercise, "id");
-            const exercisePublication = { mode: childMode(exercise), publishFrom: nullableText(exercise, "publish_from"), publishUntil: nullableText(exercise, "publish_until") };
+            const exercisePublication = { mode: childMode(exercise), limited: false, publishFrom: null, publishUntil: null };
             const exerciseStatus = resolveChildPublication(exercisePublication, sectionStatus, now);
             return {
               id: exerciseId,
@@ -392,7 +394,8 @@ export async function getLatestWarnings() {
   const database = await getDatabase();
   const result = await database.execute(`SELECT sync_warnings.severity, sync_warnings.relative_path, sync_warnings.message
     FROM sync_warnings JOIN sync_runs ON sync_runs.id = sync_warnings.sync_run_id
-    WHERE sync_runs.status = 'completed' ORDER BY sync_runs.finished_at DESC, sync_warnings.relative_path, sync_warnings.message`);
+    WHERE sync_warnings.sync_run_id = (SELECT id FROM sync_runs WHERE status = 'completed' ORDER BY finished_at DESC LIMIT 1)
+    ORDER BY sync_warnings.relative_path, sync_warnings.message`);
   return result.rows.map((row) => ({ severity: text(row, "severity"), relativePath: text(row, "relative_path"), message: text(row, "message") }));
 }
 
@@ -412,9 +415,9 @@ export async function setPortfolioTitle(id: string, title: string): Promise<void
   await database.execute({ sql: "UPDATE portfolios SET title_override = ? WHERE id = ?", args: [title.trim() || null, id] });
 }
 
-export async function setSectionPublication(id: string, mode: ChildVisibilityMode, publishFrom: string | null, publishUntil: string | null): Promise<void> {
+export async function setSectionPublication(id: string, mode: ChildVisibilityMode, limited: boolean, publishFrom: string | null, publishUntil: string | null): Promise<void> {
   const database = await getDatabase();
-  await database.execute({ sql: "UPDATE sections SET visibility_mode = ?, publish_from = ?, publish_until = ? WHERE id = ?", args: [mode, publishFrom, publishUntil, id] });
+  await database.execute({ sql: "UPDATE sections SET visibility_mode = ?, publication_limited = ?, publish_from = ?, publish_until = ? WHERE id = ?", args: [mode, limited ? 1 : 0, publishFrom, publishUntil, id] });
 }
 
 export async function setSectionVisibility(id: string, visible: boolean): Promise<void> {
@@ -462,13 +465,13 @@ export async function getStudentPortfolios(): Promise<StudentPortfolio[]> {
       sections: [],
     };
     for (const section of sections.rows.filter((row) => text(row, "portfolio_id") === portfolioId)) {
-      const sectionPublication = { mode: childMode(section), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
+      const sectionPublication = { mode: childMode(section), limited: bool(section.publication_limited), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
       const sectionStatus = resolveChildPublication(sectionPublication, publication, now);
       const sectionId = text(section, "id");
       studentPortfolio.sections.push({
         id: sectionId, title: text(section, "title"), order: Number(section.sort_order),
         exercises: exercises.rows.filter((row) => text(row, "section_id") === sectionId).map((exercise) => {
-          const exercisePublication = { mode: childMode(exercise), publishFrom: nullableText(exercise, "publish_from"), publishUntil: nullableText(exercise, "publish_until") };
+          const exercisePublication = { mode: childMode(exercise), limited: false, publishFrom: null, publishUntil: null };
           return {
             id: text(exercise, "id"), code: text(exercise, "exercise_code"),
             visible: resolveChildPublication(exercisePublication, sectionStatus, now).state === "visible",
@@ -489,7 +492,7 @@ export async function getVisibleExercise(id: string) {
   const database = await getDatabase();
   const exerciseResult = await database.execute({
     sql: `SELECT exercises.*, sections.title AS section_title, sections.visibility_mode AS section_visibility_mode,
-      sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
+      sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
       portfolios.code AS portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override,
       portfolios.visible AS portfolio_visible, portfolios.publication_limited, portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until
       FROM exercises JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
@@ -500,8 +503,8 @@ export async function getVisibleExercise(id: string) {
   if (!exercise) return null;
   const now = new Date();
   const portfolioStatus = resolvePortfolioPublication({ visible: bool(exercise.portfolio_visible), limited: bool(exercise.publication_limited), publishFrom: nullableText(exercise, "portfolio_publish_from"), publishUntil: nullableText(exercise, "portfolio_publish_until") }, now);
-  const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: exercise.section_visibility_mode }), publishFrom: nullableText(exercise, "section_publish_from"), publishUntil: nullableText(exercise, "section_publish_until") }, portfolioStatus, now);
-  const exerciseStatus = resolveChildPublication({ mode: childMode(exercise), publishFrom: nullableText(exercise, "publish_from"), publishUntil: nullableText(exercise, "publish_until") }, sectionStatus, now);
+  const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: exercise.section_visibility_mode }), limited: bool(exercise.section_publication_limited), publishFrom: nullableText(exercise, "section_publish_from"), publishUntil: nullableText(exercise, "section_publish_until") }, portfolioStatus, now);
+  const exerciseStatus = resolveChildPublication({ mode: childMode(exercise), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now);
   if (exerciseStatus.state !== "visible") return null;
 
   const assets = await database.execute({
@@ -519,11 +522,34 @@ export async function getVisibleExercise(id: string) {
   };
 }
 
+export async function getAdminExercise(id: string) {
+  const database = await getDatabase();
+  const result = await database.execute({ sql: `SELECT exercises.exercise_code, sections.title AS section_title, portfolios.code AS portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override
+    FROM exercises JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
+    WHERE exercises.id = ? AND exercises.is_indexed = 1 AND sections.is_indexed = 1 AND portfolios.is_indexed = 1`, args: [id] });
+  const exercise = result.rows[0];
+  if (!exercise) return null;
+  const assets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.file_name, solution_assets.extension, solution_assets.step, solution_variants.kind, solution_variants.label
+    FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+    WHERE solution_variants.exercise_id = ? AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1
+    ORDER BY CASE solution_variants.kind WHEN 'standard' THEN 0 ELSE 1 END, solution_assets.step, solution_assets.file_name`, args: [id] });
+  return { id, code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"), portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"), assets: assets.rows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label") })) };
+}
+
+export async function getAdminAsset(id: string) {
+  const database = await getDatabase();
+  const result = await database.execute({ sql: `SELECT solution_assets.relative_path, solution_assets.source_id, solution_assets.file_name, solution_assets.extension
+    FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id JOIN exercises ON exercises.id = solution_variants.exercise_id
+    WHERE solution_assets.id = ? AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1 AND exercises.is_indexed = 1`, args: [id] });
+  const row = result.rows[0];
+  return row ? { sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension") } : null;
+}
+
 export async function getPublicAsset(id: string) {
   const database = await getDatabase();
   const result = await database.execute({
     sql: `SELECT solution_assets.relative_path, solution_assets.source_id, solution_assets.file_name, solution_assets.extension,
-      exercises.*, sections.visibility_mode AS section_visibility_mode, sections.publish_from AS section_publish_from,
+      exercises.*, sections.visibility_mode AS section_visibility_mode, sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from,
       sections.publish_until AS section_publish_until, sections.is_indexed AS section_is_indexed,
       portfolios.visible AS portfolio_visible, portfolios.publication_limited, portfolios.publish_from AS portfolio_publish_from,
       portfolios.publish_until AS portfolio_publish_until, portfolios.is_indexed AS portfolio_is_indexed
@@ -537,8 +563,8 @@ export async function getPublicAsset(id: string) {
   if (!row || !bool(row.is_indexed) || !bool(row.section_is_indexed) || !bool(row.portfolio_is_indexed)) return null;
   const now = new Date();
   const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
-  const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now);
-  if (resolveChildPublication({ mode: childMode(row), publishFrom: nullableText(row, "publish_from"), publishUntil: nullableText(row, "publish_until") }, sectionStatus, now).state !== "visible") return null;
+  const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now);
+  if (resolveChildPublication({ mode: childMode(row), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now).state !== "visible") return null;
   return { sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension") };
 }
 
@@ -619,15 +645,15 @@ export async function getAdminErrorReports(): Promise<AdminErrorReport[]> {
   const result = await database.execute(`SELECT error_reports.*, portfolios.code AS portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override,
     sections.title AS section_title, exercises.exercise_code, exercises.visibility_mode AS exercise_visibility_mode,
     exercises.publish_from AS exercise_publish_from, exercises.publish_until AS exercise_publish_until,
-    sections.visibility_mode AS section_visibility_mode, sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
+    sections.visibility_mode AS section_visibility_mode, sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
     portfolios.visible AS portfolio_visible, portfolios.publication_limited, portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until
     FROM error_reports JOIN portfolios ON portfolios.id = error_reports.portfolio_id JOIN sections ON sections.id = error_reports.section_id
     JOIN exercises ON exercises.id = error_reports.exercise_id`);
   const now = new Date();
   return result.rows.map((row) => {
     const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
-    const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now);
-    const solutionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.exercise_visibility_mode }), publishFrom: nullableText(row, "exercise_publish_from"), publishUntil: nullableText(row, "exercise_publish_until") }, sectionStatus, now);
+    const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now);
+    const solutionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.exercise_visibility_mode }), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now);
     return { id: text(row, "id"), portfolioId: text(row, "portfolio_id"), portfolioCode: text(row, "portfolio_code"), portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"), sectionTitle: text(row, "section_title"), exerciseId: text(row, "exercise_id"), exerciseCode: text(row, "exercise_code"), variant: text(row, "variant_kind"), message: text(row, "message"), status: text(row, "status") === "DONE" ? "DONE" : "TODO", pinned: bool(row.pinned), adminNote: nullableText(row, "admin_note") ?? "", createdAt: text(row, "created_at"), completedAt: nullableText(row, "completed_at"), solutionConfiguredVisible: childMode({ visibility_mode: row.exercise_visibility_mode }) === "visible", solutionStatus, solutionVisible: solutionStatus.state === "visible" };
   });
 }

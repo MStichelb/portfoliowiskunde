@@ -110,6 +110,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .status-badge.hidden { background: #ecefed; color: #4f5c62; }
 .status-badge.inherit { background: #e2edf2; color: #23566a; }
 .status-badge.pending { background: #fff0c7; color: #6c4700; }
+.status-badge.blocking { background: #f8dfb5; color: #674000; }
 .status-badge.missing { background: #fff0df; color: #824015; }
 .missing-row { opacity: .72; }
 .text-button { border: 0; padding: 8px 0; background: transparent; color: #075c75; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
