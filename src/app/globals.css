@@ -126,6 +126,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .text-button { border: 0; padding: 8px 0; background: transparent; color: #075c75; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .notification-link { display: inline-flex; align-items: center; gap: 7px; }
 .notification-badge { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #9b5b2f; color: #fff; font-size: 12px; }
+.warning-count { display: inline-flex; align-items: center; gap: 5px; color: #805700; font-weight: 700; text-decoration: none; }
+.warning-count span { display: inline-grid; place-items: center; min-width: 20px; height: 20px; border-radius: 50%; background: #fff0c7; border: 1px solid #e5c872; font-size: 12px; }
 .report-sort { display: flex; gap: 10px; align-items: center; color: #52616a; font-size: 14px; }
 .report-sort a { padding: 4px 7px; border-radius: 4px; text-decoration: none; }
 .report-sort .sort-active { background: #e2edf2; color: #173e4e; font-weight: 700; }

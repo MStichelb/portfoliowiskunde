@@ -2,7 +2,7 @@ import Link from "next/link";
 
 import { PublicationStatus } from "@/app/components/publication-status";
 import { requireAdmin } from "@/lib/auth";
-import { getAdminPortfolios, getLatestSyncSummary, getLatestWarnings, getOpenErrorReportCount } from "@/lib/repositories";
+import { getActiveWarningCounts, getAdminPortfolios, getLatestSyncSummary, getLatestWarnings, getOpenErrorReportCount } from "@/lib/repositories";
 
 import { logoutAction, syncAction } from "./actions";
 import { SubmitButton } from "../components/submit-button";
@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPage() {
   await requireAdmin();
-  const [portfolios, warnings, latestSync, openReports] = await Promise.all([getAdminPortfolios(), getLatestWarnings(), getLatestSyncSummary(), getOpenErrorReportCount()]);
+  const [portfolios, warnings, latestSync, openReports, warningCounts] = await Promise.all([getAdminPortfolios(), getLatestWarnings(), getLatestSyncSummary(), getOpenErrorReportCount(), getActiveWarningCounts()]);
 
   return (
     <main className="page-shell admin-page">
@@ -33,13 +33,14 @@ export default async function AdminPage() {
       {portfolios.length === 0 ? <p className="empty-state">Nog geen inhoud geindexeerd. Kies Synchroniseren.</p> : (
         <div className="admin-summary-table" role="region" aria-label="Portfolio-overzicht" tabIndex={0}>
           <table>
-            <thead><tr><th>Portfolio</th><th>Titel</th><th>Status</th><th>Onderdelen</th><th>Oefeningen</th><th>Actie</th></tr></thead>
+            <thead><tr><th>Portfolio</th><th>Titel</th><th>Status</th><th>Onderdelen</th><th>Oefeningen</th><th>Waarschuwingen</th><th>Actie</th></tr></thead>
             <tbody>{portfolios.map((portfolio) => {
               const exerciseCount = portfolio.sections.reduce((total, section) => total + section.exercises.length, 0);
               return <tr key={portfolio.id}>
                 <td><strong>{portfolio.code}</strong></td><td>{portfolio.title}{!portfolio.isIndexed && <small>Ontbreekt in bron</small>}</td>
                 <td>{portfolio.isIndexed ? <PublicationStatus status={portfolio.effectiveStatus} /> : <span className="status-badge missing">Bron ontbreekt</span>}</td>
                 <td>{portfolio.sections.length}</td><td>{exerciseCount}</td>
+                <td>{warningCounts.get(portfolio.id) ? <Link className="warning-count" href={`/admin/portfolio/${encodeURIComponent(portfolio.id)}#portfolio-warnings-title`} aria-label={`${warningCounts.get(portfolio.id)} waarschuwingen`}>! <span>{warningCounts.get(portfolio.id)}</span></Link> : null}</td>
                 <td><Link className="secondary-button link-button" href={`/admin/portfolio/${encodeURIComponent(portfolio.id)}`}>Open beheer</Link></td>
               </tr>;
             })}</tbody>

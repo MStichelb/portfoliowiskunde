@@ -405,6 +405,16 @@ export async function getLatestWarnings() {
   return result.rows.map((row) => ({ severity: text(row, "severity"), relativePath: text(row, "relative_path"), message: text(row, "message") }));
 }
 
+export async function getActiveWarningCounts(): Promise<Map<string, number>> {
+  const warnings = await getLatestWarnings();
+  const counts = new Map<string, number>();
+  for (const warning of warnings) {
+    const match = warning.relativePath.match(/^Portfolio\s+([0-9]+[A-Za-z]?)\s+-/i);
+    if (match) counts.set(`portfolio-${match[1]}`, (counts.get(`portfolio-${match[1]}`) ?? 0) + 1);
+  }
+  return counts;
+}
+
 export async function getPortfolioWarnings(portfolioId: string) {
   const portfolio = await getAdminPortfolio(portfolioId);
   if (!portfolio) return [];
