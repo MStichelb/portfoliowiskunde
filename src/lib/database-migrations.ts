@@ -173,4 +173,13 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX IF NOT EXISTS error_reports_exercise_index ON error_reports(exercise_id)",
     ],
   },
+  {
+    version: "007_remove_inherit_visibility",
+    statements: [
+      "ALTER TABLE portfolios ADD COLUMN publication_limited INTEGER NOT NULL DEFAULT 0",
+      "UPDATE portfolios SET publication_limited = CASE WHEN publish_from IS NOT NULL OR publish_until IS NOT NULL THEN 1 ELSE 0 END",
+      "UPDATE sections SET visibility_mode = 'visible' WHERE visibility_mode = 'inherit'",
+      "UPDATE exercises SET visibility_mode = 'visible' WHERE visibility_mode = 'inherit'",
+    ],
+  },
 ];

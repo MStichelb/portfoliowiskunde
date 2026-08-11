@@ -1,23 +1,35 @@
 import { describe, expect, it } from "vitest";
 
-import { isChildPublished, isPortfolioPublished, parseBrusselsDateTime } from "./publication";
+import { parseBrusselsDateTime, resolveChildPublication, resolvePortfolioPublication } from "./publication";
 
-describe("publication rules", () => {
+describe("publication resolver", () => {
   const now = new Date("2026-08-11T10:00:00.000Z");
+  const visible = { mode: "visible" as const, publishFrom: null, publishUntil: null };
+  const hidden = { mode: "hidden" as const, publishFrom: null, publishUntil: null };
 
-  it("keeps a hidden portfolio inaccessible regardless of dates", () => {
-    expect(isPortfolioPublished({ visible: false, publishFrom: "2026-08-01T00:00:00.000Z", publishUntil: null }, now)).toBe(false);
+  it("resolves visible parents and children as visible", () => {
+    const portfolio = resolvePortfolioPublication({ visible: true, limited: false, publishFrom: null, publishUntil: null }, now);
+    const section = resolveChildPublication(visible, portfolio, now);
+    expect(portfolio.state).toBe("visible");
+    expect(resolveChildPublication(visible, section, now).state).toBe("visible");
   });
 
-  it("honours scheduled publication boundaries", () => {
-    expect(isPortfolioPublished({ visible: true, publishFrom: null, publishUntil: null }, now)).toBe(true);
-    expect(isPortfolioPublished({ visible: true, publishFrom: "2026-08-11T09:59:00.000Z", publishUntil: "2026-08-11T10:01:00.000Z" }, now)).toBe(true);
-    expect(isPortfolioPublished({ visible: true, publishFrom: "2026-08-11T10:01:00.000Z", publishUntil: null }, now)).toBe(false);
+  it("marks visible children as pending when a parent is hidden", () => {
+    const portfolio = resolvePortfolioPublication({ visible: false, limited: false, publishFrom: null, publishUntil: null }, now);
+    expect(resolveChildPublication(visible, portfolio, now)).toMatchObject({ state: "pending", reason: "parent" });
   });
 
-  it("never lets a child override a hidden parent", () => {
-    expect(isChildPublished(false, { mode: "visible", publishFrom: null, publishUntil: null }, now)).toBe(false);
-    expect(isChildPublished(true, { mode: "hidden", publishFrom: null, publishUntil: null }, now)).toBe(false);
+  it("keeps an explicit child hidden and makes descendants pending", () => {
+    const portfolio = resolvePortfolioPublication({ visible: true, limited: false, publishFrom: null, publishUntil: null }, now);
+    const section = resolveChildPublication(hidden, portfolio, now);
+    expect(section).toMatchObject({ state: "hidden", reason: "self-hidden" });
+    expect(resolveChildPublication(visible, section, now)).toMatchObject({ state: "pending", reason: "parent" });
+  });
+
+  it("handles future and expired limited publication windows", () => {
+    expect(resolvePortfolioPublication({ visible: true, limited: true, publishFrom: "2026-08-12T10:00:00.000Z", publishUntil: null }, now)).toMatchObject({ state: "pending", reason: "scheduled" });
+    expect(resolvePortfolioPublication({ visible: true, limited: true, publishFrom: "2026-08-10T10:00:00.000Z", publishUntil: null }, now).state).toBe("visible");
+    expect(resolvePortfolioPublication({ visible: true, limited: true, publishFrom: null, publishUntil: "2026-08-10T10:00:00.000Z" }, now)).toMatchObject({ state: "hidden", reason: "expired" });
   });
 
   it("stores Brussels local times as a UTC instant and rejects the skipped DST hour", () => {

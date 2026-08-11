@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
-import { createErrorReport, getAdminErrorReports, getOpenErrorReportCount, getStudentPortfolios, persistIndex, saveErrorReportNote, setErrorReportStatus, setExercisePublication, setPortfolioPublication, toggleErrorReportPin } from "./repositories";
+import { createErrorReport, getAdminErrorReports, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, persistIndex, saveErrorReportNote, setErrorReportStatus, setExercisePublication, setPortfolioPublication, toggleErrorReportPin } from "./repositories";
 import { indexSource } from "./storage/portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./storage/provider";
 
@@ -51,13 +51,13 @@ describe("persistIndex", () => {
     expect(Number((await database.execute("SELECT COUNT(*) AS count FROM solution_assets")).rows[0].count)).toBe(5);
   });
 
-  it("lets inherited sections and exercises follow a visible portfolio without resetting overrides", async () => {
+  it("lets visible sections and exercises follow a visible portfolio without resetting overrides", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-visibility-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     const source = createTwoPortfolioProvider();
     await persistIndex(await indexSource(source), "local");
-    await setPortfolioPublication("portfolio-3", "visible", null, null);
+    await setPortfolioPublication("portfolio-3", "visible", false, null, null);
     const visiblePortfolio = (await getStudentPortfolios()).find((portfolio) => portfolio.id === "portfolio-3");
     expect(visiblePortfolio?.sections.flatMap((section) => section.exercises).every((exercise) => exercise.visible)).toBe(true);
 
@@ -67,7 +67,8 @@ describe("persistIndex", () => {
     expect((await getStudentPortfolios()).find((portfolio) => portfolio.id === "portfolio-3")?.sections.flatMap((section) => section.exercises).find((exercise) => exercise.id === exerciseId)?.visible).toBe(false);
     await persistIndex(await indexSource(source), "local");
     expect((await database.execute({ sql: "SELECT visibility_mode FROM exercises WHERE id = ?", args: [exerciseId] })).rows[0].visibility_mode).toBe("hidden");
-    expect((await database.execute("SELECT COUNT(*) AS count FROM exercises WHERE visibility_mode = 'inherit'")).rows[0].count).not.toBe(0);
+    expect((await database.execute("SELECT COUNT(*) AS count FROM sections WHERE visibility_mode = 'visible'")).rows[0].count).not.toBe(0);
+    expect((await database.execute("SELECT COUNT(*) AS count FROM exercises WHERE visibility_mode = 'visible'")).rows[0].count).not.toBe(0);
   });
 
   it("keeps error reports actionable with TODO, DONE, pinning and notes", async () => {
@@ -75,7 +76,7 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await persistIndex(await indexSource(createTwoPortfolioProvider()), "local");
-    await setPortfolioPublication("portfolio-3", "visible", null, null);
+    await setPortfolioPublication("portfolio-3", "visible", false, null, null);
     const database = await getDatabase();
     const exerciseId = String((await database.execute("SELECT id FROM exercises WHERE portfolio_id = 'portfolio-3' ORDER BY id LIMIT 1")).rows[0].id);
     await createErrorReport({ exerciseId, variant: "standard", message: "Stap twee bevat een fout.", rateLimitKey: "test-report" });
@@ -92,6 +93,24 @@ describe("persistIndex", () => {
     updated = (await getAdminErrorReports())[0];
     expect(updated.completedAt).toBeNull();
     expect(await getOpenErrorReportCount()).toBe(1);
+  });
+
+  it("only permits a solution asset when its full publication chain is effective", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-assets-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await persistIndex(await indexSource(createTwoPortfolioProvider()), "local");
+    const database = await getDatabase();
+    const assetId = String((await database.execute("SELECT id FROM solution_assets ORDER BY id LIMIT 1")).rows[0].id);
+    const exerciseId = String((await database.execute("SELECT id FROM exercises WHERE portfolio_id = 'portfolio-3' ORDER BY id LIMIT 1")).rows[0].id);
+    expect(await getPublicAsset(assetId)).toBeNull();
+    await setPortfolioPublication("portfolio-3", "visible", false, null, null);
+    expect(await getPublicAsset(assetId)).not.toBeNull();
+    await setExercisePublication([exerciseId], "hidden", null, null);
+    expect(await getPublicAsset(assetId)).toBeNull();
+    await setExercisePublication([exerciseId], "visible", null, null);
+    await setPortfolioPublication("portfolio-3", "visible", true, "2030-01-01T00:00:00.000Z", null);
+    expect(await getPublicAsset(assetId)).toBeNull();
   });
 });
 

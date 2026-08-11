@@ -23,6 +23,10 @@ ADMIN_PASSWORD=vervang-door-een-lang-uniek-wachtwoord
 
 De SQLite-database wordt automatisch gemaakt in `.data/portfolio.db`. Verwijder uitsluitend die database als je de metadata en alle zichtbaarheidinstellingen lokaal wilt resetten; de bronmap wordt door de applicatie nooit gewijzigd. Je kunt de lokale bronmap later ook veilig wijzigen in **Beheer > Instellingen**; het pad wordt gevalideerd, maar nooit beschreven.
 
+## Publicatie
+
+Portfolio's, onderdelen en oefeningen hebben elk een expliciete status **Zichtbaar** of **Verborgen**. Een zichtbaar kind wordt pas effectief zichtbaar wanneer alle bovenliggende niveaus ook zichtbaar zijn. De beheeromgeving toont daarom drie effectieve toestanden: **Zichtbaar**, **Wordt zichtbaar** (wacht op een parent of gepland tijdstip) en **Verborgen**. De portfolio-optie **Beperkt zichtbaar** schakelt uitsluitend de bewaarde portfolio-planning in; gewoon **Zichtbaar** negeert die planning zonder datums te verwijderen. Migratie `007_remove_inherit_visibility` zet bestaande `inherit`-waarden veilig om naar `visible`, met behoud van planning en expliciete overrides.
+
 ## Synchronisatie
 
 De knop **Synchroniseren** voert onmiddellijk een volledige, read-only indexering uit. Leerlingroutes controleren daarnaast of de laatste succesvolle synchronisatie ouder is dan drie minuten (instelbaar met `PORTFOLIO_AUTO_SYNC_TTL_SECONDS`) en starten dan maximaal een synchronisatie per applicatieproces. Gewone requests lezen uitsluitend de lokale metadata. Nieuwe portfolio's starten verborgen; nieuwe onderdelen en oefeningen nemen hun ouderinstelling over. In een serverless productieomgeving geldt de deduplicatie per actieve instantie; voor striktere, centrale planning kan later een scheduler of provider-delta-sync worden toegevoegd.

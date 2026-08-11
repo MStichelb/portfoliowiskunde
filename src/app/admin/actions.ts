@@ -10,16 +10,18 @@ import { parseBrusselsDateTime, type ChildVisibilityMode, type PortfolioVisibili
 import {
   getAdminPortfolio,
   setExercisePublication,
+  setExerciseVisibility,
   setPortfolioPublication,
   setPortfolioTitle,
   setErrorReportStatus,
   saveErrorReportNote,
   setSectionPublication,
+  setSectionVisibility,
   toggleErrorReportPin,
 } from "@/lib/repositories";
 import { synchronizeSource } from "@/lib/sync";
 
-const childModeSchema = z.enum(["inherit", "hidden", "visible"]);
+const childModeSchema = z.enum(["hidden", "visible"]);
 const portfolioModeSchema = z.enum(["hidden", "visible"]);
 
 export async function syncAction() {
@@ -34,9 +36,10 @@ export async function savePortfolioAction(formData: FormData) {
   const id = stringValue(formData, "id");
   const title = stringValue(formData, "title");
   const mode = portfolioModeSchema.safeParse(stringValue(formData, "mode"));
+  const limited = stringValue(formData, "publicationMode") === "limited";
   if (!id || !mode.success || title.length > 180) throw new Error("Ongeldige portfolio-invoer.");
   const window = parsePublicationWindow(formData);
-  await Promise.all([setPortfolioTitle(id, title), setPortfolioPublication(id, mode.data, window.publishFrom, window.publishUntil)]);
+  await Promise.all([setPortfolioTitle(id, title), setPortfolioPublication(id, mode.data, limited, window.publishFrom, window.publishUntil)]);
   refreshPublicationPaths(id);
 }
 
@@ -90,6 +93,29 @@ export async function saveExercisePublicationAction(formData: FormData) {
   refreshPublicationPaths(portfolioId);
 }
 
+export async function toggleSectionVisibilityAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  const portfolioId = stringValue(formData, "portfolioId");
+  const visible = stringValue(formData, "visible") === "true";
+  const portfolio = await getAdminPortfolio(portfolioId);
+  if (!id || !portfolio?.sections.some((section) => section.id === id)) throw new Error("Onderdeel niet gevonden.");
+  await setSectionVisibility(id, visible);
+  refreshPublicationPaths(portfolioId);
+}
+
+export async function toggleExerciseVisibilityAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  const portfolioId = stringValue(formData, "portfolioId");
+  const visible = stringValue(formData, "visible") === "true";
+  const portfolio = await getAdminPortfolio(portfolioId);
+  if (!id || !portfolio?.sections.some((section) => section.exercises.some((exercise) => exercise.id === id))) throw new Error("Oefening niet gevonden.");
+  await setExerciseVisibility(id, visible);
+  refreshPublicationPaths(portfolioId);
+  revalidatePath("/admin/meldingen");
+}
+
 export async function logoutAction() {
   await endAdminSession();
   redirect("/admin/login");
@@ -126,7 +152,20 @@ export async function hideReportedExerciseAction(formData: FormData) {
   const id = stringValue(formData, "exerciseId");
   const portfolioId = stringValue(formData, "portfolioId");
   if (!id || !portfolioId) return;
-  await setExercisePublication([id], "hidden", null, null);
+  await setExerciseVisibility(id, false);
+  refreshPublicationPaths(portfolioId);
+  revalidatePath("/admin/meldingen");
+}
+
+export async function toggleReportedExerciseVisibilityAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "exerciseId");
+  const portfolioId = stringValue(formData, "portfolioId");
+  const visible = stringValue(formData, "visible") === "true";
+  if (!id || !portfolioId) return;
+  const portfolio = await getAdminPortfolio(portfolioId);
+  if (!portfolio?.sections.some((section) => section.exercises.some((exercise) => exercise.id === id))) throw new Error("Oefening niet gevonden.");
+  await setExerciseVisibility(id, visible);
   refreshPublicationPaths(portfolioId);
   revalidatePath("/admin/meldingen");
 }

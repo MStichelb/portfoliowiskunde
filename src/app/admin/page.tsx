@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { PublicationStatus } from "@/app/components/publication-status";
 import { requireAdmin } from "@/lib/auth";
 import { getAdminPortfolios, getLatestSyncSummary, getLatestWarnings, getOpenErrorReportCount } from "@/lib/repositories";
 
@@ -37,7 +38,7 @@ export default async function AdminPage() {
               const exerciseCount = portfolio.sections.reduce((total, section) => total + section.exercises.length, 0);
               return <tr key={portfolio.id}>
                 <td><strong>{portfolio.code}</strong></td><td>{portfolio.title}{!portfolio.isIndexed && <small>Ontbreekt in bron</small>}</td>
-                <td><StatusBadge visible={portfolio.effectivePublished} indexed={portfolio.isIndexed} /></td>
+                <td>{portfolio.isIndexed ? <PublicationStatus status={portfolio.effectiveStatus} /> : <span className="status-badge missing">Bron ontbreekt</span>}</td>
                 <td>{portfolio.sections.length}</td><td>{exerciseCount}</td>
                 <td><Link className="secondary-button link-button" href={`/admin/portfolio/${encodeURIComponent(portfolio.id)}`}>Open beheer</Link></td>
               </tr>;
@@ -46,19 +47,9 @@ export default async function AdminPage() {
         </div>
       )}
 
-      <section className="warnings" aria-labelledby="warnings-title">
-        <h2 id="warnings-title">Waarschuwingen ({warnings.length})</h2>
-        {warnings.length === 0 ? <p>Geen waarschuwingen in de laatste geslaagde synchronisatie.</p> : <ul>{warnings.map((warning, index) => (
-          <li key={`${warning.relativePath}-${index}`}><strong>{warning.severity === "warning" ? "Waarschuwing" : "Info"}:</strong> {warning.message}<span className="file-reference">{warning.relativePath}</span></li>
-        ))}</ul>}
-      </section>
+      <section className="warnings" aria-labelledby="warnings-title"><h2 id="warnings-title">Waarschuwingen ({warnings.length})</h2><p>{warnings.length === 0 ? "Geen waarschuwingen in de laatste geslaagde synchronisatie." : "Portfolio-specifieke waarschuwingen staan uitsluitend bij het relevante portfolio."}</p></section>
     </main>
   );
-}
-
-function StatusBadge({ visible, indexed }: { visible: boolean; indexed: boolean }) {
-  if (!indexed) return <span className="status-badge missing">Bron ontbreekt</span>;
-  return <span className={`status-badge ${visible ? "published" : "hidden"}`}>{visible ? "Gepubliceerd" : "Verborgen"}</span>;
 }
 
 function formatSync(summary: Awaited<ReturnType<typeof getLatestSyncSummary>>) {
