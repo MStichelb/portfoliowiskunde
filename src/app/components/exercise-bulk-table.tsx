@@ -17,13 +17,17 @@ export function ExerciseBulkTable({ portfolioId, sections }: { portfolioId: stri
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const toggle = (id: string) => setSelected((current) => {
     const next = new Set(current);
-    next.has(id) ? next.delete(id) : next.add(id);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
     return next;
   });
   const toggleGroup = (ids: string[]) => setSelected((current) => {
     const next = new Set(current);
     const everySelected = ids.every((id) => next.has(id));
-    ids.forEach((id) => everySelected ? next.delete(id) : next.add(id));
+    ids.forEach((id) => {
+      if (everySelected) next.delete(id);
+      else next.add(id);
+    });
     return next;
   });
 

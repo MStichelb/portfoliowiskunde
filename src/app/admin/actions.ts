@@ -11,6 +11,7 @@ import {
   setExercisePublication,
   setPortfolioPublication,
   setPortfolioTitle,
+  setErrorReportStatus,
   setSectionPublication,
 } from "@/lib/repositories";
 import { synchronizeSource } from "@/lib/sync";
@@ -68,6 +69,15 @@ export async function bulkExercisePublicationAction(formData: FormData) {
 export async function logoutAction() {
   await endAdminSession();
   redirect("/admin/login");
+}
+
+export async function errorReportStatusAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  const status = stringValue(formData, "status");
+  if (!id || (status !== "VIEWED" && status !== "RESOLVED")) throw new Error("Ongeldige meldingsstatus.");
+  await setErrorReportStatus(id, status);
+  revalidatePath("/admin/meldingen");
 }
 
 function parsePublicationWindow(formData: FormData) {

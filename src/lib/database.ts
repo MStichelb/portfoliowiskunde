@@ -1,7 +1,7 @@
-import { createClient, type Client, type InValue } from "@libsql/client";
+import { createClient, type InValue } from "@libsql/client";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
-import postgres, { type Sql } from "postgres";
+import postgres from "postgres";
 
 import { migrations } from "@/lib/database-migrations";
 

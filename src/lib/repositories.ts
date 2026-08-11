@@ -540,3 +540,39 @@ export async function getAdminPortfolioDocument(portfolioId: string, kind: "assi
 export function getPublicationStatusLabel(portfolio: AdminPortfolio): ReturnType<typeof publicationStatus> {
   return publicationStatus({ visible: portfolio.visible, publishFrom: portfolio.publishFrom, publishUntil: portfolio.publishUntil });
 }
+
+export async function createErrorReport(input: { exerciseId: string; variant: "standard" | "alternative"; message: string; rateLimitKey: string }): Promise<void> {
+  const exercise = await getVisibleExercise(input.exerciseId);
+  if (!exercise || input.message.trim().length < 3 || input.message.trim().length > 2_000) throw new Error("De melding is ongeldig of de oplossing is niet beschikbaar.");
+  const matchingAssets = exercise.assets.filter((asset) => asset.kind === input.variant);
+  if (matchingAssets.length === 0) throw new Error("Deze oplossingsvariant bestaat niet.");
+  const database = await getDatabase();
+  const identifiers = await database.execute({ sql: "SELECT portfolio_id, section_id FROM exercises WHERE id = ?", args: [input.exerciseId] });
+  const row = identifiers.rows[0];
+  if (!row) throw new Error("Oefening niet gevonden.");
+  const now = new Date();
+  const windowStartedAt = new Date(Math.floor(now.getTime() / 600_000) * 600_000).toISOString();
+  const current = await database.execute({ sql: "SELECT attempts FROM error_report_rate_limits WHERE key = ?", args: [input.rateLimitKey] });
+  if (Number(current.rows[0]?.attempts ?? 0) >= 5) throw new Error("Probeer later opnieuw.");
+  const snapshot = matchingAssets.map((asset) => ({ id: asset.id, fileName: asset.fileName, lastModifiedAt: asset.lastModifiedAt }));
+  await database.batch([
+    { sql: "DELETE FROM error_report_rate_limits WHERE window_started_at < ?", args: [new Date(now.getTime() - 3_600_000).toISOString()] },
+    { sql: `INSERT INTO error_report_rate_limits (key, window_started_at, attempts) VALUES (?, ?, 1)
+      ON CONFLICT(key) DO UPDATE SET attempts = error_report_rate_limits.attempts + 1, window_started_at = excluded.window_started_at`, args: [input.rateLimitKey, windowStartedAt] },
+    { sql: `INSERT INTO error_reports (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'NEW', ?, ?)`, args: [randomUUID(), text(row, "portfolio_id"), text(row, "section_id"), input.exerciseId, input.variant, JSON.stringify(snapshot), matchingAssets.map((asset) => asset.lastModifiedAt).filter(Boolean).sort().at(-1) ?? null, input.message.trim(), now.toISOString(), now.toISOString()] },
+  ]);
+}
+
+export async function getAdminErrorReports() {
+  const database = await getDatabase();
+  const result = await database.execute(`SELECT error_reports.*, portfolios.code AS portfolio_code, sections.title AS section_title, exercises.exercise_code
+    FROM error_reports JOIN portfolios ON portfolios.id = error_reports.portfolio_id JOIN sections ON sections.id = error_reports.section_id
+    JOIN exercises ON exercises.id = error_reports.exercise_id ORDER BY CASE error_reports.status WHEN 'NEW' THEN 0 WHEN 'VIEWED' THEN 1 ELSE 2 END, error_reports.created_at DESC`);
+  return result.rows.map((row) => ({ id: text(row, "id"), portfolioCode: text(row, "portfolio_code"), sectionTitle: text(row, "section_title"), exerciseCode: text(row, "exercise_code"), variant: text(row, "variant_kind"), message: text(row, "message"), status: text(row, "status"), createdAt: text(row, "created_at") }));
+}
+
+export async function setErrorReportStatus(id: string, status: "VIEWED" | "RESOLVED"): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "UPDATE error_reports SET status = ?, updated_at = ? WHERE id = ?", args: [status, new Date().toISOString(), id] });
+}

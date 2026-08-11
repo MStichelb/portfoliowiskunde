@@ -46,4 +46,20 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .settings-section > form + form { margin-top: 12px; }
 .error-message { color: #8b2b1c; font-weight: 700; }
 .success-message { color: #154d37; font-weight: 700; }
+.portfolio-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+.portfolio-card { display: grid; gap: 8px; padding: 18px; border: 1px solid #c9d0cc; border-radius: 6px; background: white; color: #17222b; text-decoration: none; }
+.portfolio-card:hover, .portfolio-card:focus-visible { border-color: #075c75; background: #eff7f4; }
+.portfolio-card span, .portfolio-card small, .exercise-hidden small { color: #52616a; }
+.document-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.exercise-hidden small { display: block; margin-top: 4px; font-size: 12px; }
+.solution-asset { margin: 18px 0; padding: 0; }
+.solution-asset img { display: block; width: 100%; height: auto; border: 1px solid #c9d0cc; border-radius: 4px; background: white; }
+.solution-asset iframe { width: 100%; min-height: 72vh; border: 1px solid #c9d0cc; border-radius: 4px; background: white; }
+.solution-asset figcaption { margin-top: 8px; font-size: 14px; }
+.report-form { display: grid; gap: 10px; margin-top: 42px; padding-top: 24px; border-top: 1px solid #c9d0cc; max-width: 680px; }
+.report-form textarea { min-height: 110px; resize: vertical; }
+.report-form input, .report-form textarea, .report-form select { width: 100%; min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; font: inherit; }
+.report-form label { display: grid; gap: 5px; font-weight: 700; }
+.honeypot { position: absolute; left: -10000px; }
+:focus-visible { outline: 3px solid #e6a23c; outline-offset: 2px; }
 @media (max-width: 640px) { .site-nav { padding: 0 16px; } .page-shell { width: min(100% - 24px, 1080px); padding-top: 28px; } .admin-header, .admin-row, .admin-exercise { display: block; } .admin-actions, .admin-header form, .visibility-form { margin-top: 14px; justify-content: start; } .exercise-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .exercise-link, .exercise-hidden { min-width: 0; width: 100%; } }

@@ -23,6 +23,7 @@ export default async function AdminPage() {
         </div>
         <div className="admin-actions">
           <Link className="secondary-button link-button" href="/admin/instellingen">Instellingen</Link>
+          <Link className="secondary-button link-button" href="/admin/meldingen">Meldingen</Link>
           <form action={syncAction}><SubmitButton pendingLabel="Synchroniseren...">Synchroniseren</SubmitButton></form>
           <form action={logoutAction}><button className="secondary-button" type="submit">Uitloggen</button></form>
         </div>
