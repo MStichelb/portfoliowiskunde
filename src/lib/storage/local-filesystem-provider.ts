@@ -15,18 +15,27 @@ export class LocalFilesystemProvider implements StorageProvider {
     const directory = this.resolve(relativePath);
     const entries = await fs.readdir(directory, { withFileTypes: true });
 
-    return entries
+    const supportedEntries = entries
       .filter((entry) => entry.isDirectory() || entry.isFile())
-      .map((entry) => ({
+      .map((entry) => ({ entry, relativePath: this.toRelative(path.join(relativePath, entry.name)) }));
+
+    const mapped = await Promise.all(supportedEntries.map(async ({ entry, relativePath: entryPath }) => {
+      const metadata = await fs.stat(this.resolve(entryPath));
+      return {
         name: entry.name,
-        relativePath: this.toRelative(path.join(relativePath, entry.name)),
+        relativePath: entryPath,
+        sourceId: entryPath,
         kind: entry.isDirectory() ? ("directory" as const) : ("file" as const),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name, "nl"));
+        lastModifiedAt: metadata.mtime.toISOString(),
+        sourceVersion: `${metadata.size}-${metadata.mtimeMs}`,
+      };
+    }));
+
+    return mapped.sort((a, b) => a.name.localeCompare(b.name, "nl"));
   }
 
-  async readFile(relativePath: string): Promise<Buffer> {
-    return fs.readFile(this.resolve(relativePath));
+  async readFile(sourceId: string): Promise<Buffer> {
+    return fs.readFile(this.resolve(sourceId));
   }
 
   private resolve(relativePath: string): string {

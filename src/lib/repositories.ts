@@ -1,11 +1,18 @@
-import type { InStatement, Row } from "@libsql/client";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 
 import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
-import type { IndexedPortfolio } from "@/lib/domain";
+import type { DatabaseRow, InStatement } from "@/lib/database";
 import { executeBatch, getDatabase } from "@/lib/database";
+import type { IndexedPortfolio } from "@/lib/domain";
+import {
+  isChildPublished,
+  isPortfolioPublished,
+  type ChildVisibilityMode,
+  type PortfolioVisibilityMode,
+  publicationStatus,
+} from "@/lib/publication";
 
 export interface AdminAsset {
   id: string;
@@ -13,12 +20,19 @@ export interface AdminAsset {
   extension: string;
   step: number;
   variant: "standard" | "alternative";
+  isIndexed: boolean;
+  lastModifiedAt: string | null;
 }
 
 export interface AdminExercise {
   id: string;
   code: string;
   visible: boolean;
+  visibilityMode: ChildVisibilityMode;
+  publishFrom: string | null;
+  publishUntil: string | null;
+  effectivePublished: boolean;
+  isIndexed: boolean;
   assets: AdminAsset[];
 }
 
@@ -26,6 +40,11 @@ export interface AdminSection {
   id: string;
   order: number;
   title: string;
+  visibilityMode: ChildVisibilityMode;
+  publishFrom: string | null;
+  publishUntil: string | null;
+  effectivePublished: boolean;
+  isIndexed: boolean;
   exercises: AdminExercise[];
 }
 
@@ -33,16 +52,23 @@ export interface AdminPortfolio {
   id: string;
   code: string;
   title: string;
+  detectedTitle: string;
   visible: boolean;
+  publishFrom: string | null;
+  publishUntil: string | null;
+  effectivePublished: boolean;
+  isIndexed: boolean;
   assignmentPdfPath: string | null;
   finalSolutionsPdfPath: string | null;
   sections: AdminSection[];
 }
 
 export interface StudentPortfolio {
+  id: string;
   code: string;
   title: string;
   sections: Array<{
+    id: string;
     title: string;
     order: number;
     exercises: Array<{ id: string; code: string; visible: boolean }>;
@@ -60,18 +86,33 @@ export interface SyncSummary {
   portfolioCount: number;
   warningCount: number;
   status: string;
+  providerType: string | null;
+  addedCount: number;
+  updatedCount: number;
+  missingCount: number;
+  failureMessage: string | null;
 }
 
-const bool = (value: unknown) => Number(value) === 1;
-const text = (row: Row, field: string) => String(row[field] ?? "");
+const bool = (value: unknown) => value === true || Number(value) === 1;
+const text = (row: DatabaseRow, field: string) => String(row[field] ?? "");
+const nullableText = (row: DatabaseRow, field: string): string | null => {
+  const value = row[field];
+  return typeof value === "string" && value ? value : null;
+};
+
+function childMode(row: DatabaseRow): ChildVisibilityMode {
+  const value = text(row, "visibility_mode");
+  return value === "hidden" || value === "visible" ? value : "inherit";
+}
+
+function stableId(prefix: string, ...parts: string[]): string {
+  const hash = createHash("sha256").update(parts.join("\u0000")).digest("base64url").slice(0, 30);
+  return `${prefix}-${hash}`;
+}
 
 export async function getLocalStorageSettings(): Promise<LocalStorageSettings> {
-  const database = await getDatabase();
-  const result = await database.execute({ sql: "SELECT value FROM app_settings WHERE key = 'local_source_path'", args: [] });
-  const sourcePath = result.rows[0]?.value;
-  if (typeof sourcePath === "string" && sourcePath.trim()) {
-    return { sourcePath, sourcePathOrigin: "database" };
-  }
+  const sourcePath = await getSetting("local_source_path");
+  if (sourcePath) return { sourcePath, sourcePathOrigin: "database" };
   if (process.env.PORTFOLIO_SOURCE_PATH?.trim()) {
     return { sourcePath: process.env.PORTFOLIO_SOURCE_PATH.trim(), sourcePathOrigin: "environment" };
   }
@@ -86,79 +127,116 @@ export async function setLocalSourcePath(sourcePath: string): Promise<void> {
   const normalizedPath = path.resolve(sourcePath.trim());
   const sourceStats = await stat(normalizedPath);
   if (!sourceStats.isDirectory()) throw new Error("De opgegeven bronmap bestaat niet of is geen map.");
-
-  const database = await getDatabase();
-  await database.execute({
-    sql: `INSERT INTO app_settings (key, value, updated_at) VALUES ('local_source_path', ?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-    args: [normalizedPath, new Date().toISOString()],
-  });
+  await setSetting("local_source_path", normalizedPath);
 }
 
 export async function resetLocalSourcePath(): Promise<void> {
+  await deleteSetting("local_source_path");
+}
+
+export async function getStorageProviderType(): Promise<"local" | "onedrive"> {
+  return (await getSetting("storage_provider")) === "onedrive" ? "onedrive" : "local";
+}
+
+export async function setStorageProviderType(provider: "local" | "onedrive"): Promise<void> {
+  await setSetting("storage_provider", provider);
+}
+
+export async function getSetting(key: string): Promise<string | null> {
   const database = await getDatabase();
-  await database.execute({ sql: "DELETE FROM app_settings WHERE key = 'local_source_path'", args: [] });
+  const result = await database.execute({ sql: "SELECT value FROM app_settings WHERE key = ?", args: [key] });
+  return result.rows[0] ? nullableText(result.rows[0], "value") : null;
+}
+
+export async function setSetting(key: string, value: string): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({
+    sql: `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    args: [key, value, new Date().toISOString()],
+  });
+}
+
+export async function deleteSetting(key: string): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "DELETE FROM app_settings WHERE key = ?", args: [key] });
 }
 
 export async function getLatestSyncSummary(): Promise<SyncSummary | null> {
   const database = await getDatabase();
-  const result = await database.execute("SELECT started_at, finished_at, portfolio_count, warning_count, status FROM sync_runs ORDER BY started_at DESC LIMIT 1");
-  if (result.rows.length === 0) return null;
+  const result = await database.execute("SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 1");
+  if (!result.rows[0]) return null;
   const row = result.rows[0];
   return {
     startedAt: text(row, "started_at"),
-    finishedAt: (row.finished_at as string | null) ?? null,
+    finishedAt: nullableText(row, "finished_at"),
     portfolioCount: Number(row.portfolio_count),
     warningCount: Number(row.warning_count),
     status: text(row, "status"),
+    providerType: nullableText(row, "provider_type"),
+    addedCount: Number(row.added_count ?? 0),
+    updatedCount: Number(row.updated_count ?? 0),
+    missingCount: Number(row.missing_count ?? 0),
+    failureMessage: nullableText(row, "failure_message"),
   };
 }
 
-export async function persistIndex(portfolios: IndexedPortfolio[]): Promise<{ warnings: number }> {
+export async function persistIndex(portfolios: IndexedPortfolio[], providerType: string): Promise<{ warnings: number; added: number; updated: number; missing: number }> {
+  const database = await getDatabase();
   const startedAt = new Date().toISOString();
   const runId = randomUUID();
   const warnings = portfolios.flatMap((portfolio) => portfolio.warnings);
+  const existingAssets = await database.execute("SELECT id, source_version FROM solution_assets WHERE is_indexed = 1");
+  const existingAssetVersions = new Map(existingAssets.rows.map((row) => [text(row, "id"), nullableText(row, "source_version")]));
+  const seenAssetIds = new Set<string>();
+  let added = 0;
+  let updated = 0;
+
   const statements: InStatement[] = [
     {
-      sql: "INSERT INTO sync_runs (id, started_at, portfolio_count, warning_count, status) VALUES (?, ?, ?, ?, 'running')",
-      args: [runId, startedAt, portfolios.length, warnings.length],
+      sql: `INSERT INTO sync_runs (id, started_at, portfolio_count, warning_count, status, provider_type)
+        VALUES (?, ?, ?, ?, 'running', ?)`,
+      args: [runId, startedAt, portfolios.length, warnings.length, providerType],
     },
     { sql: "UPDATE portfolios SET is_indexed = 0", args: [] },
     { sql: "UPDATE sections SET is_indexed = 0", args: [] },
     { sql: "UPDATE exercises SET is_indexed = 0", args: [] },
-    { sql: "DELETE FROM solution_assets", args: [] },
-    { sql: "DELETE FROM solution_variants", args: [] },
-    { sql: "DELETE FROM sync_warnings", args: [] },
+    { sql: "UPDATE solution_variants SET is_indexed = 0", args: [] },
+    { sql: "UPDATE solution_assets SET is_indexed = 0", args: [] },
   ];
 
   for (const portfolio of portfolios) {
     const portfolioId = `portfolio-${portfolio.code}`;
     statements.push({
-      sql: `INSERT INTO portfolios (id, code, title, relative_path, assignment_pdf_path, final_solutions_pdf_path, is_indexed, indexed_at)
-            VALUES (?, ?, ?, ?, ?, ?, 1, ?)
-            ON CONFLICT(id) DO UPDATE SET code = excluded.code, title = excluded.title, relative_path = excluded.relative_path,
-              assignment_pdf_path = excluded.assignment_pdf_path, final_solutions_pdf_path = excluded.final_solutions_pdf_path,
-              is_indexed = 1, indexed_at = excluded.indexed_at`,
-      args: [portfolioId, portfolio.code, portfolio.title, portfolio.relativePath, portfolio.assignmentPdfPath, portfolio.finalSolutionsPdfPath, startedAt],
+      sql: `INSERT INTO portfolios (id, code, title, relative_path, assignment_pdf_path, assignment_pdf_source_id,
+        final_solutions_pdf_path, final_solutions_pdf_source_id, is_indexed, indexed_at, last_seen_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET code = excluded.code, title = excluded.title, relative_path = excluded.relative_path,
+          assignment_pdf_path = excluded.assignment_pdf_path, assignment_pdf_source_id = excluded.assignment_pdf_source_id,
+          final_solutions_pdf_path = excluded.final_solutions_pdf_path, final_solutions_pdf_source_id = excluded.final_solutions_pdf_source_id,
+          is_indexed = 1, indexed_at = excluded.indexed_at, last_seen_at = excluded.last_seen_at`,
+      args: [portfolioId, portfolio.code, portfolio.title, portfolio.relativePath, portfolio.assignmentPdfPath,
+        portfolio.assignmentPdfSourceId, portfolio.finalSolutionsPdfPath, portfolio.finalSolutionsPdfSourceId, startedAt, startedAt],
     });
 
     for (const section of portfolio.sections) {
       const sectionId = `${portfolioId}-section-${section.order}`;
       statements.push({
-        sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path, is_indexed)
-              VALUES (?, ?, ?, ?, ?, 1)
-              ON CONFLICT(id) DO UPDATE SET title = excluded.title, relative_path = excluded.relative_path, is_indexed = 1`,
-        args: [sectionId, portfolioId, section.order, section.title, section.relativePath],
+        sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path, is_indexed, last_seen_at)
+          VALUES (?, ?, ?, ?, ?, 1, ?)
+          ON CONFLICT(id) DO UPDATE SET title = excluded.title, relative_path = excluded.relative_path,
+            is_indexed = 1, last_seen_at = excluded.last_seen_at`,
+        args: [sectionId, portfolioId, section.order, section.title, section.relativePath, startedAt],
       });
 
       for (const exercise of section.exercises) {
         const exerciseId = `${sectionId}-exercise-${exercise.code}`;
         statements.push({
-          sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, is_indexed)
-                VALUES (?, ?, ?, ?, ?, ?, 1)
-                ON CONFLICT(id) DO UPDATE SET exercise_number = excluded.exercise_number,
-                  exercise_suffix = excluded.exercise_suffix, is_indexed = 1`,
-          args: [exerciseId, portfolioId, sectionId, exercise.code, exercise.number, exercise.suffix],
+          sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, is_indexed, last_seen_at)
+            VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+            ON CONFLICT(id) DO UPDATE SET exercise_number = excluded.exercise_number,
+              exercise_suffix = excluded.exercise_suffix, is_indexed = 1, last_seen_at = excluded.last_seen_at`,
+          args: [exerciseId, portfolioId, sectionId, exercise.code, exercise.number, exercise.suffix, startedAt],
         });
 
         for (const variant of ["standard", "alternative"] as const) {
@@ -166,13 +244,26 @@ export async function persistIndex(portfolios: IndexedPortfolio[]): Promise<{ wa
           if (variantAssets.length === 0) continue;
           const variantId = `${exerciseId}-${variant}`;
           statements.push({
-            sql: "INSERT INTO solution_variants (id, exercise_id, kind, label) VALUES (?, ?, ?, ?)",
+            sql: `INSERT INTO solution_variants (id, exercise_id, kind, label, is_indexed) VALUES (?, ?, ?, ?, 1)
+              ON CONFLICT(id) DO UPDATE SET label = excluded.label, is_indexed = 1`,
             args: [variantId, exerciseId, variant, variant === "standard" ? "Standaard" : "Alternatief"],
           });
           for (const asset of variantAssets) {
+            const assetId = stableId("asset", variantId, asset.relativePath);
+            seenAssetIds.add(assetId);
+            const previousVersion = existingAssetVersions.get(assetId);
+            if (previousVersion === undefined) added += 1;
+            else if (previousVersion !== asset.sourceVersion) updated += 1;
             statements.push({
-              sql: "INSERT INTO solution_assets (id, variant_id, relative_path, file_name, extension, step) VALUES (?, ?, ?, ?, ?, ?)",
-              args: [randomUUID(), variantId, asset.relativePath, asset.fileName, asset.parsed.extension, asset.parsed.step],
+              sql: `INSERT INTO solution_assets (id, variant_id, relative_path, source_id, file_name, extension, step,
+                last_modified_at, source_version, is_indexed, missing_since)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
+                ON CONFLICT(id) DO UPDATE SET relative_path = excluded.relative_path, source_id = excluded.source_id,
+                  file_name = excluded.file_name, extension = excluded.extension, step = excluded.step,
+                  last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
+                  is_indexed = 1, missing_since = NULL`,
+              args: [assetId, variantId, asset.relativePath, asset.sourceId, asset.fileName, asset.parsed.extension,
+                asset.parsed.step, asset.lastModifiedAt, asset.sourceVersion],
             });
           }
         }
@@ -180,6 +271,13 @@ export async function persistIndex(portfolios: IndexedPortfolio[]): Promise<{ wa
     }
   }
 
+  const missing = [...existingAssetVersions.keys()].filter((id) => !seenAssetIds.has(id));
+  if (missing.length > 0) {
+    statements.push({
+      sql: `UPDATE solution_assets SET missing_since = ? WHERE is_indexed = 0 AND missing_since IS NULL`,
+      args: [startedAt],
+    });
+  }
   for (const warning of warnings) {
     statements.push({
       sql: "INSERT INTO sync_warnings (id, sync_run_id, severity, relative_path, message) VALUES (?, ?, ?, ?, ?)",
@@ -187,154 +285,258 @@ export async function persistIndex(portfolios: IndexedPortfolio[]): Promise<{ wa
     });
   }
   statements.push({
-    sql: "UPDATE sync_runs SET status = 'completed', finished_at = ? WHERE id = ?",
-    args: [new Date().toISOString(), runId],
+    sql: `UPDATE sync_runs SET status = 'completed', finished_at = ?, added_count = ?, updated_count = ?, missing_count = ? WHERE id = ?`,
+    args: [new Date().toISOString(), added, updated, missing.length, runId],
   });
 
   await executeBatch(statements);
-  return { warnings: warnings.length };
+  return { warnings: warnings.length, added, updated, missing: missing.length };
+}
+
+export async function recordFailedSync(providerType: string, error: unknown): Promise<void> {
+  const database = await getDatabase();
+  const message = error instanceof Error ? error.message.slice(0, 1000) : "Onbekende synchronisatiefout.";
+  await database.execute({
+    sql: `INSERT INTO sync_runs (id, started_at, finished_at, portfolio_count, warning_count, status, provider_type, failure_message)
+      VALUES (?, ?, ?, 0, 0, 'failed', ?, ?)`,
+    args: [randomUUID(), new Date().toISOString(), new Date().toISOString(), providerType, message],
+  });
 }
 
 export async function getAdminPortfolios(): Promise<AdminPortfolio[]> {
   const database = await getDatabase();
-  const portfolios = await database.execute("SELECT * FROM portfolios WHERE is_indexed = 1 ORDER BY CAST(code AS INTEGER), code");
-  const sections = await database.execute("SELECT * FROM sections WHERE is_indexed = 1 ORDER BY portfolio_id, sort_order");
-  const exercises = await database.execute("SELECT * FROM exercises WHERE is_indexed = 1 ORDER BY section_id, exercise_number, exercise_suffix");
-  const assets = await database.execute(`SELECT solution_assets.*, solution_variants.exercise_id, solution_variants.kind
-    FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
-    ORDER BY solution_assets.step, solution_assets.file_name`);
+  const [portfolios, sections, exercises, assets] = await Promise.all([
+    database.execute("SELECT * FROM portfolios ORDER BY code"),
+    database.execute("SELECT * FROM sections ORDER BY portfolio_id, sort_order"),
+    database.execute("SELECT * FROM exercises ORDER BY section_id, exercise_number, exercise_suffix"),
+    database.execute(`SELECT solution_assets.*, solution_variants.exercise_id, solution_variants.kind
+      FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+      ORDER BY solution_assets.step, solution_assets.file_name`),
+  ]);
+  const now = new Date();
 
   return portfolios.rows.map((portfolio) => {
     const portfolioId = text(portfolio, "id");
+    const portfolioPublished = isPortfolioPublished({
+      visible: bool(portfolio.visible), publishFrom: nullableText(portfolio, "publish_from"), publishUntil: nullableText(portfolio, "publish_until"),
+    }, now);
     return {
       id: portfolioId,
       code: text(portfolio, "code"),
-      title: text(portfolio, "title"),
+      title: nullableText(portfolio, "title_override") ?? text(portfolio, "title"),
+      detectedTitle: text(portfolio, "title"),
       visible: bool(portfolio.visible),
-      assignmentPdfPath: (portfolio.assignment_pdf_path as string | null) ?? null,
-      finalSolutionsPdfPath: (portfolio.final_solutions_pdf_path as string | null) ?? null,
-      sections: sections.rows
-        .filter((section) => text(section, "portfolio_id") === portfolioId)
-        .map((section) => {
-          const sectionId = text(section, "id");
-          return {
-            id: sectionId,
-            order: Number(section.sort_order),
-            title: text(section, "title"),
-            exercises: exercises.rows
-              .filter((exercise) => text(exercise, "section_id") === sectionId)
-              .map((exercise) => {
-                const exerciseId = text(exercise, "id");
-                return {
-                  id: exerciseId,
-                  code: text(exercise, "exercise_code"),
-                  visible: bool(exercise.visible),
-                  assets: assets.rows
-                    .filter((asset) => text(asset, "exercise_id") === exerciseId)
-                    .map((asset) => ({
-                      id: text(asset, "id"),
-                      fileName: text(asset, "file_name"),
-                      extension: text(asset, "extension"),
-                      step: Number(asset.step),
-                      variant: text(asset, "kind") as AdminAsset["variant"],
-                    })),
-                };
-              }),
-          };
-        }),
+      publishFrom: nullableText(portfolio, "publish_from"),
+      publishUntil: nullableText(portfolio, "publish_until"),
+      effectivePublished: portfolioPublished,
+      isIndexed: bool(portfolio.is_indexed),
+      assignmentPdfPath: nullableText(portfolio, "assignment_pdf_path"),
+      finalSolutionsPdfPath: nullableText(portfolio, "final_solutions_pdf_path"),
+      sections: sections.rows.filter((section) => text(section, "portfolio_id") === portfolioId).map((section) => {
+        const sectionId = text(section, "id");
+        const sectionPublication = { mode: childMode(section), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
+        const sectionPublished = isChildPublished(portfolioPublished, sectionPublication, now);
+        return {
+          id: sectionId,
+          order: Number(section.sort_order),
+          title: text(section, "title"),
+          visibilityMode: sectionPublication.mode,
+          publishFrom: sectionPublication.publishFrom,
+          publishUntil: sectionPublication.publishUntil,
+          effectivePublished: sectionPublished,
+          isIndexed: bool(section.is_indexed),
+          exercises: exercises.rows.filter((exercise) => text(exercise, "section_id") === sectionId).map((exercise) => {
+            const exerciseId = text(exercise, "id");
+            const exercisePublication = { mode: childMode(exercise), publishFrom: nullableText(exercise, "publish_from"), publishUntil: nullableText(exercise, "publish_until") };
+            return {
+              id: exerciseId,
+              code: text(exercise, "exercise_code"),
+              visible: childMode(exercise) === "visible",
+              visibilityMode: exercisePublication.mode,
+              publishFrom: exercisePublication.publishFrom,
+              publishUntil: exercisePublication.publishUntil,
+              effectivePublished: isChildPublished(sectionPublished, exercisePublication, now),
+              isIndexed: bool(exercise.is_indexed),
+              assets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId).map((asset) => ({
+                id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"),
+                step: Number(asset.step), variant: text(asset, "kind") as AdminAsset["variant"],
+                isIndexed: bool(asset.is_indexed), lastModifiedAt: nullableText(asset, "last_modified_at"),
+              })),
+            };
+          }),
+        };
+      }),
     };
   });
 }
 
+export async function getAdminPortfolio(id: string): Promise<AdminPortfolio | null> {
+  return (await getAdminPortfolios()).find((portfolio) => portfolio.id === id) ?? null;
+}
+
 export async function getLatestWarnings() {
   const database = await getDatabase();
-  const result = await database.execute("SELECT severity, relative_path, message FROM sync_warnings ORDER BY relative_path, message");
-  return result.rows.map((row) => ({
-    severity: text(row, "severity"),
-    relativePath: text(row, "relative_path"),
-    message: text(row, "message"),
-  }));
+  const result = await database.execute(`SELECT sync_warnings.severity, sync_warnings.relative_path, sync_warnings.message
+    FROM sync_warnings JOIN sync_runs ON sync_runs.id = sync_warnings.sync_run_id
+    WHERE sync_runs.status = 'completed' ORDER BY sync_runs.finished_at DESC, sync_warnings.relative_path, sync_warnings.message`);
+  return result.rows.map((row) => ({ severity: text(row, "severity"), relativePath: text(row, "relative_path"), message: text(row, "message") }));
+}
+
+export async function setPortfolioPublication(id: string, mode: PortfolioVisibilityMode, publishFrom: string | null, publishUntil: string | null): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "UPDATE portfolios SET visible = ?, publish_from = ?, publish_until = ? WHERE id = ?", args: [mode === "visible" ? 1 : 0, publishFrom, publishUntil, id] });
+}
+
+export async function setPortfolioTitle(id: string, title: string): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "UPDATE portfolios SET title_override = ? WHERE id = ?", args: [title.trim() || null, id] });
+}
+
+export async function setSectionPublication(id: string, mode: ChildVisibilityMode, publishFrom: string | null, publishUntil: string | null): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "UPDATE sections SET visibility_mode = ?, publish_from = ?, publish_until = ? WHERE id = ?", args: [mode, publishFrom, publishUntil, id] });
+}
+
+export async function setExercisePublication(ids: string[], mode: ChildVisibilityMode, publishFrom: string | null, publishUntil: string | null): Promise<void> {
+  if (ids.length === 0) return;
+  const database = await getDatabase();
+  await database.batch(ids.map((id) => ({
+    sql: "UPDATE exercises SET visibility_mode = ?, visible = ?, publish_from = ?, publish_until = ? WHERE id = ?",
+    args: [mode, mode === "visible" ? 1 : 0, publishFrom, publishUntil, id],
+  })));
 }
 
 export async function setPortfolioVisibility(id: string, visible: boolean): Promise<void> {
-  const database = await getDatabase();
-  await database.execute({ sql: "UPDATE portfolios SET visible = ? WHERE id = ?", args: [visible ? 1 : 0, id] });
+  await setPortfolioPublication(id, visible ? "visible" : "hidden", null, null);
 }
 
 export async function setExerciseVisibility(id: string, visible: boolean): Promise<void> {
-  const database = await getDatabase();
-  await database.execute({ sql: "UPDATE exercises SET visible = ? WHERE id = ?", args: [visible ? 1 : 0, id] });
+  await setExercisePublication([id], visible ? "visible" : "hidden", null, null);
 }
 
 export async function getStudentPortfolios(): Promise<StudentPortfolio[]> {
   const database = await getDatabase();
-  const result = await database.execute(`SELECT portfolios.code AS portfolio_code, portfolios.title AS portfolio_title,
-      sections.title AS section_title, sections.sort_order, exercises.id AS exercise_id, exercises.exercise_code, exercises.visible AS exercise_visible
-    FROM portfolios
-    JOIN sections ON sections.portfolio_id = portfolios.id AND sections.is_indexed = 1
-    JOIN exercises ON exercises.section_id = sections.id AND exercises.is_indexed = 1
-    WHERE portfolios.is_indexed = 1 AND portfolios.visible = 1
-    ORDER BY CAST(portfolios.code AS INTEGER), portfolios.code, sections.sort_order, exercises.exercise_number, exercises.exercise_suffix`);
-  const grouped = new Map<string, StudentPortfolio>();
+  const [portfolios, sections, exercises] = await Promise.all([
+    database.execute("SELECT * FROM portfolios WHERE is_indexed = 1 ORDER BY code"),
+    database.execute("SELECT * FROM sections WHERE is_indexed = 1 ORDER BY portfolio_id, sort_order"),
+    database.execute("SELECT * FROM exercises WHERE is_indexed = 1 ORDER BY section_id, exercise_number, exercise_suffix"),
+  ]);
+  const now = new Date();
+  const result: StudentPortfolio[] = [];
 
-  for (const row of result.rows) {
-    const code = text(row, "portfolio_code");
-    const portfolio = grouped.get(code) ?? { code, title: text(row, "portfolio_title"), sections: [] };
-    let section = portfolio.sections.find((item) => item.order === Number(row.sort_order));
-    if (!section) {
-      section = { title: text(row, "section_title"), order: Number(row.sort_order), exercises: [] };
-      portfolio.sections.push(section);
+  for (const portfolio of portfolios.rows) {
+    const publication = { visible: bool(portfolio.visible), publishFrom: nullableText(portfolio, "publish_from"), publishUntil: nullableText(portfolio, "publish_until") };
+    if (!isPortfolioPublished(publication, now)) continue;
+    const portfolioId = text(portfolio, "id");
+    const studentPortfolio: StudentPortfolio = {
+      id: portfolioId,
+      code: text(portfolio, "code"),
+      title: nullableText(portfolio, "title_override") ?? text(portfolio, "title"),
+      sections: [],
+    };
+    for (const section of sections.rows.filter((row) => text(row, "portfolio_id") === portfolioId)) {
+      const sectionPublication = { mode: childMode(section), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
+      const sectionPublished = isChildPublished(true, sectionPublication, now);
+      const sectionId = text(section, "id");
+      studentPortfolio.sections.push({
+        id: sectionId, title: text(section, "title"), order: Number(section.sort_order),
+        exercises: exercises.rows.filter((row) => text(row, "section_id") === sectionId).map((exercise) => {
+          const exercisePublication = { mode: childMode(exercise), publishFrom: nullableText(exercise, "publish_from"), publishUntil: nullableText(exercise, "publish_until") };
+          return {
+            id: text(exercise, "id"), code: text(exercise, "exercise_code"),
+            visible: isChildPublished(sectionPublished, exercisePublication, now),
+          };
+        }),
+      });
     }
-    section.exercises.push({ id: text(row, "exercise_id"), code: text(row, "exercise_code"), visible: bool(row.exercise_visible) });
-    grouped.set(code, portfolio);
+    result.push(studentPortfolio);
   }
-  return [...grouped.values()];
+  return result;
+}
+
+export async function getStudentPortfolio(id: string): Promise<StudentPortfolio | null> {
+  return (await getStudentPortfolios()).find((portfolio) => portfolio.id === id) ?? null;
 }
 
 export async function getVisibleExercise(id: string) {
   const database = await getDatabase();
-  const exercise = await database.execute({
-    sql: `SELECT exercises.exercise_code, portfolios.code AS portfolio_code, portfolios.title AS portfolio_title
-      FROM exercises JOIN portfolios ON portfolios.id = exercises.portfolio_id
-      WHERE exercises.id = ? AND exercises.visible = 1 AND exercises.is_indexed = 1 AND portfolios.visible = 1 AND portfolios.is_indexed = 1`,
+  const exerciseResult = await database.execute({
+    sql: `SELECT exercises.*, sections.title AS section_title, sections.visibility_mode AS section_visibility_mode,
+      sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
+      portfolios.code AS portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override,
+      portfolios.visible AS portfolio_visible, portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until
+      FROM exercises JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
+      WHERE exercises.id = ? AND exercises.is_indexed = 1 AND sections.is_indexed = 1 AND portfolios.is_indexed = 1`,
     args: [id],
   });
-  if (exercise.rows.length === 0) return null;
+  const exercise = exerciseResult.rows[0];
+  if (!exercise) return null;
+  const now = new Date();
+  const portfolioPublished = isPortfolioPublished({ visible: bool(exercise.portfolio_visible), publishFrom: nullableText(exercise, "portfolio_publish_from"), publishUntil: nullableText(exercise, "portfolio_publish_until") }, now);
+  const sectionPublished = isChildPublished(portfolioPublished, { mode: childMode({ visibility_mode: exercise.section_visibility_mode }), publishFrom: nullableText(exercise, "section_publish_from"), publishUntil: nullableText(exercise, "section_publish_until") }, now);
+  const exercisePublished = isChildPublished(sectionPublished, { mode: childMode(exercise), publishFrom: nullableText(exercise, "publish_from"), publishUntil: nullableText(exercise, "publish_until") }, now);
+  if (!exercisePublished) return null;
+
   const assets = await database.execute({
     sql: `SELECT solution_assets.id, solution_assets.file_name, solution_assets.extension, solution_assets.step,
-      solution_variants.kind, solution_variants.label
+      solution_assets.last_modified_at, solution_variants.kind, solution_variants.label
       FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
-      WHERE solution_variants.exercise_id = ? ORDER BY solution_variants.kind, solution_assets.step, solution_assets.file_name`,
+      WHERE solution_variants.exercise_id = ? AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1
+      ORDER BY CASE solution_variants.kind WHEN 'standard' THEN 0 ELSE 1 END, solution_assets.step, solution_assets.file_name`,
     args: [id],
   });
   return {
-    code: text(exercise.rows[0], "exercise_code"),
-    portfolioCode: text(exercise.rows[0], "portfolio_code"),
-    portfolioTitle: text(exercise.rows[0], "portfolio_title"),
-    assets: assets.rows.map((asset) => ({
-      id: text(asset, "id"),
-      fileName: text(asset, "file_name"),
-      extension: text(asset, "extension"),
-      step: Number(asset.step),
-      kind: text(asset, "kind") as "standard" | "alternative",
-      label: text(asset, "label"),
-    })),
+    id, code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"),
+    portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
+    assets: assets.rows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label"), lastModifiedAt: nullableText(asset, "last_modified_at") })),
   };
 }
 
 export async function getPublicAsset(id: string) {
   const database = await getDatabase();
   const result = await database.execute({
-    sql: `SELECT solution_assets.relative_path, solution_assets.file_name, solution_assets.extension
-      FROM solution_assets
-      JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
-      JOIN exercises ON exercises.id = solution_variants.exercise_id
-      JOIN portfolios ON portfolios.id = exercises.portfolio_id
-      WHERE solution_assets.id = ? AND exercises.visible = 1 AND exercises.is_indexed = 1
-        AND portfolios.visible = 1 AND portfolios.is_indexed = 1`,
+    sql: `SELECT solution_assets.relative_path, solution_assets.source_id, solution_assets.file_name, solution_assets.extension,
+      exercises.*, sections.visibility_mode AS section_visibility_mode, sections.publish_from AS section_publish_from,
+      sections.publish_until AS section_publish_until, sections.is_indexed AS section_is_indexed,
+      portfolios.visible AS portfolio_visible, portfolios.publish_from AS portfolio_publish_from,
+      portfolios.publish_until AS portfolio_publish_until, portfolios.is_indexed AS portfolio_is_indexed
+      FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+      JOIN exercises ON exercises.id = solution_variants.exercise_id JOIN sections ON sections.id = exercises.section_id
+      JOIN portfolios ON portfolios.id = exercises.portfolio_id WHERE solution_assets.id = ?
+        AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1`,
     args: [id],
   });
-  if (result.rows.length === 0) return null;
   const row = result.rows[0];
-  return { relativePath: text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension") };
+  if (!row || !bool(row.is_indexed) || !bool(row.section_is_indexed) || !bool(row.portfolio_is_indexed)) return null;
+  const now = new Date();
+  const portfolioPublished = isPortfolioPublished({ visible: bool(row.portfolio_visible), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
+  const sectionPublished = isChildPublished(portfolioPublished, { mode: childMode({ visibility_mode: row.section_visibility_mode }), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, now);
+  if (!isChildPublished(sectionPublished, { mode: childMode(row), publishFrom: nullableText(row, "publish_from"), publishUntil: nullableText(row, "publish_until") }, now)) return null;
+  return { sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension") };
+}
+
+export async function getPublicPortfolioDocument(portfolioId: string, kind: "assignment" | "final-solutions") {
+  const database = await getDatabase();
+  const result = await database.execute({ sql: "SELECT * FROM portfolios WHERE id = ? AND is_indexed = 1", args: [portfolioId] });
+  const portfolio = result.rows[0];
+  if (!portfolio || !isPortfolioPublished({ visible: bool(portfolio.visible), publishFrom: nullableText(portfolio, "publish_from"), publishUntil: nullableText(portfolio, "publish_until") })) return null;
+  const sourceId = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_source_id") : nullableText(portfolio, "final_solutions_pdf_source_id");
+  const relativePath = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_path") : nullableText(portfolio, "final_solutions_pdf_path");
+  if (!sourceId && !relativePath) return null;
+  return { sourceId: sourceId ?? relativePath!, fileName: (relativePath ?? "document.pdf").split("/").at(-1) ?? "document.pdf", extension: "pdf" };
+}
+
+export async function getAdminPortfolioDocument(portfolioId: string, kind: "assignment" | "final-solutions") {
+  const database = await getDatabase();
+  const result = await database.execute({ sql: "SELECT * FROM portfolios WHERE id = ?", args: [portfolioId] });
+  const portfolio = result.rows[0];
+  if (!portfolio) return null;
+  const sourceId = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_source_id") : nullableText(portfolio, "final_solutions_pdf_source_id");
+  const relativePath = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_path") : nullableText(portfolio, "final_solutions_pdf_path");
+  if (!sourceId && !relativePath) return null;
+  return { sourceId: sourceId ?? relativePath!, fileName: (relativePath ?? "document.pdf").split("/").at(-1) ?? "document.pdf", extension: "pdf" };
+}
+
+export function getPublicationStatusLabel(portfolio: AdminPortfolio): ReturnType<typeof publicationStatus> {
+  return publicationStatus({ visible: portfolio.visible, publishFrom: portfolio.publishFrom, publishUntil: portfolio.publishUntil });
 }

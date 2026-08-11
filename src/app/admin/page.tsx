@@ -3,7 +3,8 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
 import { getAdminPortfolios, getLatestSyncSummary, getLatestWarnings } from "@/lib/repositories";
 
-import { exerciseVisibilityAction, logoutAction, portfolioVisibilityAction, syncAction } from "./actions";
+import { logoutAction, syncAction } from "./actions";
+import { SubmitButton } from "../components/submit-button";
 
 export const dynamic = "force-dynamic";
 
@@ -17,96 +18,51 @@ export default async function AdminPage() {
         <div>
           <p className="eyebrow">Beheer</p>
           <h1>Portfolio-index</h1>
-          <p>Bronbestanden worden alleen gelezen. Nieuwe portfolio&apos;s en oefeningen starten verborgen.</p>
-          <p className="file-reference">
-            {latestSync
-              ? `Laatste synchronisatie: ${formatDate(latestSync.finishedAt ?? latestSync.startedAt)} - ${latestSync.portfolioCount} portfolio(s), ${latestSync.warningCount} waarschuwing(en).`
-              : "Nog niet gesynchroniseerd."}
-          </p>
+          <p>Bronbestanden blijven read-only. Nieuwe inhoud start verborgen; een synchronisatie bewaart bestaande publicatie-instellingen.</p>
+          <p className="file-reference">{formatSync(latestSync)}</p>
         </div>
         <div className="admin-actions">
           <Link className="secondary-button link-button" href="/admin/instellingen">Instellingen</Link>
-          <form action={syncAction}><button className="primary-button" type="submit">Opnieuw synchroniseren</button></form>
+          <form action={syncAction}><SubmitButton pendingLabel="Synchroniseren...">Synchroniseren</SubmitButton></form>
           <form action={logoutAction}><button className="secondary-button" type="submit">Uitloggen</button></form>
         </div>
       </header>
 
-      {portfolios.length === 0 ? (
-        <p className="empty-state">Nog geen inhoud geindexeerd. Kies Opnieuw synchroniseren.</p>
-      ) : (
-        <div className="admin-portfolios">
-          {portfolios.map((portfolio) => (
-            <section className="admin-portfolio" key={portfolio.id}>
-              <div className="admin-row">
-                <div>
-                  <h2>Portfolio {portfolio.code}: {portfolio.title}</h2>
-                  <p className="file-reference">Opgaven: {portfolio.assignmentPdfPath ?? "niet herkend"}</p>
-                  <p className="file-reference">Eindoplossingen: {portfolio.finalSolutionsPdfPath ?? "niet herkend"}</p>
-                </div>
-                <VisibilityForm action={portfolioVisibilityAction} id={portfolio.id} visible={portfolio.visible} label="Portfolio" />
-              </div>
-              {portfolio.sections.map((section) => (
-                <section className="admin-section" key={section.id}>
-                  <h3>{section.order}. {section.title}</h3>
-                  <ul className="admin-exercises">
-                    {section.exercises.map((exercise) => (
-                      <li key={exercise.id} className="admin-exercise">
-                        <div>
-                          <strong>Oefening {exercise.code}</strong>
-                          <p className="asset-list">
-                            {exercise.assets.map((asset) => `${asset.variant === "alternative" ? "alternatief" : "standaard"}, stap ${asset.step}: ${asset.fileName}`).join(" | ")}
-                          </p>
-                        </div>
-                        <VisibilityForm action={exerciseVisibilityAction} id={exercise.id} visible={exercise.visible} label="Oplossing" />
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
-            </section>
-          ))}
+      {portfolios.length === 0 ? <p className="empty-state">Nog geen inhoud geindexeerd. Kies Synchroniseren.</p> : (
+        <div className="admin-summary-table" role="region" aria-label="Portfolio-overzicht" tabIndex={0}>
+          <table>
+            <thead><tr><th>Portfolio</th><th>Status</th><th>Onderdelen</th><th>Oefeningen</th><th>Actie</th></tr></thead>
+            <tbody>{portfolios.map((portfolio) => {
+              const exerciseCount = portfolio.sections.reduce((total, section) => total + section.exercises.length, 0);
+              return <tr key={portfolio.id}>
+                <td><strong>{portfolio.code}</strong><span>{portfolio.title}</span>{!portfolio.isIndexed && <small>Ontbreekt in bron</small>}</td>
+                <td><StatusBadge visible={portfolio.effectivePublished} indexed={portfolio.isIndexed} /></td>
+                <td>{portfolio.sections.length}</td><td>{exerciseCount}</td>
+                <td><Link className="table-link" href={`/admin/portfolio/${encodeURIComponent(portfolio.id)}`}>Open beheer</Link></td>
+              </tr>;
+            })}</tbody>
+          </table>
         </div>
       )}
 
       <section className="warnings" aria-labelledby="warnings-title">
         <h2 id="warnings-title">Waarschuwingen ({warnings.length})</h2>
-        {warnings.length === 0 ? <p>Geen waarschuwingen in de laatste synchronisatie.</p> : (
-          <ul>
-            {warnings.map((warning, index) => (
-              <li key={`${warning.relativePath}-${index}`}>
-                <strong>{warning.severity === "warning" ? "Waarschuwing" : "Info"}:</strong> {warning.message}
-                <span className="file-reference">{warning.relativePath}</span>
-              </li>
-            ))}
-          </ul>
-        )}
+        {warnings.length === 0 ? <p>Geen waarschuwingen in de laatste geslaagde synchronisatie.</p> : <ul>{warnings.map((warning, index) => (
+          <li key={`${warning.relativePath}-${index}`}><strong>{warning.severity === "warning" ? "Waarschuwing" : "Info"}:</strong> {warning.message}<span className="file-reference">{warning.relativePath}</span></li>
+        ))}</ul>}
       </section>
     </main>
   );
 }
 
-function formatDate(value: string) {
-  return new Intl.DateTimeFormat("nl-BE", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Brussels" }).format(new Date(value));
+function StatusBadge({ visible, indexed }: { visible: boolean; indexed: boolean }) {
+  if (!indexed) return <span className="status-badge missing">Bron ontbreekt</span>;
+  return <span className={`status-badge ${visible ? "published" : "hidden"}`}>{visible ? "Gepubliceerd" : "Verborgen"}</span>;
 }
 
-function VisibilityForm({
-  action,
-  id,
-  visible,
-  label,
-}: {
-  action: (formData: FormData) => Promise<void>;
-  id: string;
-  visible: boolean;
-  label: string;
-}) {
-  return (
-    <form action={action} className="visibility-form">
-      <input type="hidden" name="id" value={id} />
-      <input type="hidden" name="visible" value={String(!visible)} />
-      <button type="submit" className={visible ? "visibility visible" : "visibility hidden"}>
-        {label}: {visible ? "zichtbaar" : "verborgen"}
-      </button>
-    </form>
-  );
+function formatSync(summary: Awaited<ReturnType<typeof getLatestSyncSummary>>) {
+  if (!summary) return "Nog niet gesynchroniseerd.";
+  if (summary.status === "failed") return `Laatste synchronisatie mislukte: ${summary.failureMessage ?? "onbekende fout"}`;
+  const date = new Intl.DateTimeFormat("nl-BE", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Brussels" }).format(new Date(summary.finishedAt ?? summary.startedAt));
+  return `Laatste synchronisatie: ${date}. ${summary.addedCount} nieuw, ${summary.updatedCount} bijgewerkt, ${summary.missingCount} ontbrekend, ${summary.warningCount} waarschuwingen.`;
 }

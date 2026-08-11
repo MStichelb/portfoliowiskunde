@@ -77,7 +77,9 @@ async function indexPortfolio(
     title,
     relativePath: directory.relativePath,
     assignmentPdfPath: assignmentPdf?.relativePath ?? null,
+    assignmentPdfSourceId: assignmentPdf?.sourceId ?? null,
     finalSolutionsPdfPath: finalSolutionsPdf?.relativePath ?? null,
+    finalSolutionsPdfSourceId: finalSolutionsPdf?.sourceId ?? null,
     sections,
     warnings,
   };
@@ -126,7 +128,14 @@ async function indexSections(
         suffix: parsed.exerciseSuffix,
         assets: [],
       };
-      existing.assets.push({ relativePath: file.relativePath, fileName: file.name, parsed });
+      existing.assets.push({
+        relativePath: file.relativePath,
+        sourceId: file.sourceId ?? file.relativePath,
+        fileName: file.name,
+        lastModifiedAt: file.lastModifiedAt ?? null,
+        sourceVersion: file.sourceVersion ?? null,
+        parsed,
+      });
       exercises.set(parsed.exerciseCode, existing);
     }
 

@@ -28,7 +28,10 @@ export interface IndexWarning {
 
 export interface IndexedAsset {
   relativePath: string;
+  sourceId: string;
   fileName: string;
+  lastModifiedAt: string | null;
+  sourceVersion: string | null;
   parsed: ParsedSolutionFile;
 }
 
@@ -51,7 +54,9 @@ export interface IndexedPortfolio {
   title: string;
   relativePath: string;
   assignmentPdfPath: string | null;
+  assignmentPdfSourceId: string | null;
   finalSolutionsPdfPath: string | null;
+  finalSolutionsPdfSourceId: string | null;
   sections: IndexedSection[];
   warnings: IndexWarning[];
 }
