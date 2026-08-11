@@ -186,9 +186,13 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
   const startedAt = new Date().toISOString();
   const runId = randomUUID();
   const warnings = portfolios.flatMap((portfolio) => portfolio.warnings);
-  const existingAssets = await database.execute("SELECT id, source_version FROM solution_assets WHERE is_indexed = 1");
-  const existingAssetVersions = new Map(existingAssets.rows.map((row) => [text(row, "id"), nullableText(row, "source_version")]));
-  const seenAssetIds = new Set<string>();
+  const existingAssets = await database.execute("SELECT id, variant_id, relative_path, source_version FROM solution_assets WHERE is_indexed = 1");
+  const assetKey = (variantId: string, relativePath: string) => `${variantId}\u0000${relativePath}`;
+  const existingAssetVersions = new Map(existingAssets.rows.map((row) => [
+    assetKey(text(row, "variant_id"), text(row, "relative_path")),
+    { id: text(row, "id"), sourceVersion: nullableText(row, "source_version") },
+  ]));
+  const seenAssetKeys = new Set<string>();
   let added = 0;
   let updated = 0;
 
@@ -250,15 +254,16 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
           });
           for (const asset of variantAssets) {
             const assetId = stableId("asset", variantId, asset.relativePath);
-            seenAssetIds.add(assetId);
-            const previousVersion = existingAssetVersions.get(assetId);
-            if (previousVersion === undefined) added += 1;
-            else if (previousVersion !== asset.sourceVersion) updated += 1;
+            const logicalAssetKey = assetKey(variantId, asset.relativePath);
+            seenAssetKeys.add(logicalAssetKey);
+            const previousAsset = existingAssetVersions.get(logicalAssetKey);
+            if (previousAsset === undefined) added += 1;
+            else if (previousAsset.sourceVersion !== asset.sourceVersion) updated += 1;
             statements.push({
               sql: `INSERT INTO solution_assets (id, variant_id, relative_path, source_id, file_name, extension, step,
                 last_modified_at, source_version, is_indexed, missing_since)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
-                ON CONFLICT(id) DO UPDATE SET relative_path = excluded.relative_path, source_id = excluded.source_id,
+                ON CONFLICT(variant_id, relative_path) DO UPDATE SET source_id = excluded.source_id,
                   file_name = excluded.file_name, extension = excluded.extension, step = excluded.step,
                   last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
                   is_indexed = 1, missing_since = NULL`,
@@ -271,7 +276,7 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
     }
   }
 
-  const missing = [...existingAssetVersions.keys()].filter((id) => !seenAssetIds.has(id));
+  const missing = [...existingAssetVersions.entries()].filter(([key]) => !seenAssetKeys.has(key)).map(([, asset]) => asset.id);
   if (missing.length > 0) {
     statements.push({
       sql: `UPDATE solution_assets SET missing_since = ? WHERE is_indexed = 0 AND missing_since IS NULL`,

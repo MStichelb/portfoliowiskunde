@@ -110,9 +110,15 @@ async function indexSections(
 
     const files = await provider.list(entry.relativePath);
     const exercises = new Map<string, IndexedPortfolio["sections"][number]["exercises"][number]>();
+    const indexedPaths = new Set<string>();
 
     for (const file of files) {
       if (file.kind !== "file") continue;
+      if (indexedPaths.has(file.relativePath)) {
+        warnings.push({ severity: "warning", path: file.relativePath, message: "Dubbel bronbestand tijdens scanning genegeerd." });
+        continue;
+      }
+      indexedPaths.add(file.relativePath);
       const parsed = parseSolutionFileName(file.name);
       if (!parsed) {
         warnings.push({ severity: "warning", path: file.relativePath, message: "Uitwerking niet herkend; verwacht bijvoorbeeld PF3-Oef2b-alt(1).png." });

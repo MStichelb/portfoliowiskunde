@@ -22,6 +22,7 @@ export interface DatabaseClient {
 }
 
 let clientPromise: Promise<DatabaseClient> | undefined;
+let localClient: ReturnType<typeof createClient> | undefined;
 
 export async function getDatabase(): Promise<DatabaseClient> {
   if (!clientPromise) clientPromise = createDatabaseClient();
@@ -45,6 +46,7 @@ async function createLibsqlClient(databaseUrl?: string): Promise<DatabaseClient>
     url,
     authToken: process.env.DATABASE_AUTH_TOKEN?.trim() || process.env.TURSO_AUTH_TOKEN?.trim(),
   });
+  localClient = client;
 
   return {
     async execute(statement) {
@@ -120,5 +122,7 @@ export async function executeBatch(statements: InStatement[]): Promise<void> {
 }
 
 export function resetDatabaseForTests() {
+  localClient?.close();
+  localClient = undefined;
   clientPromise = undefined;
 }
