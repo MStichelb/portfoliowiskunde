@@ -61,6 +61,7 @@ export async function saveLearningSpaceAction(formData: FormData) {
   if (matchingSlug && matchingSlug.id !== id) throw new Error("Deze publieke slug bestaat al.");
   await updateLearningSpace(id, input);
   revalidatePath("/admin");
+  redirect(`/admin/${encodeURIComponent(input.slug)}/instellingen?saved=1`);
 }
 
 export async function createLearningSpaceAction(formData: FormData) {
