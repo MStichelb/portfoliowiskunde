@@ -4,10 +4,10 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import { isAdminAuthenticated } from "@/lib/auth";
-import { exchangeMicrosoftCode, getOneDriveFolderPath, saveOneDriveConnection } from "@/lib/onedrive";
-import { setStorageProviderType } from "@/lib/repositories";
+import { exchangeMicrosoftCode } from "@/lib/onedrive";
 
 const OAUTH_STATE_COOKIE = "portfolio_onedrive_oauth_state";
+const OAUTH_VERIFIER_COOKIE = "portfolio_onedrive_oauth_verifier";
 
 export async function GET(request: Request) {
   const callbackUrl = new URL(request.url);
@@ -15,31 +15,30 @@ export async function GET(request: Request) {
   const state = callbackUrl.searchParams.get("state");
   const cookieStore = await cookies();
   const expectedState = cookieStore.get(OAUTH_STATE_COOKIE)?.value;
+  const codeVerifier = cookieStore.get(OAUTH_VERIFIER_COOKIE)?.value;
   const response = (status: string) => NextResponse.redirect(new URL(`/admin/instellingen?onedrive=${encodeURIComponent(status)}`, request.url));
 
-  if (!(await isAdminAuthenticated()) || !code || !state || !expectedState || !sameValue(state, expectedState)) {
+  if (!(await isAdminAuthenticated()) || !code || !state || !expectedState || !codeVerifier || !sameValue(state, expectedState)) {
     const rejected = response("authorization-failed");
-    rejected.cookies.delete(OAUTH_STATE_COOKIE);
+    clearOAuthCookies(rejected);
     return rejected;
   }
-  const folderPath = await getOneDriveFolderPath();
-  if (!folderPath) {
-    const incomplete = response("folder-required");
-    incomplete.cookies.delete(OAUTH_STATE_COOKIE);
-    return incomplete;
-  }
   try {
-    await exchangeMicrosoftCode(code);
-    await saveOneDriveConnection(folderPath);
-    await setStorageProviderType("onedrive");
+    await exchangeMicrosoftCode(code, codeVerifier);
     const complete = response("connected");
-    complete.cookies.delete(OAUTH_STATE_COOKIE);
+    clearOAuthCookies(complete);
     return complete;
-  } catch {
+  } catch (error) {
+    console.error("Microsoft OAuth callback failed.", { errorType: error instanceof Error ? error.name : typeof error });
     const failed = response("connection-failed");
-    failed.cookies.delete(OAUTH_STATE_COOKIE);
+    clearOAuthCookies(failed);
     return failed;
   }
+}
+
+function clearOAuthCookies(response: NextResponse) {
+  response.cookies.delete(OAUTH_STATE_COOKIE);
+  response.cookies.delete(OAUTH_VERIFIER_COOKIE);
 }
 
 function sameValue(left: string, right: string): boolean {

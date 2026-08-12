@@ -23,6 +23,7 @@ export interface DatabaseClient {
 
 let clientPromise: Promise<DatabaseClient> | undefined;
 let localClient: ReturnType<typeof createClient> | undefined;
+const POSTGRES_MIGRATION_LOCK_ID = "741824936501";
 
 export async function getDatabase(): Promise<DatabaseClient> {
   if (!clientPromise) clientPromise = createDatabaseClient();
@@ -31,12 +32,25 @@ export async function getDatabase(): Promise<DatabaseClient> {
 
 async function createDatabaseClient(): Promise<DatabaseClient> {
   const databaseUrl = process.env.DATABASE_URL?.trim();
-  const client = databaseUrl?.startsWith("postgres://") || databaseUrl?.startsWith("postgresql://")
-    ? createPostgresClient(databaseUrl)
+  const configurationProblem = getDatabaseConfigurationProblem();
+  if (configurationProblem) throw new Error(configurationProblem);
+  const isPostgres = databaseUrl?.startsWith("postgres://") || databaseUrl?.startsWith("postgresql://");
+  const client = isPostgres
+    ? createPostgresClient(databaseUrl!)
     : await createLibsqlClient(databaseUrl);
 
-  await runMigrations(client);
+  await runMigrations(client, Boolean(isPostgres));
   return client;
+}
+
+export function getDatabaseConfigurationProblem(environment: NodeJS.ProcessEnv = process.env): string | null {
+  if (environment.NODE_ENV !== "production") return null;
+  const databaseUrl = environment.DATABASE_URL?.trim();
+  if (!databaseUrl) return "DATABASE_URL ontbreekt; productie gebruikt nooit een lokale databasefile.";
+  if (!databaseUrl.startsWith("postgres://") && !databaseUrl.startsWith("postgresql://")) {
+    return "DATABASE_URL moet in productie naar PostgreSQL verwijzen.";
+  }
+  return null;
 }
 
 async function createLibsqlClient(databaseUrl?: string): Promise<DatabaseClient> {
@@ -103,17 +117,22 @@ async function localDatabaseUrl(): Promise<string> {
   return `file:${databasePath.replace(/\\/g, "/")}`;
 }
 
-async function runMigrations(database: DatabaseClient): Promise<void> {
-  await database.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
-  const applied = await database.execute("SELECT version FROM schema_migrations");
-  const knownVersions = new Set(applied.rows.map((row) => String(row.version)));
+async function runMigrations(database: DatabaseClient, isPostgres: boolean): Promise<void> {
+  if (isPostgres) await database.execute(`SELECT pg_advisory_lock(${POSTGRES_MIGRATION_LOCK_ID})`);
+  try {
+    await database.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    const applied = await database.execute("SELECT version FROM schema_migrations");
+    const knownVersions = new Set(applied.rows.map((row) => String(row.version)));
 
-  for (const migration of migrations) {
-    if (knownVersions.has(migration.version)) continue;
-    await database.batch([
-      ...migration.statements.map((sql) => ({ sql, args: [] })),
-      { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, new Date().toISOString()] },
-    ]);
+    for (const migration of migrations) {
+      if (knownVersions.has(migration.version)) continue;
+      await database.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, new Date().toISOString()] },
+      ]);
+    }
+  } finally {
+    if (isPostgres) await database.execute(`SELECT pg_advisory_unlock(${POSTGRES_MIGRATION_LOCK_ID})`);
   }
 }
 

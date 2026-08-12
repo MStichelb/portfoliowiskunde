@@ -27,7 +27,9 @@ function signature(payload: string, secret: string): string {
 
 export function getAuthenticationProblem(): string | null {
   if (!getPassword()) return "ADMIN_PASSWORD ontbreekt.";
+  if (process.env.NODE_ENV === "production" && getPassword()!.length < 16) return "ADMIN_PASSWORD moet in productie minstens 16 tekens lang zijn.";
   if (process.env.NODE_ENV === "production" && !process.env.ADMIN_SESSION_SECRET?.trim()) return "ADMIN_SESSION_SECRET ontbreekt.";
+  if (process.env.NODE_ENV === "production" && process.env.ADMIN_SESSION_SECRET!.trim().length < 32) return "ADMIN_SESSION_SECRET moet in productie minstens 32 tekens lang zijn.";
   return null;
 }
 
@@ -99,7 +101,7 @@ export async function endAdminSession(): Promise<void> {
   const cookieStore = await cookies();
   const sessionId = sessionIdFromToken(cookieStore.get(SESSION_COOKIE)?.value);
   if (sessionId) await (await getDatabase()).execute({ sql: "DELETE FROM admin_sessions WHERE id = ?", args: [sessionId] });
-  cookieStore.set(SESSION_COOKIE, "", { httpOnly: true, maxAge: 0, path: "/", sameSite: "lax" });
+  cookieStore.set(SESSION_COOKIE, "", { httpOnly: true, maxAge: 0, path: "/", sameSite: "lax", secure: process.env.NODE_ENV === "production" });
 }
 
 function sessionIdFromToken(token: string | undefined): string | null {

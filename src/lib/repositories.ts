@@ -302,6 +302,23 @@ export async function getLatestSyncSummary(learningSpaceId?: string): Promise<Sy
   };
 }
 
+export async function tryAcquireSyncLease(learningSpaceId: string, ownerId: string, now = new Date(), leaseSeconds = 600): Promise<boolean> {
+  const database = await getDatabase();
+  const acquiredUntil = new Date(now.getTime() + Math.max(60, leaseSeconds) * 1000).toISOString();
+  const result = await database.execute({
+    sql: `INSERT INTO sync_leases (learning_space_id, owner_id, acquired_until) VALUES (?, ?, ?)
+      ON CONFLICT(learning_space_id) DO UPDATE SET owner_id = excluded.owner_id, acquired_until = excluded.acquired_until
+      WHERE sync_leases.acquired_until <= ?
+      RETURNING owner_id`,
+    args: [learningSpaceId, ownerId, acquiredUntil, now.toISOString()],
+  });
+  return result.rows.some((row) => text(row, "owner_id") === ownerId);
+}
+
+export async function releaseSyncLease(learningSpaceId: string, ownerId: string): Promise<void> {
+  await (await getDatabase()).execute({ sql: "DELETE FROM sync_leases WHERE learning_space_id = ? AND owner_id = ?", args: [learningSpaceId, ownerId] });
+}
+
 export async function persistIndex(portfolios: IndexedPortfolio[], providerType: string, learningSpaceId?: string): Promise<{ warnings: number; added: number; updated: number; missing: number }> {
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();

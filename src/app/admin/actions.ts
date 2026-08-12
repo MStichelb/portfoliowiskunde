@@ -52,7 +52,8 @@ export async function syncSpaceAction(_previousState: AdminActionState, formData
   const learningSpaceId = stringValue(formData, "learningSpaceId");
   if (!await getLearningSpace(learningSpaceId)) return { error: "Leeromgeving niet gevonden." };
   try {
-    await synchronizeSource(learningSpaceId);
+    const result = await synchronizeSource(learningSpaceId);
+    if (result.skipped) return { error: "Er loopt al een synchronisatie voor deze leeromgeving." };
   } catch (error) {
     const message = userFacingSourceError(error);
     if (message) return { error: message };

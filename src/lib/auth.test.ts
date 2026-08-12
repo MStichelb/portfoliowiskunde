@@ -1,14 +1,15 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { clearFailedLogins, createSessionToken, isLoginRateLimited, isValidSessionToken, recordFailedLogin } from "./auth";
+import { clearFailedLogins, createSessionToken, getAuthenticationProblem, isLoginRateLimited, isValidSessionToken, recordFailedLogin } from "./auth";
 import { resetDatabaseForTests } from "./database";
 
 let temporaryDirectory: string | undefined;
 
 afterEach(async () => {
+  vi.unstubAllEnvs();
   resetDatabaseForTests();
   delete process.env.PORTFOLIO_DATABASE_PATH;
   if (temporaryDirectory) {
@@ -22,6 +23,20 @@ afterEach(async () => {
 });
 
 describe("admin session tokens", () => {
+  it("fails closed for weak production secrets", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ADMIN_PASSWORD", "");
+    vi.stubEnv("ADMIN_SESSION_SECRET", "");
+    expect(getAuthenticationProblem()).toContain("ADMIN_PASSWORD");
+    vi.stubEnv("ADMIN_PASSWORD", "too-short");
+    expect(getAuthenticationProblem()).toContain("16 tekens");
+    vi.stubEnv("ADMIN_PASSWORD", "a-strong-admin-password");
+    vi.stubEnv("ADMIN_SESSION_SECRET", "too-short");
+    expect(getAuthenticationProblem()).toContain("32 tekens");
+    vi.stubEnv("ADMIN_SESSION_SECRET", "a-session-secret-that-is-long-enough");
+    expect(getAuthenticationProblem()).toBeNull();
+  });
+
   it("accepteert een geldig getekend token", () => {
     const now = 1_700_000_000_000;
     expect(isValidSessionToken(createSessionToken("test-secret", now), "test-secret", now)).toBe(true);

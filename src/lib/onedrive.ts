@@ -1,9 +1,10 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
 import { deleteSetting, getSetting, setSetting } from "@/lib/repositories";
 
 const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
 const TOKEN_SETTING = "onedrive_tokens";
+let refreshInFlight: Promise<string> | undefined;
 
 interface OAuthTokens {
   accessToken: string;
@@ -43,7 +44,7 @@ export function getMicrosoftConfigurationProblem(): string | null {
   return null;
 }
 
-export function createMicrosoftAuthorizationUrl(state: string): string {
+export function createMicrosoftAuthorizationUrl(state: string, codeChallenge: string): string {
   const config = requiredMicrosoftConfiguration();
   const url = new URL(`https://login.microsoftonline.com/${encodeURIComponent(config.tenantId)}/oauth2/v2.0/authorize`);
   url.searchParams.set("client_id", config.clientId);
@@ -52,18 +53,26 @@ export function createMicrosoftAuthorizationUrl(state: string): string {
   url.searchParams.set("response_mode", "query");
   url.searchParams.set("scope", "offline_access Files.Read");
   url.searchParams.set("state", state);
+  url.searchParams.set("code_challenge", codeChallenge);
+  url.searchParams.set("code_challenge_method", "S256");
   url.searchParams.set("prompt", "select_account");
   return url.toString();
 }
 
-export async function exchangeMicrosoftCode(code: string): Promise<void> {
+export function createPkceChallenge(codeVerifier: string): string {
+  return createHash("sha256").update(codeVerifier).digest("base64url");
+}
+
+export async function exchangeMicrosoftCode(code: string, codeVerifier: string): Promise<void> {
   const config = requiredMicrosoftConfiguration();
   const body = new URLSearchParams({
     client_id: config.clientId,
     client_secret: config.clientSecret,
     grant_type: "authorization_code",
     code,
+    code_verifier: codeVerifier,
     redirect_uri: config.redirectUri,
+    scope: "offline_access Files.Read",
   });
   const response = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(config.tenantId)}/oauth2/v2.0/token`, {
     method: "POST",
@@ -87,6 +96,13 @@ export async function getGraphAccessToken(): Promise<string> {
   if (!tokens) throw new Error("OneDrive is nog niet verbonden.");
   if (tokens.expiresAt > Date.now() + 60_000) return tokens.accessToken;
 
+  if (!refreshInFlight) {
+    refreshInFlight = refreshGraphAccessToken(tokens).finally(() => { refreshInFlight = undefined; });
+  }
+  return refreshInFlight;
+}
+
+async function refreshGraphAccessToken(tokens: OAuthTokens): Promise<string> {
   const config = requiredMicrosoftConfiguration();
   const response = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(config.tenantId)}/oauth2/v2.0/token`, {
     method: "POST",
@@ -115,8 +131,7 @@ export async function getGraphAccessToken(): Promise<string> {
 
 export async function graphJson<T>(pathOrUrl: string): Promise<T> {
   const token = await getGraphAccessToken();
-  const url = pathOrUrl.startsWith("https://") ? pathOrUrl : `${GRAPH_BASE_URL}${pathOrUrl}`;
-  if (!url.startsWith(GRAPH_BASE_URL)) throw new Error("Onverwachte Microsoft Graph-URL.");
+  const url = microsoftGraphUrl(pathOrUrl);
   const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
   if (!response.ok) throw new Error(`Microsoft Graph gaf HTTP ${response.status}.`);
   return response.json() as Promise<T>;
@@ -152,6 +167,10 @@ export function normalizeOneDriveFolderPath(value: string): string | null {
 
 export async function hasOneDriveConnection(): Promise<boolean> {
   return Boolean(await getSetting(TOKEN_SETTING)) && Boolean(await getSetting("onedrive_drive_id")) && Boolean(await getSetting("onedrive_folder_id"));
+}
+
+export async function hasOneDriveAuthorization(): Promise<boolean> {
+  return Boolean(await readTokens());
 }
 
 export async function saveOneDriveConnection(folderPath: string): Promise<void> {
@@ -219,6 +238,14 @@ function getTokenEncryptionKey(): Buffer | null {
   } catch {
     return null;
   }
+}
+
+export function microsoftGraphUrl(pathOrUrl: string): string {
+  const url = pathOrUrl.startsWith("https://") ? new URL(pathOrUrl) : new URL(`${GRAPH_BASE_URL}${pathOrUrl.startsWith("/") ? pathOrUrl : `/${pathOrUrl}`}`);
+  if (url.protocol !== "https:" || url.hostname !== "graph.microsoft.com" || (url.pathname !== "/v1.0" && !url.pathname.startsWith("/v1.0/"))) {
+    throw new Error("Onverwachte Microsoft Graph-URL.");
+  }
+  return url.toString();
 }
 
 function encrypt(plaintext: string): string {

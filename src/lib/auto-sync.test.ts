@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isSyncStale } from "./auto-sync";
+import { isSyncStale, maybeAutoSynchronize } from "./auto-sync";
 
 describe("automatic synchronization freshness", () => {
   const now = Date.parse("2026-08-11T12:00:00.000Z");
@@ -12,5 +12,33 @@ describe("automatic synchronization freshness", () => {
 
   it("does not request a sync for recent metadata", () => {
     expect(isSyncStale("2026-08-11T11:58:00.000Z", now, 180)).toBe(false);
+  });
+
+  it("falls back to a safe TTL when configuration is invalid", () => {
+    expect(isSyncStale("2026-08-11T11:58:00.000Z", now, Number.NaN)).toBe(false);
+    expect(isSyncStale("2026-08-11T11:56:00.000Z", now, Number.NaN)).toBe(true);
+  });
+
+  it("keeps serving when a best-effort automatic sync fails", async () => {
+    await expect(maybeAutoSynchronize("failure-test", {
+      getLatestSyncSummary: async () => null,
+      synchronize: async () => { throw new Error("Graph is tijdelijk niet bereikbaar"); },
+    })).resolves.toBeUndefined();
+  });
+
+  it("deduplicates concurrent synchronization within one process", async () => {
+    let calls = 0;
+    let finish: (() => void) | undefined;
+    const synchronize = () => {
+      calls += 1;
+      return new Promise<void>((resolve) => { finish = resolve; });
+    };
+    const dependencies = { getLatestSyncSummary: async () => null, synchronize };
+    const first = maybeAutoSynchronize("dedupe-test", dependencies);
+    const second = maybeAutoSynchronize("dedupe-test", dependencies);
+    await Promise.resolve();
+    expect(calls).toBe(1);
+    finish?.();
+    await Promise.all([first, second]);
   });
 });

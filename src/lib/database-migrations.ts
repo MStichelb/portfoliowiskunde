@@ -263,4 +263,15 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX admin_sessions_expiry_index ON admin_sessions(expires_at)",
     ],
   },
+  {
+    version: "013_synchronization_leases",
+    statements: [
+      `CREATE TABLE sync_leases (
+        learning_space_id TEXT PRIMARY KEY REFERENCES learning_spaces(id),
+        owner_id TEXT NOT NULL,
+        acquired_until TEXT NOT NULL
+      )`,
+      "CREATE INDEX sync_leases_expiry_index ON sync_leases(acquired_until)",
+    ],
+  },
 ];

@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
-import { archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deactivateLearningSpace, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getAdminPortfolios, getLatestWarnings, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, persistIndex, recordFailedSync, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, updateLearningSpace } from "./repositories";
+import { archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deactivateLearningSpace, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getAdminPortfolios, getLatestWarnings, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, persistIndex, recordFailedSync, releaseSyncLease, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -26,6 +26,18 @@ afterEach(async () => {
 });
 
 describe("persistIndex", () => {
+  it("coordinates synchronization with an expiring database lease", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-lease-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await getDatabase();
+    const now = new Date("2026-08-12T12:00:00.000Z");
+    expect(await tryAcquireSyncLease("space-6", "owner-a", now, 120)).toBe(true);
+    expect(await tryAcquireSyncLease("space-6", "owner-b", new Date(now.getTime() + 60_000), 120)).toBe(false);
+    await releaseSyncLease("space-6", "owner-a");
+    expect(await tryAcquireSyncLease("space-6", "owner-b", new Date(now.getTime() + 61_000), 120)).toBe(true);
+  });
+
   it("is idempotent for multiple portfolios and updates a replaced source file", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-sync-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
