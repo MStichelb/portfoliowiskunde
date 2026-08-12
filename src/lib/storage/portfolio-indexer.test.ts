@@ -78,4 +78,34 @@ describe("portfolio indexer", () => {
     expect(exercise?.assets.map((asset) => asset.fileName)).toEqual(["PF3-Oef10.png"]);
     expect(portfolio.warnings.some((warning) => warning.path.endsWith("PF8-Oef10.png"))).toBe(true);
   });
+
+  it("negeert alle bestanden rechtstreeks onder Uitwerkingen en scant alleen geldige onderdeelmappen", async () => {
+    const portfolioPath = "Portfolio 4 - De bepaalde integraal";
+    const solutionsPath = `${portfolioPath}/Uitwerkingen`;
+    const sectionPath = `${solutionsPath}/4 - Hyperbolische functies`;
+    const directFiles = ["PF4-Oef5.png", "PF4-Oef10(2).png", "Uitgewerkte oefeningen.docx"].map((name) => ({ name, relativePath: `${solutionsPath}/${name}`, kind: "file" as const }));
+    const sectionFiles = ["PF4-Oef30c-controlerend(2).png", "PF5-Oef1.png"].map((name) => ({ name, relativePath: `${sectionPath}/${name}`, kind: "file" as const }));
+    const sectionOnlyProvider: StorageProvider = {
+      id: "section-only-fixture",
+      async list(relativePath = "") {
+        if (relativePath === "") return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+        if (relativePath === portfolioPath) return [
+          { name: "Portfolio 4 - De bepaalde integraal.pdf", relativePath: `${portfolioPath}/Portfolio 4 - De bepaalde integraal.pdf`, kind: "file" },
+          { name: "Eindoplossingen portfolio 4.pdf", relativePath: `${portfolioPath}/Eindoplossingen portfolio 4.pdf`, kind: "file" },
+          { name: "Uitwerkingen", relativePath: solutionsPath, kind: "directory" },
+        ];
+        if (relativePath === solutionsPath) return [...directFiles, { name: "4 - Hyperbolische functies", relativePath: sectionPath, kind: "directory" }];
+        if (relativePath === sectionPath) return sectionFiles;
+        return [];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+
+    const [portfolio] = await indexSource(sectionOnlyProvider);
+    expect(portfolio.sections).toHaveLength(1);
+    expect(portfolio.sections[0].exercises).toMatchObject([{ code: "30c", assets: [{ fileName: "PF4-Oef30c-controlerend(2).png" }] }]);
+    expect(portfolio.sections[0].exercises.some((exercise) => exercise.code === "5" || exercise.code === "10")).toBe(false);
+    expect(portfolio.warnings).toHaveLength(1);
+    expect(portfolio.warnings[0]).toMatchObject({ path: `${sectionPath}/PF5-Oef1.png`, message: "Portfolio-code PF5 komt niet overeen met Portfolio 4." });
+  });
 });

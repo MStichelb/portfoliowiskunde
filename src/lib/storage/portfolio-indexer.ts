@@ -101,10 +101,8 @@ async function indexSections(
   const sections: IndexedPortfolio["sections"] = [];
 
   for (const entry of entries) {
-    if (entry.kind === "file") {
-      if (looksLikeSolutionFile(entry.name)) warnings.push({ severity: "warning", path: entry.relativePath, message: "Uitwerking niet herkend; verwacht bijvoorbeeld PF3-Oef2b-alt(1).png." });
-      continue;
-    }
+    // Files directly under Uitwerkingen are source material, never individual solutions.
+    if (entry.kind === "file") continue;
 
     const parsedSection = parseSectionDirectory(entry.name);
     if (!parsedSection) {
