@@ -1,4 +1,4 @@
-# Portfolio Wiskunde - V0.1
+# Portfolio Wiskunde
 
 Een lokale, read-only index en publicatielaag voor wiskundeportfolio's. De bronmap blijft de waarheid: deze app leest bestanden en bewaart alleen metadata, zichtbaarheid en synchronisatiewaarschuwingen in een lokale SQLite-database.
 
@@ -18,10 +18,16 @@ ADMIN_PASSWORD=vervang-door-een-lang-uniek-wachtwoord
 ```
 
 4. Start de app met `pnpm dev`.
-5. Open `http://localhost:3000/admin`, log in en kies **Synchroniseren** voor een onmiddellijke eerste indexering.
-6. Zet eerst een portfolio en vervolgens de gewenste oefeningen op zichtbaar. De leerlingweergave staat op `http://localhost:3000`.
+5. Open `http://localhost:3000/admin`, log in en kies een leeromgeving.
+6. Configureer per leeromgeving de bronmap in **Instellingen** en kies **Nu synchroniseren**. De leerlingweergave staat bijvoorbeeld op `http://localhost:3000/6`.
 
-De SQLite-database wordt automatisch gemaakt in `.data/portfolio.db`. Verwijder uitsluitend die database als je de metadata en alle zichtbaarheidinstellingen lokaal wilt resetten; de bronmap wordt door de applicatie nooit gewijzigd. Je kunt de lokale bronmap later ook veilig wijzigen in **Beheer > Instellingen**; het pad wordt gevalideerd, maar nooit beschreven.
+De SQLite-database wordt automatisch gemaakt in `.data/portfolio.db`. Verwijder uitsluitend die database als je de metadata en alle zichtbaarheidinstellingen lokaal wilt resetten; de bronmap wordt door de applicatie nooit gewijzigd.
+
+## Leeromgevingen en migratie
+
+Migratie `010_learning_spaces` voegt het generieke concept **Leeromgeving** toe. Bestaande portfolio-, publicatie-, oefening-, asset-, warning- en foutmeldingsmetadata wordt veilig gekoppeld aan de initiële leeromgeving **6de jaar** (`/6`). **5de jaar** (`/5`) wordt leeg aangemaakt. Nieuwe ruimtes zijn volledig databasegestuurd: naam, URL-slug, sortering, storageprovider en bronconfiguratie worden via **Beheer > Leeromgevingen beheren** ingesteld.
+
+Elke leeromgeving synchroniseert uitsluitend haar eigen bron. Portfolio-codes mogen daardoor in verschillende leeromgevingen opnieuw voorkomen. Gebruik de canonieke routes `/admin/<slug>` en `/<slug>`; bijvoorbeeld `/admin/6` en `/6`. Thema's, warnings en foutmeldingen worden server-side per ruimte gefilterd.
 
 ## Publicatie
 
@@ -42,12 +48,12 @@ De knop **Synchroniseren** voert onmiddellijk een volledige, read-only indexerin
 
 ## Architectuur
 
-- `src/lib/storage`: providerinterface en read-only `LocalFilesystemProvider`; een toekomstige `OneDriveProvider` kan dezelfde interface implementeren.
+- `src/lib/storage`: providerinterface met read-only `LocalFilesystemProvider` en per leeromgeving geconfigureerde OneDrive-root.
 - `src/lib/parser.ts`: pure, geteste naamparser.
 - `src/lib/storage/portfolio-indexer.ts`: provider-onafhankelijke herkenning en warnings.
 - `src/lib/database.ts` en `src/lib/repositories.ts`: portable lokale SQLite-metadata. Educatieve broninhoud wordt niet gekopieerd.
 - `src/lib/auth.ts`: server-side wachtwoordcontrole, ondertekende httpOnly-sessie en bescherming van elke beheeractie.
-- `src/app/api/solution-assets/[id]`: levert uitsluitend bestanden van zichtbare portfolio's en oefeningen, binnen de geconfigureerde bronmap.
+- `src/app/api/solution-assets/[id]`: levert uitsluitend bestanden van zichtbare portfolio's en oefeningen binnen de geselecteerde leeromgeving.
 
 ## Kwaliteitscontroles
 
@@ -58,4 +64,4 @@ pnpm test
 pnpm build
 ```
 
-Microsoft Graph/OAuth en deployment blijven afzonderlijke productiestappen; Docker en uitgebreide foutafhandeling blijven bewust buiten deze lokale basis.
+Het verwijderen van een leeromgeving is bewust nog niet als UI-actie beschikbaar: het zou metadata van een hele leeromgeving raken en vereist een expliciete bewaartermijn/archiveringsbeleid. Bronbestanden worden ook dan nooit verwijderd.
