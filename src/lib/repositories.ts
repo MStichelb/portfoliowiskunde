@@ -37,6 +37,7 @@ export interface AdminExercise {
   showAlternativeToStudents: boolean;
   standardAssets: number;
   alternativeAssets: number;
+  missingAssets: number;
   assets: AdminAsset[];
 }
 
@@ -307,7 +308,7 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
   const startedAt = new Date().toISOString();
   const runId = randomUUID();
   const warnings = [...portfolios.flatMap((portfolio) => portfolio.warnings)];
-  const existingAssets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.source_version
+  const existingAssets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.file_name, solution_assets.source_version, solution_variants.kind
     FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
     JOIN exercises ON exercises.id = solution_variants.exercise_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
     WHERE solution_assets.is_indexed = 1 AND portfolios.learning_space_id = ?`, args: [spaceId] });
@@ -317,9 +318,10 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
   const assetKey = (variantId: string, relativePath: string) => `${variantId}\u0000${relativePath}`;
   const existingAssetVersions = new Map(existingAssets.rows.map((row) => [
     assetKey(text(row, "variant_id"), text(row, "relative_path")),
-    { id: text(row, "id"), sourceVersion: nullableText(row, "source_version") },
+    { id: text(row, "id"), fileName: text(row, "file_name"), variant: text(row, "kind"), sourceVersion: nullableText(row, "source_version") },
   ]));
   const seenAssetKeys = new Set<string>();
+  const seenVariantIds = new Set<string>();
   let added = 0;
   let updated = 0;
 
@@ -374,6 +376,7 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
           const variantAssets = exercise.assets.filter((asset) => asset.parsed.variant === variant);
           if (variantAssets.length === 0) continue;
           const variantId = `${exerciseId}-${variant}`;
+          seenVariantIds.add(variantId);
           statements.push({
             sql: `INSERT INTO solution_variants (id, exercise_id, kind, label, is_indexed) VALUES (?, ?, ?, ?, 1)
               ON CONFLICT(id) DO UPDATE SET label = excluded.label, is_indexed = 1, archived_at = NULL`,
@@ -403,14 +406,20 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
     }
   }
 
-  const missing = [...existingAssetVersions.entries()].filter(([key]) => !seenAssetKeys.has(key)).map(([key, asset]) => ({ id: asset.id, relativePath: key.split("\u0000")[1] }));
+  const missing = [...existingAssetVersions.entries()].filter(([key]) => !seenAssetKeys.has(key)).map(([key, asset]) => {
+    const [variantId, relativePath] = key.split("\u0000");
+    return { id: asset.id, relativePath, fileName: asset.fileName, variant: asset.variant, variantStillPresent: seenVariantIds.has(variantId) };
+  });
   if (missing.length > 0) {
     statements.push({
       sql: `UPDATE solution_assets SET missing_since = ? WHERE is_indexed = 0 AND missing_since IS NULL AND variant_id IN
         (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))`,
       args: [startedAt, spaceId],
     });
-    for (const asset of missing) warnings.push({ severity: "warning", path: asset.relativePath, message: "Bronbestand ontbreekt; deze oefening blijft voorlopig herkenbaar in het beheer." });
+    for (const asset of missing) {
+      const label = asset.variant === "alternative" ? "Alternatieve uitwerking" : "Uitwerking";
+      warnings.push({ severity: "warning", path: asset.relativePath, message: asset.variantStillPresent ? `${label} is onvolledig: bestand ontbreekt: ${asset.fileName}.` : `Bronbestand ontbreekt: ${asset.fileName}. Deze oefening blijft voorlopig herkenbaar in het beheer.` });
+    }
   }
   for (const warning of warnings) {
     statements.push({
@@ -528,6 +537,7 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
               showAlternativeToStudents: bool(exercise.show_alternative_to_students),
               standardAssets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
               alternativeAssets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
+              missingAssets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && !bool(asset.is_indexed)).length,
               assets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId).map((asset) => ({
                 id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"),
                 step: Number(asset.step), variant: text(asset, "kind") as AdminAsset["variant"],

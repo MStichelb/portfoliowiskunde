@@ -95,6 +95,37 @@ describe("persistIndex", () => {
     expect(source.has(removed)).toBe(false);
   });
 
+  it("warns for each missing step while keeping partial standard and alternative solutions usable", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-partial-missing-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const source = createTwoPortfolioProvider();
+    const standardFirst = "Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png";
+    const standardSecond = standardFirst.replace("(1)", "(2)");
+    const alternativeSecond = standardFirst.replace("(1)", "-alt(2)");
+    source.add(alternativeSecond);
+    await persistIndex(await indexSource(source), "local");
+    source.remove(standardSecond);
+    source.remove(alternativeSecond);
+    await persistIndex(await indexSource(source), "local");
+
+    const exercise = (await getAdminPortfolios()).find((portfolio) => portfolio.code === "3")!.sections.flatMap((section) => section.exercises).find((item) => item.code === "2")!;
+    expect(exercise.isIndexed).toBe(true);
+    expect(exercise.standardAssets).toBe(1);
+    expect(exercise.alternativeAssets).toBe(1);
+    expect(exercise.missingAssets).toBe(2);
+    expect((await getLatestWarnings()).filter((warning) => warning.message.includes("onvolledig"))).toHaveLength(2);
+    expect((await getLatestWarnings()).some((warning) => warning.message.includes("Alternatieve uitwerking is onvolledig"))).toBe(true);
+    expect((await getLatestWarnings()).some((warning) => warning.message.includes("PF3-Oef2(2).png"))).toBe(true);
+    expect((await getLatestWarnings()).some((warning) => warning.message.includes("PF3-Oef2-alt(2).png"))).toBe(true);
+
+    source.add(standardSecond);
+    source.add(alternativeSecond);
+    await persistIndex(await indexSource(source), "local");
+    expect((await getLatestWarnings()).filter((warning) => warning.message.includes("onvolledig"))).toHaveLength(0);
+    expect((await getAdminPortfolios()).find((portfolio) => portfolio.code === "3")!.sections.flatMap((section) => section.exercises).find((item) => item.code === "2")?.missingAssets).toBe(0);
+  });
+
   it("keeps error reports actionable with TODO, DONE, pinning and notes", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-reports-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
@@ -280,7 +311,8 @@ function createTwoPortfolioProvider() {
     },
     async readFile() { return Buffer.from(""); },
     setVersion(relativePath: string, version: string) { versions.set(relativePath, version); },
+    add(relativePath: string) { const parent = relativePath.split("/").slice(0, -1).join("/"); if (!tree[parent]?.some((entry) => entry.relativePath === relativePath)) tree[parent]?.push(file(relativePath)); },
     remove(relativePath: string) { for (const entries of Object.values(tree)) { const index = entries.findIndex((entry) => entry.relativePath === relativePath); if (index >= 0) entries.splice(index, 1); } },
     has(relativePath: string) { return Object.values(tree).flat().some((entry) => entry.relativePath === relativePath); },
-  } satisfies StorageProvider & { setVersion(relativePath: string, version: string): void; remove(relativePath: string): void; has(relativePath: string): boolean };
+  } satisfies StorageProvider & { setVersion(relativePath: string, version: string): void; add(relativePath: string): void; remove(relativePath: string): void; has(relativePath: string): boolean };
 }

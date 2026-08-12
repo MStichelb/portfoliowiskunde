@@ -30,6 +30,12 @@ function isFinalSolutionsPdf(entry: StorageEntry, code: string): boolean {
   return isPdf(entry) && name.includes("eindoplossingen") && name.includes(`portfolio ${code.toLowerCase()}`);
 }
 
+// Only names that start like a reserved PF/Oef solution are treated as malformed input.
+// Other files under Uitwerkingen are supporting source material and intentionally ignored.
+function looksLikeSolutionFile(name: string): boolean {
+  return /^pf\s*\d+[a-z]?\s*-\s*oef/i.test(name.trim());
+}
+
 export async function indexSource(provider: StorageProvider): Promise<IndexedPortfolio[]> {
   const rootEntries = await provider.list();
   const portfolios: IndexedPortfolio[] = [];
@@ -96,9 +102,7 @@ async function indexSections(
 
   for (const entry of entries) {
     if (entry.kind === "file") {
-      if (!/\.docx$/i.test(entry.name) && !/\.pdf$/i.test(entry.name)) {
-        warnings.push({ severity: "info", path: entry.relativePath, message: "Niet-herkend bestand in Uitwerkingen genegeerd." });
-      }
+      if (looksLikeSolutionFile(entry.name)) warnings.push({ severity: "warning", path: entry.relativePath, message: "Uitwerking niet herkend; verwacht bijvoorbeeld PF3-Oef2b-alt(1).png." });
       continue;
     }
 
@@ -121,7 +125,7 @@ async function indexSections(
       indexedPaths.add(file.relativePath);
       const parsed = parseSolutionFileName(file.name);
       if (!parsed) {
-        warnings.push({ severity: "warning", path: file.relativePath, message: "Uitwerking niet herkend; verwacht bijvoorbeeld PF3-Oef2b-alt(1).png." });
+        if (looksLikeSolutionFile(file.name)) warnings.push({ severity: "warning", path: file.relativePath, message: "Uitwerking niet herkend; verwacht bijvoorbeeld PF3-Oef2b-alt(1).png." });
         continue;
       }
       if (parsed.portfolioCode !== normalizePortfolioCode(portfolioCode)) {
