@@ -119,11 +119,34 @@ describe("persistIndex", () => {
     expect((await getLatestWarnings()).some((warning) => warning.message.includes("PF3-Oef2(2).png"))).toBe(true);
     expect((await getLatestWarnings()).some((warning) => warning.message.includes("PF3-Oef2-alt(2).png"))).toBe(true);
 
+    await archiveMissingIndexItems("space-6");
+    const afterCleanup = (await getAdminPortfolios()).find((portfolio) => portfolio.code === "3")!.sections.flatMap((section) => section.exercises).find((item) => item.code === "2")!;
+    expect(afterCleanup.isIndexed).toBe(true);
+    expect(afterCleanup.missingAssets).toBe(0);
+    expect((await getLatestWarnings()).filter((warning) => warning.message.includes("onvolledig"))).toHaveLength(0);
+
     source.add(standardSecond);
     source.add(alternativeSecond);
     await persistIndex(await indexSource(source), "local");
     expect((await getLatestWarnings()).filter((warning) => warning.message.includes("onvolledig"))).toHaveLength(0);
     expect((await getAdminPortfolios()).find((portfolio) => portfolio.code === "3")!.sections.flatMap((section) => section.exercises).find((item) => item.code === "2")?.missingAssets).toBe(0);
+  });
+
+  it("never infers a missing asset from a single file or a first step alone", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-single-asset-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const source = createSingleAssetProvider("PF8-Oef2.png");
+    await persistIndex(await indexSource(source), "local");
+    let exercise = (await getAdminPortfolios()).find((portfolio) => portfolio.code === "8")!.sections[0].exercises[0];
+    expect(exercise).toMatchObject({ isIndexed: true, standardAssets: 1, alternativeAssets: 0, missingAssets: 0 });
+    expect(await getLatestWarnings()).toHaveLength(0);
+
+    const firstStepOnly = createSingleAssetProvider("PF8-Oef2(1).png");
+    await persistIndex(await indexSource(firstStepOnly), "local", "space-5");
+    exercise = (await getAdminPortfolios("space-5")).find((portfolio) => portfolio.code === "8")!.sections[0].exercises[0];
+    expect(exercise).toMatchObject({ isIndexed: true, standardAssets: 1, alternativeAssets: 0, missingAssets: 0 });
+    expect(await getLatestWarnings("space-5")).toHaveLength(0);
   });
 
   it("keeps error reports actionable with TODO, DONE, pinning and notes", async () => {
@@ -315,4 +338,22 @@ function createTwoPortfolioProvider() {
     remove(relativePath: string) { for (const entries of Object.values(tree)) { const index = entries.findIndex((entry) => entry.relativePath === relativePath); if (index >= 0) entries.splice(index, 1); } },
     has(relativePath: string) { return Object.values(tree).flat().some((entry) => entry.relativePath === relativePath); },
   } satisfies StorageProvider & { setVersion(relativePath: string, version: string): void; add(relativePath: string): void; remove(relativePath: string): void; has(relativePath: string): boolean };
+}
+
+function createSingleAssetProvider(fileName: string) {
+  const portfolio = "Portfolio 8 - Test";
+  const section = `${portfolio}/Uitwerkingen/1 - Test`;
+  const currentFileName = fileName;
+  const file = (): StorageEntry => ({ name: currentFileName, relativePath: `${section}/${currentFileName}`, sourceId: `${section}/${currentFileName}`, kind: "file", sourceVersion: "v1", lastModifiedAt: "2026-08-12T10:00:00.000Z" });
+  return {
+    id: "single-asset-fixture",
+    async list(relativePath = "") {
+      if (relativePath === "") return [{ name: portfolio, relativePath: portfolio, kind: "directory" as const }];
+      if (relativePath === portfolio) return [{ name: "Portfolio 8 - Test.pdf", relativePath: `${portfolio}/Portfolio 8 - Test.pdf`, kind: "file" as const }, { name: "Eindoplossingen portfolio 8.pdf", relativePath: `${portfolio}/Eindoplossingen portfolio 8.pdf`, kind: "file" as const }, { name: "Uitwerkingen", relativePath: `${portfolio}/Uitwerkingen`, kind: "directory" as const }];
+      if (relativePath === `${portfolio}/Uitwerkingen`) return [{ name: "1 - Test", relativePath: section, kind: "directory" as const }];
+      if (relativePath === section) return [file()];
+      return [];
+    },
+    async readFile() { return Buffer.from(""); },
+  } satisfies StorageProvider;
 }

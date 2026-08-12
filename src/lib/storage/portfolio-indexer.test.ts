@@ -51,7 +51,7 @@ describe("portfolio indexer", () => {
         if (relativePath === "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden") return [
           { name: "notities.docx", relativePath: `${relativePath}/notities.docx`, kind: "file" },
           { name: "willekeurig-bestand.png", relativePath: `${relativePath}/willekeurig-bestand.png`, kind: "file" },
-          { name: "PF3-Oef2-onvolledig.png", relativePath: `${relativePath}/PF3-Oef2-onvolledig.png`, kind: "file" },
+          { name: "PF3-Oef2--onvolledig.png", relativePath: `${relativePath}/PF3-Oef2--onvolledig.png`, kind: "file" },
         ];
         return tree[relativePath] ?? [];
       },
@@ -59,7 +59,7 @@ describe("portfolio indexer", () => {
     const [portfolio] = await indexSource(malformedProvider);
     expect(portfolio.sections[0].exercises).toHaveLength(0);
     expect(portfolio.warnings).toHaveLength(1);
-    expect(portfolio.warnings[0].path).toContain("PF3-Oef2-onvolledig.png");
+    expect(portfolio.warnings[0].path).toContain("PF3-Oef2--onvolledig.png");
   });
 
   it("laat een geldig en ongeldig bestand voor hetzelfde oefeningnummer nooit samenvloeien", async () => {

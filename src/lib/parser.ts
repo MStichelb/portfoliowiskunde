@@ -6,8 +6,8 @@ import type {
 
 const PORTFOLIO_DIRECTORY = /^portfolio\s+(\d+[a-z]?)\s*-\s*(.+)$/i;
 const SECTION_DIRECTORY = /^(\d+)\s*-\s*(.+)$/;
-const SOLUTION_FILE =
-  /^pf(\d+[a-z]?)\s*-\s*oef(\d+)([a-z]?)(?:\s*-\s*(alt))?(?:\((\d+)\))?\.(pdf|png|jpe?g)$/i;
+const SOLUTION_PREFIX = /^pf(\d+[a-z]?)\s*-\s*oef(\d+)([a-z]?)(.*)\.(pdf|png|jpe?g)$/i;
+const STEP_TOKEN = /\((\d+)\)/g;
 
 export function normalizePortfolioCode(code: string): string {
   return code.trim().toUpperCase();
@@ -33,20 +33,32 @@ export function parseSectionDirectory(name: string): ParsedSectionDirectory | nu
 }
 
 export function parseSolutionFileName(name: string): ParsedSolutionFile | null {
-  const match = name.trim().match(SOLUTION_FILE);
+  const match = name.trim().match(SOLUTION_PREFIX);
   if (!match) return null;
 
   const exerciseNumber = Number(match[2]);
   const exerciseSuffix = (match[3] ?? "").toLowerCase();
-  const extension = match[6].toLowerCase() as ParsedSolutionFile["extension"];
+  const extension = match[5].toLowerCase() as ParsedSolutionFile["extension"];
+  const tail = match[4].trim();
+  const steps = [...tail.matchAll(STEP_TOKEN)];
+  if (steps.length > 1) return null;
+  const withoutStep = tail.replace(STEP_TOKEN, "");
+  if (/[()]/.test(withoutStep)) return null;
+  if (withoutStep && !withoutStep.startsWith("-")) return null;
+
+  const tokens = withoutStep ? withoutStep.slice(1).split("-").map((token) => token.trim()) : [];
+  if (tokens.some((token) => token.length === 0)) return null;
+  const alternativeMarkers = tokens.filter((token) => token.toLowerCase() === "alt");
+  if (alternativeMarkers.length > 1) return null;
 
   return {
     portfolioCode: normalizePortfolioCode(match[1]),
     exerciseNumber,
     exerciseSuffix,
     exerciseCode: `${exerciseNumber}${exerciseSuffix}`,
-    variant: match[4] ? "alternative" : "standard",
-    step: match[5] ? Number(match[5]) : 1,
+    // Only an exact hyphen-delimited `alt` token is structural. All other tokens are descriptions.
+    variant: alternativeMarkers.length === 1 ? "alternative" : "standard",
+    step: steps[0] ? Number(steps[0][1]) : 1,
     extension,
   };
 }

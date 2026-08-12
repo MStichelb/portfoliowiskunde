@@ -74,6 +74,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .portfolio-card { display: grid; gap: 8px; padding: 18px; border: 1px solid #c9d0cc; border-radius: 6px; background: white; color: #17222b; text-decoration: none; }
 .portfolio-card:hover, .portfolio-card:focus-visible { border-color: #075c75; background: #eff7f4; }
 .portfolio-card span, .portfolio-card small, .exercise-hidden small { color: #52616a; }
+.portfolio-warnings .file-reference { display: block; margin-top: 5px; overflow-wrap: anywhere; }
 .document-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .exercise-hidden small { display: block; margin-top: 4px; font-size: 12px; }
 .solution-asset { margin: 18px 0; padding: 0; }

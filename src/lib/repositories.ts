@@ -442,11 +442,16 @@ export async function archiveMissingIndexItems(learningSpaceId: string): Promise
   const exerciseCount = await database.execute({ sql: "SELECT COUNT(*) AS count FROM exercises WHERE is_indexed = 0 AND archived_at IS NULL AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [learningSpaceId] });
   const assetCount = await database.execute({ sql: "SELECT COUNT(*) AS count FROM solution_assets WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [learningSpaceId] });
   await executeBatch([
+    { sql: `DELETE FROM sync_warnings WHERE sync_run_id = (SELECT id FROM sync_runs WHERE status = 'completed' AND learning_space_id = ? ORDER BY finished_at DESC LIMIT 1)
+      AND relative_path IN (SELECT relative_path FROM solution_assets WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN
+        (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?))))`, args: [learningSpaceId, learningSpaceId] },
     { sql: "UPDATE solution_assets SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [now, learningSpaceId] },
     { sql: "UPDATE solution_variants SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?))", args: [now, learningSpaceId] },
     { sql: "UPDATE exercises SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [now, learningSpaceId] },
     { sql: "UPDATE sections SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [now, learningSpaceId] },
     { sql: "UPDATE portfolios SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND learning_space_id = ?", args: [now, learningSpaceId] },
+    { sql: `UPDATE sync_runs SET warning_count = (SELECT COUNT(*) FROM sync_warnings WHERE sync_run_id = sync_runs.id)
+      WHERE id = (SELECT id FROM sync_runs WHERE status = 'completed' AND learning_space_id = ? ORDER BY finished_at DESC LIMIT 1)`, args: [learningSpaceId] },
   ]);
   return { exercises: Number(exerciseCount.rows[0]?.count ?? 0), assets: Number(assetCount.rows[0]?.count ?? 0) };
 }
@@ -481,6 +486,7 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
     database.execute({ sql: "SELECT * FROM exercises WHERE archived_at IS NULL ORDER BY section_id, exercise_number, exercise_suffix" }),
     database.execute(`SELECT solution_assets.*, solution_variants.exercise_id, solution_variants.kind
       FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+      WHERE solution_assets.archived_at IS NULL
       ORDER BY solution_assets.step, solution_assets.file_name`),
   ]);
   const now = new Date();
