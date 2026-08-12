@@ -10,5 +10,5 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const { id } = await params;
   const asset = await getAdminAsset(id);
   if (!asset) return new Response("Niet gevonden.", { status: 404 });
-  try { const content = await (await getStorageProvider()).readFile(asset.sourceId); return new Response(new Uint8Array(content), { headers: { "Content-Type": mimeTypes[asset.extension] ?? "application/octet-stream", "Content-Disposition": `inline; filename="${asset.fileName.replaceAll('"', "")}"`, "Cache-Control": "private, no-store, max-age=0" } }); } catch { return new Response("Het bronbestand kon niet worden gelezen.", { status: 404 }); }
+  try { const content = await (await getStorageProvider(asset.learningSpaceId)).readFile(asset.sourceId); return new Response(new Uint8Array(content), { headers: { "Content-Type": mimeTypes[asset.extension] ?? "application/octet-stream", "Content-Disposition": `inline; filename="${asset.fileName.replaceAll('"', "")}"`, "Cache-Control": "private, no-store, max-age=0" } }); } catch { return new Response("Het bronbestand kon niet worden gelezen.", { status: 404 }); }
 }

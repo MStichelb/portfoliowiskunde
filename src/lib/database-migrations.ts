@@ -193,4 +193,48 @@ export const migrations: DatabaseMigration[] = [
     version: "009_alternative_solution_visibility",
     statements: ["ALTER TABLE exercises ADD COLUMN show_alternative_to_students INTEGER NOT NULL DEFAULT 1"],
   },
+  {
+    version: "010_learning_spaces",
+    statements: [
+      `CREATE TABLE learning_spaces (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        short_label TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1,
+        storage_provider TEXT NOT NULL DEFAULT 'local' CHECK(storage_provider IN ('local', 'onedrive')),
+        local_source_path TEXT,
+        onedrive_drive_id TEXT,
+        onedrive_folder_id TEXT,
+        onedrive_folder_path TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `INSERT INTO learning_spaces (id, name, slug, short_label, sort_order, is_active, storage_provider, local_source_path, created_at, updated_at)
+        VALUES ('space-6', '6de jaar', '6', '6', 60, 1, 'local', (SELECT value FROM app_settings WHERE key = 'local_source_path'), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      `INSERT INTO learning_spaces (id, name, slug, short_label, sort_order, is_active, storage_provider, created_at, updated_at)
+        VALUES ('space-5', '5de jaar', '5', '5', 50, 1, 'local', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ('legacy_default_learning_space_id', 'space-6', CURRENT_TIMESTAMP) ON CONFLICT(key) DO NOTHING`,
+      "ALTER TABLE portfolios ADD COLUMN learning_space_id TEXT REFERENCES learning_spaces(id)",
+      "ALTER TABLE portfolios ADD COLUMN portfolio_code TEXT",
+      "ALTER TABLE portfolios ADD COLUMN theme_id TEXT",
+      "UPDATE portfolios SET learning_space_id = 'space-6', portfolio_code = code",
+      "UPDATE portfolios SET code = learning_space_id || ':' || portfolio_code",
+      "ALTER TABLE sync_runs ADD COLUMN learning_space_id TEXT REFERENCES learning_spaces(id)",
+      "UPDATE sync_runs SET learning_space_id = 'space-6'",
+      `CREATE TABLE themes (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id),
+        name TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(learning_space_id, name)
+      )`,
+      "CREATE INDEX portfolios_learning_space_index ON portfolios(learning_space_id, portfolio_code)",
+      "CREATE INDEX sync_runs_learning_space_index ON sync_runs(learning_space_id, started_at)",
+      "CREATE INDEX themes_learning_space_index ON themes(learning_space_id, sort_order)",
+    ],
+  },
 ];

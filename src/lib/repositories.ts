@@ -68,6 +68,9 @@ export interface AdminPortfolio {
   isIndexed: boolean;
   assignmentPdfPath: string | null;
   finalSolutionsPdfPath: string | null;
+  learningSpaceId: string;
+  themeId: string | null;
+  themeName: string | null;
   sections: AdminSection[];
 }
 
@@ -75,6 +78,8 @@ export interface StudentPortfolio {
   id: string;
   code: string;
   title: string;
+  themeId: string | null;
+  themeName: string | null;
   sections: Array<{
     id: string;
     title: string;
@@ -101,6 +106,27 @@ export interface SyncSummary {
   failureMessage: string | null;
 }
 
+export interface LearningSpace {
+  id: string;
+  name: string;
+  slug: string;
+  shortLabel: string;
+  sortOrder: number;
+  isActive: boolean;
+  storageProvider: "local" | "onedrive";
+  localSourcePath: string | null;
+  oneDriveDriveId: string | null;
+  oneDriveFolderId: string | null;
+  oneDriveFolderPath: string | null;
+}
+
+export interface Theme {
+  id: string;
+  learningSpaceId: string;
+  name: string;
+  sortOrder: number;
+}
+
 const bool = (value: unknown) => value === true || Number(value) === 1;
 const text = (row: DatabaseRow, field: string) => String(row[field] ?? "");
 const nullableText = (row: DatabaseRow, field: string): string | null => {
@@ -116,6 +142,83 @@ function childMode(row: DatabaseRow): ChildVisibilityMode {
 function stableId(prefix: string, ...parts: string[]): string {
   const hash = createHash("sha256").update(parts.join("\u0000")).digest("base64url").slice(0, 30);
   return `${prefix}-${hash}`;
+}
+
+function learningSpaceFromRow(row: DatabaseRow): LearningSpace {
+  return {
+    id: text(row, "id"), name: text(row, "name"), slug: text(row, "slug"), shortLabel: text(row, "short_label"),
+    sortOrder: Number(row.sort_order), isActive: bool(row.is_active), storageProvider: text(row, "storage_provider") === "onedrive" ? "onedrive" : "local",
+    localSourcePath: nullableText(row, "local_source_path"), oneDriveDriveId: nullableText(row, "onedrive_drive_id"),
+    oneDriveFolderId: nullableText(row, "onedrive_folder_id"), oneDriveFolderPath: nullableText(row, "onedrive_folder_path"),
+  };
+}
+
+export async function getLearningSpaces(activeOnly = false): Promise<LearningSpace[]> {
+  const database = await getDatabase();
+  const result = await database.execute(`SELECT * FROM learning_spaces${activeOnly ? " WHERE is_active = 1" : ""} ORDER BY sort_order, name`);
+  return result.rows.map(learningSpaceFromRow);
+}
+
+export async function getLearningSpaceBySlug(slug: string): Promise<LearningSpace | null> {
+  const database = await getDatabase();
+  const result = await database.execute({ sql: "SELECT * FROM learning_spaces WHERE slug = ?", args: [slug] });
+  return result.rows[0] ? learningSpaceFromRow(result.rows[0]) : null;
+}
+
+export async function getLearningSpace(id: string): Promise<LearningSpace | null> {
+  const database = await getDatabase();
+  const result = await database.execute({ sql: "SELECT * FROM learning_spaces WHERE id = ?", args: [id] });
+  return result.rows[0] ? learningSpaceFromRow(result.rows[0]) : null;
+}
+
+async function defaultLearningSpaceId(): Promise<string> {
+  const spaces = await getLearningSpaces(true);
+  if (!spaces[0]) throw new Error("Er is nog geen actieve leeromgeving.");
+  return spaces.at(-1)!.id;
+}
+
+export async function createLearningSpace(input: { name: string; slug: string; shortLabel: string; sortOrder: number; storageProvider: "local" | "onedrive"; localSourcePath?: string | null; oneDriveDriveId?: string | null; oneDriveFolderId?: string | null; oneDriveFolderPath?: string | null }): Promise<LearningSpace> {
+  const database = await getDatabase();
+  const now = new Date().toISOString();
+  const id = stableId("space", input.slug);
+  await database.execute({ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, sort_order, is_active, storage_provider, local_source_path, onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`, args: [id, input.name, input.slug, input.shortLabel, input.sortOrder, input.storageProvider, input.localSourcePath ?? null, input.oneDriveDriveId ?? null, input.oneDriveFolderId ?? null, input.oneDriveFolderPath ?? null, now, now] });
+  return (await getLearningSpace(id))!;
+}
+
+export async function updateLearningSpace(id: string, input: { name: string; slug: string; shortLabel: string; sortOrder: number; storageProvider: "local" | "onedrive"; localSourcePath?: string | null; oneDriveDriveId?: string | null; oneDriveFolderId?: string | null; oneDriveFolderPath?: string | null }): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: `UPDATE learning_spaces SET name = ?, slug = ?, short_label = ?, sort_order = ?, storage_provider = ?, local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, updated_at = ? WHERE id = ?`, args: [input.name, input.slug, input.shortLabel, input.sortOrder, input.storageProvider, input.localSourcePath ?? null, input.oneDriveDriveId ?? null, input.oneDriveFolderId ?? null, input.oneDriveFolderPath ?? null, new Date().toISOString(), id] });
+}
+
+export async function getThemes(learningSpaceId: string): Promise<Theme[]> {
+  const database = await getDatabase();
+  const result = await database.execute({ sql: "SELECT * FROM themes WHERE learning_space_id = ? ORDER BY sort_order, name", args: [learningSpaceId] });
+  return result.rows.map((row) => ({ id: text(row, "id"), learningSpaceId: text(row, "learning_space_id"), name: text(row, "name"), sortOrder: Number(row.sort_order) }));
+}
+
+export async function createTheme(learningSpaceId: string, name: string, sortOrder: number): Promise<void> {
+  const database = await getDatabase();
+  const now = new Date().toISOString();
+  await database.execute({ sql: "INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", args: [randomUUID(), learningSpaceId, name, sortOrder, now, now] });
+}
+
+export async function updateTheme(id: string, learningSpaceId: string, name: string, sortOrder: number): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "UPDATE themes SET name = ?, sort_order = ?, updated_at = ? WHERE id = ? AND learning_space_id = ?", args: [name, sortOrder, new Date().toISOString(), id, learningSpaceId] });
+}
+
+export async function deleteTheme(id: string, learningSpaceId: string): Promise<void> {
+  await executeBatch([{ sql: "UPDATE portfolios SET theme_id = NULL WHERE theme_id = ? AND learning_space_id = ?", args: [id, learningSpaceId] }, { sql: "DELETE FROM themes WHERE id = ? AND learning_space_id = ?", args: [id, learningSpaceId] }]);
+}
+
+export async function setPortfolioTheme(id: string, learningSpaceId: string, themeId: string | null): Promise<void> {
+  const database = await getDatabase();
+  if (themeId) {
+    const theme = await database.execute({ sql: "SELECT id FROM themes WHERE id = ? AND learning_space_id = ?", args: [themeId, learningSpaceId] });
+    if (!theme.rows[0]) throw new Error("Thema niet gevonden.");
+  }
+  await database.execute({ sql: "UPDATE portfolios SET theme_id = ? WHERE id = ? AND learning_space_id = ?", args: [themeId, id, learningSpaceId] });
 }
 
 export async function getLocalStorageSettings(): Promise<LocalStorageSettings> {
@@ -170,9 +273,10 @@ export async function deleteSetting(key: string): Promise<void> {
   await database.execute({ sql: "DELETE FROM app_settings WHERE key = ?", args: [key] });
 }
 
-export async function getLatestSyncSummary(): Promise<SyncSummary | null> {
+export async function getLatestSyncSummary(learningSpaceId?: string): Promise<SyncSummary | null> {
   const database = await getDatabase();
-  const result = await database.execute("SELECT * FROM sync_runs ORDER BY started_at DESC LIMIT 1");
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({ sql: "SELECT * FROM sync_runs WHERE learning_space_id = ? ORDER BY started_at DESC LIMIT 1", args: [spaceId] });
   if (!result.rows[0]) return null;
   const row = result.rows[0];
   return {
@@ -189,12 +293,19 @@ export async function getLatestSyncSummary(): Promise<SyncSummary | null> {
   };
 }
 
-export async function persistIndex(portfolios: IndexedPortfolio[], providerType: string): Promise<{ warnings: number; added: number; updated: number; missing: number }> {
+export async function persistIndex(portfolios: IndexedPortfolio[], providerType: string, learningSpaceId?: string): Promise<{ warnings: number; added: number; updated: number; missing: number }> {
   const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const startedAt = new Date().toISOString();
   const runId = randomUUID();
   const warnings = portfolios.flatMap((portfolio) => portfolio.warnings);
-  const existingAssets = await database.execute("SELECT id, variant_id, relative_path, source_version FROM solution_assets WHERE is_indexed = 1");
+  const existingAssets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.source_version
+    FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+    JOIN exercises ON exercises.id = solution_variants.exercise_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
+    WHERE solution_assets.is_indexed = 1 AND portfolios.learning_space_id = ?`, args: [spaceId] });
+  const existingPortfolios = await database.execute({ sql: "SELECT id, portfolio_code FROM portfolios WHERE learning_space_id = ?", args: [spaceId] });
+  const portfolioIds = new Map(existingPortfolios.rows.map((row) => [text(row, "portfolio_code"), text(row, "id")]));
+  const legacyDefaultSpaceId = await getSetting("legacy_default_learning_space_id");
   const assetKey = (variantId: string, relativePath: string) => `${variantId}\u0000${relativePath}`;
   const existingAssetVersions = new Map(existingAssets.rows.map((row) => [
     assetKey(text(row, "variant_id"), text(row, "relative_path")),
@@ -206,28 +317,28 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
 
   const statements: InStatement[] = [
     {
-      sql: `INSERT INTO sync_runs (id, started_at, portfolio_count, warning_count, status, provider_type)
-        VALUES (?, ?, ?, ?, 'running', ?)`,
-      args: [runId, startedAt, portfolios.length, warnings.length, providerType],
+      sql: `INSERT INTO sync_runs (id, learning_space_id, started_at, portfolio_count, warning_count, status, provider_type)
+        VALUES (?, ?, ?, ?, ?, 'running', ?)`,
+      args: [runId, spaceId, startedAt, portfolios.length, warnings.length, providerType],
     },
-    { sql: "UPDATE portfolios SET is_indexed = 0", args: [] },
-    { sql: "UPDATE sections SET is_indexed = 0", args: [] },
-    { sql: "UPDATE exercises SET is_indexed = 0", args: [] },
-    { sql: "UPDATE solution_variants SET is_indexed = 0", args: [] },
-    { sql: "UPDATE solution_assets SET is_indexed = 0", args: [] },
+    { sql: "UPDATE portfolios SET is_indexed = 0 WHERE learning_space_id = ?", args: [spaceId] },
+    { sql: "UPDATE sections SET is_indexed = 0 WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [spaceId] },
+    { sql: "UPDATE exercises SET is_indexed = 0 WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [spaceId] },
+    { sql: "UPDATE solution_variants SET is_indexed = 0 WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?))", args: [spaceId] },
+    { sql: "UPDATE solution_assets SET is_indexed = 0 WHERE variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [spaceId] },
   ];
 
   for (const portfolio of portfolios) {
-    const portfolioId = `portfolio-${portfolio.code}`;
+    const portfolioId = portfolioIds.get(portfolio.code) ?? (legacyDefaultSpaceId === spaceId ? `portfolio-${portfolio.code}` : stableId("portfolio", spaceId, portfolio.code));
     statements.push({
-      sql: `INSERT INTO portfolios (id, code, title, relative_path, assignment_pdf_path, assignment_pdf_source_id,
+      sql: `INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, assignment_pdf_path, assignment_pdf_source_id,
         final_solutions_pdf_path, final_solutions_pdf_source_id, is_indexed, indexed_at, last_seen_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET code = excluded.code, title = excluded.title, relative_path = excluded.relative_path,
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET code = excluded.code, portfolio_code = excluded.portfolio_code, learning_space_id = excluded.learning_space_id, title = excluded.title, relative_path = excluded.relative_path,
           assignment_pdf_path = excluded.assignment_pdf_path, assignment_pdf_source_id = excluded.assignment_pdf_source_id,
           final_solutions_pdf_path = excluded.final_solutions_pdf_path, final_solutions_pdf_source_id = excluded.final_solutions_pdf_source_id,
           is_indexed = 1, indexed_at = excluded.indexed_at, last_seen_at = excluded.last_seen_at`,
-      args: [portfolioId, portfolio.code, portfolio.title, portfolio.relativePath, portfolio.assignmentPdfPath,
+      args: [portfolioId, `${spaceId}:${portfolio.code}`, portfolio.code, spaceId, portfolio.title, portfolio.relativePath, portfolio.assignmentPdfPath,
         portfolio.assignmentPdfSourceId, portfolio.finalSolutionsPdfPath, portfolio.finalSolutionsPdfSourceId, startedAt, startedAt],
     });
 
@@ -287,8 +398,9 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
   const missing = [...existingAssetVersions.entries()].filter(([key]) => !seenAssetKeys.has(key)).map(([, asset]) => asset.id);
   if (missing.length > 0) {
     statements.push({
-      sql: `UPDATE solution_assets SET missing_since = ? WHERE is_indexed = 0 AND missing_since IS NULL`,
-      args: [startedAt],
+      sql: `UPDATE solution_assets SET missing_since = ? WHERE is_indexed = 0 AND missing_since IS NULL AND variant_id IN
+        (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))`,
+      args: [startedAt, spaceId],
     });
   }
   for (const warning of warnings) {
@@ -306,21 +418,24 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
   return { warnings: warnings.length, added, updated, missing: missing.length };
 }
 
-export async function recordFailedSync(providerType: string, error: unknown): Promise<void> {
+export async function recordFailedSync(providerType: string, error: unknown, learningSpaceId?: string): Promise<void> {
   const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const message = error instanceof Error ? error.message.slice(0, 1000) : "Onbekende synchronisatiefout.";
   await database.execute({
-    sql: `INSERT INTO sync_runs (id, started_at, finished_at, portfolio_count, warning_count, status, provider_type, failure_message)
-      VALUES (?, ?, ?, 0, 0, 'failed', ?, ?)`,
-    args: [randomUUID(), new Date().toISOString(), new Date().toISOString(), providerType, message],
+    sql: `INSERT INTO sync_runs (id, learning_space_id, started_at, finished_at, portfolio_count, warning_count, status, provider_type, failure_message)
+      VALUES (?, ?, ?, ?, 0, 0, 'failed', ?, ?)`,
+    args: [randomUUID(), spaceId, new Date().toISOString(), new Date().toISOString(), providerType, message],
   });
 }
 
-export async function getAdminPortfolios(): Promise<AdminPortfolio[]> {
+export async function getAdminPortfolios(learningSpaceId?: string): Promise<AdminPortfolio[]> {
   const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const [portfolios, sections, exercises, assets] = await Promise.all([
-    database.execute("SELECT * FROM portfolios ORDER BY code"),
-    database.execute("SELECT * FROM sections ORDER BY portfolio_id, sort_order"),
+    database.execute({ sql: `SELECT portfolios.*, themes.name AS theme_name FROM portfolios LEFT JOIN themes ON themes.id = portfolios.theme_id
+      WHERE portfolios.learning_space_id = ? ORDER BY portfolios.portfolio_code`, args: [spaceId] }),
+    database.execute({ sql: "SELECT * FROM sections WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY portfolio_id, sort_order", args: [spaceId] }),
     database.execute("SELECT * FROM exercises ORDER BY section_id, exercise_number, exercise_suffix"),
     database.execute(`SELECT solution_assets.*, solution_variants.exercise_id, solution_variants.kind
       FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
@@ -335,7 +450,7 @@ export async function getAdminPortfolios(): Promise<AdminPortfolio[]> {
     }, now);
     return {
       id: portfolioId,
-      code: text(portfolio, "code"),
+      code: nullableText(portfolio, "portfolio_code") ?? text(portfolio, "code"),
       title: nullableText(portfolio, "title_override") ?? text(portfolio, "title"),
       detectedTitle: text(portfolio, "title"),
       visible: bool(portfolio.visible),
@@ -347,6 +462,7 @@ export async function getAdminPortfolios(): Promise<AdminPortfolio[]> {
       isIndexed: bool(portfolio.is_indexed),
       assignmentPdfPath: nullableText(portfolio, "assignment_pdf_path"),
       finalSolutionsPdfPath: nullableText(portfolio, "final_solutions_pdf_path"),
+      learningSpaceId: text(portfolio, "learning_space_id"), themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
       sections: sections.rows.filter((section) => text(section, "portfolio_id") === portfolioId).map((section) => {
         const sectionId = text(section, "id");
         const sectionPublication = { mode: childMode(section), limited: bool(section.publication_limited), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
@@ -392,33 +508,44 @@ export async function getAdminPortfolios(): Promise<AdminPortfolio[]> {
   });
 }
 
-export async function getAdminPortfolio(id: string): Promise<AdminPortfolio | null> {
-  return (await getAdminPortfolios()).find((portfolio) => portfolio.id === id) ?? null;
+export async function getAdminPortfolio(id: string, learningSpaceId?: string): Promise<AdminPortfolio | null> {
+  return (await getAdminPortfolios(learningSpaceId)).find((portfolio) => portfolio.id === id) ?? null;
 }
 
-export async function getLatestWarnings() {
+export async function getAdminPortfolioAny(id: string): Promise<AdminPortfolio | null> {
   const database = await getDatabase();
-  const result = await database.execute(`SELECT sync_warnings.severity, sync_warnings.relative_path, sync_warnings.message
+  const result = await database.execute({ sql: "SELECT learning_space_id FROM portfolios WHERE id = ?", args: [id] });
+  const spaceId = nullableText(result.rows[0] ?? {}, "learning_space_id");
+  return spaceId ? getAdminPortfolio(id, spaceId) : null;
+}
+
+export async function getLatestWarnings(learningSpaceId?: string) {
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({ sql: `SELECT sync_warnings.severity, sync_warnings.relative_path, sync_warnings.message
     FROM sync_warnings JOIN sync_runs ON sync_runs.id = sync_warnings.sync_run_id
-    WHERE sync_warnings.sync_run_id = (SELECT id FROM sync_runs WHERE status = 'completed' ORDER BY finished_at DESC LIMIT 1)
-    ORDER BY sync_warnings.relative_path, sync_warnings.message`);
+    WHERE sync_warnings.sync_run_id = (SELECT id FROM sync_runs WHERE status = 'completed' AND (learning_space_id = ? OR learning_space_id IS NULL) ORDER BY finished_at DESC LIMIT 1)
+    ORDER BY sync_warnings.relative_path, sync_warnings.message`, args: [spaceId] });
   return result.rows.map((row) => ({ severity: text(row, "severity"), relativePath: text(row, "relative_path"), message: text(row, "message") }));
 }
 
-export async function getActiveWarningCounts(): Promise<Map<string, number>> {
-  const warnings = await getLatestWarnings();
+export async function getActiveWarningCounts(learningSpaceId?: string): Promise<Map<string, number>> {
+  const warnings = await getLatestWarnings(learningSpaceId);
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const portfolios = await getAdminPortfolios(spaceId);
   const counts = new Map<string, number>();
   for (const warning of warnings) {
     const match = warning.relativePath.match(/^Portfolio\s+([0-9]+[A-Za-z]?)\s+-/i);
-    if (match) counts.set(`portfolio-${match[1]}`, (counts.get(`portfolio-${match[1]}`) ?? 0) + 1);
+    const portfolio = portfolios.find((item) => item.code === match?.[1]);
+    if (portfolio) counts.set(portfolio.id, (counts.get(portfolio.id) ?? 0) + 1);
   }
   return counts;
 }
 
-export async function getPortfolioWarnings(portfolioId: string) {
-  const portfolio = await getAdminPortfolio(portfolioId);
+export async function getPortfolioWarnings(portfolioId: string, learningSpaceId?: string) {
+  const portfolio = await getAdminPortfolio(portfolioId, learningSpaceId);
   if (!portfolio) return [];
-  return (await getLatestWarnings()).filter((warning) => warning.relativePath.includes(`Portfolio ${portfolio.code} -`));
+  return (await getLatestWarnings(portfolio.learningSpaceId)).filter((warning) => warning.relativePath.includes(`Portfolio ${portfolio.code} -`));
 }
 
 export async function setPortfolioPublication(id: string, mode: PortfolioVisibilityMode, limited: boolean, publishFrom: string | null, publishUntil: string | null): Promise<void> {
@@ -465,12 +592,14 @@ export async function setExerciseAlternativeVisibility(id: string, showAlternati
   await database.execute({ sql: "UPDATE exercises SET show_alternative_to_students = ? WHERE id = ?", args: [showAlternativeToStudents ? 1 : 0, id] });
 }
 
-export async function getStudentPortfolios(): Promise<StudentPortfolio[]> {
+export async function getStudentPortfolios(learningSpaceId?: string): Promise<StudentPortfolio[]> {
   const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const [portfolios, sections, exercises] = await Promise.all([
-    database.execute("SELECT * FROM portfolios WHERE is_indexed = 1 ORDER BY code"),
-    database.execute("SELECT * FROM sections WHERE is_indexed = 1 ORDER BY portfolio_id, sort_order"),
-    database.execute("SELECT * FROM exercises WHERE is_indexed = 1 ORDER BY section_id, exercise_number, exercise_suffix"),
+    database.execute({ sql: `SELECT portfolios.*, themes.name AS theme_name FROM portfolios LEFT JOIN themes ON themes.id = portfolios.theme_id
+      WHERE portfolios.is_indexed = 1 AND portfolios.learning_space_id = ? ORDER BY portfolios.portfolio_code`, args: [spaceId] }),
+    database.execute({ sql: "SELECT * FROM sections WHERE is_indexed = 1 AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY portfolio_id, sort_order", args: [spaceId] }),
+    database.execute({ sql: "SELECT * FROM exercises WHERE is_indexed = 1 AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY section_id, exercise_number, exercise_suffix", args: [spaceId] }),
   ]);
   const now = new Date();
   const result: StudentPortfolio[] = [];
@@ -481,8 +610,9 @@ export async function getStudentPortfolios(): Promise<StudentPortfolio[]> {
     const portfolioId = text(portfolio, "id");
     const studentPortfolio: StudentPortfolio = {
       id: portfolioId,
-      code: text(portfolio, "code"),
+      code: nullableText(portfolio, "portfolio_code") ?? text(portfolio, "code"),
       title: nullableText(portfolio, "title_override") ?? text(portfolio, "title"),
+      themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
       sections: [],
     };
     for (const section of sections.rows.filter((row) => text(row, "portfolio_id") === portfolioId)) {
@@ -505,20 +635,20 @@ export async function getStudentPortfolios(): Promise<StudentPortfolio[]> {
   return result;
 }
 
-export async function getStudentPortfolio(id: string): Promise<StudentPortfolio | null> {
-  return (await getStudentPortfolios()).find((portfolio) => portfolio.id === id) ?? null;
+export async function getStudentPortfolio(id: string, learningSpaceId?: string): Promise<StudentPortfolio | null> {
+  return (await getStudentPortfolios(learningSpaceId)).find((portfolio) => portfolio.id === id) ?? null;
 }
 
-export async function getVisibleExercise(id: string) {
+export async function getVisibleExercise(id: string, learningSpaceId?: string) {
   const database = await getDatabase();
   const exerciseResult = await database.execute({
     sql: `SELECT exercises.*, sections.title AS section_title, sections.visibility_mode AS section_visibility_mode,
       sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
-      portfolios.code AS portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override,
+      portfolios.id AS portfolio_id, portfolios.portfolio_code, portfolios.learning_space_id, portfolios.title AS portfolio_title, portfolios.title_override,
       portfolios.visible AS portfolio_visible, portfolios.publication_limited, portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until
       FROM exercises JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
-      WHERE exercises.id = ? AND exercises.is_indexed = 1 AND sections.is_indexed = 1 AND portfolios.is_indexed = 1`,
-    args: [id],
+      WHERE exercises.id = ? AND exercises.is_indexed = 1 AND sections.is_indexed = 1 AND portfolios.is_indexed = 1${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`,
+    args: learningSpaceId ? [id, learningSpaceId] : [id],
   });
   const exercise = exerciseResult.rows[0];
   if (!exercise) return null;
@@ -537,48 +667,48 @@ export async function getVisibleExercise(id: string) {
     args: [id],
   });
   return {
-    id, code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"),
+    id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"),
     portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
     assets: assets.rows.filter((asset) => text(asset, "kind") !== "alternative" || bool(exercise.show_alternative_to_students)).map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label"), lastModifiedAt: nullableText(asset, "last_modified_at") })),
   };
 }
 
-export async function getAdminExercise(id: string) {
+export async function getAdminExercise(id: string, learningSpaceId?: string) {
   const database = await getDatabase();
-  const result = await database.execute({ sql: `SELECT exercises.exercise_code, sections.title AS section_title, portfolios.code AS portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override
+  const result = await database.execute({ sql: `SELECT exercises.exercise_code, sections.title AS section_title, portfolios.portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override, portfolios.learning_space_id
     FROM exercises JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
-    WHERE exercises.id = ? AND exercises.is_indexed = 1 AND sections.is_indexed = 1 AND portfolios.is_indexed = 1`, args: [id] });
+    WHERE exercises.id = ? AND exercises.is_indexed = 1 AND sections.is_indexed = 1 AND portfolios.is_indexed = 1${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`, args: learningSpaceId ? [id, learningSpaceId] : [id] });
   const exercise = result.rows[0];
   if (!exercise) return null;
   const assets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.file_name, solution_assets.extension, solution_assets.step, solution_variants.kind, solution_variants.label
     FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
     WHERE solution_variants.exercise_id = ? AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1
     ORDER BY CASE solution_variants.kind WHEN 'standard' THEN 0 ELSE 1 END, solution_assets.step, solution_assets.file_name`, args: [id] });
-  return { id, code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"), portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"), assets: assets.rows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label") })) };
+  return { id, learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"), portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"), assets: assets.rows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label") })) };
 }
 
-export async function getAdminAsset(id: string) {
+export async function getAdminAsset(id: string, learningSpaceId?: string) {
   const database = await getDatabase();
-  const result = await database.execute({ sql: `SELECT solution_assets.relative_path, solution_assets.source_id, solution_assets.file_name, solution_assets.extension
+  const result = await database.execute({ sql: `SELECT solution_assets.relative_path, solution_assets.source_id, solution_assets.file_name, solution_assets.extension, portfolios.learning_space_id
     FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id JOIN exercises ON exercises.id = solution_variants.exercise_id
-    WHERE solution_assets.id = ? AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1 AND exercises.is_indexed = 1`, args: [id] });
+    JOIN portfolios ON portfolios.id = exercises.portfolio_id WHERE solution_assets.id = ? AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1 AND exercises.is_indexed = 1${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`, args: learningSpaceId ? [id, learningSpaceId] : [id] });
   const row = result.rows[0];
-  return row ? { sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension") } : null;
+  return row ? { learningSpaceId: text(row, "learning_space_id"), sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension") } : null;
 }
 
-export async function getPublicAsset(id: string) {
+export async function getPublicAsset(id: string, learningSpaceId?: string) {
   const database = await getDatabase();
   const result = await database.execute({
     sql: `SELECT solution_assets.relative_path, solution_assets.source_id, solution_assets.file_name, solution_assets.extension,
       exercises.*, solution_variants.kind AS variant_kind, sections.visibility_mode AS section_visibility_mode, sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from,
       sections.publish_until AS section_publish_until, sections.is_indexed AS section_is_indexed,
       portfolios.visible AS portfolio_visible, portfolios.publication_limited, portfolios.publish_from AS portfolio_publish_from,
-      portfolios.publish_until AS portfolio_publish_until, portfolios.is_indexed AS portfolio_is_indexed
+      portfolios.publish_until AS portfolio_publish_until, portfolios.is_indexed AS portfolio_is_indexed, portfolios.learning_space_id
       FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
       JOIN exercises ON exercises.id = solution_variants.exercise_id JOIN sections ON sections.id = exercises.section_id
       JOIN portfolios ON portfolios.id = exercises.portfolio_id WHERE solution_assets.id = ?
-        AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1`,
-    args: [id],
+        AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`,
+    args: learningSpaceId ? [id, learningSpaceId] : [id],
   });
   const row = result.rows[0];
   if (!row || !bool(row.is_indexed) || !bool(row.section_is_indexed) || !bool(row.portfolio_is_indexed) || (text(row, "variant_kind") === "alternative" && !bool(row.show_alternative_to_students))) return null;
@@ -586,29 +716,29 @@ export async function getPublicAsset(id: string) {
   const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
   const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now);
   if (resolveChildPublication({ mode: childMode(row), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now).state !== "visible") return null;
-  return { sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension") };
+  return { learningSpaceId: text(row, "learning_space_id"), sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension") };
 }
 
-export async function getPublicPortfolioDocument(portfolioId: string, kind: "assignment" | "final-solutions") {
+export async function getPublicPortfolioDocument(portfolioId: string, kind: "assignment" | "final-solutions", learningSpaceId?: string) {
   const database = await getDatabase();
-  const result = await database.execute({ sql: "SELECT * FROM portfolios WHERE id = ? AND is_indexed = 1", args: [portfolioId] });
+  const result = await database.execute({ sql: `SELECT * FROM portfolios WHERE id = ? AND is_indexed = 1${learningSpaceId ? " AND learning_space_id = ?" : ""}`, args: learningSpaceId ? [portfolioId, learningSpaceId] : [portfolioId] });
   const portfolio = result.rows[0];
   if (!portfolio || resolvePortfolioPublication({ visible: bool(portfolio.visible), limited: bool(portfolio.publication_limited), publishFrom: nullableText(portfolio, "publish_from"), publishUntil: nullableText(portfolio, "publish_until") }).state !== "visible") return null;
   const sourceId = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_source_id") : nullableText(portfolio, "final_solutions_pdf_source_id");
   const relativePath = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_path") : nullableText(portfolio, "final_solutions_pdf_path");
   if (!sourceId && !relativePath) return null;
-  return { sourceId: sourceId ?? relativePath!, fileName: (relativePath ?? "document.pdf").split("/").at(-1) ?? "document.pdf", extension: "pdf" };
+  return { learningSpaceId: text(portfolio, "learning_space_id"), sourceId: sourceId ?? relativePath!, fileName: (relativePath ?? "document.pdf").split("/").at(-1) ?? "document.pdf", extension: "pdf" };
 }
 
-export async function getAdminPortfolioDocument(portfolioId: string, kind: "assignment" | "final-solutions") {
+export async function getAdminPortfolioDocument(portfolioId: string, kind: "assignment" | "final-solutions", learningSpaceId?: string) {
   const database = await getDatabase();
-  const result = await database.execute({ sql: "SELECT * FROM portfolios WHERE id = ?", args: [portfolioId] });
+  const result = await database.execute({ sql: `SELECT * FROM portfolios WHERE id = ?${learningSpaceId ? " AND learning_space_id = ?" : ""}`, args: learningSpaceId ? [portfolioId, learningSpaceId] : [portfolioId] });
   const portfolio = result.rows[0];
   if (!portfolio) return null;
   const sourceId = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_source_id") : nullableText(portfolio, "final_solutions_pdf_source_id");
   const relativePath = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_path") : nullableText(portfolio, "final_solutions_pdf_path");
   if (!sourceId && !relativePath) return null;
-  return { sourceId: sourceId ?? relativePath!, fileName: (relativePath ?? "document.pdf").split("/").at(-1) ?? "document.pdf", extension: "pdf" };
+  return { learningSpaceId: text(portfolio, "learning_space_id"), sourceId: sourceId ?? relativePath!, fileName: (relativePath ?? "document.pdf").split("/").at(-1) ?? "document.pdf", extension: "pdf" };
 }
 
 
@@ -655,21 +785,23 @@ export interface AdminErrorReport {
   solutionVisible: boolean;
 }
 
-export async function getOpenErrorReportCount(): Promise<number> {
+export async function getOpenErrorReportCount(learningSpaceId?: string): Promise<number> {
   const database = await getDatabase();
-  const result = await database.execute("SELECT COUNT(*) AS count FROM error_reports WHERE status = 'TODO'");
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({ sql: "SELECT COUNT(*) AS count FROM error_reports JOIN portfolios ON portfolios.id = error_reports.portfolio_id WHERE error_reports.status = 'TODO' AND portfolios.learning_space_id = ?", args: [spaceId] });
   return Number(result.rows[0]?.count ?? 0);
 }
 
-export async function getAdminErrorReports(): Promise<AdminErrorReport[]> {
+export async function getAdminErrorReports(learningSpaceId?: string): Promise<AdminErrorReport[]> {
   const database = await getDatabase();
-  const result = await database.execute(`SELECT error_reports.*, portfolios.code AS portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override,
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({ sql: `SELECT error_reports.*, portfolios.portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override,
     sections.title AS section_title, exercises.exercise_code, exercises.visibility_mode AS exercise_visibility_mode,
     exercises.publish_from AS exercise_publish_from, exercises.publish_until AS exercise_publish_until,
     sections.visibility_mode AS section_visibility_mode, sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
     portfolios.visible AS portfolio_visible, portfolios.publication_limited, portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until
     FROM error_reports JOIN portfolios ON portfolios.id = error_reports.portfolio_id JOIN sections ON sections.id = error_reports.section_id
-    JOIN exercises ON exercises.id = error_reports.exercise_id`);
+    JOIN exercises ON exercises.id = error_reports.exercise_id WHERE portfolios.learning_space_id = ?`, args: [spaceId] });
   const now = new Date();
   return result.rows.map((row) => {
     const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
@@ -700,15 +832,17 @@ export async function deleteErrorReport(id: string): Promise<void> {
   await database.execute({ sql: "DELETE FROM error_reports WHERE id = ?", args: [id] });
 }
 
-export async function getOldDoneErrorReportCount(now = new Date()): Promise<number> {
+export async function getOldDoneErrorReportCount(now = new Date(), learningSpaceId?: string): Promise<number> {
   const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
-  const result = await database.execute({ sql: "SELECT COUNT(*) AS count FROM error_reports WHERE status = 'DONE' AND completed_at < ?", args: [cutoff] });
+  const result = await database.execute({ sql: "SELECT COUNT(*) AS count FROM error_reports JOIN portfolios ON portfolios.id = error_reports.portfolio_id WHERE status = 'DONE' AND completed_at < ? AND portfolios.learning_space_id = ?", args: [cutoff, spaceId] });
   return Number(result.rows[0]?.count ?? 0);
 }
 
-export async function deleteOldDoneErrorReports(now = new Date()): Promise<void> {
+export async function deleteOldDoneErrorReports(now = new Date(), learningSpaceId?: string): Promise<void> {
   const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
-  await database.execute({ sql: "DELETE FROM error_reports WHERE status = 'DONE' AND completed_at < ?", args: [cutoff] });
+  await database.execute({ sql: "DELETE FROM error_reports WHERE status = 'DONE' AND completed_at < ? AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [cutoff, spaceId] });
 }

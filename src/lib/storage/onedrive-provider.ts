@@ -20,6 +20,10 @@ export class OneDriveProvider implements StorageProvider {
     return new OneDriveProvider(connection.driveId, connection.folderId);
   }
 
+  static fromSpaceConnection(connection: { driveId: string; folderId: string }): OneDriveProvider {
+    return new OneDriveProvider(connection.driveId, connection.folderId);
+  }
+
   async list(relativePath = ""): Promise<StorageEntry[]> {
     const normalizedPath = normalizePath(relativePath);
     const parentId = this.directories.get(normalizedPath);

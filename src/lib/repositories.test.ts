@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
-import { createErrorReport, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getLatestWarnings, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, persistIndex, recordFailedSync, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, toggleErrorReportPin } from "./repositories";
+import { createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getAdminPortfolios, getLatestWarnings, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, persistIndex, recordFailedSync, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin } from "./repositories";
 import { indexSource } from "./storage/portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./storage/provider";
 
@@ -163,6 +163,47 @@ describe("persistIndex", () => {
     expect(await getLatestWarnings()).toMatchObject([{ message: "Blijvend probleem" }]);
     await recordFailedSync("local", new Error("Testfout"));
     expect(await getLatestWarnings()).toMatchObject([{ message: "Blijvend probleem" }]);
+  });
+
+  it("isolates duplicate portfolio codes, warnings, themes, reports and assets by learning space", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-spaces-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const source = createTwoPortfolioProvider();
+    const index = await indexSource(source);
+    await persistIndex(index, "local", "space-5");
+    await persistIndex(index, "local", "space-6");
+    const fifth = await getAdminPortfolios("space-5");
+    const sixth = await getAdminPortfolios("space-6");
+    expect(fifth.find((portfolio) => portfolio.code === "3")?.id).not.toBe(sixth.find((portfolio) => portfolio.code === "3")?.id);
+    const fifthPortfolio = fifth.find((portfolio) => portfolio.code === "3")!;
+    const sixthPortfolio = sixth.find((portfolio) => portfolio.code === "3")!;
+    await Promise.all([setPortfolioPublication(fifthPortfolio.id, "visible", false, null, null), setPortfolioPublication(sixthPortfolio.id, "visible", false, null, null)]);
+    const fifthExercise = fifthPortfolio.sections[0].exercises[0].id;
+    const sixthExercise = sixthPortfolio.sections[0].exercises[0].id;
+    await createErrorReport({ exerciseId: fifthExercise, variant: "standard", message: "Fout in vijf.", rateLimitKey: "space-five" });
+    await createErrorReport({ exerciseId: sixthExercise, variant: "standard", message: "Fout in zes.", rateLimitKey: "space-six" });
+    expect(await getAdminErrorReports("space-5")).toHaveLength(1);
+    expect(await getAdminErrorReports("space-6")).toHaveLength(1);
+    await createTheme("space-5", "Analyse", 1);
+    const theme = (await getThemes("space-5"))[0];
+    await setPortfolioTheme(fifthPortfolio.id, "space-5", theme.id);
+    expect((await getAdminPortfolios("space-5")).find((portfolio) => portfolio.id === fifthPortfolio.id)?.themeName).toBe("Analyse");
+    expect((await getAdminPortfolios("space-6")).find((portfolio) => portfolio.id === sixthPortfolio.id)?.themeName).toBeNull();
+    const database = await getDatabase();
+    const fifthAsset = String((await database.execute({ sql: "SELECT solution_assets.id FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id JOIN exercises ON exercises.id = solution_variants.exercise_id WHERE exercises.portfolio_id = ? LIMIT 1", args: [fifthPortfolio.id] })).rows[0].id);
+    expect(await getPublicAsset(fifthAsset, "space-5")).not.toBeNull();
+    expect(await getPublicAsset(fifthAsset, "space-6")).toBeNull();
+    await persistIndex([], "local", "space-5");
+    expect((await getAdminPortfolios("space-6")).find((portfolio) => portfolio.id === sixthPortfolio.id)?.isIndexed).toBe(true);
+  });
+
+  it("creates generic learning spaces with a unique URL-safe slug", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-create-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await expect(createLearningSpace({ name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, storageProvider: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4" });
+    await expect(createLearningSpace({ name: "Dubbel", slug: "fysica-4", shortLabel: "D", sortOrder: 41, storageProvider: "local", localSourcePath: null })).rejects.toThrow();
   });
 });
 

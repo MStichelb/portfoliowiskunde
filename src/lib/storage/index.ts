@@ -1,20 +1,26 @@
 import { LocalFilesystemProvider } from "@/lib/storage/local-filesystem-provider";
 import type { StorageProvider } from "@/lib/storage/provider";
-import { getLocalSourcePath, getStorageProviderType } from "@/lib/repositories";
+import { getLearningSpace, getLearningSpaces, getSetting, type LearningSpace } from "@/lib/repositories";
 import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 
 export { DEFAULT_LOCAL_SOURCE_PATH };
 
-export async function getStorageProvider(): Promise<StorageProvider> {
-  const { provider } = await getStorageProviderWithType();
+export async function getStorageProvider(spaceId?: string): Promise<StorageProvider> {
+  const { provider } = await getStorageProviderWithType(spaceId);
   return provider;
 }
 
-export async function getStorageProviderWithType(): Promise<{ provider: StorageProvider; type: "local" | "onedrive" }> {
-  const type = await getStorageProviderType();
-  if (type === "onedrive") {
+export async function getStorageProviderWithType(spaceId?: string): Promise<{ provider: StorageProvider; type: "local" | "onedrive"; space: LearningSpace }> {
+  const resolvedSpaceId = spaceId ?? (await getLearningSpaces(true)).at(-1)?.id;
+  const space = resolvedSpaceId ? await getLearningSpace(resolvedSpaceId) : null;
+  if (!space) throw new Error("Leeromgeving niet gevonden.");
+  if (space.storageProvider === "onedrive") {
     const { OneDriveProvider } = await import("@/lib/storage/onedrive-provider");
-    return { provider: await OneDriveProvider.fromStoredConnection(), type };
+    if (!space.oneDriveDriveId || !space.oneDriveFolderId) throw new Error("OneDrive is nog niet geconfigureerd voor deze leeromgeving.");
+    return { provider: OneDriveProvider.fromSpaceConnection({ driveId: space.oneDriveDriveId, folderId: space.oneDriveFolderId }), type: "onedrive", space };
   }
-  return { provider: new LocalFilesystemProvider(await getLocalSourcePath()), type };
+  const legacyDefaultSpaceId = await getSetting("legacy_default_learning_space_id");
+  const root = space.localSourcePath || (legacyDefaultSpaceId === space.id ? DEFAULT_LOCAL_SOURCE_PATH : "");
+  if (!root) throw new Error("Vul eerst een lokale bronmap in voor deze leeromgeving.");
+  return { provider: new LocalFilesystemProvider(root), type: "local", space };
 }

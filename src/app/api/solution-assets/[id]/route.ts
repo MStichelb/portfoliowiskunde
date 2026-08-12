@@ -1,5 +1,5 @@
 import { maybeAutoSynchronize } from "@/lib/auto-sync";
-import { getPublicAsset } from "@/lib/repositories";
+import { getLearningSpaceBySlug, getPublicAsset } from "@/lib/repositories";
 import { getStorageProvider } from "@/lib/storage";
 
 const mimeTypes: Record<string, string> = {
@@ -9,14 +9,17 @@ const mimeTypes: Record<string, string> = {
   jpeg: "image/jpeg",
 };
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
-  await maybeAutoSynchronize();
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const slug = new URL(request.url).searchParams.get("space");
+  const space = slug ? await getLearningSpaceBySlug(slug) : null;
+  if (!slug || !space) return new Response("Niet gevonden.", { status: 404 });
+  await maybeAutoSynchronize(space?.id);
   const { id } = await params;
-  const asset = await getPublicAsset(id);
+  const asset = await getPublicAsset(id, space.id);
   if (!asset) return new Response("Niet gevonden.", { status: 404 });
 
   try {
-    const content = await (await getStorageProvider()).readFile(asset.sourceId);
+    const content = await (await getStorageProvider(asset.learningSpaceId)).readFile(asset.sourceId);
     return new Response(new Uint8Array(content), {
       headers: {
         "Content-Type": mimeTypes[asset.extension] ?? "application/octet-stream",
