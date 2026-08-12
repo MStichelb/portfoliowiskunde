@@ -160,10 +160,13 @@ describe("persistIndex", () => {
     await createErrorReport({ exerciseId, variant: "standard", message: "Stap twee bevat een fout.", rateLimitKey: "test-report" });
     expect(await getOpenErrorReportCount()).toBe(1);
     const report = (await getAdminErrorReports())[0];
+    expect(report.createdAt).toBeTruthy();
     await toggleErrorReportPin(report.id);
     await saveErrorReportNote(report.id, "Later nakijken.");
-    await setErrorReportStatus(report.id, "DONE");
     let updated = (await getAdminErrorReports())[0];
+    expect(updated).toMatchObject({ status: "TODO", pinned: true, adminNote: "Later nakijken.", completedAt: null });
+    await setErrorReportStatus(report.id, "DONE");
+    updated = (await getAdminErrorReports())[0];
     expect(updated).toMatchObject({ status: "DONE", pinned: true, adminNote: "Later nakijken." });
     expect(updated.completedAt).toBeTruthy();
     expect(await getOpenErrorReportCount()).toBe(0);

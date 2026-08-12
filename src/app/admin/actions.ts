@@ -285,12 +285,16 @@ export async function errorReportPinAction(formData: FormData) {
   revalidatePath("/admin/meldingen");
 }
 
-export async function errorReportNoteAction(formData: FormData) {
+export async function errorReportNoteAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState & { saved?: boolean }> {
   await requireAdmin();
   const id = stringValue(formData, "id");
-  if (!id) return;
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  if (!id) return { error: "Foutmelding niet gevonden." };
   await saveErrorReportNote(id, stringValue(formData, "note"));
   revalidatePath("/admin/meldingen");
+  const learningSpace = learningSpaceId ? await getLearningSpace(learningSpaceId) : null;
+  if (learningSpace) revalidatePath(`/admin/${encodeURIComponent(learningSpace.slug)}/foutmeldingen`);
+  return { error: null, saved: true };
 }
 
 export async function deleteErrorReportAction(formData: FormData) {

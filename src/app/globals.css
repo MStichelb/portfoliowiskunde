@@ -191,12 +191,15 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .status-action:has(.hidden) { background: #ecefed; color: #4f5c62; border-color: #cbd2d0; }
 .status-action:has(.pending) { background: #fff0c7; color: #6c4700; border-color: #e5c872; }
 .status-action:has(.blocking) { background: #eadbdd; color: #6a3f45; border-color: #d6b8bd; }
-.report-message { margin: 16px 0 8px; white-space: pre-wrap; }
-.report-note { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; margin-top: 14px; }
+.report-message { margin: 0 0 12px; white-space: pre-wrap; }
+.report-date { margin: 4px 0; color: #52616a; font-size: 14px; }
+.report-note { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: end; margin-top: 14px; }
 .report-note label { display: grid; gap: 5px; font-size: 14px; font-weight: 700; }
 .report-note textarea { min-height: 64px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; font: inherit; resize: vertical; }
 .report-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .9fr); gap: 20px; margin-top: 14px; }
 .report-content .report-note { margin-top: 0; }
+.report-note-actions { display: flex; align-items: center; gap: 10px; min-height: 34px; }
+.report-note-saved { margin: 0; color: #174a36; font-size: 14px; font-weight: 700; }
 .done-group > summary { cursor: pointer; list-style: none; }
 .done-group > summary::-webkit-details-marker { display: none; }
 .done-group > summary h2::before { content: ">"; display: inline-block; margin-right: 8px; color: #52616a; }
