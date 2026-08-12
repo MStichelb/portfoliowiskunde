@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 
 import { cookies } from "next/headers";
 
@@ -10,6 +10,7 @@ const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
 
 interface SessionPayload {
   exp: number;
+  sid?: string;
 }
 
 function getPassword(): string | null {
@@ -38,8 +39,8 @@ export function isValidPassword(candidate: string): boolean {
   return candidateBytes.length === passwordBytes.length && timingSafeEqual(candidateBytes, passwordBytes);
 }
 
-export function createSessionToken(secret: string, now = Date.now()): string {
-  const payload = Buffer.from(JSON.stringify({ exp: now + SESSION_MAX_AGE_SECONDS * 1000 } satisfies SessionPayload)).toString("base64url");
+export function createSessionToken(secret: string, now = Date.now(), sessionId = randomUUID()): string {
+  const payload = Buffer.from(JSON.stringify({ exp: now + SESSION_MAX_AGE_SECONDS * 1000, sid: sessionId } satisfies SessionPayload)).toString("base64url");
   return `${payload}.${signature(payload, secret)}`;
 }
 
@@ -62,7 +63,13 @@ export function isValidSessionToken(token: string | undefined, secret: string | 
 
 export async function isAdminAuthenticated(): Promise<boolean> {
   const cookieStore = await cookies();
-  return isValidSessionToken(cookieStore.get(SESSION_COOKIE)?.value, signingSecret());
+  const token = cookieStore.get(SESSION_COOKIE)?.value;
+  if (!isValidSessionToken(token, signingSecret())) return false;
+  const sessionId = sessionIdFromToken(token);
+  if (!sessionId) return false;
+  const database = await getDatabase();
+  const session = await database.execute({ sql: "SELECT id FROM admin_sessions WHERE id = ? AND expires_at > ?", args: [sessionId, new Date().toISOString()] });
+  return Boolean(session.rows[0]);
 }
 
 export async function requireAdmin(): Promise<void> {
@@ -72,8 +79,14 @@ export async function requireAdmin(): Promise<void> {
 export async function startAdminSession(): Promise<void> {
   const secret = signingSecret();
   if (!secret) throw new Error("De beheerwachtwoordconfiguratie ontbreekt.");
+  const now = Date.now();
+  const sessionId = randomUUID();
+  await (await getDatabase()).batch([
+    { sql: "DELETE FROM admin_sessions WHERE expires_at <= ?", args: [new Date(now).toISOString()] },
+    { sql: "INSERT INTO admin_sessions (id, expires_at, created_at) VALUES (?, ?, ?)", args: [sessionId, new Date(now + SESSION_MAX_AGE_SECONDS * 1000).toISOString(), new Date(now).toISOString()] },
+  ]);
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, createSessionToken(secret), {
+  cookieStore.set(SESSION_COOKIE, createSessionToken(secret, now, sessionId), {
     httpOnly: true,
     maxAge: SESSION_MAX_AGE_SECONDS,
     path: "/",
@@ -84,7 +97,20 @@ export async function startAdminSession(): Promise<void> {
 
 export async function endAdminSession(): Promise<void> {
   const cookieStore = await cookies();
+  const sessionId = sessionIdFromToken(cookieStore.get(SESSION_COOKIE)?.value);
+  if (sessionId) await (await getDatabase()).execute({ sql: "DELETE FROM admin_sessions WHERE id = ?", args: [sessionId] });
   cookieStore.set(SESSION_COOKIE, "", { httpOnly: true, maxAge: 0, path: "/", sameSite: "lax" });
+}
+
+function sessionIdFromToken(token: string | undefined): string | null {
+  if (!token) return null;
+  try {
+    const payload = token.split(".")[0];
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as SessionPayload;
+    return typeof parsed.sid === "string" && parsed.sid.length > 0 ? parsed.sid : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function isLoginRateLimited(key: string, now = new Date()): Promise<boolean> {

@@ -252,4 +252,15 @@ export const migrations: DatabaseMigration[] = [
       )`,
     ],
   },
+  {
+    version: "012_revocable_admin_sessions",
+    statements: [
+      `CREATE TABLE admin_sessions (
+        id TEXT PRIMARY KEY,
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      "CREATE INDEX admin_sessions_expiry_index ON admin_sessions(expires_at)",
+    ],
+  },
 ];
