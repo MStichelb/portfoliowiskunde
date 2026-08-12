@@ -1,61 +1,156 @@
 # Portfolio Wiskunde
 
-Een lokale, read-only index en publicatielaag voor wiskundeportfolio's. De bronmap blijft de waarheid: deze app leest bestanden en bewaart alleen metadata, zichtbaarheid en synchronisatiewaarschuwingen in een lokale SQLite-database.
+Een read-only index- en publicatielaag voor wiskundeportfolio's. Bronbestanden blijven in een lokale map of OneDrive; de applicatie bewaart alleen metadata, publicatie-instellingen, waarschuwingen, foutmeldingen en versleutelde OAuth-tokens.
 
-## Lokale start
+De lokaal geaccepteerde V1 staat op Git-tag `v1.0-local-accepted`.
 
-1. Installeer Node.js 20 of nieuwer en pnpm 10 of nieuwer.
-2. Open een terminal in deze map en voer `pnpm install` uit.
-3. Kopieer `.env.example` naar `.env.local` en kies een eigen `ADMIN_PASSWORD`. Zonder dat wachtwoord is de beheeromgeving bewust niet toegankelijk. `ADMIN_SESSION_SECRET` is aanbevolen wanneer je de app buiten je eigen computer draait.
+## A. Local development
 
-```dotenv
-PORTFOLIO_SOURCE_PATH=C:\Users\mathi\OneDrive - EDUGO Scholengroep\6WIS - Wiskunde\testmapapplicatie
-ADMIN_PASSWORD=vervang-door-een-lang-uniek-wachtwoord
-# Optioneel maar aanbevolen:
-# ADMIN_SESSION_SECRET=vervang-door-een-aparte-lange-geheime-sleutel
-# Optioneel: standaard is .data/portfolio.db in deze repository
-# PORTFOLIO_DATABASE_PATH=C:\pad\naar\portfolio.db
+Vereisten: Node.js 20 of nieuwer en pnpm via Corepack.
+
+1. Voer `pnpm install` uit.
+2. Kopieer `.env.example` naar `.env.local`.
+3. Vul minstens `ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET` en `PORTFOLIO_SOURCE_PATH` in.
+4. Start met `pnpm dev`.
+5. Open `http://localhost:3000/admin` en synchroniseer de gewenste leeromgeving.
+
+Zonder `DATABASE_URL` gebruikt development SQLite in `.data/portfolio.db`, of het pad uit `PORTFOLIO_DATABASE_PATH`. De bron wordt uitsluitend gelezen. `.env*`, `.data`, Vercel-configuratie en lokale databases zijn door `.gitignore` uitgesloten.
+
+## B. Microsoft Entra / OneDrive setup
+
+De app gebruikt een confidential server-side web-app, een app-brede delegated OAuth-verbinding en per LearningSpace een eigen drive-ID en folder-ID. Access- en refresh-tokens worden uitsluitend server-side, met AES-256-GCM, in de database opgeslagen. De flow gebruikt authorization code + PKCE.
+
+1. Open het [Microsoft Entra admin center](https://entra.microsoft.com/), kies de juiste schooltenant en ga naar **Entra ID > App registrations > New registration**.
+2. Naam: bijvoorbeeld `Portfolio Wiskunde`.
+3. Supported account type: **Accounts in this organizational directory only (Single tenant)**.
+4. Kies bij Redirect URI het platform **Web** en voeg lokaal toe: `http://localhost:3000/api/onedrive/callback`.
+5. Voeg onder **Authentication > Web > Redirect URIs** ook productie toe: `https://<productiedomein>/api/onedrive/callback`. Gebruik exact hetzelfde adres in `MICROSOFT_REDIRECT_URI`.
+6. Kopieer op **Overview** de **Directory (tenant) ID** naar `MICROSOFT_TENANT_ID` en de **Application (client) ID** naar `MICROSOFT_CLIENT_ID`.
+7. Ga naar **API permissions > Add a permission > Microsoft Graph > Delegated permissions** en voeg uitsluitend `Files.Read` toe. Verwijder een automatisch toegevoegd `User.Read` als dat aanwezig is en verder niet nodig is. Voeg geen `Files.ReadWrite`, `.All` of application permission toe. De app vraagt daarnaast de standaard OAuth-scope `offline_access` om een refresh-token te ontvangen.
+8. `Files.Read` vereist volgens Microsoft normaal geen admin consent. Als de schooltenant user consent blokkeert, moet een tenantbeheerder wel **Grant admin consent** uitvoeren.
+9. Ga naar **Certificates & secrets > Client secrets > New client secret**. Kies de kortste praktisch beheerbare geldigheidsduur, kopieer de secret value eenmalig naar `MICROSOFT_CLIENT_SECRET` en plan rotatie voor de vervaldatum. Plaats deze waarde nooit in Git, logs of chat.
+10. Genereer lokaal 32 willekeurige bytes, base64-codeer die en zet het resultaat als `GRAPH_TOKEN_ENCRYPTION_KEY`. Bewaar deze sleutel blijvend: wijzigen maakt de opgeslagen OAuth-token onleesbaar en vereist opnieuw verbinden.
+11. Log na deployment in als admin, open **Leeromgevingen beheren** en kies **OneDrive verbinden**. Dit is eenmalig app-breed; opnieuw verbinden vervangt de versleutelde tokens.
+
+Voor een map in de standaard-OneDrive kun je de drive- en folder-ID opvragen met Microsoft Graph Explorer:
+
+```http
+GET https://graph.microsoft.com/v1.0/me/drive/root:/pad/naar/bronmap?$select=id,name,parentReference
 ```
 
-4. Start de app met `pnpm dev`.
-5. Open `http://localhost:3000/admin`, log in en kies een leeromgeving.
-6. Configureer per leeromgeving de bronmap in **Instellingen** en kies **Nu synchroniseren**. De leerlingweergave staat bijvoorbeeld op `http://localhost:3000/6`.
+Gebruik `id` als **OneDrive map-ID** en `parentReference.driveId` als **OneDrive drive-ID**. Vul die waarden per LearningSpace in. Het optionele padveld is alleen een leesbaar administratief label; de runtime gebruikt de stabiele ID's.
 
-De SQLite-database wordt automatisch gemaakt in `.data/portfolio.db`. Verwijder uitsluitend die database als je de metadata en alle zichtbaarheidinstellingen lokaal wilt resetten; de bronmap wordt door de applicatie nooit gewijzigd.
+Officiele referenties: [app registration](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app), [authorization code + PKCE](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow), [Files.Read](https://learn.microsoft.com/en-us/graph/permissions-reference#filesread) en [OneDrive-items via pad](https://learn.microsoft.com/en-us/graph/api/resources/onedrive?view=graph-rest-1.0).
 
-## Leeromgevingen en migratie
+## C. Production PostgreSQL
 
-Migratie `010_learning_spaces` voegt het generieke concept **Leeromgeving** toe. Bestaande portfolio-, publicatie-, oefening-, asset-, warning- en foutmeldingsmetadata wordt veilig gekoppeld aan de initiële leeromgeving **6de jaar** (`/6`). **5de jaar** (`/5`) wordt leeg aangemaakt. Nieuwe ruimtes zijn volledig databasegestuurd: naam, URL-slug, sortering, storageprovider en bronconfiguratie worden via **Beheer > Leeromgevingen beheren** ingesteld.
+Productie weigert bewust te starten zonder een `postgres://` of `postgresql://` `DATABASE_URL`; er is geen fallback naar een lokale of ephemeral databasefile. Local filesystem-bronnen zijn eveneens alleen in development beschikbaar.
 
-Elke leeromgeving synchroniseert uitsluitend haar eigen bron. Portfolio-codes mogen daardoor in verschillende leeromgevingen opnieuw voorkomen. Gebruik de canonieke routes `/admin/<slug>` en `/<slug>`; bijvoorbeeld `/admin/6` en `/6`. Thema's, warnings en foutmeldingen worden server-side per ruimte gefilterd.
+1. Maak bij een PostgreSQL-provider een lege database in een regio dicht bij de Vercel-functions.
+2. Maak een applicatierol die schema's/tabellen/indexen mag aanmaken en wijzigen en daarna normale DML mag uitvoeren.
+3. Kopieer de TLS-verbinding als `DATABASE_URL`; gebruik `sslmode=require` wanneer de provider dat voorschrijft.
+4. Maak vóór elke latere schemamigratie een providerbackup of herstelpunt.
 
-## Publicatie
+Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001` tot en met de nieuwste versie uit. PostgreSQL-starts worden met een advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
 
-Portfolio's, onderdelen en oefeningen hebben elk een expliciete status **Zichtbaar** of **Verborgen**. Een zichtbaar kind wordt pas effectief zichtbaar wanneer alle bovenliggende niveaus ook zichtbaar zijn. De beheeromgeving toont daarom drie effectieve toestanden: **Zichtbaar**, **Wordt zichtbaar** (wacht op een parent of gepland tijdstip) en **Verborgen**. De portfolio-optie **Beperkt zichtbaar** schakelt uitsluitend de bewaarde portfolio-planning in; gewoon **Zichtbaar** negeert die planning zonder datums te verwijderen. Migratie `007_remove_inherit_visibility` zet bestaande `inherit`-waarden veilig om naar `visible`, met behoud van planning en expliciete overrides.
+Toekomstige rollout:
 
-## Synchronisatie
+1. Maak een databasebackup.
+2. Deploy geteste code met een nieuwe, alleen-voorwaartse migration.
+3. Laat de eerste runtime-aanroep de migration onder lock uitvoeren.
+4. Controleer `schema_migrations`, runtime logs en de smoke test.
 
-De knop **Synchroniseren** voert onmiddellijk een volledige, read-only indexering uit. Leerlingroutes controleren daarnaast of de laatste succesvolle synchronisatie ouder is dan drie minuten (instelbaar met `PORTFOLIO_AUTO_SYNC_TTL_SECONDS`) en starten dan maximaal een synchronisatie per applicatieproces. Gewone requests lezen uitsluitend de lokale metadata. Nieuwe portfolio's starten verborgen; nieuwe onderdelen en oefeningen nemen hun ouderinstelling over. In een serverless productieomgeving geldt de deduplicatie per actieve instantie; voor striktere, centrale planning kan later een scheduler of provider-delta-sync worden toegevoegd.
+Een Vercel code rollback draait databasewijzigingen niet terug. Voor een incompatibele schemarollback is ook het databaseherstelpunt nodig.
 
-## Wat V0.1 herkent
+## D. Vercel deployment
 
-- `Portfolio 3 - Toepassingen van afgeleiden` en lettercodes zoals `Portfolio 3A - ...`
-- de opgaven-PDF, eindoplossingen-PDF en de map `Uitwerkingen`
-- onderdeelmappen volgens `<nummer> - <titel>`
-- uitwerkingen als `PF3-Oef2b.png`, `PF3-Oef2b-alt(1).png`, `PF12-Oef13(2).pdf` en JPG/JPEG-varianten
+1. Push de production-readiness commits en tags naar GitHub; GitHub blijft de source of truth.
+2. Kies in Vercel **Add New > Project**, importeer de GitHub-repository en laat Framework Preset op **Next.js** staan.
+3. Gebruik de repositoryroot als Root Directory. Install en build worden uit `package.json` en `pnpm-lock.yaml` afgeleid.
+4. Voeg de variabelen uit sectie E toe aan **Production**. Geef Preview geen productiedatabase of productiesecrets; gebruik voor een echte preview aparte resources.
+5. Voeg het gekozen `*.vercel.app`-domein of custom domain als Web redirect URI toe in Entra en zet exact dat callbackadres in `MICROSOFT_REDIRECT_URI`.
+6. Deploy of redeploy nadat environment variables zijn gewijzigd. Vercel past gewijzigde variabelen niet toe op bestaande deployments.
 
-`-alt` wordt als alternatieve oplossing gegroepeerd; `(1)`, `(2)`, ... zijn stappen binnen dezelfde oplossing. Ongeldige namen en inconsistenties verschijnen als waarschuwingen in het beheer.
+De app gebruikt de standaard Node.js-runtime, Server Components, Server Actions en Route Handlers. Er is geen Vercel-specifieke database- of opslag-API toegevoegd.
 
-## Architectuur
+## E. Environment variables
 
-- `src/lib/storage`: providerinterface met read-only `LocalFilesystemProvider` en per leeromgeving geconfigureerde OneDrive-root.
-- `src/lib/parser.ts`: pure, geteste naamparser.
-- `src/lib/storage/portfolio-indexer.ts`: provider-onafhankelijke herkenning en warnings.
-- `src/lib/database.ts` en `src/lib/repositories.ts`: portable lokale SQLite-metadata. Educatieve broninhoud wordt niet gekopieerd.
-- `src/lib/auth.ts`: server-side wachtwoordcontrole, ondertekende httpOnly-sessie en bescherming van elke beheeractie.
-- `src/app/api/solution-assets/[id]`: levert uitsluitend bestanden van zichtbare portfolio's en oefeningen binnen de geselecteerde leeromgeving.
+| Variabele | Productie | Doel |
+| --- | --- | --- |
+| `DATABASE_URL` | Verplicht | PostgreSQL TLS connection string. |
+| `ADMIN_PASSWORD` | Verplicht | Uniek adminwachtwoord, minimaal 16 tekens in production. |
+| `ADMIN_SESSION_SECRET` | Verplicht | Aparte willekeurige sessiesleutel, minimaal 32 tekens. |
+| `MICROSOFT_TENANT_ID` | Verplicht voor OneDrive | Directory/tenant ID uit Entra. |
+| `MICROSOFT_CLIENT_ID` | Verplicht voor OneDrive | Application/client ID uit Entra. |
+| `MICROSOFT_CLIENT_SECRET` | Verplicht voor OneDrive | Server-side client secret value. |
+| `MICROSOFT_REDIRECT_URI` | Verplicht voor OneDrive | Volledige callback-URL, lokaal of productie. |
+| `GRAPH_TOKEN_ENCRYPTION_KEY` | Verplicht voor OneDrive | Base64 van exact 32 willekeurige bytes. |
+| `REPORT_RATE_LIMIT_SECRET` | Aanbevolen | Aparte HMAC-sleutel voor foutmeldings-rate-limits; anders wordt de adminsecret gebruikt. |
+| `PORTFOLIO_AUTO_SYNC_TTL_SECONDS` | Optioneel | Stale TTL, standaard 180 en minimaal 30 seconden. |
+| `PORTFOLIO_SYNC_LEASE_SECONDS` | Optioneel | Databaselease, standaard 600 en minimaal 60 seconden. |
+| `PORTFOLIO_SOURCE_PATH` | Alleen development | Configureerbare lokale bronmap. |
+| `PORTFOLIO_DATABASE_PATH` | Alleen development | Optioneel SQLite-bestandspad. |
 
-## Kwaliteitscontroles
+Er is geen `APP_URL` of `BASE_URL` nodig: interne links zijn relatief en OAuth gebruikt de expliciete `MICROSOFT_REDIRECT_URI`. `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` en `DATABASE_AUTH_TOKEN` blijven alleen beschikbaar voor optionele libSQL-development; Vercel-productie accepteert uitsluitend PostgreSQL.
+
+## F. First production login
+
+1. Open eerst `https://<productiedomein>/`; hiermee wordt de lege database geinitialiseerd.
+2. Open `/admin/login` en log in met `ADMIN_PASSWORD`.
+3. Controleer dat uitloggen de sessie intrekt en opnieuw naar login leidt.
+4. Wijzig secrets uitsluitend in Vercel en redeploy. Rotatie van `ADMIN_SESSION_SECRET` maakt bestaande cookies onmiddellijk ongeldig.
+
+## G. LearningSpace source folders instellen
+
+1. Open `/admin/instellingen` en verbind OneDrive app-breed.
+2. Open elke LearningSpace afzonderlijk.
+3. Kies **OneDrive**.
+4. Vul de drive-ID, folder-ID en optioneel het herkenbare map-pad in.
+5. Sla op. Elke LearningSpace houdt zijn eigen bronconfiguratie en index.
+
+Gebruik Local filesystem niet in productie; de server weigert dit bewust omdat Vercel geen blijvende lokale bronmap biedt.
+
+## H. First sync
+
+Kies per LearningSpace **Nu synchroniseren**. De Graph-provider gebruikt alleen list/read/download-aanroepen. De app schrijft of verwijdert nooit OneDrive-bestanden. Controleer daarna portfolio's, waarschuwingen en de laatste synchronisatietijd.
+
+Automatische sync is request-gestuurd:
+
+- een leerlingroute controleert alleen de laatste synctijd in PostgreSQL;
+- ouder dan de TTL start een volledige read-only scan voor die LearningSpace;
+- dezelfde instance dedupliceert in geheugen en PostgreSQL voorkomt overlap tussen verschillende instances;
+- een crash laat een tijdelijke lease achter die automatisch verloopt;
+- een fout registreert een failed sync, logt alleen type/context en laat de laatst geldige index aan leerlingen zien;
+- de handmatige knop blijft beschikbaar.
+
+Er zijn bewust nog geen Graph webhooks of Vercel cronjobs. Zonder verkeer start geen achtergrondscan; bij de eerstvolgende leerlingrequest na de TTL wordt de bron bijgewerkt.
+
+## I. Smoke test
+
+Voer na de eerste production sync uit:
+
+1. Open de LearningSpace-URL, bijvoorbeeld `/6`, zonder adminsessie.
+2. Controleer een zichtbaar portfolio, onderdeel en oefening.
+3. Open PNG/JPG/PDF-uitwerkingen en de opgaven- en eindoplossingen-PDF.
+4. Controleer dat verborgen content en directe verborgen asset-URL's 404 geven.
+5. Controleer dat alternatieve uitwerkingen alleen voor leerlingen verschijnen wanneer de toggle actief is; adminpreview toont ze altijd.
+6. Dien een foutmelding in en controleer TODO, pin, notitie, DONE en delete in admin.
+7. Wijzig een OneDrive-bestand, wacht minstens de TTL en open opnieuw een leerlingroute; controleer de nieuwe syncsamenvatting.
+8. Maak tijdelijk een ongeldige folder-ID, voer handmatige sync uit en controleer de vriendelijke fout. Herstel de ID en verifieer dat de oude index tijdens de fout beschikbaar bleef.
+9. Log uit en controleer dat adminpagina's en admin-assetendpoints niet meer toegankelijk zijn.
+
+## J. Troubleshooting / rollback
+
+- **Databaseconfiguratie ontbreekt:** controleer `DATABASE_URL`, TLS en netwerktoegang; productie valt nooit terug op SQLite.
+- **OAuth configuration error:** vergelijk tenant ID, client ID, client secret en de redirect URI teken voor teken met Entra en Vercel.
+- **OneDrive connection expired:** kies **OneDrive opnieuw verbinden**. Controleer ook of de client secret nog geldig is.
+- **Graph 403:** controleer of de ingelogde gebruiker toegang heeft tot de bron en of delegated `Files.Read` consent kreeg.
+- **Sync al bezig:** wacht tot de actieve run klaar is. Na een crash verloopt de lease standaard na tien minuten.
+- **Sync failure:** de laatste geldige index blijft actief. Bekijk Vercel runtime logs en de adminsyncsamenvatting; tokens, passwords en secrets worden niet gelogd.
+- **Code rollback:** promote in Vercel een eerdere deployment of revert de Git-commit. Voor de volledig lokaal geaccepteerde baseline bestaat tag `v1.0-local-accepted`.
+- **Database rollback:** restore de vooraf gemaakte providerbackup als de oudere code niet met het gemigreerde schema overweg kan.
+
+Kwaliteitscontroles voor elke rollout:
 
 ```bash
 pnpm lint
@@ -63,5 +158,3 @@ pnpm typecheck
 pnpm test
 pnpm build
 ```
-
-Het verwijderen van een leeromgeving is bewust nog niet als UI-actie beschikbaar: het zou metadata van een hele leeromgeving raken en vereist een expliciete bewaartermijn/archiveringsbeleid. Bronbestanden worden ook dan nooit verwijderd.
