@@ -3,10 +3,11 @@ import { notFound } from "next/navigation";
 
 import { LearningSpaceNav } from "@/app/components/learning-space-nav";
 import { LearningSpaceSettingsForm } from "@/app/components/learning-space-settings-form";
+import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import { requireAdmin } from "@/lib/auth";
 import { getLearningSpaceBySlug, getLearningSpaces } from "@/lib/repositories";
 
-import { saveLearningSpaceAction } from "../../actions";
+import { deactivateLearningSpaceAction, saveLearningSpaceAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -36,5 +37,6 @@ export default async function LearningSpaceSettingsPage({
     </header>
     {saved === "1" ? <p className="success-message" role="status">Instellingen opgeslagen.</p> : null}
     <LearningSpaceSettingsForm space={space} action={saveLearningSpaceAction} />
+    <section className="settings-section" aria-labelledby="remove-space-heading"><h2 id="remove-space-heading">Leeromgeving verwijderen</h2><p>De leeromgeving verdwijnt uit de actieve applicatie. Bestanden in de bronmap of OneDrive worden nooit verwijderd.</p><ConfirmActionButton action={deactivateLearningSpaceAction} fields={{ id: space.id }} className="danger-button" label="Leeromgeving verwijderen" confirmTitle={`Leeromgeving '${space.name}' verwijderen?`} confirmText="De leeromgeving en de bijbehorende metadata worden uit de actieve applicatie verwijderd. De bestanden in de bronmap of OneDrive worden NIET verwijderd." /></section>
   </main>;
 }

@@ -1,19 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useActionState, useState } from "react";
 
 import type { LearningSpace } from "@/lib/repositories";
+import type { AdminActionState } from "@/app/admin/actions";
 
 export function LearningSpaceSettingsForm({
   space,
   action,
 }: {
   space: LearningSpace;
-  action: (formData: FormData) => void | Promise<void>;
+  action: (previousState: AdminActionState, formData: FormData) => AdminActionState | Promise<AdminActionState>;
 }) {
   const [storageProvider, setStorageProvider] = useState<"local" | "onedrive">(space.storageProvider);
+  const [state, actionState] = useActionState(action, { error: null });
 
-  return <form action={action} className="learning-space-settings-form">
+  return <form action={actionState} className="learning-space-settings-form">
     <input type="hidden" name="id" value={space.id} />
 
     <section className="settings-card" aria-labelledby="general-settings-heading">
@@ -37,6 +39,7 @@ export function LearningSpaceSettingsForm({
       </div>}
     </section>
 
+    {state.error ? <p className="form-message" role="alert">{state.error}</p> : null}
     <button className="primary-button settings-save-button" type="submit">Opslaan</button>
   </form>;
 }

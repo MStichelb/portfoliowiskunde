@@ -1,5 +1,5 @@
 "use client";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, TriangleAlert } from "lucide-react";
 import { useActionState, useMemo, useState } from "react";
 import { bulkExercisePublicationAction, toggleExerciseAlternativeVisibilityAction, toggleExerciseVisibilityAction } from "@/app/admin/actions";
 import { SubmitButton } from "@/app/components/submit-button";
@@ -8,7 +8,7 @@ import { bulkSelectionError } from "@/lib/admin-validation";
 import type { EffectivePublication } from "@/lib/publication";
 
 export interface BulkSection { id: string; title: string; order: number; exercises: Array<{ id: string; code: string; configuredVisible: boolean; status: EffectivePublication; standardAssets: number; alternativeAssets: number; showAlternativeToStudents: boolean; isIndexed: boolean }>; }
-export function ExerciseBulkTable({ portfolioId, sections }: { portfolioId: string; sections: BulkSection[] }) {
+export function ExerciseBulkTable({ portfolioId, spaceSlug, sections }: { portfolioId: string; spaceSlug?: string; sections: BulkSection[] }) {
   const ids = useMemo(() => sections.flatMap((section) => section.exercises.map((exercise) => exercise.id)), [sections]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [state, action] = useActionState(bulkExercisePublicationAction, { error: null });
@@ -38,7 +38,7 @@ export function ExerciseBulkTable({ portfolioId, sections }: { portfolioId: stri
           <tr className="section-table-row" key={section.id}><td /><th colSpan={5}>{section.order}. {section.title}</th></tr>,
           ...section.exercises.map((exercise) => <tr key={exercise.id} id={`exercise-${exercise.id}`}>
             <td><input aria-label={`Oefening ${exercise.code} selecteren`} type="checkbox" checked={selected.has(exercise.id)} onChange={() => flip(exercise.id)} /></td>
-            <td><a href={`/admin/oefening/${exercise.id}`}>Oefening {exercise.code}</a></td>
+            <td><a href={spaceSlug ? `/admin/${encodeURIComponent(spaceSlug)}/oefening/${encodeURIComponent(exercise.id)}` : `/admin/oefening/${encodeURIComponent(exercise.id)}`}>Oefening {exercise.code}</a>{!exercise.isIndexed && <span className="missing-source" role="status"><TriangleAlert size={15} aria-hidden />Bron ontbreekt</span>}</td>
             <td><form action={toggleExerciseVisibilityAction}><input type="hidden" name="id" value={exercise.id} /><input type="hidden" name="portfolioId" value={portfolioId} /><input type="hidden" name="visible" value={String(!exercise.configuredVisible)} /><button className="visibility-toggle">{exercise.configuredVisible ? <Eye size={16} /> : <EyeOff size={16} />}{exercise.configuredVisible ? "Zichtbaar" : "Verborgen"}</button></form></td>
             <td><PublicationStatus status={exercise.status} /></td>
             <td>{exercise.alternativeAssets > 0 ? <form action={toggleExerciseAlternativeVisibilityAction} className="alternative-toggle"><input type="hidden" name="id" value={exercise.id} /><input type="hidden" name="portfolioId" value={portfolioId} /><input type="hidden" name="visible" value={String(!exercise.showAlternativeToStudents)} /><input aria-label={`Alternatieve uitwerking voor oefening ${exercise.code} tonen`} title="Alternatieve uitwerking voor leerlingen tonen" type="checkbox" checked={exercise.showAlternativeToStudents} onChange={(event) => event.currentTarget.form?.requestSubmit()} /></form> : "-"}</td>

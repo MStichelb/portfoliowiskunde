@@ -17,6 +17,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       <h1>Inloggen</h1>
       {error === "config" || configurationProblem ? <p className="error-message">Stel eerst ADMIN_PASSWORD in .env.local in.</p> : null}
       {error === "invalid" ? <p className="error-message">Het wachtwoord klopt niet.</p> : null}
+      {error === "rate-limited" ? <p className="error-message">Te veel pogingen. Probeer over enkele minuten opnieuw.</p> : null}
       {!configurationProblem ? (
         <form className="login-form" action={loginAction}>
           <label htmlFor="password">Wachtwoord</label>

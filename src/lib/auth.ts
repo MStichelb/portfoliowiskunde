@@ -1,6 +1,8 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { cookies } from "next/headers";
+
+import { getDatabase } from "@/lib/database";
 import { redirect } from "next/navigation";
 
 const SESSION_COOKIE = "portfolio_admin_session";
@@ -24,6 +26,7 @@ function signature(payload: string, secret: string): string {
 
 export function getAuthenticationProblem(): string | null {
   if (!getPassword()) return "ADMIN_PASSWORD ontbreekt.";
+  if (process.env.NODE_ENV === "production" && !process.env.ADMIN_SESSION_SECRET?.trim()) return "ADMIN_SESSION_SECRET ontbreekt.";
   return null;
 }
 
@@ -82,4 +85,31 @@ export async function startAdminSession(): Promise<void> {
 export async function endAdminSession(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, "", { httpOnly: true, maxAge: 0, path: "/", sameSite: "lax" });
+}
+
+export async function isLoginRateLimited(key: string, now = new Date()): Promise<boolean> {
+  const database = await getDatabase();
+  const row = (await database.execute({ sql: "SELECT window_started_at, attempts FROM admin_login_attempts WHERE key = ?", args: [key] })).rows[0];
+  if (!row) return false;
+  const startedAt = Date.parse(String(row.window_started_at));
+  return Number.isFinite(startedAt) && now.getTime() - startedAt < 10 * 60 * 1000 && Number(row.attempts) >= 8;
+}
+
+export async function recordFailedLogin(key: string, now = new Date()): Promise<void> {
+  const database = await getDatabase();
+  const windowStartedAt = new Date(Math.floor(now.getTime() / (10 * 60 * 1000)) * 10 * 60 * 1000).toISOString();
+  await database.batch([
+    { sql: "DELETE FROM admin_login_attempts WHERE window_started_at < ?", args: [new Date(now.getTime() - 60 * 60 * 1000).toISOString()] },
+    { sql: `INSERT INTO admin_login_attempts (key, window_started_at, attempts) VALUES (?, ?, 1)
+      ON CONFLICT(key) DO UPDATE SET attempts = CASE WHEN admin_login_attempts.window_started_at = excluded.window_started_at THEN admin_login_attempts.attempts + 1 ELSE 1 END, window_started_at = excluded.window_started_at`, args: [key, windowStartedAt] },
+  ]);
+}
+
+export async function clearFailedLogins(key: string): Promise<void> {
+  await (await getDatabase()).execute({ sql: "DELETE FROM admin_login_attempts WHERE key = ?", args: [key] });
+}
+
+export function loginRateLimitKey(visitor: string): string {
+  const secret = signingSecret();
+  return secret ? signature(visitor, secret) : visitor;
 }

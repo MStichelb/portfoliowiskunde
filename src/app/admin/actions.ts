@@ -30,11 +30,15 @@ import {
   setSectionPublication,
   setSectionVisibility,
   toggleErrorReportPin,
+  archiveMissingIndexItems,
+  deactivateLearningSpace,
 } from "@/lib/repositories";
 import { synchronizeSource } from "@/lib/sync";
+import { userFacingSourceError } from "@/lib/source-errors";
 
 const childModeSchema = z.enum(["hidden", "visible"]);
 const portfolioModeSchema = z.enum(["hidden", "visible"]);
+export interface AdminActionState { error: string | null; }
 
 export async function syncAction() {
   await requireAdmin();
@@ -43,32 +47,78 @@ export async function syncAction() {
   revalidatePath("/admin");
 }
 
-export async function syncSpaceAction(formData: FormData) {
+export async function syncSpaceAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState> {
   await requireAdmin();
   const learningSpaceId = stringValue(formData, "learningSpaceId");
-  if (!await getLearningSpace(learningSpaceId)) throw new Error("Leeromgeving niet gevonden.");
-  await synchronizeSource(learningSpaceId);
+  if (!await getLearningSpace(learningSpaceId)) return { error: "Leeromgeving niet gevonden." };
+  try {
+    await synchronizeSource(learningSpaceId);
+  } catch (error) {
+    const message = userFacingSourceError(error);
+    if (message) return { error: message };
+    throw error;
+  }
+  revalidatePath("/admin");
+  return { error: null };
+}
+
+export async function archiveMissingIndexAction(formData: FormData) {
+  await requireAdmin();
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  if (!await getLearningSpace(learningSpaceId)) return;
+  await archiveMissingIndexItems(learningSpaceId);
   revalidatePath("/admin");
 }
 
-export async function saveLearningSpaceAction(formData: FormData) {
+export async function deactivateLearningSpaceAction(formData: FormData) {
   await requireAdmin();
   const id = stringValue(formData, "id");
-  const input = learningSpaceInput(formData);
+  if (!id || !await getLearningSpace(id)) return;
+  if (!await deactivateLearningSpace(id)) redirect("/admin?error=last-space");
+  revalidatePath("/");
+  revalidatePath("/admin");
+  redirect("/admin");
+}
+
+export async function saveLearningSpaceAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState> {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  let input: ReturnType<typeof learningSpaceInput>;
+  try {
+    input = learningSpaceInput(formData);
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "De instellingen zijn ongeldig." };
+  }
   const existing = await getLearningSpace(id);
-  if (!existing) throw new Error("Leeromgeving niet gevonden.");
+  if (!existing) return { error: "Leeromgeving niet gevonden." };
   const matchingSlug = await getLearningSpaceBySlug(input.slug);
-  if (matchingSlug && matchingSlug.id !== id) throw new Error("Deze publieke slug bestaat al.");
-  await updateLearningSpace(id, input);
+  if (matchingSlug && matchingSlug.id !== id) return { error: "Deze publieke slug bestaat al. Kies een andere slug." };
+  try {
+    await updateLearningSpace(id, input);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) return { error: "Deze publieke slug bestaat al. Kies een andere slug." };
+    throw error;
+  }
   revalidatePath("/admin");
   redirect(`/admin/${encodeURIComponent(input.slug)}/instellingen?saved=1`);
 }
 
 export async function createLearningSpaceAction(formData: FormData) {
   await requireAdmin();
-  const input = learningSpaceInput(formData);
-  if (await getLearningSpaceBySlug(input.slug)) throw new Error("Deze publieke slug bestaat al.");
-  const space = await createLearningSpace(input);
+  let input: ReturnType<typeof learningSpaceInput>;
+  try {
+    input = learningSpaceInput(formData);
+  } catch {
+    redirect("/admin/instellingen?error=invalid");
+  }
+  if (await getLearningSpaceBySlug(input.slug)) redirect("/admin/instellingen?error=duplicate");
+  let space;
+  try {
+    space = await createLearningSpace(input);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) redirect("/admin/instellingen?error=duplicate");
+    throw error;
+  }
   revalidatePath("/admin");
   redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
 }
@@ -295,6 +345,10 @@ function parsePublicationWindow(formData: FormData) {
 
 function stringValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
+}
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return error instanceof Error && /unique|constraint/i.test(error.message);
 }
 
 function learningSpaceInput(formData: FormData) {

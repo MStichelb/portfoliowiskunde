@@ -64,6 +64,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-path input { min-width: min(100%, 620px); }
 .source-connection-status { grid-column: 1 / -1; margin: 0; color: #52616a; font-size: 14px; }
 .settings-save-button { width: fit-content; }
+.missing-source { display: inline-flex; align-items: center; gap: 5px; margin-top: 4px; color: #824015; font-size: 12px; font-weight: 700; }
+.missing-index-action { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 22px; padding: 14px; border: 1px solid #e5c872; border-radius: 4px; background: #fff8de; color: #6c4700; font-weight: 700; }
 .settings-section { margin-top: 28px; padding-top: 20px; border-top: 1px solid #c9d0cc; }
 .settings-section > form + form { margin-top: 12px; }
 .error-message { color: #8b2b1c; font-weight: 700; }
