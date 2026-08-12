@@ -2,18 +2,27 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import path from "node:path";
 import { z } from "zod";
 
 import { endAdminSession, requireAdmin } from "@/lib/auth";
 import { bulkSelectionError } from "@/lib/admin-validation";
 import { parseBrusselsDateTime, type ChildVisibilityMode, type PortfolioVisibilityMode } from "@/lib/publication";
 import {
-  getAdminPortfolio,
+  getAdminPortfolioAny,
+  createLearningSpace,
+  createTheme,
+  deleteTheme,
+  getLearningSpace,
+  getLearningSpaceBySlug,
+  updateLearningSpace,
+  updateTheme,
   setExercisePublication,
   setExerciseVisibility,
   setExerciseAlternativeVisibility,
   setPortfolioPublication,
   setPortfolioTitle,
+  setPortfolioTheme,
   setErrorReportStatus,
   saveErrorReportNote,
   deleteErrorReport,
@@ -34,6 +43,73 @@ export async function syncAction() {
   revalidatePath("/admin");
 }
 
+export async function syncSpaceAction(formData: FormData) {
+  await requireAdmin();
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  if (!await getLearningSpace(learningSpaceId)) throw new Error("Leeromgeving niet gevonden.");
+  await synchronizeSource(learningSpaceId);
+  revalidatePath("/admin");
+}
+
+export async function saveLearningSpaceAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  const input = learningSpaceInput(formData);
+  const existing = await getLearningSpace(id);
+  if (!existing) throw new Error("Leeromgeving niet gevonden.");
+  const matchingSlug = await getLearningSpaceBySlug(input.slug);
+  if (matchingSlug && matchingSlug.id !== id) throw new Error("Deze publieke slug bestaat al.");
+  await updateLearningSpace(id, input);
+  revalidatePath("/admin");
+}
+
+export async function createLearningSpaceAction(formData: FormData) {
+  await requireAdmin();
+  const input = learningSpaceInput(formData);
+  if (await getLearningSpaceBySlug(input.slug)) throw new Error("Deze publieke slug bestaat al.");
+  const space = await createLearningSpace(input);
+  revalidatePath("/admin");
+  redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
+}
+
+export async function createThemeAction(formData: FormData) {
+  await requireAdmin();
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  const name = stringValue(formData, "name");
+  if (!name || !await getLearningSpace(learningSpaceId)) throw new Error("Ongeldig thema.");
+  await createTheme(learningSpaceId, name, Number(stringValue(formData, "sortOrder")) || 0);
+  revalidatePath("/admin");
+}
+
+export async function saveThemeAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  const name = stringValue(formData, "name");
+  if (!id || !name || !await getLearningSpace(learningSpaceId)) throw new Error("Ongeldig thema.");
+  await updateTheme(id, learningSpaceId, name, Number(stringValue(formData, "sortOrder")) || 0);
+  revalidatePath("/admin");
+}
+
+export async function deleteThemeAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  if (!id || !await getLearningSpace(learningSpaceId)) throw new Error("Thema niet gevonden.");
+  await deleteTheme(id, learningSpaceId);
+  revalidatePath("/admin");
+}
+
+export async function setPortfolioThemeAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  const themeId = stringValue(formData, "themeId") || null;
+  if (!id || !await getLearningSpace(learningSpaceId)) throw new Error("Portfolio niet gevonden.");
+  await setPortfolioTheme(id, learningSpaceId, themeId);
+  revalidatePath("/admin");
+}
+
 export async function savePortfolioAction(formData: FormData) {
   await requireAdmin();
   const id = stringValue(formData, "id");
@@ -41,7 +117,7 @@ export async function savePortfolioAction(formData: FormData) {
   const mode = portfolioModeSchema.safeParse(stringValue(formData, "mode"));
   const limited = stringValue(formData, "publicationMode") === "limited";
   if (!id || !mode.success || title.length > 180) throw new Error("Ongeldige portfolio-invoer.");
-  const existing = await getAdminPortfolio(id);
+  const existing = await getAdminPortfolioAny(id);
   if (!existing) throw new Error("Portfolio niet gevonden.");
   const window = limited ? parsePublicationWindow(formData) : { publishFrom: existing.publishFrom, publishUntil: existing.publishUntil };
   await Promise.all([setPortfolioTitle(id, title), setPortfolioPublication(id, mode.data, limited, window.publishFrom, window.publishUntil)]);
@@ -55,7 +131,7 @@ export async function saveSectionPublicationAction(formData: FormData) {
   const mode = childModeSchema.safeParse(stringValue(formData, "mode"));
   const limited = stringValue(formData, "publicationMode") === "scheduled";
   if (!id || !portfolioId || !mode.success) throw new Error("Ongeldige onderdeel-invoer.");
-  const portfolio = await getAdminPortfolio(portfolioId);
+  const portfolio = await getAdminPortfolioAny(portfolioId);
   const existing = portfolio?.sections.find((section) => section.id === id);
   if (!existing) throw new Error("Onderdeel niet gevonden.");
   const window = limited ? parsePublicationWindow(formData) : { publishFrom: existing.publishFrom, publishUntil: existing.publishUntil };
@@ -71,7 +147,7 @@ export async function bulkExercisePublicationAction(_previousState: { error: str
   const emptySelection = bulkSelectionError(requestedIds.length);
   if (emptySelection) return { error: emptySelection };
   if (!portfolioId || !mode.success) return { error: "Kies een geldige publicatiestatus." };
-  const portfolio = await getAdminPortfolio(portfolioId);
+  const portfolio = await getAdminPortfolioAny(portfolioId);
   if (!portfolio) return { error: "Portfolio niet gevonden." };
   const validIds = new Set(portfolio.sections.flatMap((section) => section.exercises.map((exercise) => exercise.id)));
   const exerciseIds = [...new Set(requestedIds)].filter((id) => validIds.has(id));
@@ -93,7 +169,7 @@ export async function saveExercisePublicationAction(formData: FormData) {
   const portfolioId = stringValue(formData, "portfolioId");
   const mode = childModeSchema.safeParse(stringValue(formData, "mode"));
   if (!id || !portfolioId || !mode.success) throw new Error("Ongeldige oefening-invoer.");
-  const portfolio = await getAdminPortfolio(portfolioId);
+  const portfolio = await getAdminPortfolioAny(portfolioId);
   if (!portfolio?.sections.some((section) => section.exercises.some((exercise) => exercise.id === id))) throw new Error("Oefening niet gevonden.");
   const window = parsePublicationWindow(formData);
   await setExercisePublication([id], mode.data, window.publishFrom, window.publishUntil);
@@ -105,7 +181,7 @@ export async function toggleSectionVisibilityAction(formData: FormData) {
   const id = stringValue(formData, "id");
   const portfolioId = stringValue(formData, "portfolioId");
   const visible = stringValue(formData, "visible") === "true";
-  const portfolio = await getAdminPortfolio(portfolioId);
+  const portfolio = await getAdminPortfolioAny(portfolioId);
   if (!id || !portfolio?.sections.some((section) => section.id === id)) throw new Error("Onderdeel niet gevonden.");
   await setSectionVisibility(id, visible);
   refreshPublicationPaths(portfolioId);
@@ -116,7 +192,7 @@ export async function toggleExerciseVisibilityAction(formData: FormData) {
   const id = stringValue(formData, "id");
   const portfolioId = stringValue(formData, "portfolioId");
   const visible = stringValue(formData, "visible") === "true";
-  const portfolio = await getAdminPortfolio(portfolioId);
+  const portfolio = await getAdminPortfolioAny(portfolioId);
   if (!id || !portfolio?.sections.some((section) => section.exercises.some((exercise) => exercise.id === id))) throw new Error("Oefening niet gevonden.");
   await setExerciseVisibility(id, visible);
   refreshPublicationPaths(portfolioId);
@@ -128,7 +204,7 @@ export async function toggleExerciseAlternativeVisibilityAction(formData: FormDa
   const id = stringValue(formData, "id");
   const portfolioId = stringValue(formData, "portfolioId");
   const visible = stringValue(formData, "visible") === "true";
-  const portfolio = await getAdminPortfolio(portfolioId);
+  const portfolio = await getAdminPortfolioAny(portfolioId);
   const exercise = portfolio?.sections.flatMap((section) => section.exercises).find((item) => item.id === id);
   if (!exercise || !exercise.assets.some((asset) => asset.variant === "alternative" && asset.isIndexed)) throw new Error("Alternatieve uitwerking niet gevonden.");
   await setExerciseAlternativeVisibility(id, visible);
@@ -175,9 +251,10 @@ export async function deleteErrorReportAction(formData: FormData) {
   revalidatePath("/admin");
 }
 
-export async function deleteOldDoneErrorReportsAction() {
+export async function deleteOldDoneErrorReportsAction(formData?: FormData) {
   await requireAdmin();
-  await deleteOldDoneErrorReports();
+  const learningSpaceId = formData ? stringValue(formData, "learningSpaceId") : undefined;
+  await deleteOldDoneErrorReports(undefined, learningSpaceId || undefined);
   revalidatePath("/admin/meldingen");
   revalidatePath("/admin");
 }
@@ -198,7 +275,7 @@ export async function toggleReportedExerciseVisibilityAction(formData: FormData)
   const portfolioId = stringValue(formData, "portfolioId");
   const visible = stringValue(formData, "visible") === "true";
   if (!id || !portfolioId) return;
-  const portfolio = await getAdminPortfolio(portfolioId);
+  const portfolio = await getAdminPortfolioAny(portfolioId);
   if (!portfolio?.sections.some((section) => section.exercises.some((exercise) => exercise.id === id))) throw new Error("Oefening niet gevonden.");
   await setExerciseVisibility(id, visible);
   refreshPublicationPaths(portfolioId);
@@ -217,6 +294,24 @@ function parsePublicationWindow(formData: FormData) {
 
 function stringValue(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
+}
+
+function learningSpaceInput(formData: FormData) {
+  const name = stringValue(formData, "name");
+  const slug = stringValue(formData, "slug").toLowerCase();
+  const shortLabel = stringValue(formData, "shortLabel");
+  const storageProvider = stringValue(formData, "storageProvider") === "onedrive" ? "onedrive" : "local";
+  const localSourcePath = stringValue(formData, "localSourcePath");
+  const oneDriveDriveId = stringValue(formData, "oneDriveDriveId");
+  const oneDriveFolderId = stringValue(formData, "oneDriveFolderId");
+  const oneDriveFolderPath = stringValue(formData, "oneDriveFolderPath");
+  if (!name || !shortLabel || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik een unieke URL-veilige slug.");
+  if (storageProvider === "local" && localSourcePath) {
+    const normalized = path.resolve(localSourcePath);
+    return { name, slug, shortLabel, sortOrder: Number(stringValue(formData, "sortOrder")) || 0, storageProvider, localSourcePath: normalized, oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null } as const;
+  }
+  if (storageProvider === "onedrive" && (!oneDriveDriveId || !oneDriveFolderId)) throw new Error("Vul OneDrive drive- en map-ID in.");
+  return { name, slug, shortLabel, sortOrder: Number(stringValue(formData, "sortOrder")) || 0, storageProvider, localSourcePath: null, oneDriveDriveId: oneDriveDriveId || null, oneDriveFolderId: oneDriveFolderId || null, oneDriveFolderPath: oneDriveFolderPath || null } as const;
 }
 
 function refreshPublicationPaths(portfolioId: string) {
