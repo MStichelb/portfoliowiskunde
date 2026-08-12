@@ -126,6 +126,7 @@ async function indexSections(
       }
       if (parsed.portfolioCode !== normalizePortfolioCode(portfolioCode)) {
         warnings.push({ severity: "warning", path: file.relativePath, message: `Portfolio-code PF${parsed.portfolioCode} komt niet overeen met Portfolio ${portfolioCode}.` });
+        continue;
       }
 
       const existing = exercises.get(parsed.exerciseCode) ?? {

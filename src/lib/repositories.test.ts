@@ -4,7 +4,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
-import { createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getAdminPortfolios, getLatestWarnings, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, persistIndex, recordFailedSync, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin } from "./repositories";
+import { archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deactivateLearningSpace, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getAdminPortfolios, getLatestWarnings, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, persistIndex, recordFailedSync, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, updateLearningSpace } from "./repositories";
+import { synchronizeSource } from "./sync";
+import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./storage/provider";
 
@@ -69,6 +71,28 @@ describe("persistIndex", () => {
     expect((await database.execute({ sql: "SELECT visibility_mode FROM exercises WHERE id = ?", args: [exerciseId] })).rows[0].visibility_mode).toBe("hidden");
     expect((await database.execute("SELECT COUNT(*) AS count FROM sections WHERE visibility_mode = 'visible'")).rows[0].count).not.toBe(0);
     expect((await database.execute("SELECT COUNT(*) AS count FROM exercises WHERE visibility_mode = 'visible'")).rows[0].count).not.toBe(0);
+  });
+
+  it("marks removed source exercises as missing, then archives them without touching other index metadata", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-missing-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const source = createTwoPortfolioProvider();
+    await persistIndex(await indexSource(source), "local");
+    const removed = "Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png";
+    source.remove(removed);
+    source.remove(removed.replace("(1)", "(2)"));
+    source.remove(removed.replace("(1)", "-alt(1)"));
+    await persistIndex(await indexSource(source), "local");
+    const beforeCleanup = (await getAdminPortfolios()).find((portfolio) => portfolio.code === "3")!;
+    const missingExercise = beforeCleanup.sections.flatMap((section) => section.exercises).find((exercise) => exercise.code === "2");
+    expect(missingExercise?.isIndexed).toBe(false);
+    expect((await getLatestWarnings()).some((warning) => warning.message.includes("Bronbestand ontbreekt"))).toBe(true);
+    await archiveMissingIndexItems("space-6");
+    const afterCleanup = (await getAdminPortfolios()).find((portfolio) => portfolio.code === "3")!;
+    expect(afterCleanup.sections.flatMap((section) => section.exercises).some((exercise) => exercise.code === "2")).toBe(false);
+    expect((await getAdminPortfolios()).find((portfolio) => portfolio.code === "4")?.sections.flatMap((section) => section.exercises).some((exercise) => exercise.code === "1")).toBe(true);
+    expect(source.has(removed)).toBe(false);
   });
 
   it("keeps error reports actionable with TODO, DONE, pinning and notes", async () => {
@@ -205,6 +229,31 @@ describe("persistIndex", () => {
     await expect(createLearningSpace({ name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, storageProvider: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4" });
     await expect(createLearningSpace({ name: "Dubbel", slug: "fysica-4", shortLabel: "D", sortOrder: 41, storageProvider: "local", localSourcePath: null })).rejects.toThrow();
   });
+
+  it("deactivates one learning space without affecting another or its source metadata", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-delete-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const source = createTwoPortfolioProvider();
+    await persistIndex(await indexSource(source), "local", "space-5");
+    await persistIndex(await indexSource(source), "local", "space-6");
+    expect(await deactivateLearningSpace("space-5")).toBe(true);
+    expect((await getLearningSpaces(true)).some((space) => space.id === "space-5")).toBe(false);
+    expect((await getAdminPortfolios("space-6")).some((portfolio) => portfolio.code === "3")).toBe(true);
+    expect(source.has("Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png")).toBe(true);
+  });
+
+  it("normalizes missing and inaccessible local source paths without changing existing indexed state", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-source-error-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await persistIndex(await indexSource(createTwoPortfolioProvider()), "local", "space-6");
+    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, storageProvider: "local", localSourcePath: null });
+    await expect(synchronizeSource("space-5")).rejects.toBeInstanceOf(SourceConfigurationError);
+    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, storageProvider: "local", localSourcePath: path.join(temporaryDirectory, "does-not-exist") });
+    await expect(synchronizeSource("space-5")).rejects.toBeInstanceOf(SourceAccessError);
+    expect((await getAdminPortfolios("space-6")).some((portfolio) => portfolio.code === "3")).toBe(true);
+  });
 });
 
 function createTwoPortfolioProvider() {
@@ -231,5 +280,7 @@ function createTwoPortfolioProvider() {
     },
     async readFile() { return Buffer.from(""); },
     setVersion(relativePath: string, version: string) { versions.set(relativePath, version); },
-  } satisfies StorageProvider & { setVersion(relativePath: string, version: string): void };
+    remove(relativePath: string) { for (const entries of Object.values(tree)) { const index = entries.findIndex((entry) => entry.relativePath === relativePath); if (index >= 0) entries.splice(index, 1); } },
+    has(relativePath: string) { return Object.values(tree).flat().some((entry) => entry.relativePath === relativePath); },
+  } satisfies StorageProvider & { setVersion(relativePath: string, version: string): void; remove(relativePath: string): void; has(relativePath: string): boolean };
 }

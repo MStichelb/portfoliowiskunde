@@ -29,7 +29,7 @@ const provider: StorageProvider = {
 };
 
 describe("portfolio indexer", () => {
-  it("groepeert standaard- en alternatieve stappen per oefening", async () => {
+  it("groepeert standaard- en alternatieve stappen per oefening en sluit bestanden met een verkeerde PF-code uit", async () => {
     const [portfolio] = await indexSource(provider);
     const exercise = portfolio.sections[0].exercises.find((item) => item.code === "2b");
 
@@ -41,5 +41,23 @@ describe("portfolio indexer", () => {
     expect(portfolio.assignmentPdfPath).toContain("Portfolio 3 - Toepassingen.pdf");
     expect(portfolio.finalSolutionsPdfPath).toContain("Eindoplossingen");
     expect(portfolio.warnings).toHaveLength(2);
+    expect(portfolio.sections[0].exercises.some((item) => item.code === "7")).toBe(false);
+  });
+
+  it("laat een geldig en ongeldig bestand voor hetzelfde oefeningnummer nooit samenvloeien", async () => {
+    const collisionProvider: StorageProvider = {
+      ...provider,
+      async list(relativePath = "") {
+        if (relativePath === "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden") return [
+          { name: "PF3-Oef10.png", relativePath: `${relativePath}/PF3-Oef10.png`, kind: "file" },
+          { name: "PF8-Oef10.png", relativePath: `${relativePath}/PF8-Oef10.png`, kind: "file" },
+        ];
+        return tree[relativePath] ?? [];
+      },
+    };
+    const [portfolio] = await indexSource(collisionProvider);
+    const exercise = portfolio.sections[0].exercises.find((item) => item.code === "10");
+    expect(exercise?.assets.map((asset) => asset.fileName)).toEqual(["PF3-Oef10.png"]);
+    expect(portfolio.warnings.some((warning) => warning.path.endsWith("PF8-Oef10.png"))).toBe(true);
   });
 });

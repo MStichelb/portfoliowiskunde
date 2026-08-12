@@ -191,6 +191,14 @@ export async function updateLearningSpace(id: string, input: { name: string; slu
   await database.execute({ sql: `UPDATE learning_spaces SET name = ?, slug = ?, short_label = ?, sort_order = ?, storage_provider = ?, local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, updated_at = ? WHERE id = ?`, args: [input.name, input.slug, input.shortLabel, input.sortOrder, input.storageProvider, input.localSourcePath ?? null, input.oneDriveDriveId ?? null, input.oneDriveFolderId ?? null, input.oneDriveFolderPath ?? null, new Date().toISOString(), id] });
 }
 
+export async function deactivateLearningSpace(id: string): Promise<boolean> {
+  const database = await getDatabase();
+  const active = await database.execute("SELECT id FROM learning_spaces WHERE is_active = 1");
+  if (active.rows.length <= 1 && active.rows.some((row) => text(row, "id") === id)) return false;
+  await database.execute({ sql: "UPDATE learning_spaces SET is_active = 0, updated_at = ? WHERE id = ?", args: [new Date().toISOString(), id] });
+  return true;
+}
+
 export async function getThemes(learningSpaceId: string): Promise<Theme[]> {
   const database = await getDatabase();
   const result = await database.execute({ sql: "SELECT * FROM themes WHERE learning_space_id = ? ORDER BY sort_order, name", args: [learningSpaceId] });
@@ -298,7 +306,7 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const startedAt = new Date().toISOString();
   const runId = randomUUID();
-  const warnings = portfolios.flatMap((portfolio) => portfolio.warnings);
+  const warnings = [...portfolios.flatMap((portfolio) => portfolio.warnings)];
   const existingAssets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.source_version
     FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
     JOIN exercises ON exercises.id = solution_variants.exercise_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
@@ -337,7 +345,7 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
         ON CONFLICT(id) DO UPDATE SET code = excluded.code, portfolio_code = excluded.portfolio_code, learning_space_id = excluded.learning_space_id, title = excluded.title, relative_path = excluded.relative_path,
           assignment_pdf_path = excluded.assignment_pdf_path, assignment_pdf_source_id = excluded.assignment_pdf_source_id,
           final_solutions_pdf_path = excluded.final_solutions_pdf_path, final_solutions_pdf_source_id = excluded.final_solutions_pdf_source_id,
-          is_indexed = 1, indexed_at = excluded.indexed_at, last_seen_at = excluded.last_seen_at`,
+          is_indexed = 1, archived_at = NULL, indexed_at = excluded.indexed_at, last_seen_at = excluded.last_seen_at`,
       args: [portfolioId, `${spaceId}:${portfolio.code}`, portfolio.code, spaceId, portfolio.title, portfolio.relativePath, portfolio.assignmentPdfPath,
         portfolio.assignmentPdfSourceId, portfolio.finalSolutionsPdfPath, portfolio.finalSolutionsPdfSourceId, startedAt, startedAt],
     });
@@ -348,7 +356,7 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
         sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path, visibility_mode, is_indexed, last_seen_at)
           VALUES (?, ?, ?, ?, ?, 'visible', 1, ?)
           ON CONFLICT(id) DO UPDATE SET title = excluded.title, relative_path = excluded.relative_path,
-            is_indexed = 1, last_seen_at = excluded.last_seen_at`,
+            is_indexed = 1, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
         args: [sectionId, portfolioId, section.order, section.title, section.relativePath, startedAt],
       });
 
@@ -358,7 +366,7 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
           sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, visibility_mode, visible, is_indexed, last_seen_at)
             VALUES (?, ?, ?, ?, ?, ?, 'visible', 1, 1, ?)
             ON CONFLICT(id) DO UPDATE SET exercise_number = excluded.exercise_number,
-              exercise_suffix = excluded.exercise_suffix, is_indexed = 1, last_seen_at = excluded.last_seen_at`,
+              exercise_suffix = excluded.exercise_suffix, is_indexed = 1, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
           args: [exerciseId, portfolioId, sectionId, exercise.code, exercise.number, exercise.suffix, startedAt],
         });
 
@@ -368,7 +376,7 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
           const variantId = `${exerciseId}-${variant}`;
           statements.push({
             sql: `INSERT INTO solution_variants (id, exercise_id, kind, label, is_indexed) VALUES (?, ?, ?, ?, 1)
-              ON CONFLICT(id) DO UPDATE SET label = excluded.label, is_indexed = 1`,
+              ON CONFLICT(id) DO UPDATE SET label = excluded.label, is_indexed = 1, archived_at = NULL`,
             args: [variantId, exerciseId, variant, variant === "standard" ? "Standaard" : "Alternatief"],
           });
           for (const asset of variantAssets) {
@@ -385,7 +393,7 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
                 ON CONFLICT(variant_id, relative_path) DO UPDATE SET source_id = excluded.source_id,
                   file_name = excluded.file_name, extension = excluded.extension, step = excluded.step,
                   last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
-                  is_indexed = 1, missing_since = NULL`,
+                  is_indexed = 1, archived_at = NULL, missing_since = NULL`,
               args: [assetId, variantId, asset.relativePath, asset.sourceId, asset.fileName, asset.parsed.extension,
                 asset.parsed.step, asset.lastModifiedAt, asset.sourceVersion],
             });
@@ -395,13 +403,14 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
     }
   }
 
-  const missing = [...existingAssetVersions.entries()].filter(([key]) => !seenAssetKeys.has(key)).map(([, asset]) => asset.id);
+  const missing = [...existingAssetVersions.entries()].filter(([key]) => !seenAssetKeys.has(key)).map(([key, asset]) => ({ id: asset.id, relativePath: key.split("\u0000")[1] }));
   if (missing.length > 0) {
     statements.push({
       sql: `UPDATE solution_assets SET missing_since = ? WHERE is_indexed = 0 AND missing_since IS NULL AND variant_id IN
         (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))`,
       args: [startedAt, spaceId],
     });
+    for (const asset of missing) warnings.push({ severity: "warning", path: asset.relativePath, message: "Bronbestand ontbreekt; deze oefening blijft voorlopig herkenbaar in het beheer." });
   }
   for (const warning of warnings) {
     statements.push({
@@ -410,12 +419,36 @@ export async function persistIndex(portfolios: IndexedPortfolio[], providerType:
     });
   }
   statements.push({
-    sql: `UPDATE sync_runs SET status = 'completed', finished_at = ?, added_count = ?, updated_count = ?, missing_count = ? WHERE id = ?`,
-    args: [new Date().toISOString(), added, updated, missing.length, runId],
+    sql: `UPDATE sync_runs SET status = 'completed', finished_at = ?, warning_count = ?, added_count = ?, updated_count = ?, missing_count = ? WHERE id = ?`,
+    args: [new Date().toISOString(), warnings.length, added, updated, missing.length, runId],
   });
 
   await executeBatch(statements);
   return { warnings: warnings.length, added, updated, missing: missing.length };
+}
+
+export async function archiveMissingIndexItems(learningSpaceId: string): Promise<{ exercises: number; assets: number }> {
+  const database = await getDatabase();
+  const now = new Date().toISOString();
+  const exerciseCount = await database.execute({ sql: "SELECT COUNT(*) AS count FROM exercises WHERE is_indexed = 0 AND archived_at IS NULL AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [learningSpaceId] });
+  const assetCount = await database.execute({ sql: "SELECT COUNT(*) AS count FROM solution_assets WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [learningSpaceId] });
+  await executeBatch([
+    { sql: "UPDATE solution_assets SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [now, learningSpaceId] },
+    { sql: "UPDATE solution_variants SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?))", args: [now, learningSpaceId] },
+    { sql: "UPDATE exercises SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [now, learningSpaceId] },
+    { sql: "UPDATE sections SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [now, learningSpaceId] },
+    { sql: "UPDATE portfolios SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND learning_space_id = ?", args: [now, learningSpaceId] },
+  ]);
+  return { exercises: Number(exerciseCount.rows[0]?.count ?? 0), assets: Number(assetCount.rows[0]?.count ?? 0) };
+}
+
+export async function getMissingIndexCounts(learningSpaceId: string): Promise<{ exercises: number; assets: number }> {
+  const database = await getDatabase();
+  const [exercises, assets] = await Promise.all([
+    database.execute({ sql: "SELECT COUNT(*) AS count FROM exercises WHERE is_indexed = 0 AND archived_at IS NULL AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [learningSpaceId] }),
+    database.execute({ sql: "SELECT COUNT(*) AS count FROM solution_assets WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [learningSpaceId] }),
+  ]);
+  return { exercises: Number(exercises.rows[0]?.count ?? 0), assets: Number(assets.rows[0]?.count ?? 0) };
 }
 
 export async function recordFailedSync(providerType: string, error: unknown, learningSpaceId?: string): Promise<void> {
@@ -434,9 +467,9 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const [portfolios, sections, exercises, assets] = await Promise.all([
     database.execute({ sql: `SELECT portfolios.*, themes.name AS theme_name FROM portfolios LEFT JOIN themes ON themes.id = portfolios.theme_id
-      WHERE portfolios.learning_space_id = ? ORDER BY portfolios.portfolio_code`, args: [spaceId] }),
-    database.execute({ sql: "SELECT * FROM sections WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY portfolio_id, sort_order", args: [spaceId] }),
-    database.execute("SELECT * FROM exercises ORDER BY section_id, exercise_number, exercise_suffix"),
+      WHERE portfolios.learning_space_id = ? AND portfolios.archived_at IS NULL ORDER BY portfolios.portfolio_code`, args: [spaceId] }),
+    database.execute({ sql: "SELECT * FROM sections WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) AND archived_at IS NULL ORDER BY portfolio_id, sort_order", args: [spaceId] }),
+    database.execute({ sql: "SELECT * FROM exercises WHERE archived_at IS NULL ORDER BY section_id, exercise_number, exercise_suffix" }),
     database.execute(`SELECT solution_assets.*, solution_variants.exercise_id, solution_variants.kind
       FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
       ORDER BY solution_assets.step, solution_assets.file_name`),
@@ -675,16 +708,18 @@ export async function getVisibleExercise(id: string, learningSpaceId?: string) {
 
 export async function getAdminExercise(id: string, learningSpaceId?: string) {
   const database = await getDatabase();
-  const result = await database.execute({ sql: `SELECT exercises.exercise_code, sections.title AS section_title, portfolios.portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override, portfolios.learning_space_id
+  const result = await database.execute({ sql: `SELECT exercises.exercise_code, exercises.is_indexed AS exercise_is_indexed, exercises.archived_at AS exercise_archived_at,
+    sections.title AS section_title, sections.is_indexed AS section_is_indexed, portfolios.portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override, portfolios.learning_space_id, portfolios.is_indexed AS portfolio_is_indexed
     FROM exercises JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
-    WHERE exercises.id = ? AND exercises.is_indexed = 1 AND sections.is_indexed = 1 AND portfolios.is_indexed = 1${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`, args: learningSpaceId ? [id, learningSpaceId] : [id] });
+    WHERE exercises.id = ? AND exercises.archived_at IS NULL${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`, args: learningSpaceId ? [id, learningSpaceId] : [id] });
   const exercise = result.rows[0];
   if (!exercise) return null;
   const assets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.file_name, solution_assets.extension, solution_assets.step, solution_variants.kind, solution_variants.label
     FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
     WHERE solution_variants.exercise_id = ? AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1
     ORDER BY CASE solution_variants.kind WHEN 'standard' THEN 0 ELSE 1 END, solution_assets.step, solution_assets.file_name`, args: [id] });
-  return { id, learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"), portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"), assets: assets.rows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label") })) };
+  const isIndexed = bool(exercise.exercise_is_indexed) && bool(exercise.section_is_indexed) && bool(exercise.portfolio_is_indexed);
+  return { id, learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"), portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"), isIndexed, assets: assets.rows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label") })) };
 }
 
 export async function getAdminAsset(id: string, learningSpaceId?: string) {

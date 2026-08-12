@@ -237,4 +237,19 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX themes_learning_space_index ON themes(learning_space_id, sort_order)",
     ],
   },
+  {
+    version: "011_archive_missing_index_and_login_protection",
+    statements: [
+      "ALTER TABLE portfolios ADD COLUMN archived_at TEXT",
+      "ALTER TABLE sections ADD COLUMN archived_at TEXT",
+      "ALTER TABLE exercises ADD COLUMN archived_at TEXT",
+      "ALTER TABLE solution_variants ADD COLUMN archived_at TEXT",
+      "ALTER TABLE solution_assets ADD COLUMN archived_at TEXT",
+      `CREATE TABLE admin_login_attempts (
+        key TEXT PRIMARY KEY,
+        window_started_at TEXT NOT NULL,
+        attempts INTEGER NOT NULL
+      )`,
+    ],
+  },
 ];
