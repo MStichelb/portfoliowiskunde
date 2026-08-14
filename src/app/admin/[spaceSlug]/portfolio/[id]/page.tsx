@@ -8,7 +8,7 @@ import { PublicationStatus } from "@/app/components/publication-status";
 import { SectionPublicationForm } from "@/app/components/section-publication-form";
 import { requireAdmin } from "@/lib/auth";
 import { formatBrusselsDateTimeInput } from "@/lib/publication";
-import { getAdminPortfolio, getLearningSpaceBySlug, getLearningSpaces, getPortfolioWarnings, getThemes } from "@/lib/repositories";
+import { getAdminLearningSpaceBySlug, getAdminPortfolio, getLearningSpaces, getPortfolioWarnings, getThemes } from "@/lib/repositories";
 
 import { savePortfolioAction, saveSectionPublicationAction, setPortfolioThemeAction } from "../../../actions";
 
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function LearningSpacePortfolioAdminPage({ params }: { params: Promise<{ spaceSlug: string; id: string }> }) {
   await requireAdmin();
   const { spaceSlug, id } = await params;
-  const space = await getLearningSpaceBySlug(spaceSlug);
+  const space = await getAdminLearningSpaceBySlug(spaceSlug);
   if (!space) notFound();
   const [portfolio, spaces, warnings, themes] = await Promise.all([getAdminPortfolio(id, space.id), getLearningSpaces(true), getPortfolioWarnings(id, space.id), getThemes(space.id)]);
   if (!portfolio) notFound();

@@ -22,7 +22,7 @@ describe("Google Drive LearningSpace migration", () => {
     const databasePath = path.join(temporaryDirectory, "metadata.db");
     const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
     await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
-    for (const migration of migrations.filter((item) => item.version !== "014_google_drive_learning_spaces")) {
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 13)) {
       await legacy.batch([
         ...migration.statements.map((sql) => ({ sql, args: [] })),
         { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-08-14T10:00:00.000Z"] },
@@ -43,6 +43,8 @@ describe("Google Drive LearningSpace migration", () => {
     const upgraded = await getDatabase();
     const space = (await upgraded.execute("SELECT * FROM learning_spaces WHERE id = 'space-6'")).rows[0];
     expect(space).toMatchObject({
+      archived_at: null,
+      is_active: 1,
       source_type: "onedrive",
       storage_provider: "onedrive",
       onedrive_drive_id: "drive-existing",
@@ -59,9 +61,31 @@ describe("Google Drive LearningSpace migration", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     const database = await getDatabase();
-    const spaces = await database.execute("SELECT source_type, google_drive_folder_id, google_drive_folder_label FROM learning_spaces ORDER BY id");
+    const spaces = await database.execute("SELECT source_type, google_drive_folder_id, google_drive_folder_label, is_active, archived_at FROM learning_spaces ORDER BY id");
     expect(spaces.rows).toHaveLength(2);
-    expect(spaces.rows.every((row) => row.source_type === "local" && row.google_drive_folder_id === null && row.google_drive_folder_label === null)).toBe(true);
+    expect(spaces.rows.every((row) => row.source_type === "local" && row.google_drive_folder_id === null && row.google_drive_folder_label === null && row.is_active === 1 && row.archived_at === null)).toBe(true);
+  });
+
+  it("migrates previously inactive LearningSpaces to archived while active spaces stay active", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-014-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 14)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-08-14T10:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.execute("UPDATE learning_spaces SET is_active = 0, updated_at = '2026-07-01T08:00:00.000Z' WHERE id = 'space-5'");
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    const spaces = await upgraded.execute("SELECT id, is_active, archived_at FROM learning_spaces ORDER BY id");
+    expect(spaces.rows.find((row) => row.id === "space-6")).toMatchObject({ is_active: 1, archived_at: null });
+    expect(spaces.rows.find((row) => row.id === "space-5")).toMatchObject({ is_active: 0, archived_at: "2026-07-01T08:00:00.000Z" });
   });
 });
 

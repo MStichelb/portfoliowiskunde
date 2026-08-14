@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { adminExercisePortfolioHref } from "./admin-routes";
-import { archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deactivateLearningSpace, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, persistIndex, recordFailedSync, releaseSyncLease, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -354,16 +354,77 @@ describe("persistIndex", () => {
     });
   });
 
-  it("deactivates one learning space without affecting another or its source metadata", async () => {
-    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-delete-"));
+  it("archives and restores a LearningSpace without losing settings or linked metadata", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-archive-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const source = createTwoPortfolioProvider();
+    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "V", sortOrder: 55, sourceType: "google_drive", googleDriveFolderId: "mirror-five", googleDriveFolderLabel: "Mirror vijf" });
+    await persistIndex(await indexSource(source), "local", "space-5");
+    await persistIndex(await indexSource(source), "local", "space-6");
+    await createTheme("space-5", "Integralen", 3);
+    const initialPortfolios = await getAdminPortfolios("space-5");
+    await setPortfolioPublication(initialPortfolios[0].id, "visible", true, "2026-09-01T08:00:00.000Z", "2027-06-30T16:00:00.000Z");
+    const portfolioIds = initialPortfolios.map((portfolio) => portfolio.id);
+    expect(await getLearningSpaceBySlug("5")).toMatchObject({ isActive: true });
+
+    expect(await archiveLearningSpace("space-5")).toBe(true);
+    expect(await getLearningSpaceBySlug("5")).toBeNull();
+    expect(await getAdminLearningSpaceBySlug("5")).toMatchObject({
+      isActive: false, shortLabel: "V", sortOrder: 55, sourceType: "google_drive", googleDriveFolderId: "mirror-five", googleDriveFolderLabel: "Mirror vijf",
+    });
+    expect((await getLearningSpaces(true)).some((space) => space.id === "space-5")).toBe(false);
+    expect((await getLearningSpaces()).some((space) => space.id === "space-5" && !space.isActive && Boolean(space.archivedAt))).toBe(true);
+    expect((await getAdminPortfolios("space-5")).map((portfolio) => portfolio.id)).toEqual(portfolioIds);
+    expect((await getAdminPortfolios("space-5"))[0]).toMatchObject({ visible: true, limited: true, publishFrom: "2026-09-01T08:00:00.000Z", publishUntil: "2027-06-30T16:00:00.000Z" });
+    expect(await getThemes("space-5")).toEqual([expect.objectContaining({ name: "Integralen", sortOrder: 3 })]);
+    let providerRequested = false;
+    await expect(synchronizeSource("space-5", {
+      getConfiguredProvider: async () => { providerRequested = true; throw new Error("Provider mag niet worden geopend."); },
+    })).resolves.toMatchObject({ skipped: true, skipReason: "archived" });
+    expect(providerRequested).toBe(false);
+
+    expect(await restoreLearningSpace("space-5")).toBe(true);
+    expect(await getLearningSpaceBySlug("5")).toMatchObject({ isActive: true, archivedAt: null, googleDriveFolderId: "mirror-five" });
+    expect((await getAdminPortfolios("space-5")).map((portfolio) => portfolio.id)).toEqual(portfolioIds);
+    expect((await getAdminPortfolios("space-5"))[0]).toMatchObject({ visible: true, limited: true, publishFrom: "2026-09-01T08:00:00.000Z", publishUntil: "2027-06-30T16:00:00.000Z" });
+    expect(await getThemes("space-5")).toHaveLength(1);
+    expect((await getAdminPortfolios("space-6")).some((portfolio) => portfolio.code === "3")).toBe(true);
+    expect(source.has("Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png")).toBe(true);
+  });
+
+  it("permanently deletes only one LearningSpace and its database-owned metadata", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-permanent-delete-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     const source = createTwoPortfolioProvider();
     await persistIndex(await indexSource(source), "local", "space-5");
     await persistIndex(await indexSource(source), "local", "space-6");
-    expect(await deactivateLearningSpace("space-5")).toBe(true);
-    expect((await getLearningSpaces(true)).some((space) => space.id === "space-5")).toBe(false);
-    expect((await getAdminPortfolios("space-6")).some((portfolio) => portfolio.code === "3")).toBe(true);
+    await createTheme("space-5", "Te verwijderen thema", 1);
+    await createTheme("space-6", "Te behouden thema", 1);
+    await tryAcquireSyncLease("space-5", "delete-test-owner");
+    const database = await getDatabase();
+    const references = (await database.execute(`SELECT exercises.id AS exercise_id, exercises.section_id, exercises.portfolio_id
+      FROM exercises JOIN portfolios ON portfolios.id = exercises.portfolio_id WHERE portfolios.learning_space_id = 'space-5' LIMIT 1`)).rows[0];
+    const syncRunId = String((await database.execute("SELECT id FROM sync_runs WHERE learning_space_id = 'space-5' LIMIT 1")).rows[0]?.id);
+    await database.execute({ sql: `INSERT INTO error_reports (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, message, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'standard', '[]', 'Lifecycle test', 'TODO', ?, ?)`, args: ["report-space-5", String(references.portfolio_id), String(references.section_id), String(references.exercise_id), "2026-08-14T10:00:00.000Z", "2026-08-14T10:00:00.000Z"] });
+    await database.execute({ sql: "INSERT INTO sync_warnings (id, sync_run_id, severity, relative_path, message) VALUES (?, ?, 'warning', 'test', 'Lifecycle test')", args: ["warning-space-5", syncRunId] });
+    const retainedPortfolioIds = (await getAdminPortfolios("space-6")).map((portfolio) => portfolio.id);
+
+    expect(await permanentlyDeleteLearningSpace("space-5")).toBe(true);
+    expect(await getLearningSpace("space-5")).toBeNull();
+    expect(await getAdminLearningSpaceBySlug("5")).toBeNull();
+    expect((await getLearningSpaces()).some((space) => space.id === "space-5")).toBe(false);
+    expect(await getAdminPortfolios("space-5")).toEqual([]);
+    expect(await getThemes("space-5")).toEqual([]);
+    expect((await database.execute("SELECT id FROM sync_runs WHERE learning_space_id = 'space-5'")).rows).toEqual([]);
+    expect((await database.execute("SELECT learning_space_id FROM sync_leases WHERE learning_space_id = 'space-5'")).rows).toEqual([]);
+    expect((await database.execute("SELECT id FROM error_reports WHERE id = 'report-space-5'")).rows).toEqual([]);
+    expect((await database.execute("SELECT id FROM sync_warnings WHERE id = 'warning-space-5'")).rows).toEqual([]);
+    expect((await database.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
+    expect((await getAdminPortfolios("space-6")).map((portfolio) => portfolio.id)).toEqual(retainedPortfolioIds);
+    expect(await getThemes("space-6")).toEqual([expect.objectContaining({ name: "Te behouden thema" })]);
     expect(source.has("Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png")).toBe(true);
   });
 

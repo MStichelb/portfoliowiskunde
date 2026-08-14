@@ -114,6 +114,7 @@ export interface LearningSpace {
   shortLabel: string;
   sortOrder: number;
   isActive: boolean;
+  archivedAt: string | null;
   sourceType: StorageSourceType;
   localSourcePath: string | null;
   oneDriveDriveId: string | null;
@@ -165,9 +166,10 @@ function stableId(prefix: string, ...parts: string[]): string {
 
 function learningSpaceFromRow(row: DatabaseRow): LearningSpace {
   const sourceType = storageSourceType(nullableText(row, "source_type") ?? text(row, "storage_provider"));
+  const archivedAt = nullableText(row, "archived_at");
   return {
     id: text(row, "id"), name: text(row, "name"), slug: text(row, "slug"), shortLabel: text(row, "short_label"),
-    sortOrder: Number(row.sort_order), isActive: bool(row.is_active), sourceType,
+    sortOrder: Number(row.sort_order), isActive: bool(row.is_active) && archivedAt === null, archivedAt, sourceType,
     localSourcePath: nullableText(row, "local_source_path"), oneDriveDriveId: nullableText(row, "onedrive_drive_id"),
     oneDriveFolderId: nullableText(row, "onedrive_folder_id"), oneDriveFolderPath: nullableText(row, "onedrive_folder_path"),
     googleDriveFolderId: nullableText(row, "google_drive_folder_id"), googleDriveFolderLabel: nullableText(row, "google_drive_folder_label"),
@@ -181,11 +183,17 @@ function storageSourceType(value: string): StorageSourceType {
 
 export async function getLearningSpaces(activeOnly = false): Promise<LearningSpace[]> {
   const database = await getDatabase();
-  const result = await database.execute(`SELECT * FROM learning_spaces${activeOnly ? " WHERE is_active = 1" : ""} ORDER BY sort_order, name`);
+  const result = await database.execute(`SELECT * FROM learning_spaces${activeOnly ? " WHERE is_active = 1 AND archived_at IS NULL" : ""} ORDER BY sort_order, name`);
   return result.rows.map(learningSpaceFromRow);
 }
 
 export async function getLearningSpaceBySlug(slug: string): Promise<LearningSpace | null> {
+  const database = await getDatabase();
+  const result = await database.execute({ sql: "SELECT * FROM learning_spaces WHERE slug = ? AND is_active = 1 AND archived_at IS NULL", args: [slug] });
+  return result.rows[0] ? learningSpaceFromRow(result.rows[0]) : null;
+}
+
+export async function getAdminLearningSpaceBySlug(slug: string): Promise<LearningSpace | null> {
   const database = await getDatabase();
   const result = await database.execute({ sql: "SELECT * FROM learning_spaces WHERE slug = ?", args: [slug] });
   return result.rows[0] ? learningSpaceFromRow(result.rows[0]) : null;
@@ -235,11 +243,45 @@ function legacyStorageProvider(sourceType: StorageSourceType): "local" | "onedri
   return sourceType === "onedrive" ? "onedrive" : "local";
 }
 
-export async function deactivateLearningSpace(id: string): Promise<boolean> {
+export async function archiveLearningSpace(id: string): Promise<boolean> {
   const database = await getDatabase();
-  const active = await database.execute("SELECT id FROM learning_spaces WHERE is_active = 1");
-  if (active.rows.length <= 1 && active.rows.some((row) => text(row, "id") === id)) return false;
-  await database.execute({ sql: "UPDATE learning_spaces SET is_active = 0, updated_at = ? WHERE id = ?", args: [new Date().toISOString(), id] });
+  const existing = await database.execute({ sql: "SELECT id FROM learning_spaces WHERE id = ?", args: [id] });
+  if (!existing.rows[0]) return false;
+  const now = new Date().toISOString();
+  await database.execute({ sql: "UPDATE learning_spaces SET is_active = 0, archived_at = COALESCE(archived_at, ?), updated_at = ? WHERE id = ?", args: [now, now, id] });
+  return true;
+}
+
+export async function restoreLearningSpace(id: string): Promise<boolean> {
+  const database = await getDatabase();
+  const existing = await database.execute({ sql: "SELECT id FROM learning_spaces WHERE id = ?", args: [id] });
+  if (!existing.rows[0]) return false;
+  await database.execute({ sql: "UPDATE learning_spaces SET is_active = 1, archived_at = NULL, updated_at = ? WHERE id = ?", args: [new Date().toISOString(), id] });
+  return true;
+}
+
+export async function permanentlyDeleteLearningSpace(id: string): Promise<boolean> {
+  const database = await getDatabase();
+  const existing = await database.execute({ sql: "SELECT id FROM learning_spaces WHERE id = ?", args: [id] });
+  if (!existing.rows[0]) return false;
+  const portfolioIds = "SELECT id FROM portfolios WHERE learning_space_id = ?";
+  const exerciseIds = `SELECT id FROM exercises WHERE portfolio_id IN (${portfolioIds})`;
+  const variantIds = `SELECT id FROM solution_variants WHERE exercise_id IN (${exerciseIds})`;
+  const syncRunIds = "SELECT id FROM sync_runs WHERE learning_space_id = ?";
+  await executeBatch([
+    { sql: `DELETE FROM error_reports WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
+    { sql: `DELETE FROM solution_assets WHERE variant_id IN (${variantIds})`, args: [id] },
+    { sql: `DELETE FROM solution_variants WHERE exercise_id IN (${exerciseIds})`, args: [id] },
+    { sql: `DELETE FROM exercises WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
+    { sql: `DELETE FROM sections WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
+    { sql: `DELETE FROM sync_warnings WHERE sync_run_id IN (${syncRunIds})`, args: [id] },
+    { sql: "DELETE FROM sync_runs WHERE learning_space_id = ?", args: [id] },
+    { sql: "DELETE FROM sync_leases WHERE learning_space_id = ?", args: [id] },
+    { sql: "DELETE FROM portfolios WHERE learning_space_id = ?", args: [id] },
+    { sql: "DELETE FROM themes WHERE learning_space_id = ?", args: [id] },
+    { sql: "DELETE FROM app_settings WHERE key = 'legacy_default_learning_space_id' AND value = ?", args: [id] },
+    { sql: "DELETE FROM learning_spaces WHERE id = ?", args: [id] },
+  ]);
   return true;
 }
 

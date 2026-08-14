@@ -4,14 +4,14 @@ import { notFound } from "next/navigation";
 
 import { requireAdmin } from "@/lib/auth";
 import { adminExercisePortfolioHref } from "@/lib/admin-routes";
-import { getAdminExercise, getLearningSpaceBySlug } from "@/lib/repositories";
+import { getAdminExercise, getAdminLearningSpaceBySlug } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function LearningSpaceAdminExercisePage({ params }: { params: Promise<{ spaceSlug: string; id: string }> }) {
   await requireAdmin();
   const { spaceSlug, id } = await params;
-  const space = await getLearningSpaceBySlug(spaceSlug);
+  const space = await getAdminLearningSpaceBySlug(spaceSlug);
   if (!space) notFound();
   const exercise = await getAdminExercise(id, space.id);
   if (!exercise) notFound();

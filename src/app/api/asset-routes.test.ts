@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   maybeAutoSynchronize: vi.fn(),
   isAdminAuthenticated: vi.fn(),
   getLearningSpaceBySlug: vi.fn(),
+  getAdminLearningSpaceBySlug: vi.fn(),
   getPublicAsset: vi.fn(),
   getAdminAsset: vi.fn(),
   getPublicPortfolioDocument: vi.fn(),
@@ -15,6 +16,7 @@ vi.mock("@/lib/auto-sync", () => ({ maybeAutoSynchronize: mocks.maybeAutoSynchro
 vi.mock("@/lib/auth", () => ({ isAdminAuthenticated: mocks.isAdminAuthenticated }));
 vi.mock("@/lib/repositories", () => ({
   getLearningSpaceBySlug: mocks.getLearningSpaceBySlug,
+  getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug,
   getPublicAsset: mocks.getPublicAsset,
   getAdminAsset: mocks.getAdminAsset,
   getPublicPortfolioDocument: mocks.getPublicPortfolioDocument,
@@ -36,6 +38,7 @@ beforeEach(() => {
   mocks.maybeAutoSynchronize.mockResolvedValue(undefined);
   mocks.isAdminAuthenticated.mockResolvedValue(true);
   mocks.getLearningSpaceBySlug.mockResolvedValue(space);
+  mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
 });
 
 describe("asset route authorization before provider access", () => {
@@ -44,6 +47,14 @@ describe("asset route authorization before provider access", () => {
     const response = await getPublicSolution(request(), solutionContext());
     expect(response.status).toBe(404);
     expect(mocks.maybeAutoSynchronize).not.toHaveBeenCalled();
+    expect(mocks.getStorageProvider).not.toHaveBeenCalled();
+  });
+
+  it.each(["archived", "deleted"])("returns 404 for a public asset in an %s LearningSpace before asset lookup", async () => {
+    mocks.getLearningSpaceBySlug.mockResolvedValue(null);
+    const response = await getPublicSolution(request(), solutionContext());
+    expect(response.status).toBe(404);
+    expect(mocks.getPublicAsset).not.toHaveBeenCalled();
     expect(mocks.getStorageProvider).not.toHaveBeenCalled();
   });
 

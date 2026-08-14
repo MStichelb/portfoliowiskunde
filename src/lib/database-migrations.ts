@@ -283,4 +283,12 @@ export const migrations: DatabaseMigration[] = [
       "UPDATE learning_spaces SET source_type = storage_provider",
     ],
   },
+  {
+    version: "015_learning_space_lifecycle",
+    statements: [
+      "ALTER TABLE learning_spaces ADD COLUMN archived_at TEXT",
+      "UPDATE learning_spaces SET archived_at = updated_at WHERE is_active = 0",
+      "CREATE INDEX learning_spaces_lifecycle_index ON learning_spaces(archived_at, sort_order)",
+    ],
+  },
 ];

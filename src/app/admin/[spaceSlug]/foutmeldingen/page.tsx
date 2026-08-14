@@ -7,7 +7,7 @@ import { ErrorReportNoteForm } from "@/app/components/error-report-note-form";
 import { LearningSpaceNav } from "@/app/components/learning-space-nav";
 import { PublicationStatus } from "@/app/components/publication-status";
 import { requireAdmin } from "@/lib/auth";
-import { getAdminErrorReports, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, type AdminErrorReport } from "@/lib/repositories";
+import { getAdminErrorReports, getAdminLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, type AdminErrorReport } from "@/lib/repositories";
 
 import { deleteErrorReportAction, deleteOldDoneErrorReportsAction, errorReportPinAction, errorReportStatusAction, toggleReportedExerciseVisibilityAction } from "../../actions";
 
@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 export default async function SpaceReportsPage({ params }: { params: Promise<{ spaceSlug: string }> }) {
   await requireAdmin();
   const { spaceSlug } = await params;
-  const space = await getLearningSpaceBySlug(spaceSlug);
+  const space = await getAdminLearningSpaceBySlug(spaceSlug);
   if (!space) notFound();
   const [spaces, reports, oldDone] = await Promise.all([getLearningSpaces(true), getAdminErrorReports(space.id), getOldDoneErrorReportCount(undefined, space.id)]);
   const pinned = reports.filter((report) => report.status === "TODO" && report.pinned);

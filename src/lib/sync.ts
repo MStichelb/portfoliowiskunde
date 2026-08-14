@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { persistIndex, recordFailedSync, releaseSyncLease, tryAcquireSyncLease } from "@/lib/repositories";
+import { getLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, tryAcquireSyncLease } from "@/lib/repositories";
 import { indexSource } from "@/lib/storage/portfolio-indexer";
 import { getStorageProviderWithType } from "@/lib/storage";
 import { SourceAccessError, SourceConfigurationError } from "@/lib/source-errors";
@@ -13,6 +13,12 @@ interface SynchronizationDependencies {
 }
 
 export async function synchronizeSource(learningSpaceId?: string, dependencies: SynchronizationDependencies = {}) {
+  if (learningSpaceId) {
+    const requestedSpace = await getLearningSpace(learningSpaceId);
+    if (requestedSpace && !requestedSpace.isActive) {
+      return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true, skipReason: "archived" as const };
+    }
+  }
   let providerType = "local";
   let lease: { learningSpaceId: string; ownerId: string } | null = null;
   try {
@@ -26,6 +32,10 @@ export async function synchronizeSource(learningSpaceId?: string, dependencies: 
     lease = { learningSpaceId: configured.space.id, ownerId };
     await configured.provider.assertReadyForIndex?.();
     const portfolios = await (dependencies.index ?? indexSource)(configured.provider);
+    const currentSpace = await getLearningSpace(configured.space.id);
+    if (!currentSpace?.isActive) {
+      return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true, skipReason: "archived" as const };
+    }
     const result = await persistIndex(portfolios, configured.type, configured.space.id);
     return { portfolios: portfolios.length, ...result, skipped: false };
   } catch (error) {

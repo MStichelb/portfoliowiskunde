@@ -1,6 +1,6 @@
 import { isAdminAuthenticated } from "@/lib/auth";
 import { storageAssetResponse } from "@/lib/asset-response";
-import { getAdminPortfolioDocument, getLearningSpaceBySlug } from "@/lib/repositories";
+import { getAdminLearningSpaceBySlug, getAdminPortfolioDocument } from "@/lib/repositories";
 import { getStorageProvider } from "@/lib/storage";
 
 export const runtime = "nodejs";
@@ -12,7 +12,7 @@ async function handleAssetRequest(request: Request, { params }: RouteContext) {
   const { id, kind } = await params;
   if (kind !== "assignment" && kind !== "final-solutions") return new Response("Niet gevonden.", { status: 404 });
   const slug = new URL(request.url).searchParams.get("space");
-  const space = slug ? await getLearningSpaceBySlug(slug) : null;
+  const space = slug ? await getAdminLearningSpaceBySlug(slug) : null;
   if (!space) return new Response("Niet gevonden.", { status: 404 });
   const document = await getAdminPortfolioDocument(id, kind, space.id);
   if (!document) return new Response("Niet gevonden.", { status: 404 });

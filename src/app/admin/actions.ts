@@ -10,11 +10,12 @@ import { bulkSelectionError } from "@/lib/admin-validation";
 import { parseBrusselsDateTime, type ChildVisibilityMode, type PortfolioVisibilityMode } from "@/lib/publication";
 import {
   getAdminPortfolioAny,
+  getAdminLearningSpaceBySlug,
+  archiveLearningSpace,
   createLearningSpace,
   createTheme,
   deleteTheme,
   getLearningSpace,
-  getLearningSpaceBySlug,
   updateLearningSpace,
   updateTheme,
   setExercisePublication,
@@ -31,7 +32,8 @@ import {
   setSectionVisibility,
   toggleErrorReportPin,
   archiveMissingIndexItems,
-  deactivateLearningSpace,
+  permanentlyDeleteLearningSpace,
+  restoreLearningSpace,
   type LearningSpaceInput,
 } from "@/lib/repositories";
 import { synchronizeSource } from "@/lib/sync";
@@ -51,10 +53,14 @@ export async function syncAction() {
 export async function syncSpaceAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState> {
   await requireAdmin();
   const learningSpaceId = stringValue(formData, "learningSpaceId");
-  if (!await getLearningSpace(learningSpaceId)) return { error: "Leeromgeving niet gevonden." };
+  const space = await getLearningSpace(learningSpaceId);
+  if (!space) return { error: "Leeromgeving niet gevonden." };
+  if (!space.isActive) return { error: "Deze leeromgeving is gearchiveerd en kan niet worden gesynchroniseerd." };
   try {
     const result = await synchronizeSource(learningSpaceId);
-    if (result.skipped) return { error: "Er loopt al een synchronisatie voor deze leeromgeving." };
+    if (result.skipped) return { error: "skipReason" in result && result.skipReason === "archived"
+      ? "Deze leeromgeving is gearchiveerd en kan niet worden gesynchroniseerd."
+      : "Er loopt al een synchronisatie voor deze leeromgeving." };
   } catch (error) {
     const message = userFacingSourceError(error);
     if (message) return { error: message };
@@ -72,14 +78,39 @@ export async function archiveMissingIndexAction(formData: FormData) {
   revalidatePath("/admin");
 }
 
-export async function deactivateLearningSpaceAction(formData: FormData) {
+export async function archiveLearningSpaceAction(formData: FormData) {
   await requireAdmin();
   const id = stringValue(formData, "id");
   if (!id || !await getLearningSpace(id)) return;
-  if (!await deactivateLearningSpace(id)) redirect("/admin?error=last-space");
+  await archiveLearningSpace(id);
   revalidatePath("/");
   revalidatePath("/admin");
-  redirect("/admin");
+  revalidatePath("/admin/instellingen");
+  redirect("/admin/instellingen");
+}
+
+export async function restoreLearningSpaceAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  if (!id || !await getLearningSpace(id)) return;
+  await restoreLearningSpace(id);
+  revalidatePath("/");
+  revalidatePath("/admin");
+  revalidatePath("/admin/instellingen");
+  redirect("/admin/instellingen");
+}
+
+export async function permanentlyDeleteLearningSpaceAction(formData: FormData) {
+  await requireAdmin();
+  const id = stringValue(formData, "id");
+  const confirmationSlug = stringValue(formData, "confirmationSlug");
+  const space = id ? await getLearningSpace(id) : null;
+  if (!space || confirmationSlug !== space.slug) return;
+  await permanentlyDeleteLearningSpace(id);
+  revalidatePath("/");
+  revalidatePath("/admin");
+  revalidatePath("/admin/instellingen");
+  redirect("/admin/instellingen");
 }
 
 export async function saveLearningSpaceAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState> {
@@ -93,7 +124,7 @@ export async function saveLearningSpaceAction(_previousState: AdminActionState, 
   } catch (error) {
     return { error: error instanceof Error ? error.message : "De instellingen zijn ongeldig." };
   }
-  const matchingSlug = await getLearningSpaceBySlug(input.slug);
+  const matchingSlug = await getAdminLearningSpaceBySlug(input.slug);
   if (matchingSlug && matchingSlug.id !== id) return { error: "Deze publieke slug bestaat al. Kies een andere slug." };
   try {
     await updateLearningSpace(id, input);
@@ -113,7 +144,7 @@ export async function createLearningSpaceAction(formData: FormData) {
   } catch {
     redirect("/admin/instellingen?error=invalid");
   }
-  if (await getLearningSpaceBySlug(input.slug)) redirect("/admin/instellingen?error=duplicate");
+  if (await getAdminLearningSpaceBySlug(input.slug)) redirect("/admin/instellingen?error=duplicate");
   let space;
   try {
     space = await createLearningSpace(input);
