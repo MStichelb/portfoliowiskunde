@@ -24,6 +24,7 @@ export async function synchronizeSource(learningSpaceId?: string, dependencies: 
       return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true };
     }
     lease = { learningSpaceId: configured.space.id, ownerId };
+    await configured.provider.assertReadyForIndex?.();
     const portfolios = await (dependencies.index ?? indexSource)(configured.provider);
     const result = await persistIndex(portfolios, configured.type, configured.space.id);
     return { portfolios: portfolios.length, ...result, skipped: false };

@@ -30,6 +30,7 @@ export interface OpenedFile {
 
 export interface StorageProvider {
   readonly id: string;
+  assertReadyForIndex?(): Promise<void>;
   list(relativePath?: string): Promise<StorageEntry[]>;
   openFile?(sourceId: string, options?: OpenFileOptions): Promise<OpenedFile>;
   readFile(sourceId: string): Promise<Buffer>;

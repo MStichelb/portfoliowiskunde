@@ -5,6 +5,8 @@ import { SourceAccessError, SourceConfigurationError, SourceFileNotFoundError, S
 const DRIVE_API_URL = "https://www.googleapis.com/drive/v3";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
 const SHORTCUT_MIME_TYPE = "application/vnd.google-apps.shortcut";
+const MIRROR_COMPLETION_MARKER = "_mirror-complete.json";
+const INCOMPLETE_MIRROR_MESSAGE = "De Google Drive-mirror is momenteel niet volledig. De laatst geldige index blijft actief.";
 
 interface GoogleDriveFile {
   id?: string;
@@ -51,6 +53,27 @@ export class GoogleDriveProvider implements StorageProvider {
     return new GoogleDriveProvider(connection.folderId, dependencies);
   }
 
+  async assertReadyForIndex(): Promise<void> {
+    if (!this.rootVerified) await this.verifyRootFolder();
+    const markers = (await this.listChildren(this.rootFolderId)).filter(
+      (file) => !file.trashed && file.name === MIRROR_COMPLETION_MARKER,
+    );
+    const marker = markers.length === 1 ? markers[0] : undefined;
+    if (!marker?.id || marker.mimeType === FOLDER_MIME_TYPE || marker.mimeType === SHORTCUT_MIME_TYPE) {
+      throw incompleteMirrorError();
+    }
+
+    let payload: unknown;
+    try {
+      const response = await this.request(`/files/${encodeURIComponent(marker.id)}?alt=media&supportsAllDrives=true`);
+      payload = await response.json();
+    } catch (error) {
+      if (error instanceof SourceTransientError) throw error;
+      throw incompleteMirrorError();
+    }
+    if (!isCompleteMirrorMarker(payload)) throw incompleteMirrorError();
+  }
+
   async list(relativePath = ""): Promise<StorageEntry[]> {
     const normalizedPath = normalizePath(relativePath);
     const parentId = this.directories.get(normalizedPath);
@@ -59,7 +82,7 @@ export class GoogleDriveProvider implements StorageProvider {
 
     const files = await this.listChildren(parentId);
     const entries = files
-      .filter((file) => !file.trashed && file.mimeType !== SHORTCUT_MIME_TYPE)
+      .filter((file) => !file.trashed && file.mimeType !== SHORTCUT_MIME_TYPE && (normalizedPath !== "" || file.name !== MIRROR_COMPLETION_MARKER))
       .map((file) => this.toStorageEntry(file, normalizedPath));
     assertUniqueNames(entries, normalizedPath);
     for (const entry of entries) {
@@ -189,6 +212,22 @@ function assertUniqueNames(entries: StorageEntry[], parentPath: string): void {
     }
     names.add(key);
   }
+}
+
+function isCompleteMirrorMarker(value: unknown): boolean {
+  if (!value || typeof value !== "object") return false;
+  const marker = value as Record<string, unknown>;
+  return marker.status === "complete" && isIsoDate(marker.completedAt);
+}
+
+function isIsoDate(value: unknown): boolean {
+  return typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+    Number.isFinite(Date.parse(value));
+}
+
+function incompleteMirrorError(): SourceAccessError {
+  return new SourceAccessError(INCOMPLETE_MIRROR_MESSAGE);
 }
 
 function googleDriveResponseError(status: number): SourceAccessError {

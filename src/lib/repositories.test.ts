@@ -385,11 +385,46 @@ describe("persistIndex", () => {
     resetDatabaseForTests();
     await persistIndex(await indexSource(createTwoPortfolioProvider()), "local", "space-6");
     const space = (await getLearningSpace("space-6"))!;
-    const inaccessibleProvider = { id: "google-drive", async list() { throw new SourceAccessError("Google Drive niet bereikbaar."); }, async readFile() { return Buffer.from(""); } } satisfies StorageProvider;
+    let indexStarted = false;
+    const inaccessibleProvider = {
+      id: "google-drive",
+      async assertReadyForIndex() { throw new SourceAccessError("De Google Drive-mirror is momenteel niet volledig. De laatst geldige index blijft actief."); },
+      async list() { indexStarted = true; return []; },
+      async readFile() { return Buffer.from(""); },
+    } satisfies StorageProvider;
     await expect(synchronizeSource("space-6", {
       getConfiguredProvider: async () => ({ provider: inaccessibleProvider, type: "google_drive", space: { ...space, sourceType: "google_drive", googleDriveFolderId: "root-id" } }),
-    })).rejects.toThrow("Google Drive niet bereikbaar");
+    })).rejects.toThrow("laatst geldige index blijft actief");
+    expect(indexStarted).toBe(false);
     expect((await getAdminPortfolios("space-6")).filter((portfolio) => portfolio.isIndexed)).toHaveLength(2);
+  });
+
+  it("allows synchronization after a successful Google mirror guard", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-google-marker-valid-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await getDatabase();
+    const space = (await getLearningSpace("space-6"))!;
+    const source = createTwoPortfolioProvider();
+    let markerChecks = 0;
+    const provider = { ...source, async assertReadyForIndex() { markerChecks += 1; } } satisfies StorageProvider;
+
+    await expect(synchronizeSource("space-6", {
+      getConfiguredProvider: async () => ({ provider, type: "google_drive", space: { ...space, sourceType: "google_drive", googleDriveFolderId: "root-id" } }),
+    })).resolves.toMatchObject({ portfolios: 2, skipped: false });
+    expect(markerChecks).toBe(1);
+  });
+
+  it.each(["local", "onedrive"] as const)("does not require a mirror marker for %s synchronization", async (sourceType) => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), `portfolio-${sourceType}-marker-free-`));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await getDatabase();
+    const space = (await getLearningSpace("space-6"))!;
+
+    await expect(synchronizeSource("space-6", {
+      getConfiguredProvider: async () => ({ provider: createTwoPortfolioProvider(), type: sourceType, space: { ...space, sourceType } }),
+    })).resolves.toMatchObject({ portfolios: 2, skipped: false });
   });
 });
 

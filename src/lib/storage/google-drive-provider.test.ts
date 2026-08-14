@@ -97,6 +97,31 @@ describe("GoogleDriveProvider", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("allows an old but complete mirror marker and never exposes the marker to the indexer", async () => {
+    const provider = createMarkerProvider(JSON.stringify({
+      completedAt: "2001-01-01T00:00:00.0000000Z",
+      source: "school-onedrive",
+      status: "complete",
+    }));
+
+    await expect(provider.assertReadyForIndex()).resolves.toBeUndefined();
+    await expect(provider.list()).resolves.toEqual([
+      expect.objectContaining({ name: "Portfolio 3 - Integralen", sourceId: "portfolio-id", kind: "directory" }),
+    ]);
+  });
+
+  it("rejects a missing completion marker", async () => {
+    await expect(createMarkerProvider().assertReadyForIndex()).rejects.toThrow("laatst geldige index blijft actief");
+  });
+
+  it.each([
+    ["an incomplete status", JSON.stringify({ completedAt: "2026-08-14T15:20:00.000Z", status: "syncing" })],
+    ["invalid JSON", "{not-json"],
+    ["an invalid completedAt", JSON.stringify({ completedAt: "gisteren", status: "complete" })],
+  ])("rejects a marker with %s", async (_label, markerBody) => {
+    await expect(createMarkerProvider(markerBody).assertReadyForIndex()).rejects.toThrow("laatst geldige index blijft actief");
+  });
+
   it.each([
     [403, "geen toegang"],
     [404, "bestaat niet"],
@@ -142,6 +167,25 @@ function createProvider(fetchImplementation: typeof fetch | ReturnType<typeof vi
     getAccessToken: async () => "test-token",
     sleep: async () => undefined,
   });
+}
+
+function createMarkerProvider(markerBody?: string) {
+  return createProvider(vi.fn(async (input: string | URL | Request) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith("/files/root-id")) {
+      return json({ id: "root-id", name: "Mirror", mimeType: folderMimeType, trashed: false });
+    }
+    if (url.searchParams.get("q") === "'root-id' in parents and trashed = false") {
+      return json({ files: [
+        ...(markerBody === undefined ? [] : [{ id: "marker-id", name: "_mirror-complete.json", mimeType: "application/json", trashed: false }]),
+        { id: "portfolio-id", name: "Portfolio 3 - Integralen", mimeType: folderMimeType, trashed: false },
+      ] });
+    }
+    if (url.pathname.endsWith("/files/marker-id") && url.searchParams.get("alt") === "media") {
+      return new Response(markerBody, { headers: { "content-type": "application/json" } });
+    }
+    return new Response(null, { status: 404 });
+  }));
 }
 
 function json(value: unknown): Response {
