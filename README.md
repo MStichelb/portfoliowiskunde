@@ -4,6 +4,8 @@ Een read-only index- en publicatielaag voor wiskundeportfolio's. Bronbestanden b
 
 De lokaal geaccepteerde V1 staat op Git-tag `v1.0-local-accepted`.
 
+De definitieve productiearchitectuur, Windows/rclone-mirror, completion markers, retentie en recovery staan in [PRODUCTION_RUNBOOK.md](./PRODUCTION_RUNBOOK.md). School-OneDrive blijft daarin de bron van waarheid; de huidige webapp-productieroute leest een gecontroleerde persoonlijke Google Drive-mirror.
+
 ## A. Local development
 
 Vereisten: Node.js 20 of nieuwer en pnpm via Corepack.
@@ -14,7 +16,7 @@ Vereisten: Node.js 20 of nieuwer en pnpm via Corepack.
 4. Start met `pnpm dev`.
 5. Open `http://localhost:3000/admin` en synchroniseer de gewenste leeromgeving.
 
-Zonder `DATABASE_URL` gebruikt development SQLite in `.data/portfolio.db`, of het pad uit `PORTFOLIO_DATABASE_PATH`. De bron wordt uitsluitend gelezen. `.env*`, `.data`, Vercel-configuratie en lokale databases zijn door `.gitignore` uitgesloten.
+Zonder `DATABASE_URL` gebruikt development SQLite in `.data/portfolio.db`, of het pad uit `PORTFOLIO_DATABASE_PATH`. De bron wordt uitsluitend gelezen. `.env*`, `.data` en lokale databases zijn door `.gitignore` uitgesloten; de niet-geheime productieconfiguratie in `vercel.json` wordt bewust wel gevolgd.
 
 ## B. Microsoft Entra / OneDrive setup
 
@@ -61,7 +63,7 @@ De provider vraagt uitsluitend `https://www.googleapis.com/auth/drive.readonly` 
 
 Productie weigert bewust te starten zonder een `postgres://` of `postgresql://` `DATABASE_URL`; er is geen fallback naar een lokale of ephemeral databasefile. Local filesystem-bronnen zijn eveneens alleen in development beschikbaar.
 
-1. Maak bij een PostgreSQL-provider een lege database in een regio dicht bij de Vercel-functions.
+1. Maak in Neon een lege PostgreSQL-database in Frankfurt, dicht bij de Vercel-functions in `fra1`.
 2. Maak een applicatierol die schema's/tabellen/indexen mag aanmaken en wijzigen en daarna normale DML mag uitvoeren.
 3. Kopieer de TLS-verbinding als `DATABASE_URL`; gebruik `sslmode=require` wanneer de provider dat voorschrijft.
 4. Maak vóór elke latere schemamigratie een providerbackup of herstelpunt.
@@ -86,7 +88,7 @@ Een Vercel code rollback draait databasewijzigingen niet terug. Voor een incompa
 5. Voeg het gekozen `*.vercel.app`-domein of custom domain als Web redirect URI toe in Entra en zet exact dat callbackadres in `MICROSOFT_REDIRECT_URI`.
 6. Deploy of redeploy nadat environment variables zijn gewijzigd. Vercel past gewijzigde variabelen niet toe op bestaande deployments.
 
-De app gebruikt de standaard Node.js-runtime, Server Components, Server Actions en Route Handlers. Er is geen Vercel-specifieke database- of opslag-API toegevoegd.
+De app gebruikt Vercel Hobby met de standaard Node.js-runtime, Server Components, Server Actions en Route Handlers. `vercel.json` zet de projectbrede Function-regio op Frankfurt (`fra1`), naast Neon PostgreSQL in Frankfurt. Er is geen Vercel-specifieke database- of opslag-API toegevoegd.
 
 ## E. Environment variables
 
@@ -117,6 +119,8 @@ Er is geen `APP_URL` of `BASE_URL` nodig: interne links zijn relatief en OAuth g
 4. Wijzig secrets uitsluitend in Vercel en redeploy. Rotatie van `ADMIN_SESSION_SECRET` maakt bestaande cookies onmiddellijk ongeldig.
 
 ## G. LearningSpace source folders instellen
+
+De actuele productiebron is de persoonlijke Google Drive-mirror uit [het production runbook](./PRODUCTION_RUNBOOK.md). OneDrive blijft een volledig ondersteunde alternatieve provider en Local filesystem blijft voor development beschikbaar.
 
 1. Open `/admin/instellingen`. Verbind OneDrive app-breed wanneer je OneDrive gebruikt; voor Google Drive controleert deze pagina de app-brede service-accountenvironment.
 2. Open elke LearningSpace afzonderlijk.
@@ -164,6 +168,8 @@ Voer na de eerste production sync uit:
 9. Log uit en controleer dat adminpagina's en admin-assetendpoints niet meer toegankelijk zijn.
 
 ## J. Troubleshooting / rollback
+
+Zie voor mirrorfouten, completion markers, `--max-delete 10`, historyherstel, lokale mirrorlogs en laag-voor-laagdiagnose ook [PRODUCTION_RUNBOOK.md](./PRODUCTION_RUNBOOK.md#9-recovery-en-troubleshooting).
 
 - **Databaseconfiguratie ontbreekt:** controleer `DATABASE_URL`, TLS en netwerktoegang; productie valt nooit terug op SQLite.
 - **OAuth configuration error:** vergelijk tenant ID, client ID, client secret en de redirect URI teken voor teken met Entra en Vercel.
