@@ -1,10 +1,13 @@
 import { isAdminAuthenticated } from "@/lib/auth";
+import { storageAssetResponse } from "@/lib/asset-response";
 import { getAdminPortfolioDocument, getLearningSpaceBySlug } from "@/lib/repositories";
 import { getStorageProvider } from "@/lib/storage";
 
 export const runtime = "nodejs";
 
-export async function GET(request: Request, { params }: { params: Promise<{ id: string; kind: string }> }) {
+type RouteContext = { params: Promise<{ id: string; kind: string }> };
+
+async function handleAssetRequest(request: Request, { params }: RouteContext) {
   if (!(await isAdminAuthenticated())) return new Response("Niet aangemeld.", { status: 401 });
   const { id, kind } = await params;
   if (kind !== "assignment" && kind !== "final-solutions") return new Response("Niet gevonden.", { status: 404 });
@@ -13,10 +16,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   if (!space) return new Response("Niet gevonden.", { status: 404 });
   const document = await getAdminPortfolioDocument(id, kind, space.id);
   if (!document) return new Response("Niet gevonden.", { status: 404 });
-  try {
-    const content = await (await getStorageProvider(document.learningSpaceId)).readFile(document.sourceId);
-    return new Response(new Uint8Array(content), { headers: { "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${document.fileName.replaceAll('"', "")}"`, "Cache-Control": "private, no-store, max-age=0" } });
-  } catch {
-    return new Response("Het bronbestand kon niet worden gelezen.", { status: 404 });
-  }
+  return storageAssetResponse(request, () => getStorageProvider(document.learningSpaceId), { sourceId: document.sourceId, fileName: document.fileName, contentType: "application/pdf" });
 }
+
+export const GET = handleAssetRequest;
+export const HEAD = handleAssetRequest;

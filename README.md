@@ -55,7 +55,7 @@ Google Drive gebruikt een app-breed service account en per LearningSpace een eig
 7. Open die map in Google Drive en kopieer het deel na `/folders/` uit de URL als **Google Drive folder-ID** in de LearningSpace-instellingen. Het label/pad is optioneel en alleen administratief.
 8. Bewaar de key in een secret manager en verwijder het gedownloade lokale JSON-bestand zodra de environment veilig is ingesteld.
 
-De provider vraagt uitsluitend `https://www.googleapis.com/auth/drive.readonly` aan. Listing start bij de ingestelde root en gebruikt alleen parent-ID's die tijdens die traversal gevonden zijn. Drive-shortcuts worden bewust genegeerd: ze worden niet gevolgd en kunnen dus nooit ongemerkt buiten de gedeelde root leiden. De huidige fase leest bestanden nog via het bestaande `Buffer`-contract; streaming en mirrorautomatisering vallen buiten deze implementatie.
+De provider vraagt uitsluitend `https://www.googleapis.com/auth/drive.readonly` aan. Listing start bij de ingestelde root en gebruikt alleen parent-ID's die tijdens die traversal gevonden zijn. Drive-shortcuts worden bewust genegeerd: ze worden niet gevolgd en kunnen dus nooit ongemerkt buiten de gedeelde root leiden.
 
 ## C. Production PostgreSQL
 
@@ -140,6 +140,14 @@ Automatische sync is request-gestuurd:
 - de handmatige knop blijft beschikbaar.
 
 Er zijn bewust nog geen Graph webhooks of Vercel cronjobs. Zonder verkeer start geen achtergrondscan; bij de eerstvolgende leerlingrequest na de TTL wordt de bron bijgewerkt.
+
+### Beveiligde assetstreaming
+
+PNG-, JPG- en PDF-bestanden worden via beveiligde applicatieroutes gestreamd. De route controleert eerst LearningSpace, effectieve publicatie, de toggle voor alternatieve uitwerkingen of de adminsessie. Pas na een geslaagde controle opent zij `StorageProvider.openFile()`. Een verborgen of cross-LearningSpace asset bereikt de provider dus niet.
+
+Local filesystem gebruikt een filesystemstream; Google Drive gebruikt server-side `files.get?alt=media`; OneDrive streamt via Microsoft Graph en de tijdelijke download-URL. Een enkele `Range: bytes=...` wordt upstream doorgegeven en resulteert in `206 Partial Content`; HEAD levert dezelfde metadata zonder body. De routes sturen waar beschikbaar `Content-Length`, `Content-Range`, `Accept-Ranges`, `ETag` en `Last-Modified` mee.
+
+Assets gebruiken `Cache-Control: private, no-store, max-age=0`, zodat een latere visibilitywijziging niet door een publieke CDN-cache wordt omzeild. Directe publieke Drive-links worden niet gebruikt: bearer tokens, service-accountcredentials en tijdelijke OneDrive-download-URL's blijven altijd server-side.
 
 ## I. Smoke test
 
