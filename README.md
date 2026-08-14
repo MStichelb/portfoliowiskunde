@@ -4,7 +4,7 @@ Een read-only index- en publicatielaag voor wiskundeportfolio's. Bronbestanden b
 
 De lokaal geaccepteerde V1 staat op Git-tag `v1.0-local-accepted`.
 
-De definitieve productiearchitectuur, Windows/rclone-mirror, completion markers, retentie en recovery staan in [PRODUCTION_RUNBOOK.md](./PRODUCTION_RUNBOOK.md). School-OneDrive blijft daarin de bron van waarheid; de huidige webapp-productieroute leest een gecontroleerde persoonlijke Google Drive-mirror.
+De definitieve productiearchitectuur, Windows/rclone-mirror, completion markers, retentie en recovery staan in [PRODUCTION_RUNBOOK.md](./PRODUCTION_RUNBOOK.md). Voor volledige herinstallatie op een nieuwe Windows-pc, inclusief de actuele scripts en Taakplanner, gebruik je [docs/SETUP-NIEUWE-PC.md](./docs/SETUP-NIEUWE-PC.md). School-OneDrive blijft de bron van waarheid; de huidige webapp-productieroute leest een gecontroleerde persoonlijke Google Drive-mirror.
 
 ## A. Local development
 

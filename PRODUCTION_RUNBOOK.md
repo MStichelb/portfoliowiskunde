@@ -2,6 +2,8 @@
 
 Dit document beschrijft het eerste definitieve productie-ijkpunt van Portfolio Wiskunde. De webapp is een read-only index- en publicatielaag: bronbestanden worden uitsluitend buiten de webapp beheerd.
 
+Voor een volledige herinstallatie van de vaste mirror-pc, met copy/paste-scripts, Google OAuth en Windows Taakplanner, zie [docs/SETUP-NIEUWE-PC.md](./docs/SETUP-NIEUWE-PC.md).
+
 ## 1. Productiearchitectuur
 
 School-OneDrive is de bron van waarheid. De vaste productieketen is:
