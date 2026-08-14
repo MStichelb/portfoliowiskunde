@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
-import { archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deactivateLearningSpace, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getAdminPortfolios, getLatestWarnings, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, persistIndex, recordFailedSync, releaseSyncLease, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deactivateLearningSpace, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, persistIndex, recordFailedSync, releaseSyncLease, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -59,9 +59,11 @@ describe("persistIndex", () => {
     expect(Number((await database.execute({ sql: "SELECT visible FROM exercises WHERE id = ?", args: [String(exercise.rows[0].id)] })).rows[0].visible)).toBe(1);
 
     source.setVersion("Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png", "replacement-v2");
+    source.setSourceId("Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png", "google-replacement-id");
     await expect(persistIndex(await indexSource(source), "local")).resolves.toMatchObject({ updated: 1, missing: 0 });
-    const updated = await database.execute({ sql: "SELECT source_version FROM solution_assets WHERE relative_path = ?", args: ["Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png"] });
+    const updated = await database.execute({ sql: "SELECT source_id, source_version FROM solution_assets WHERE relative_path = ?", args: ["Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png"] });
     expect(updated.rows[0].source_version).toBe("replacement-v2");
+    expect(updated.rows[0].source_id).toBe("google-replacement-id");
     expect(Number((await database.execute("SELECT COUNT(*) AS count FROM solution_assets")).rows[0].count)).toBe(5);
   });
 
@@ -295,8 +297,33 @@ describe("persistIndex", () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-create-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
-    await expect(createLearningSpace({ name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, storageProvider: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4" });
-    await expect(createLearningSpace({ name: "Dubbel", slug: "fysica-4", shortLabel: "D", sortOrder: 41, storageProvider: "local", localSourcePath: null })).rejects.toThrow();
+    await expect(createLearningSpace({ name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, sourceType: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4", sourceType: "local" });
+    await expect(createLearningSpace({ name: "Dubbel", slug: "fysica-4", shortLabel: "D", sortOrder: 41, sourceType: "local", localSourcePath: null })).rejects.toThrow();
+  });
+
+  it("preserves dormant OneDrive and Google Drive configuration while switching providers", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-switch-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await updateLearningSpace("space-5", {
+      name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
+      oneDriveDriveId: "drive-five", oneDriveFolderId: "folder-five", oneDriveFolderPath: "Wiskunde/5",
+    });
+    await updateLearningSpace("space-5", {
+      name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "google_drive",
+      googleDriveFolderId: "google-folder-five", googleDriveFolderLabel: "Mirror 5de jaar",
+    });
+    expect((await getLearningSpaces()).find((space) => space.id === "space-5")).toMatchObject({
+      sourceType: "google_drive", oneDriveDriveId: "drive-five", oneDriveFolderId: "folder-five",
+      googleDriveFolderId: "google-folder-five", googleDriveFolderLabel: "Mirror 5de jaar",
+    });
+    await updateLearningSpace("space-5", {
+      name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
+      oneDriveDriveId: "drive-five", oneDriveFolderId: "folder-five", oneDriveFolderPath: "Wiskunde/5",
+    });
+    expect((await getLearningSpaces()).find((space) => space.id === "space-5")).toMatchObject({
+      sourceType: "onedrive", googleDriveFolderId: "google-folder-five", googleDriveFolderLabel: "Mirror 5de jaar",
+    });
   });
 
   it("deactivates one learning space without affecting another or its source metadata", async () => {
@@ -317,17 +344,31 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await persistIndex(await indexSource(createTwoPortfolioProvider()), "local", "space-6");
-    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, storageProvider: "local", localSourcePath: null });
+    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: null });
     await expect(synchronizeSource("space-5")).rejects.toBeInstanceOf(SourceConfigurationError);
-    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, storageProvider: "local", localSourcePath: path.join(temporaryDirectory, "does-not-exist") });
+    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: path.join(temporaryDirectory, "does-not-exist") });
     await expect(synchronizeSource("space-5")).rejects.toBeInstanceOf(SourceAccessError);
     expect((await getAdminPortfolios("space-6")).some((portfolio) => portfolio.code === "3")).toBe(true);
+  });
+
+  it("keeps the last valid index when a Google Drive scan fails before persistence", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-google-source-error-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await persistIndex(await indexSource(createTwoPortfolioProvider()), "local", "space-6");
+    const space = (await getLearningSpace("space-6"))!;
+    const inaccessibleProvider = { id: "google-drive", async list() { throw new SourceAccessError("Google Drive niet bereikbaar."); }, async readFile() { return Buffer.from(""); } } satisfies StorageProvider;
+    await expect(synchronizeSource("space-6", {
+      getConfiguredProvider: async () => ({ provider: inaccessibleProvider, type: "google_drive", space: { ...space, sourceType: "google_drive", googleDriveFolderId: "root-id" } }),
+    })).rejects.toThrow("Google Drive niet bereikbaar");
+    expect((await getAdminPortfolios("space-6")).filter((portfolio) => portfolio.isIndexed)).toHaveLength(2);
   });
 });
 
 function createTwoPortfolioProvider() {
   const versions = new Map<string, string>();
-  const file = (relativePath: string): StorageEntry => ({ name: relativePath.split("/").at(-1)!, relativePath, sourceId: relativePath, kind: "file", sourceVersion: versions.get(relativePath) ?? "v1", lastModifiedAt: "2026-08-11T10:00:00.000Z" });
+  const sourceIds = new Map<string, string>();
+  const file = (relativePath: string): StorageEntry => ({ name: relativePath.split("/").at(-1)!, relativePath, sourceId: sourceIds.get(relativePath) ?? relativePath, kind: "file", sourceVersion: versions.get(relativePath) ?? "v1", lastModifiedAt: "2026-08-11T10:00:00.000Z" });
   const directory = (relativePath: string): StorageEntry => ({ name: relativePath.split("/").at(-1)!, relativePath, sourceId: relativePath, kind: "directory" });
   const p3 = "Portfolio 3 - Toepassingen van integralen";
   const p4 = "Portfolio 4 - De bepaalde integraal";
@@ -344,15 +385,16 @@ function createTwoPortfolioProvider() {
     id: "fixture",
     async list(relativePath = "") {
       return (tree[relativePath] ?? []).map((entry) => entry.kind === "file"
-        ? { ...entry, sourceVersion: versions.get(entry.relativePath) ?? "v1" }
+        ? { ...entry, sourceId: sourceIds.get(entry.relativePath) ?? entry.relativePath, sourceVersion: versions.get(entry.relativePath) ?? "v1" }
         : entry);
     },
     async readFile() { return Buffer.from(""); },
     setVersion(relativePath: string, version: string) { versions.set(relativePath, version); },
+    setSourceId(relativePath: string, sourceId: string) { sourceIds.set(relativePath, sourceId); },
     add(relativePath: string) { const parent = relativePath.split("/").slice(0, -1).join("/"); if (!tree[parent]?.some((entry) => entry.relativePath === relativePath)) tree[parent]?.push(file(relativePath)); },
     remove(relativePath: string) { for (const entries of Object.values(tree)) { const index = entries.findIndex((entry) => entry.relativePath === relativePath); if (index >= 0) entries.splice(index, 1); } },
     has(relativePath: string) { return Object.values(tree).flat().some((entry) => entry.relativePath === relativePath); },
-  } satisfies StorageProvider & { setVersion(relativePath: string, version: string): void; add(relativePath: string): void; remove(relativePath: string): void; has(relativePath: string): boolean };
+  } satisfies StorageProvider & { setVersion(relativePath: string, version: string): void; setSourceId(relativePath: string, sourceId: string): void; add(relativePath: string): void; remove(relativePath: string): void; has(relativePath: string): boolean };
 }
 
 function createSingleAssetProvider(fileName: string) {

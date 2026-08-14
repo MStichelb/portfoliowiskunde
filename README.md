@@ -1,6 +1,6 @@
 # Portfolio Wiskunde
 
-Een read-only index- en publicatielaag voor wiskundeportfolio's. Bronbestanden blijven in een lokale map of OneDrive; de applicatie bewaart alleen metadata, publicatie-instellingen, waarschuwingen, foutmeldingen en versleutelde OAuth-tokens.
+Een read-only index- en publicatielaag voor wiskundeportfolio's. Bronbestanden blijven in een lokale map, OneDrive of Google Drive; de applicatie bewaart alleen metadata, publicatie-instellingen, waarschuwingen, foutmeldingen en versleutelde OAuth-tokens.
 
 De lokaal geaccepteerde V1 staat op Git-tag `v1.0-local-accepted`.
 
@@ -41,6 +41,21 @@ GET https://graph.microsoft.com/v1.0/me/drive/root:/pad/naar/bronmap?$select=id,
 Gebruik `id` als **OneDrive map-ID** en `parentReference.driveId` als **OneDrive drive-ID**. Vul die waarden per LearningSpace in. Het optionele padveld is alleen een leesbaar administratief label; de runtime gebruikt de stabiele ID's.
 
 Officiele referenties: [app registration](https://learn.microsoft.com/en-us/entra/identity-platform/quickstart-register-app), [authorization code + PKCE](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow), [Files.Read](https://learn.microsoft.com/en-us/graph/permissions-reference#filesread) en [OneDrive-items via pad](https://learn.microsoft.com/en-us/graph/api/resources/onedrive?view=graph-rest-1.0).
+
+## B2. Google Drive service-accountsetup
+
+Google Drive gebruikt een app-breed service account en per LearningSpace een eigen root-folder-ID. De credentials blijven uitsluitend in de server-environment; de database en beheerinterface slaan ze niet op.
+
+1. Maak in [Google Cloud Console](https://console.cloud.google.com/) een project of kies een bestaand project.
+2. Schakel onder **APIs & Services > Library** de **Google Drive API** in.
+3. Maak onder **IAM & Admin > Service Accounts** een service account zonder brede projectrollen.
+4. Maak voor dat account onder **Keys > Add key > Create new key** tijdelijk een JSON-keybestand.
+5. Base64-codeer het volledige bestand, bijvoorbeeld in PowerShell met `[Convert]::ToBase64String([IO.File]::ReadAllBytes('C:\pad\service-account.json'))`, en plaats uitsluitend het resultaat in `GOOGLE_SERVICE_ACCOUNT_JSON_B64` van `.env.local` of de server-environment.
+6. Lees `client_email` uit het JSON-bestand en deel alleen de gewenste persoonlijke Drive-mirrorfolder met dit adres als **Viewer**.
+7. Open die map in Google Drive en kopieer het deel na `/folders/` uit de URL als **Google Drive folder-ID** in de LearningSpace-instellingen. Het label/pad is optioneel en alleen administratief.
+8. Bewaar de key in een secret manager en verwijder het gedownloade lokale JSON-bestand zodra de environment veilig is ingesteld.
+
+De provider vraagt uitsluitend `https://www.googleapis.com/auth/drive.readonly` aan. Listing start bij de ingestelde root en gebruikt alleen parent-ID's die tijdens die traversal gevonden zijn. Drive-shortcuts worden bewust genegeerd: ze worden niet gevolgd en kunnen dus nooit ongemerkt buiten de gedeelde root leiden. De huidige fase leest bestanden nog via het bestaande `Buffer`-contract; streaming en mirrorautomatisering vallen buiten deze implementatie.
 
 ## C. Production PostgreSQL
 
@@ -85,6 +100,7 @@ De app gebruikt de standaard Node.js-runtime, Server Components, Server Actions 
 | `MICROSOFT_CLIENT_SECRET` | Verplicht voor OneDrive | Server-side client secret value. |
 | `MICROSOFT_REDIRECT_URI` | Verplicht voor OneDrive | Volledige callback-URL, lokaal of productie. |
 | `GRAPH_TOKEN_ENCRYPTION_KEY` | Verplicht voor OneDrive | Base64 van exact 32 willekeurige bytes. |
+| `GOOGLE_SERVICE_ACCOUNT_JSON_B64` | Verplicht voor Google Drive | Base64 van het volledige server-side service-accountkeybestand. |
 | `REPORT_RATE_LIMIT_SECRET` | Aanbevolen | Aparte HMAC-sleutel voor foutmeldings-rate-limits; anders wordt de adminsecret gebruikt. |
 | `PORTFOLIO_AUTO_SYNC_TTL_SECONDS` | Optioneel | Stale TTL, standaard 180 en minimaal 30 seconden. |
 | `PORTFOLIO_SYNC_LEASE_SECONDS` | Optioneel | Databaselease, standaard 600 en minimaal 60 seconden. |
@@ -102,17 +118,17 @@ Er is geen `APP_URL` of `BASE_URL` nodig: interne links zijn relatief en OAuth g
 
 ## G. LearningSpace source folders instellen
 
-1. Open `/admin/instellingen` en verbind OneDrive app-breed.
+1. Open `/admin/instellingen`. Verbind OneDrive app-breed wanneer je OneDrive gebruikt; voor Google Drive controleert deze pagina de app-brede service-accountenvironment.
 2. Open elke LearningSpace afzonderlijk.
-3. Kies **OneDrive**.
-4. Vul de drive-ID, folder-ID en optioneel het herkenbare map-pad in.
-5. Sla op. Elke LearningSpace houdt zijn eigen bronconfiguratie en index.
+3. Kies **Local filesystem**, **OneDrive** of **Google Drive**.
+4. Vul alleen de velden van de gekozen bron in. Google Drive gebruikt de folder-ID en een optioneel herkenbaar label; credentials verschijnen nooit in de UI.
+5. Sla op. Elke LearningSpace houdt zijn eigen bronconfiguratie en index. Wisselen van provider bewaart de inactieve OneDrive- en Google Drive-instellingen.
 
 Gebruik Local filesystem niet in productie; de server weigert dit bewust omdat Vercel geen blijvende lokale bronmap biedt.
 
 ## H. First sync
 
-Kies per LearningSpace **Nu synchroniseren**. De Graph-provider gebruikt alleen list/read/download-aanroepen. De app schrijft of verwijdert nooit OneDrive-bestanden. Controleer daarna portfolio's, waarschuwingen en de laatste synchronisatietijd.
+Kies per LearningSpace **Nu synchroniseren**. OneDrive en Google Drive gebruiken alleen read-only list/read/download-aanroepen. De app schrijft of verwijdert nooit bronbestanden. Controleer daarna portfolio's, waarschuwingen en de laatste synchronisatietijd.
 
 Automatische sync is request-gestuurd:
 
@@ -135,7 +151,7 @@ Voer na de eerste production sync uit:
 4. Controleer dat verborgen content en directe verborgen asset-URL's 404 geven.
 5. Controleer dat alternatieve uitwerkingen alleen voor leerlingen verschijnen wanneer de toggle actief is; adminpreview toont ze altijd.
 6. Dien een foutmelding in en controleer TODO, pin, notitie, DONE en delete in admin.
-7. Wijzig een OneDrive-bestand, wacht minstens de TTL en open opnieuw een leerlingroute; controleer de nieuwe syncsamenvatting.
+7. Wijzig een bestand in de gekozen cloudbron, wacht minstens de TTL en open opnieuw een leerlingroute; controleer de nieuwe syncsamenvatting.
 8. Maak tijdelijk een ongeldige folder-ID, voer handmatige sync uit en controleer de vriendelijke fout. Herstel de ID en verifieer dat de oude index tijdens de fout beschikbaar bleef.
 9. Log uit en controleer dat adminpagina's en admin-assetendpoints niet meer toegankelijk zijn.
 
@@ -145,6 +161,8 @@ Voer na de eerste production sync uit:
 - **OAuth configuration error:** vergelijk tenant ID, client ID, client secret en de redirect URI teken voor teken met Entra en Vercel.
 - **OneDrive connection expired:** kies **OneDrive opnieuw verbinden**. Controleer ook of de client secret nog geldig is.
 - **Graph 403:** controleer of de ingelogde gebruiker toegang heeft tot de bron en of delegated `Files.Read` consent kreeg.
+- **Google-configuratiefout:** controleer of `GOOGLE_SERVICE_ACCOUNT_JSON_B64` het volledige, geldig base64-gecodeerde JSON-keybestand bevat en herstart de server na een environmentwijziging.
+- **Google Drive 403/404:** controleer de folder-ID en deel de rootfolder als Viewer met exact het `client_email` van het service account.
 - **Sync al bezig:** wacht tot de actieve run klaar is. Na een crash verloopt de lease standaard na tien minuten.
 - **Sync failure:** de laatste geldige index blijft actief. Bekijk Vercel runtime logs en de adminsyncsamenvatting; tokens, passwords en secrets worden niet gelogd.
 - **Code rollback:** promote in Vercel een eerdere deployment of revert de Git-commit. Voor de volledig lokaal geaccepteerde baseline bestaat tag `v1.0-local-accepted`.

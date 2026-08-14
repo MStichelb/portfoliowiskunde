@@ -32,6 +32,7 @@ import {
   toggleErrorReportPin,
   archiveMissingIndexItems,
   deactivateLearningSpace,
+  type LearningSpaceInput,
 } from "@/lib/repositories";
 import { synchronizeSource } from "@/lib/sync";
 import { userFacingSourceError } from "@/lib/source-errors";
@@ -84,14 +85,14 @@ export async function deactivateLearningSpaceAction(formData: FormData) {
 export async function saveLearningSpaceAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState> {
   await requireAdmin();
   const id = stringValue(formData, "id");
+  const existing = await getLearningSpace(id);
+  if (!existing) return { error: "Leeromgeving niet gevonden." };
   let input: ReturnType<typeof learningSpaceInput>;
   try {
     input = learningSpaceInput(formData);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "De instellingen zijn ongeldig." };
   }
-  const existing = await getLearningSpace(id);
-  if (!existing) return { error: "Leeromgeving niet gevonden." };
   const matchingSlug = await getLearningSpaceBySlug(input.slug);
   if (matchingSlug && matchingSlug.id !== id) return { error: "Deze publieke slug bestaat al. Kies een andere slug." };
   try {
@@ -356,22 +357,28 @@ function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Error && /unique|constraint/i.test(error.message);
 }
 
-function learningSpaceInput(formData: FormData) {
+function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const name = stringValue(formData, "name");
   const slug = stringValue(formData, "slug").toLowerCase();
   const shortLabel = stringValue(formData, "shortLabel");
-  const storageProvider = stringValue(formData, "storageProvider") === "onedrive" ? "onedrive" : "local";
+  const requestedSourceType = stringValue(formData, "sourceType");
+  const sourceType: LearningSpaceInput["sourceType"] = requestedSourceType === "onedrive" || requestedSourceType === "google_drive" ? requestedSourceType : "local";
   const localSourcePath = stringValue(formData, "localSourcePath");
   const oneDriveDriveId = stringValue(formData, "oneDriveDriveId");
   const oneDriveFolderId = stringValue(formData, "oneDriveFolderId");
   const oneDriveFolderPath = stringValue(formData, "oneDriveFolderPath");
+  const googleDriveFolderId = stringValue(formData, "googleDriveFolderId");
+  const googleDriveFolderLabel = stringValue(formData, "googleDriveFolderLabel");
   if (!name || !shortLabel || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik een unieke URL-veilige slug.");
-  if (storageProvider === "local" && localSourcePath) {
-    const normalized = path.resolve(localSourcePath);
-    return { name, slug, shortLabel, sortOrder: Number(stringValue(formData, "sortOrder")) || 0, storageProvider, localSourcePath: normalized, oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null } as const;
+  const common = { name, slug, shortLabel, sortOrder: Number(stringValue(formData, "sortOrder")) || 0, sourceType };
+  if (sourceType === "local") return { ...common, localSourcePath: localSourcePath ? path.resolve(localSourcePath) : null };
+  if (sourceType === "onedrive") {
+    if (!oneDriveDriveId || !oneDriveFolderId) throw new Error("Vul OneDrive drive- en map-ID in.");
+    return { ...common, oneDriveDriveId, oneDriveFolderId, oneDriveFolderPath: oneDriveFolderPath || null };
   }
-  if (storageProvider === "onedrive" && (!oneDriveDriveId || !oneDriveFolderId)) throw new Error("Vul OneDrive drive- en map-ID in.");
-  return { name, slug, shortLabel, sortOrder: Number(stringValue(formData, "sortOrder")) || 0, storageProvider, localSourcePath: null, oneDriveDriveId: oneDriveDriveId || null, oneDriveFolderId: oneDriveFolderId || null, oneDriveFolderPath: oneDriveFolderPath || null } as const;
+  if (!googleDriveFolderId || !/^[A-Za-z0-9_-]+$/.test(googleDriveFolderId)) throw new Error("Vul een geldige Google Drive folder-ID in.");
+  if (googleDriveFolderLabel.length > 240) throw new Error("Het Google Drive-label is te lang.");
+  return { ...common, googleDriveFolderId, googleDriveFolderLabel: googleDriveFolderLabel || null };
 }
 
 function refreshPublicationPaths(portfolioId: string) {

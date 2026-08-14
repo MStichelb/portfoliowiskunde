@@ -50,7 +50,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .empty-state { color: #52616a; padding: 24px 0; }
 .narrow-page { max-width: 660px; }
 .login-form, .settings-form { display: grid; gap: 10px; max-width: 540px; }
-.login-form input, .settings-form input { min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; font: inherit; }
+.login-form input, .settings-form input, .settings-form select { min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; color: #17222b; font: inherit; }
 .settings-heading { margin-bottom: 20px; }
 .learning-space-settings-form { display: grid; gap: 18px; max-width: 760px; }
 .settings-card { padding: 20px; border: 1px solid #d5ddda; border-radius: 6px; background: #fff; }

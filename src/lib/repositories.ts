@@ -114,11 +114,29 @@ export interface LearningSpace {
   shortLabel: string;
   sortOrder: number;
   isActive: boolean;
-  storageProvider: "local" | "onedrive";
+  sourceType: StorageSourceType;
   localSourcePath: string | null;
   oneDriveDriveId: string | null;
   oneDriveFolderId: string | null;
   oneDriveFolderPath: string | null;
+  googleDriveFolderId: string | null;
+  googleDriveFolderLabel: string | null;
+}
+
+export type StorageSourceType = "local" | "onedrive" | "google_drive";
+
+export interface LearningSpaceInput {
+  name: string;
+  slug: string;
+  shortLabel: string;
+  sortOrder: number;
+  sourceType: StorageSourceType;
+  localSourcePath?: string | null;
+  oneDriveDriveId?: string | null;
+  oneDriveFolderId?: string | null;
+  oneDriveFolderPath?: string | null;
+  googleDriveFolderId?: string | null;
+  googleDriveFolderLabel?: string | null;
 }
 
 export interface Theme {
@@ -146,12 +164,19 @@ function stableId(prefix: string, ...parts: string[]): string {
 }
 
 function learningSpaceFromRow(row: DatabaseRow): LearningSpace {
+  const sourceType = storageSourceType(nullableText(row, "source_type") ?? text(row, "storage_provider"));
   return {
     id: text(row, "id"), name: text(row, "name"), slug: text(row, "slug"), shortLabel: text(row, "short_label"),
-    sortOrder: Number(row.sort_order), isActive: bool(row.is_active), storageProvider: text(row, "storage_provider") === "onedrive" ? "onedrive" : "local",
+    sortOrder: Number(row.sort_order), isActive: bool(row.is_active), sourceType,
     localSourcePath: nullableText(row, "local_source_path"), oneDriveDriveId: nullableText(row, "onedrive_drive_id"),
     oneDriveFolderId: nullableText(row, "onedrive_folder_id"), oneDriveFolderPath: nullableText(row, "onedrive_folder_path"),
+    googleDriveFolderId: nullableText(row, "google_drive_folder_id"), googleDriveFolderLabel: nullableText(row, "google_drive_folder_label"),
   };
+}
+
+function storageSourceType(value: string): StorageSourceType {
+  if (value === "onedrive" || value === "google_drive") return value;
+  return "local";
 }
 
 export async function getLearningSpaces(activeOnly = false): Promise<LearningSpace[]> {
@@ -178,18 +203,36 @@ async function defaultLearningSpaceId(): Promise<string> {
   return spaces.at(-1)!.id;
 }
 
-export async function createLearningSpace(input: { name: string; slug: string; shortLabel: string; sortOrder: number; storageProvider: "local" | "onedrive"; localSourcePath?: string | null; oneDriveDriveId?: string | null; oneDriveFolderId?: string | null; oneDriveFolderPath?: string | null }): Promise<LearningSpace> {
+export async function createLearningSpace(input: LearningSpaceInput): Promise<LearningSpace> {
   const database = await getDatabase();
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
-  await database.execute({ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, sort_order, is_active, storage_provider, local_source_path, onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?)`, args: [id, input.name, input.slug, input.shortLabel, input.sortOrder, input.storageProvider, input.localSourcePath ?? null, input.oneDriveDriveId ?? null, input.oneDriveFolderId ?? null, input.oneDriveFolderPath ?? null, now, now] });
+  await database.execute({ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, sort_order, is_active, storage_provider, source_type,
+    local_source_path, onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, google_drive_folder_id, google_drive_folder_label, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args: [id, input.name, input.slug, input.shortLabel, input.sortOrder,
+      legacyStorageProvider(input.sourceType), input.sourceType, input.localSourcePath ?? null, input.oneDriveDriveId ?? null,
+      input.oneDriveFolderId ?? null, input.oneDriveFolderPath ?? null, input.googleDriveFolderId ?? null, input.googleDriveFolderLabel ?? null, now, now] });
   return (await getLearningSpace(id))!;
 }
 
-export async function updateLearningSpace(id: string, input: { name: string; slug: string; shortLabel: string; sortOrder: number; storageProvider: "local" | "onedrive"; localSourcePath?: string | null; oneDriveDriveId?: string | null; oneDriveFolderId?: string | null; oneDriveFolderPath?: string | null }): Promise<void> {
+export async function updateLearningSpace(id: string, input: LearningSpaceInput): Promise<void> {
+  const existing = await getLearningSpace(id);
+  if (!existing) throw new Error("Leeromgeving niet gevonden.");
   const database = await getDatabase();
-  await database.execute({ sql: `UPDATE learning_spaces SET name = ?, slug = ?, short_label = ?, sort_order = ?, storage_provider = ?, local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, updated_at = ? WHERE id = ?`, args: [input.name, input.slug, input.shortLabel, input.sortOrder, input.storageProvider, input.localSourcePath ?? null, input.oneDriveDriveId ?? null, input.oneDriveFolderId ?? null, input.oneDriveFolderPath ?? null, new Date().toISOString(), id] });
+  await database.execute({ sql: `UPDATE learning_spaces SET name = ?, slug = ?, short_label = ?, sort_order = ?, storage_provider = ?, source_type = ?,
+    local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, google_drive_folder_id = ?, google_drive_folder_label = ?, updated_at = ? WHERE id = ?`,
+    args: [input.name, input.slug, input.shortLabel, input.sortOrder, legacyStorageProvider(input.sourceType), input.sourceType,
+      input.localSourcePath === undefined ? existing.localSourcePath : input.localSourcePath,
+      input.oneDriveDriveId === undefined ? existing.oneDriveDriveId : input.oneDriveDriveId,
+      input.oneDriveFolderId === undefined ? existing.oneDriveFolderId : input.oneDriveFolderId,
+      input.oneDriveFolderPath === undefined ? existing.oneDriveFolderPath : input.oneDriveFolderPath,
+      input.googleDriveFolderId === undefined ? existing.googleDriveFolderId : input.googleDriveFolderId,
+      input.googleDriveFolderLabel === undefined ? existing.googleDriveFolderLabel : input.googleDriveFolderLabel,
+      new Date().toISOString(), id] });
+}
+
+function legacyStorageProvider(sourceType: StorageSourceType): "local" | "onedrive" {
+  return sourceType === "onedrive" ? "onedrive" : "local";
 }
 
 export async function deactivateLearningSpace(id: string): Promise<boolean> {

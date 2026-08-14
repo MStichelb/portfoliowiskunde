@@ -274,4 +274,13 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX sync_leases_expiry_index ON sync_leases(acquired_until)",
     ],
   },
+  {
+    version: "014_google_drive_learning_spaces",
+    statements: [
+      "ALTER TABLE learning_spaces ADD COLUMN source_type TEXT NOT NULL DEFAULT 'local' CHECK(source_type IN ('local', 'onedrive', 'google_drive'))",
+      "ALTER TABLE learning_spaces ADD COLUMN google_drive_folder_id TEXT",
+      "ALTER TABLE learning_spaces ADD COLUMN google_drive_folder_label TEXT",
+      "UPDATE learning_spaces SET source_type = storage_provider",
+    ],
+  },
 ];
