@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createMicrosoftAuthorizationUrl, createPkceChallenge, microsoftGraphUrl } from "./onedrive";
+import { createMicrosoftAuthorizationUrl, createPkceChallenge, microsoftGraphUrl, openGraphFile } from "./onedrive";
 
 const originalEnvironment = { ...process.env };
 
@@ -27,5 +27,22 @@ describe("Microsoft Graph production boundaries", () => {
     expect(microsoftGraphUrl("https://graph.microsoft.com/v1.0/me/drive")).toBe("https://graph.microsoft.com/v1.0/me/drive");
     expect(() => microsoftGraphUrl("https://graph.microsoft.com.evil.test/v1.0/me")).toThrow();
     expect(() => microsoftGraphUrl("https://graph.microsoft.com/beta/me")).toThrow();
+  });
+
+  it("forwards Range to Graph and its temporary download URL without forwarding the bearer token", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "https://download.example.test/file" } }))
+      .mockResolvedValueOnce(new Response(Uint8Array.from([1, 2, 3]), { status: 206 }));
+    await openGraphFile("drive-id", "item-id", "bytes=0-2", undefined, {
+      fetch: fetchMock,
+      getAccessToken: async () => "server-secret-token",
+    });
+
+    const graphHeaders = new Headers(fetchMock.mock.calls[0][1].headers);
+    const downloadHeaders = new Headers(fetchMock.mock.calls[1][1].headers);
+    expect(graphHeaders.get("authorization")).toBe("Bearer server-secret-token");
+    expect(graphHeaders.get("range")).toBe("bytes=0-2");
+    expect(downloadHeaders.get("range")).toBe("bytes=0-2");
+    expect(downloadHeaders.has("authorization")).toBe(false);
   });
 });

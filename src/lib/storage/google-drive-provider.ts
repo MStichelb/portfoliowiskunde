@@ -1,5 +1,6 @@
-import type { StorageEntry, StorageProvider } from "@/lib/storage/provider";
-import { SourceAccessError, SourceConfigurationError } from "@/lib/source-errors";
+import { resolveByteRange } from "@/lib/byte-range";
+import type { OpenFileOptions, OpenedFile, StorageEntry, StorageProvider } from "@/lib/storage/provider";
+import { SourceAccessError, SourceConfigurationError, SourceFileNotFoundError, SourceTransientError } from "@/lib/source-errors";
 
 const DRIVE_API_URL = "https://www.googleapis.com/drive/v3";
 const FOLDER_MIME_TYPE = "application/vnd.google-apps.folder";
@@ -12,6 +13,7 @@ interface GoogleDriveFile {
   modifiedTime?: string;
   version?: string;
   md5Checksum?: string;
+  size?: string;
   trashed?: boolean;
 }
 
@@ -72,6 +74,26 @@ export class GoogleDriveProvider implements StorageProvider {
     return Buffer.from(await response.arrayBuffer());
   }
 
+  async openFile(sourceId: string, options: OpenFileOptions = {}): Promise<OpenedFile> {
+    if (!isGoogleDriveId(sourceId)) throw new SourceAccessError("Ongeldige Google Drive-bestandsidentiteit.");
+    const fields = encodeURIComponent("id,name,size,mimeType,modifiedTime,md5Checksum,version,trashed");
+    const metadata = await this.requestJson<GoogleDriveFile>(`/files/${encodeURIComponent(sourceId)}?fields=${fields}&supportsAllDrives=true`, { signal: options.signal });
+    const totalLength = Number(metadata.size);
+    if (metadata.id !== sourceId || metadata.trashed || metadata.mimeType === FOLDER_MIME_TYPE || !Number.isSafeInteger(totalLength) || totalLength < 0) {
+      throw new SourceFileNotFoundError("Het Google Drive-bronbestand bestaat niet.");
+    }
+    const range = resolveByteRange(options.range, totalLength);
+    if (options.headOnly) return googleOpenedFile(metadata, totalLength, range, null);
+
+    const response = await this.request(`/files/${encodeURIComponent(sourceId)}?alt=media&supportsAllDrives=true`, {
+      headers: range ? { Range: `bytes=${range.start}-${range.end}` } : undefined,
+      signal: options.signal,
+    });
+    if (range && response.status !== 206) throw new SourceAccessError("Google Drive ondersteunde het gevraagde bytebereik niet.");
+    if (!response.body) throw new SourceAccessError("Google Drive leverde geen bestandsstream.");
+    return googleOpenedFile(metadata, totalLength, range, response.body);
+  }
+
   private async verifyRootFolder(): Promise<void> {
     const fields = encodeURIComponent("id,name,mimeType,trashed");
     const root = await this.requestJson<GoogleDriveFile>(`/files/${encodeURIComponent(this.rootFolderId)}?fields=${fields}&supportsAllDrives=true`);
@@ -117,8 +139,8 @@ export class GoogleDriveProvider implements StorageProvider {
     };
   }
 
-  private async requestJson<T>(path: string): Promise<T> {
-    const response = await this.request(path);
+  private async requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+    const response = await this.request(path, init);
     try {
       return await response.json() as T;
     } catch {
@@ -126,11 +148,14 @@ export class GoogleDriveProvider implements StorageProvider {
     }
   }
 
-  private async request(path: string): Promise<Response> {
+  private async request(path: string, init: RequestInit = {}): Promise<Response> {
     for (let attempt = 0; attempt <= this.maxRetries; attempt += 1) {
       const token = await this.getAccessToken();
+      const headers = new Headers(init.headers);
+      headers.set("Authorization", `Bearer ${token}`);
       const response = await this.fetchImplementation(`${DRIVE_API_URL}${path}`, {
-        headers: { Authorization: `Bearer ${token}` },
+        ...init,
+        headers,
         cache: "no-store",
       });
       if (response.ok) return response;
@@ -169,7 +194,25 @@ function assertUniqueNames(entries: StorageEntry[], parentPath: string): void {
 function googleDriveResponseError(status: number): SourceAccessError {
   if (status === 401) return new SourceAccessError("Google Drive-authenticatie werd geweigerd. Controleer het service-accountkeybestand.");
   if (status === 403) return new SourceAccessError("Het Google service account heeft geen toegang tot deze map. Deel de mirrorfolder als Viewer.");
-  if (status === 404) return new SourceAccessError("De Google Drive-map of het bestand bestaat niet of is niet gedeeld met het service account.");
-  if (status === 429) return new SourceAccessError("Google Drive is tijdelijk overbelast. Probeer de synchronisatie later opnieuw.");
+  if (status === 404) return new SourceFileNotFoundError("De Google Drive-map of het bestand bestaat niet of is niet gedeeld met het service account.");
+  if (status === 429 || status >= 500) return new SourceTransientError("Google Drive is tijdelijk niet beschikbaar. Probeer later opnieuw.");
   return new SourceAccessError(`Google Drive kon niet worden gelezen (HTTP ${status}).`);
+}
+
+function googleOpenedFile(
+  metadata: GoogleDriveFile,
+  totalLength: number,
+  range: ReturnType<typeof resolveByteRange>,
+  body: ReadableStream<Uint8Array> | null,
+): OpenedFile {
+  return {
+    body,
+    contentLength: range?.length ?? totalLength,
+    totalLength,
+    contentType: metadata.mimeType,
+    contentRange: range ? `bytes ${range.start}-${range.end}/${totalLength}` : undefined,
+    etag: metadata.md5Checksum ? `"${metadata.md5Checksum}"` : metadata.version ? `W/"${metadata.version}"` : undefined,
+    lastModified: metadata.modifiedTime ? new Date(metadata.modifiedTime).toUTCString() : undefined,
+    acceptRanges: true,
+  };
 }

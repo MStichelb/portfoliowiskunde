@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 
 import { deleteSetting, getSetting, setSetting } from "@/lib/repositories";
+import { SourceAccessError, SourceFileNotFoundError, SourceTransientError } from "@/lib/source-errors";
 
 const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
 const TOKEN_SETTING = "onedrive_tokens";
@@ -24,7 +25,8 @@ export interface GraphDriveItem {
   name: string;
   eTag?: string;
   lastModifiedDateTime?: string;
-  file?: Record<string, unknown>;
+  size?: number;
+  file?: { mimeType?: string; hashes?: Record<string, string> };
   folder?: Record<string, unknown>;
   parentReference?: { driveId?: string };
 }
@@ -133,22 +135,38 @@ export async function graphJson<T>(pathOrUrl: string): Promise<T> {
   const token = await getGraphAccessToken();
   const url = microsoftGraphUrl(pathOrUrl);
   const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
-  if (!response.ok) throw new Error(`Microsoft Graph gaf HTTP ${response.status}.`);
+  if (!response.ok) throw graphResponseError(response.status);
   return response.json() as Promise<T>;
 }
 
 export async function readGraphFile(driveId: string, itemId: string): Promise<Buffer> {
-  const token = await getGraphAccessToken();
-  const response = await fetch(`${GRAPH_BASE_URL}/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/content`, {
-    headers: { Authorization: `Bearer ${token}` }, redirect: "manual", cache: "no-store",
+  const download = await openGraphFile(driveId, itemId);
+  return Buffer.from(await download.arrayBuffer());
+}
+
+interface OpenGraphFileDependencies {
+  fetch?: typeof fetch;
+  getAccessToken?: typeof getGraphAccessToken;
+}
+
+export async function openGraphFile(driveId: string, itemId: string, range?: string, signal?: AbortSignal, dependencies: OpenGraphFileDependencies = {}): Promise<Response> {
+  const fetchImplementation = dependencies.fetch ?? fetch;
+  const token = await (dependencies.getAccessToken ?? getGraphAccessToken)();
+  const headers = new Headers({ Authorization: `Bearer ${token}` });
+  if (range) headers.set("Range", range);
+  const response = await fetchImplementation(`${GRAPH_BASE_URL}/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/content`, {
+    headers, redirect: "manual", cache: "no-store", signal,
   });
+  if (response.ok) return response;
   const downloadUrl = response.headers.get("location");
-  if (!downloadUrl) throw new Error("Microsoft Graph leverde geen tijdelijke download-URL.");
+  if (!downloadUrl) throw graphResponseError(response.status);
   const target = new URL(downloadUrl);
   if (target.protocol !== "https:") throw new Error("Microsoft Graph leverde een onveilige download-URL.");
-  const download = await fetch(target, { cache: "no-store" });
-  if (!download.ok) throw new Error("Het OneDrive-bestand kon niet worden gedownload.");
-  return Buffer.from(await download.arrayBuffer());
+  const downloadHeaders = new Headers();
+  if (range) downloadHeaders.set("Range", range);
+  const download = await fetchImplementation(target, { headers: downloadHeaders, cache: "no-store", signal });
+  if (!download.ok) throw graphResponseError(download.status);
+  return download;
 }
 
 export async function resolveDriveFolder(relativePath: string): Promise<{ driveId: string; folderId: string }> {
@@ -264,4 +282,10 @@ function decrypt(value: string): string {
   const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64url"));
   decipher.setAuthTag(Buffer.from(tag, "base64url"));
   return Buffer.concat([decipher.update(Buffer.from(content, "base64url")), decipher.final()]).toString("utf8");
+}
+
+function graphResponseError(status: number): SourceAccessError {
+  if (status === 404) return new SourceFileNotFoundError("Het OneDrive-bronbestand bestaat niet meer.");
+  if (status === 429 || status >= 500) return new SourceTransientError("OneDrive is tijdelijk niet beschikbaar. Probeer later opnieuw.");
+  return new SourceAccessError(`Microsoft Graph weigerde het bronbestand (HTTP ${status}).`);
 }

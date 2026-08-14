@@ -55,6 +55,48 @@ describe("GoogleDriveProvider", () => {
     await expect(provider.readFile("asset-id")).resolves.toEqual(Buffer.from([1, 2, 3]));
   });
 
+  it("streams a byte range from Drive upstream with file metadata", async () => {
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      if (url.searchParams.get("alt") === "media") {
+        expect(new Headers(init?.headers).get("range")).toBe("bytes=0-99");
+        return new Response(Uint8Array.from({ length: 100 }, (_, index) => index), {
+          status: 206,
+          headers: { "content-range": "bytes 0-99/500" },
+        });
+      }
+      return json({
+        id: "asset-id",
+        name: "sample.pdf",
+        size: "500",
+        mimeType: "application/pdf",
+        modifiedTime: "2026-08-14T10:00:00Z",
+        md5Checksum: "abc123",
+        trashed: false,
+      });
+    });
+    const provider = createProvider(fetchMock);
+
+    const opened = await provider.openFile("asset-id", { range: { kind: "offset", start: 0, end: 99 } });
+    expect(opened).toMatchObject({
+      contentLength: 100,
+      totalLength: 500,
+      contentType: "application/pdf",
+      contentRange: "bytes 0-99/500",
+      etag: '"abc123"',
+    });
+    expect(opened.body).toBeInstanceOf(ReadableStream);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses metadata only for HEAD", async () => {
+    const fetchMock = vi.fn(async () => json({ id: "asset-id", size: "3", mimeType: "image/jpeg", trashed: false }));
+    const opened = await createProvider(fetchMock).openFile("asset-id", { headOnly: true });
+    expect(opened.body).toBeNull();
+    expect(opened.contentLength).toBe(3);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it.each([
     [403, "geen toegang"],
     [404, "bestaat niet"],
