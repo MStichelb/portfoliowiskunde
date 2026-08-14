@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireAdmin } from "@/lib/auth";
+import { adminExercisePortfolioHref } from "@/lib/admin-routes";
 import { getAdminExercise, getLearningSpaceBySlug } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ export default async function LearningSpaceAdminExercisePage({ params }: { param
   if (!exercise) notFound();
 
   return <main className="page-shell solution-page">
-    <Link href={`/admin/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(`portfolio-${exercise.portfolioCode}`)}#exercise-${encodeURIComponent(exercise.id)}`} className="back-link">Terug naar portfolio</Link>
+    <Link href={adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id)} className="back-link">Terug naar portfolio</Link>
     <aside className="admin-preview-banner" role="note"><strong>Adminweergave</strong><span>Deze pagina kan inhoud tonen die voor leerlingen verborgen is.</span></aside>
     <h1>Oefening {exercise.code}</h1><p>{exercise.portfolioTitle} - {exercise.sectionTitle}</p>
     {!exercise.isIndexed ? <p className="form-message" role="status">Deze oefening is niet meer aanwezig in de bronmap. De historische metadata blijft behouden tot je de index opschoont.</p> : (["standard", "alternative"] as const).map((kind) => {

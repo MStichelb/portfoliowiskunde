@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
+import { adminExercisePortfolioHref } from "./admin-routes";
 import { archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deactivateLearningSpace, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, persistIndex, recordFailedSync, releaseSyncLease, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
@@ -293,6 +294,33 @@ describe("persistIndex", () => {
     expect((await getAdminPortfolios("space-6")).find((portfolio) => portfolio.id === sixthPortfolio.id)?.isIndexed).toBe(true);
   });
 
+  it("returns the exact parent ID for a Google PF1 exercise preview and keeps the local PF1 separate", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-admin-routing-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await updateLearningSpace("space-5", {
+      name: "Google", slug: "google", shortLabel: "G", sortOrder: 50, sourceType: "google_drive", googleDriveFolderId: "google-root-id",
+    });
+    const index = await indexSource(createPortfolioProvider("1", "PF1-Oef1.png"));
+    await persistIndex(index, "google_drive", "space-5");
+    await persistIndex(index, "local", "space-6");
+
+    const googlePortfolio = (await getAdminPortfolios("space-5")).find((portfolio) => portfolio.code === "1")!;
+    const localPortfolio = (await getAdminPortfolios("space-6")).find((portfolio) => portfolio.code === "1")!;
+    const googleExercise = await getAdminExercise(googlePortfolio.sections[0].exercises[0].id, "space-5");
+    const localExercise = await getAdminExercise(localPortfolio.sections[0].exercises[0].id, "space-6");
+
+    expect(googlePortfolio.id).not.toBe("portfolio-1");
+    expect(googleExercise).toMatchObject({ portfolioId: googlePortfolio.id, learningSpaceId: "space-5" });
+    expect(localExercise).toMatchObject({ portfolioId: localPortfolio.id, learningSpaceId: "space-6" });
+    expect(adminExercisePortfolioHref("google", googleExercise!.portfolioId, googleExercise!.id)).toBe(
+      `/admin/google/portfolio/${googlePortfolio.id}#exercise-${googleExercise!.id}`,
+    );
+    expect(adminExercisePortfolioHref("6", localExercise!.portfolioId, localExercise!.id)).toBe(
+      `/admin/6/portfolio/${localPortfolio.id}#exercise-${localExercise!.id}`,
+    );
+  });
+
   it("creates generic learning spaces with a unique URL-safe slug", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-create-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
@@ -398,15 +426,18 @@ function createTwoPortfolioProvider() {
 }
 
 function createSingleAssetProvider(fileName: string) {
-  const portfolio = "Portfolio 8 - Test";
+  return createPortfolioProvider("8", fileName);
+}
+
+function createPortfolioProvider(code: string, fileName: string) {
+  const portfolio = `Portfolio ${code} - Test`;
   const section = `${portfolio}/Uitwerkingen/1 - Test`;
-  const currentFileName = fileName;
-  const file = (): StorageEntry => ({ name: currentFileName, relativePath: `${section}/${currentFileName}`, sourceId: `${section}/${currentFileName}`, kind: "file", sourceVersion: "v1", lastModifiedAt: "2026-08-12T10:00:00.000Z" });
+  const file = (): StorageEntry => ({ name: fileName, relativePath: `${section}/${fileName}`, sourceId: `${section}/${fileName}`, kind: "file", sourceVersion: "v1", lastModifiedAt: "2026-08-12T10:00:00.000Z" });
   return {
     id: "single-asset-fixture",
     async list(relativePath = "") {
       if (relativePath === "") return [{ name: portfolio, relativePath: portfolio, kind: "directory" as const }];
-      if (relativePath === portfolio) return [{ name: "Portfolio 8 - Test.pdf", relativePath: `${portfolio}/Portfolio 8 - Test.pdf`, kind: "file" as const }, { name: "Eindoplossingen portfolio 8.pdf", relativePath: `${portfolio}/Eindoplossingen portfolio 8.pdf`, kind: "file" as const }, { name: "Uitwerkingen", relativePath: `${portfolio}/Uitwerkingen`, kind: "directory" as const }];
+      if (relativePath === portfolio) return [{ name: `Portfolio ${code} - Test.pdf`, relativePath: `${portfolio}/Portfolio ${code} - Test.pdf`, kind: "file" as const }, { name: `Eindoplossingen portfolio ${code}.pdf`, relativePath: `${portfolio}/Eindoplossingen portfolio ${code}.pdf`, kind: "file" as const }, { name: "Uitwerkingen", relativePath: `${portfolio}/Uitwerkingen`, kind: "directory" as const }];
       if (relativePath === `${portfolio}/Uitwerkingen`) return [{ name: "1 - Test", relativePath: section, kind: "directory" as const }];
       if (relativePath === section) return [file()];
       return [];
