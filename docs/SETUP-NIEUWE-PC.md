@@ -234,12 +234,17 @@ Rclone gebruikt het persoonlijke Google-account met schrijfrechten. Dit is bewus
 3. Zoek **Google Drive API** en kies **Enable/Inschakelen** als ze nog niet actief is.
 4. Open **Google Auth Platform** of **APIs & Services > OAuth consent screen**.
 5. Configureer de doelgroep als **External/Extern**.
-6. **Testing/Testen** is voldoende voor de eerste setup.
-7. Open **Audience/Doelgroep > Test users/Testgebruikers** en voeg het persoonlijke Google-account toe.
+6. Controleer dat de appstatus **In production / Published (In productie / Gepubliceerd)** is.
 
-> **Valkuil:** voeg dezelfde testgebruiker niet opnieuw toe als die al in de lijst staat. Google kan een dubbele toevoeging als `ineligible` weigeren. Controleer eerst de bestaande lijst.
+> **Productie-invariant:** laat de rclone OAuth-app niet in **Testing/Testen** staan. Bij een External-app in Testing kan de Drive-refresh-token na zeven dagen verlopen. De definitieve rclone-app staat daarom **In production / Published**.
 
-Een External-app in Testing kan periodieke herauthenticatie vereisen. Google laat testautorisaties voor deze Drive-scope normaal na zeven dagen verlopen. Publiceer de OAuth-app later als **In production** als blijvende rclone-autorisatie nodig is; Google kan daarbij een unverified-appwaarschuwing of verificatievereisten tonen.
+Is de appstatus gewijzigd van Testing naar In production/Published nadat de remote al was aangemaakt, autoriseer die remote dan eenmalig opnieuw. Bestaande tokens nemen de statuswijziging niet betrouwbaar vanzelf over:
+
+```powershell
+rclone config reconnect gdrive:
+```
+
+Rond de browserautorisatie af met het persoonlijke Google-account en test daarna `rclone lsd gdrive:`. Deze eenmalige herautorisatie voorkomt dat een token uit de eerdere Testing-fase na zeven dagen onverwacht vervalt.
 
 ### 5.2 Desktop OAuth-client maken
 
@@ -274,6 +279,8 @@ Beantwoord de interactieve vragen als volgt. Nummering kan per rcloneversie vers
 11. Meld in de browser aan met het persoonlijke Google-account en geef toestemming.
 12. Shared Drive/Team Drive: `n`/nee.
 13. Bevestig en bewaar de remote.
+
+Controleer ook bij een volledig nieuwe pc eerst dat de OAuth-app **In production / Published** staat. Werd de app pas na een eerdere rclone-autorisatie gepubliceerd, voer dan één keer `rclone config reconnect gdrive:` uit voordat de geplande mirror wordt ingeschakeld.
 
 > **Kritieke valkuil:** gebruik als scope `drive` of de menuoptie **Full access**. Gebruik niet `access` en niet `https://www.googleapis.com/auth/full`. Die ongeldige waarden veroorzaakten tijdens de eerste installatie Google-fout `400 invalid_scope`.
 
@@ -948,7 +955,7 @@ Op een nieuwe pc moeten vooral OneDrive, rclone-autorisatie, lokale scripts, Tas
 
 ### Rclone OAuth verloren of verlopen
 
-Voer `rclone config` uit, kies remote `gdrive` en autoriseer opnieuw met het persoonlijke Google-account. Verwijder de Google Drive mirror niet. Bij External/Testing kan de refresh token na zeven dagen verlopen.
+Controleer eerst dat de rclone OAuth-app **In production / Published** staat. Voer daarna `rclone config reconnect gdrive:` uit en autoriseer opnieuw met het persoonlijke Google-account. Verwijder de Google Drive mirror niet. Een token dat nog tijdens External/Testing werd verleend, kan na zeven dagen verlopen; autoriseer daarom na de statuswijziging altijd eenmalig opnieuw.
 
 ### Service-account JSON-key verloren
 

@@ -68,6 +68,8 @@ Dit rclone-account staat los van de webappidentiteit:
 - **webapp-service-account:** gedeelde mirrorfolder als Viewer en uitsluitend Google-scope `drive.readonly`;
 - **webapp:** geen rclone-credentials en geen Google Drive write/delete-aanroepen.
 
+De OAuth-app voor rclone staat definitief **In production / Published**. Laat haar niet in **Testing** staan, omdat een tijdens Testing verleende Drive-refresh-token na zeven dagen kan verlopen. Na een wijziging van Testing naar In production/Published moet de bestaande remote eenmalig opnieuw worden geautoriseerd met `rclone config reconnect gdrive:`; test daarna met `rclone lsd gdrive:` voordat de geplande mirror opnieuw wordt ingeschakeld.
+
 De Windows Taakplanner voert de mirror iedere vijf minuten uit via `mirror-hidden.vbs`, zodat geen PowerShell-venster verschijnt. Configureer bij taakoverlap **Geen nieuw exemplaar starten**. De scripts zijn pc-configuratie en bevatten geen applicatiecode; leg hun absolute locatie vast in de taak. De aanbevolen indeling is:
 
 ```text
