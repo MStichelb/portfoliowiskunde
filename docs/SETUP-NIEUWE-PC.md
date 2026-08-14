@@ -141,7 +141,7 @@ Vul lokale waarden in zonder ze te committen. Minimaal:
 ```dotenv
 ADMIN_PASSWORD=<STERK-UNIEK-LOKAAL-WACHTWOORD>
 ADMIN_SESSION_SECRET=<AFZONDERLIJKE-WILLEKEURIGE-SLEUTEL-MINSTENS-32-TEKENS>
-PORTFOLIO_SOURCE_PATH=C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\PORTFOLIO
+PORTFOLIO_SOURCE_PATH=C:\Users\<WINDOWS_USER>\OneDrive\PORTFOLIO
 GOOGLE_SERVICE_ACCOUNT_JSON_B64=<ALLEEN-INDIEN-GOOGLE-LOKAAL-WORDT-GETEST>
 ```
 
@@ -184,14 +184,14 @@ Open `http://localhost:3000/admin`. Stop de server later met `Ctrl+C`.
 De definitieve bronroot heeft deze vorm:
 
 ```text
-C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\PORTFOLIO
+C:\Users\<WINDOWS_USER>\OneDrive\PORTFOLIO
 ```
 
-`<WINDOWS_USER>` kan op de nieuwe pc anders zijn dan `mathi`. Controleer de echte gebruikersmap:
+`<WINDOWS_USER>` kan op iedere pc anders zijn. Controleer de echte gebruikersmap:
 
 ```powershell
 $env:USERNAME
-Test-Path -LiteralPath "C:\Users\$env:USERNAME\OneDrive - EDUGO Scholengroep\PORTFOLIO"
+Test-Path -LiteralPath "C:\Users\$env:USERNAME\OneDrive\PORTFOLIO"
 ```
 
 **Verwacht resultaat:** de tweede opdracht geeft `True`. Als ze `False` geeft, zoek de werkelijke OneDrive-map in Verkenner en pas later `$source` in `mirror.ps1` aan.
@@ -365,7 +365,7 @@ Herstel een gewenst bestand uit history naar School-OneDrive, de bron van waarhe
 Sla het script op als:
 
 ```text
-C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\ALGEMEEN - EDUGO\APPS\Portfolio\mirror.ps1
+C:\Users\<WINDOWS_USER>\OneDrive\ALGEMEEN\APPS\Portfolio\mirror.ps1
 ```
 
 Maak de map indien nodig. Vervang in onderstaande bewezen productieversie `<WINDOWS_USER>` door de echte Windows-gebruikersmap. Controleer vooral `$source`; het script ontdekt alle directe LearningSpaces automatisch.
@@ -377,7 +377,7 @@ $ErrorActionPreference = "Stop"
 # CONFIGURATIE
 # ============================================================
 
-$source = "C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\PORTFOLIO"
+$source = "C:\Users\<WINDOWS_USER>\OneDrive\PORTFOLIO"
 
 $destination = "gdrive:Portfolio Wiskunde Mirror/current"
 $historyRoot = "gdrive:Portfolio Wiskunde Mirror/history"
@@ -602,7 +602,7 @@ Ze bevatten `gdrive:` en nooit `gdrive\:`.
 Sla dit bestand naast `mirror.ps1` op als:
 
 ```text
-C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\ALGEMEEN - EDUGO\APPS\Portfolio\mirror-hidden.vbs
+C:\Users\<WINDOWS_USER>\OneDrive\ALGEMEEN\APPS\Portfolio\mirror-hidden.vbs
 ```
 
 Vervang `<VOLLEDIG_PAD_NAAR_MIRROR.PS1>` door het echte volledige pad:
@@ -621,7 +621,7 @@ WScript.Quit exitCode
 Voorbeeld na vervanging:
 
 ```vbscript
-Chr(34) & "C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\ALGEMEEN - EDUGO\APPS\Portfolio\mirror.ps1" & Chr(34)
+Chr(34) & "C:\Users\<WINDOWS_USER>\OneDrive\ALGEMEEN\APPS\Portfolio\mirror.ps1" & Chr(34)
 ```
 
 - `0` start PowerShell zonder zichtbaar venster.
@@ -633,7 +633,7 @@ Chr(34) & "C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\ALGEMEEN - EDUG
 Test het VBS-bestand pas nadat `mirror.ps1` handmatig succesvol is uitgevoerd:
 
 ```powershell
-& "C:\Windows\System32\wscript.exe" "C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\ALGEMEEN - EDUGO\APPS\Portfolio\mirror-hidden.vbs"
+& "C:\Windows\System32\wscript.exe" "C:\Users\<WINDOWS_USER>\OneDrive\ALGEMEEN\APPS\Portfolio\mirror-hidden.vbs"
 ```
 
 Er verschijnt geen venster. Controleer daarna of de logtijd is bijgewerkt en markers bestaan.
@@ -684,7 +684,7 @@ C:\Windows\System32\wscript.exe
 Argumenten:
 
 ```text
-"C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\ALGEMEEN - EDUGO\APPS\Portfolio\mirror-hidden.vbs"
+"C:\Users\<WINDOWS_USER>\OneDrive\ALGEMEEN\APPS\Portfolio\mirror-hidden.vbs"
 ```
 
 **Start in** mag leeg blijven.
@@ -725,7 +725,7 @@ Voer deze stappen uit voordat Taakplanner automatisch mag draaien. Lees iedere d
 Open PowerShell en definieer:
 
 ```powershell
-$source = "C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\PORTFOLIO"
+$source = "C:\Users\<WINDOWS_USER>\OneDrive\PORTFOLIO"
 $destination = "gdrive:Portfolio Wiskunde Mirror/current"
 $history = "gdrive:Portfolio Wiskunde Mirror/history/$(Get-Date -Format 'yyyy-MM-dd')"
 ```
@@ -785,10 +785,10 @@ rclone sync $source $destination --dry-run --backup-dir $history --delete-after 
 $backupTest = Join-Path $source "5WIS\mirror-backup-test.txt"
 Set-Content -LiteralPath $backupTest -Value "versie 1"
 Start-Sleep -Seconds 130
-& "C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\ALGEMEEN - EDUGO\APPS\Portfolio\mirror.ps1"
+& "C:\Users\<WINDOWS_USER>\OneDrive\ALGEMEEN\APPS\Portfolio\mirror.ps1"
 Set-Content -LiteralPath $backupTest -Value "versie 2"
 Start-Sleep -Seconds 130
-& "C:\Users\<WINDOWS_USER>\OneDrive - EDUGO Scholengroep\ALGEMEEN - EDUGO\APPS\Portfolio\mirror.ps1"
+& "C:\Users\<WINDOWS_USER>\OneDrive\ALGEMEEN\APPS\Portfolio\mirror.ps1"
 ```
 
 **Verwacht:** `current/5WIS/mirror-backup-test.txt` bevat versie 2 en de vorige versie staat in `history/YYYY-MM-DD/5WIS/`. Verwijder daarna het testbestand uit School-OneDrive en laat de mirror nogmaals lopen.

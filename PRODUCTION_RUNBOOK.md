@@ -36,7 +36,7 @@ De webapp leest per LearningSpace uitsluitend de bijbehorende map onder `current
 De lokale mirrorroot op de vaste Windows-pc is:
 
 ```text
-C:\Users\mathi\OneDrive - EDUGO Scholengroep\PORTFOLIO
+C:\Users\<WINDOWS_USER>\OneDrive\PORTFOLIO
 ```
 
 Elke directe submap is een afzonderlijke LearningSpace:
