@@ -7,6 +7,7 @@ import { z } from "zod";
 
 import { endAdminSession, requireAdmin } from "@/lib/auth";
 import { bulkSelectionError } from "@/lib/admin-validation";
+import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { parseBrusselsDateTime, type ChildVisibilityMode, type PortfolioVisibilityMode } from "@/lib/publication";
 import {
   getAdminPortfolioAny,
@@ -106,7 +107,8 @@ export async function permanentlyDeleteLearningSpaceAction(formData: FormData) {
   const confirmationSlug = stringValue(formData, "confirmationSlug");
   const space = id ? await getLearningSpace(id) : null;
   if (!space || confirmationSlug !== space.slug) return;
-  await permanentlyDeleteLearningSpace(id);
+  if (!canPermanentlyDeleteLearningSpace(space)) redirect("/admin/instellingen?error=archive-before-delete");
+  if (!await permanentlyDeleteLearningSpace(id)) redirect("/admin/instellingen?error=delete-failed");
   revalidatePath("/");
   revalidatePath("/admin");
   revalidatePath("/admin/instellingen");

@@ -6,6 +6,7 @@ import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { executeBatch, getDatabase } from "@/lib/database";
 import type { IndexedPortfolio } from "@/lib/domain";
+import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import {
   resolveChildPublication,
   resolvePortfolioPublication,
@@ -262,8 +263,9 @@ export async function restoreLearningSpace(id: string): Promise<boolean> {
 
 export async function permanentlyDeleteLearningSpace(id: string): Promise<boolean> {
   const database = await getDatabase();
-  const existing = await database.execute({ sql: "SELECT id FROM learning_spaces WHERE id = ?", args: [id] });
-  if (!existing.rows[0]) return false;
+  const existing = await database.execute({ sql: "SELECT id, is_active, archived_at FROM learning_spaces WHERE id = ?", args: [id] });
+  const row = existing.rows[0];
+  if (!row || !canPermanentlyDeleteLearningSpace({ isActive: bool(row.is_active), archivedAt: nullableText(row, "archived_at") })) return false;
   const portfolioIds = "SELECT id FROM portfolios WHERE learning_space_id = ?";
   const exerciseIds = `SELECT id FROM exercises WHERE portfolio_id IN (${portfolioIds})`;
   const variantIds = `SELECT id FROM solution_variants WHERE exercise_id IN (${exerciseIds})`;

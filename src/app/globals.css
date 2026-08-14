@@ -159,12 +159,24 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .theme-admin-group > h2, .theme-group > h2 { margin-bottom: 10px; }
 .theme-group { margin: 34px 0; }
 .space-list, .theme-editor-list { display: grid; gap: 12px; margin: 22px 0; }
-.space-list-item, .theme-editor { display: flex; gap: 12px; justify-content: space-between; align-items: end; padding: 14px; border: 1px solid #d5ddda; border-radius: 4px; background: #fff; }
-.space-list-item div { display: grid; gap: 4px; }
+.space-list-item, .theme-editor { display: flex; gap: 18px; justify-content: space-between; align-items: center; padding: 16px; border: 1px solid #d5ddda; border-radius: 4px; background: #fff; }
+.space-list-item .space-list-info { display: grid; min-width: 0; gap: 4px; }
 .space-list-item span { color: #52616a; font-size: 14px; overflow-wrap: anywhere; }
 .space-list-item .space-list-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .space-list-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .space-list-actions form { margin: 0; }
+.space-list-actions .secondary-button, .space-list-actions .danger-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; }
+.restore-button { border-color: #84aa98; color: #174a36; }
+.learning-spaces-page { max-width: 820px; }
+.learning-spaces-section > p, .add-learning-space-section > p { color: #52616a; }
+.learning-space-create-form { display: grid; gap: 22px; margin-top: 20px; }
+.learning-space-create-form fieldset { display: grid; gap: 14px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.learning-space-create-form legend { margin-bottom: 14px; padding: 0; color: #314149; font-size: 15px; font-weight: 700; }
+.learning-space-create-form label { display: grid; gap: 6px; color: #314149; font-size: 14px; font-weight: 700; }
+.learning-space-create-form input, .learning-space-create-form select { width: 100%; min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; color: #17222b; font: inherit; }
+.learning-space-create-form small { color: #52616a; font-size: 12px; font-weight: 400; line-height: 1.35; }
+.create-source-fields { display: grid; gap: 16px; }
+.create-space-actions { display: flex; justify-content: flex-start; padding-top: 2px; }
 .archived-message { margin: 14px 0; padding: 11px 13px; border-left: 4px solid #8a6d35; background: #f5f0e4; color: #55451f; font-weight: 700; }
 .archived-nav-status { display: inline-flex; align-items: center; padding: 6px 8px; color: #5c6265; font-weight: 700; }
 .theme-editor { display: grid; grid-template-columns: minmax(0, 1fr) 130px auto auto; }
@@ -218,4 +230,4 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 @media (max-width: 640px) { .site-nav { padding: 0 16px; } .page-shell { width: min(100% - 24px, 1080px); padding-top: 28px; } .admin-header, .admin-row, .admin-exercise { display: block; } .admin-actions, .admin-header form, .visibility-form { margin-top: 14px; justify-content: start; } .exercise-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); } .exercise-link, .exercise-hidden { min-width: 0; width: 100%; } }
 @media (max-width: 900px) { .bulk-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 640px) { .admin-card { margin: 16px 0; padding: 16px; } .card-heading, .document-item { display: grid; } .document-grid, .bulk-toolbar, .report-content, .settings-grid { grid-template-columns: 1fr; } .settings-card { padding: 16px; } .publication-row { align-items: stretch; } .segmented-control, .segmented-control div { width: 100%; } .segmented-control div { display: grid; } .segmented-control button { border-right: 0; border-bottom: 1px solid #9ab0ad; justify-content: center; } .segmented-control button:last-child { border-bottom: 0; } .planning-fields label { width: 100%; } .document-item .secondary-button { justify-self: start; } .bulk-toolbar .primary-button { width: 100%; } .report-actions { flex-wrap: wrap; } .done-group-actions { justify-content: start; } .theme-editor { grid-template-columns: 1fr; } .space-list-item { align-items: start; flex-direction: column; } }
-@media (max-width: 640px) { .space-list-item .space-list-actions { width: 100%; justify-content: flex-start; } }
+@media (max-width: 640px) { .space-list-item .space-list-actions { width: 100%; justify-content: flex-start; } .space-list-actions .secondary-button, .space-list-actions .danger-button { flex: 1 1 auto; } }

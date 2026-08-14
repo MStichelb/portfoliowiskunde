@@ -325,7 +325,7 @@ describe("persistIndex", () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-create-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
-    await expect(createLearningSpace({ name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, sourceType: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4", sourceType: "local" });
+    await expect(createLearningSpace({ name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, sourceType: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4", sourceType: "local", isActive: true, archivedAt: null });
     await expect(createLearningSpace({ name: "Dubbel", slug: "fysica-4", shortLabel: "D", sortOrder: 41, sourceType: "local", localSourcePath: null })).rejects.toThrow();
   });
 
@@ -393,7 +393,16 @@ describe("persistIndex", () => {
     expect(source.has("Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png")).toBe(true);
   });
 
-  it("permanently deletes only one LearningSpace and its database-owned metadata", async () => {
+  it("refuses to permanently delete an active LearningSpace", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-active-delete-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    expect(await permanentlyDeleteLearningSpace("space-5")).toBe(false);
+    expect(await getLearningSpace("space-5")).toMatchObject({ isActive: true, archivedAt: null });
+  });
+
+  it("permanently deletes only one archived LearningSpace and its database-owned metadata", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-permanent-delete-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
@@ -412,6 +421,7 @@ describe("persistIndex", () => {
     await database.execute({ sql: "INSERT INTO sync_warnings (id, sync_run_id, severity, relative_path, message) VALUES (?, ?, 'warning', 'test', 'Lifecycle test')", args: ["warning-space-5", syncRunId] });
     const retainedPortfolioIds = (await getAdminPortfolios("space-6")).map((portfolio) => portfolio.id);
 
+    expect(await archiveLearningSpace("space-5")).toBe(true);
     expect(await permanentlyDeleteLearningSpace("space-5")).toBe(true);
     expect(await getLearningSpace("space-5")).toBeNull();
     expect(await getAdminLearningSpaceBySlug("5")).toBeNull();
