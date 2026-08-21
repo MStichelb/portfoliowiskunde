@@ -1,4 +1,3 @@
-import { maybeAutoSynchronize } from "@/lib/auto-sync";
 import { mimeTypeForExtension, storageAssetResponse } from "@/lib/asset-response";
 import { getLearningSpaceBySlug, getPublicAsset } from "@/lib/repositories";
 import { getStorageProvider } from "@/lib/storage";
@@ -12,10 +11,7 @@ async function handleAssetRequest(request: Request, { params }: RouteContext) {
   const space = slug ? await getLearningSpaceBySlug(slug) : null;
   if (!slug || !space) return new Response("Niet gevonden.", { status: 404 });
   const { id } = await params;
-  let asset = await getPublicAsset(id, space.id);
-  if (!asset) return new Response("Niet gevonden.", { status: 404 });
-  await maybeAutoSynchronize(space.id);
-  asset = await getPublicAsset(id, space.id);
+  const asset = await getPublicAsset(id, space.id);
   if (!asset) return new Response("Niet gevonden.", { status: 404 });
 
   return storageAssetResponse(request, () => getStorageProvider(asset.learningSpaceId), {

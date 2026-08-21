@@ -1,9 +1,10 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { ErrorReportForm } from "@/app/components/error-report-form";
-import { maybeAutoSynchronize } from "@/lib/auto-sync";
+import { isNextPrefetchRequest, preparePublicIndex } from "@/lib/public-index";
 import { getLearningSpaceBySlug, getVisibleExercise } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ export default async function LearningSpaceExercisePage({ params }: { params: Pr
   const { spaceSlug, id } = await params;
   const space = await getLearningSpaceBySlug(spaceSlug);
   if (!space || !space.isActive) notFound();
-  await maybeAutoSynchronize(space.id);
+  await preparePublicIndex(space.id, { isPrefetch: isNextPrefetchRequest(await headers()) });
   const exercise = await getVisibleExercise(id, space.id);
   if (!exercise) notFound();
   const standard = exercise.assets.filter((asset) => asset.kind === "standard");

@@ -528,6 +528,17 @@ export async function getLatestSyncSummary(learningSpaceId?: string): Promise<Sy
   };
 }
 
+export async function hasValidLearningSpaceIndex(learningSpaceId: string): Promise<boolean> {
+  const result = await (await getDatabase()).execute({
+    sql: `SELECT CASE WHEN
+      EXISTS(SELECT 1 FROM sync_runs WHERE learning_space_id = ? AND status = 'completed')
+      OR EXISTS(SELECT 1 FROM portfolios WHERE learning_space_id = ? AND is_indexed = 1)
+      THEN 1 ELSE 0 END AS has_valid_index`,
+    args: [learningSpaceId, learningSpaceId],
+  });
+  return Number(result.rows[0]?.has_valid_index ?? 0) === 1;
+}
+
 export async function tryAcquireSyncLease(learningSpaceId: string, ownerId: string, now = new Date(), leaseSeconds = 600): Promise<boolean> {
   const database = await getDatabase();
   const acquiredUntil = new Date(now.getTime() + Math.max(60, leaseSeconds) * 1000).toISOString();

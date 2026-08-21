@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { adminExercisePortfolioHref } from "./admin-routes";
-import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -48,7 +48,9 @@ describe("persistIndex", () => {
 
     expect(firstIndex).toHaveLength(2);
     expect(firstIndex.flatMap((portfolio) => portfolio.sections).flatMap((section) => section.exercises).flatMap((exercise) => exercise.assets)).toHaveLength(5);
+    expect(await hasValidLearningSpaceIndex("space-6")).toBe(false);
     await persistIndex(firstIndex, "local");
+    expect(await hasValidLearningSpaceIndex("space-6")).toBe(true);
     const database = await getDatabase();
     const original = await database.execute("SELECT id, variant_id, relative_path FROM solution_assets ORDER BY id LIMIT 1");
     await database.execute({ sql: "UPDATE solution_assets SET id = ? WHERE id = ?", args: ["legacy-v02-asset-id", String(original.rows[0].id)] });

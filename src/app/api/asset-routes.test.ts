@@ -90,6 +90,7 @@ describe("asset route streaming", () => {
     mocks.getStorageProvider.mockResolvedValue(provider);
     const response = await getPublicSolution(request(), solutionContext());
     expect(response.status).toBe(200);
+    expect(mocks.maybeAutoSynchronize).not.toHaveBeenCalled();
     expect(response.headers.get("content-type")).toBe("image/png");
     expect(provider.openFile).toHaveBeenCalledWith("source-id", expect.objectContaining({ headOnly: false }));
   });
