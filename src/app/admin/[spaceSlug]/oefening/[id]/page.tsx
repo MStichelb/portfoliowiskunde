@@ -2,6 +2,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AdminSpaceHeader } from "@/app/components/admin-space-header";
+import { SolutionVariantHeading } from "@/app/components/solution-variant-heading";
 import { requireAdmin } from "@/lib/auth";
 import { adminExercisePortfolioHref } from "@/lib/admin-routes";
 import { getAdminExercise, getAdminLearningSpaceBySlug } from "@/lib/repositories";
@@ -16,15 +18,14 @@ export default async function LearningSpaceAdminExercisePage({ params }: { param
   const exercise = await getAdminExercise(id, space.id);
   if (!exercise) notFound();
 
-  return <main className="page-shell admin-page solution-page">
+  return <main className="page-shell admin-page admin-space-page solution-page">
     <AdminSpaceHeader current={space} section="portfolios" />
     <Link href={adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id)} className="back-link">Terug naar portfolio</Link>
     <aside className="admin-preview-banner" role="note"><strong>Adminweergave</strong><span>Deze inhoud kan voor leerlingen verborgen zijn.</span></aside>
     <h2>Oefening {exercise.code}</h2><p>{exercise.portfolioTitle} - {exercise.sectionTitle}</p>
     {!exercise.isIndexed ? <p className="form-message" role="status">Deze oefening is niet meer aanwezig in de bronmap. De historische metadata blijft behouden tot je de index opschoont.</p> : (["standard", "alternative"] as const).map((kind) => {
       const assets = exercise.assets.filter((asset) => asset.kind === kind);
-      return assets.length === 0 ? null : <section className="solution-variant" key={kind}><h2>{kind === "standard" ? "Uitwerking" : "Alternatieve uitwerking"}</h2>{assets.map((asset) => <figure className="solution-asset" key={asset.id}>{asset.extension === "pdf" ? <iframe title={asset.fileName} src={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} /> : <img src={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} alt={asset.fileName} />}<figcaption><a href={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} target="_blank" rel="noreferrer">Open oorspronkelijk bestand</a></figcaption></figure>)}</section>;
+      return assets.length === 0 ? null : <section className="solution-variant" key={kind}><SolutionVariantHeading kind={kind} />{assets.map((asset) => <figure className="solution-asset" key={asset.id}>{asset.extension === "pdf" ? <iframe title={asset.fileName} src={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} /> : <img src={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} alt={asset.fileName} />}<figcaption><a href={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} target="_blank" rel="noreferrer">Open oorspronkelijk bestand</a></figcaption></figure>)}</section>;
     })}
   </main>;
 }
-import { AdminSpaceHeader } from "@/app/components/admin-space-header";

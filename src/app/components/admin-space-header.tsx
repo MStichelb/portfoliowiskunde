@@ -3,15 +3,10 @@ import Link from "next/link";
 
 import { LearningSpaceNav, type AdminSpaceSection } from "@/app/components/learning-space-nav";
 import { SyncSpaceForm } from "@/app/components/sync-space-form";
-import { getLatestSyncSummary, getLearningSpaces, getOpenErrorReportCount, type LearningSpace } from "@/lib/repositories";
+import { getLatestSyncSummary, getOpenErrorReportCount, type LearningSpace } from "@/lib/repositories";
 
 export async function AdminSpaceHeader({ current, section }: { current: LearningSpace; section: AdminSpaceSection }) {
-  const [allSpaces, sync, reportCount] = await Promise.all([
-    getLearningSpaces(),
-    getLatestSyncSummary(current.id),
-    getOpenErrorReportCount(current.id),
-  ]);
-  const spaces = allSpaces.filter((space) => space.isActive || space.id === current.id);
+  const [sync, reportCount] = await Promise.all([getLatestSyncSummary(current.id), getOpenErrorReportCount(current.id)]);
   const syncedAt = sync?.finishedAt ?? sync?.startedAt;
   return <>
     <header className="admin-header admin-space-header">
@@ -22,7 +17,7 @@ export async function AdminSpaceHeader({ current, section }: { current: Learning
         {current.isActive ? <SyncSpaceForm learningSpaceId={current.id} /> : null}
       </div>
     </header>
-    <LearningSpaceNav spaces={spaces} current={current} section={section} />
+    <LearningSpaceNav current={current} section={section} />
   </>;
 }
 

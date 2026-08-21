@@ -337,4 +337,8 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE portfolios ADD COLUMN card_color TEXT NOT NULL DEFAULT '#E7EEF2'",
     ],
   },
+  {
+    version: "019_error_report_reporter_name",
+    statements: ["ALTER TABLE error_reports ADD COLUMN reporter_name TEXT"],
+  },
 ];

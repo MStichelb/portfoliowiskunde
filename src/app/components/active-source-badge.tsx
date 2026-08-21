@@ -5,7 +5,7 @@ export function ActiveSourceBadge({ space, compact = false }: { space: LearningS
   const mirrorActive = active?.role === "mirror";
   const Tag = compact ? "small" : "span";
   return <Tag className={mirrorActive ? (compact ? "mirror-active-text" : "mirror-active-badge") : (compact ? undefined : "source-role-badge")}>
-    {active ? `${mirrorActive ? "Mirror actief" : "Primary"} · ${providerLabel(active.providerType)}` : "Geen actieve bron"}
+    {active ? `${mirrorActive ? "Mirror actief" : "Bron"} · ${providerLabel(active.providerType)}` : "Geen actieve bron"}
   </Tag>;
 }
 

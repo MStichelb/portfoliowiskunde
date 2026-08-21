@@ -8,12 +8,11 @@ vi.mock("@/app/components/sync-space-form", () => ({
 }));
 
 vi.mock("@/lib/repositories", () => ({
-  getLearningSpaces: vi.fn(),
   getLatestSyncSummary: vi.fn(),
   getOpenErrorReportCount: vi.fn(),
 }));
 
-import { getLatestSyncSummary, getLearningSpaces, getOpenErrorReportCount } from "@/lib/repositories";
+import { getLatestSyncSummary, getOpenErrorReportCount } from "@/lib/repositories";
 import { AdminSpaceHeader } from "./admin-space-header";
 
 const mirror: LearningSpaceSource = {
@@ -31,7 +30,6 @@ const space: LearningSpace = {
 
 describe("shared LearningSpace admin header", () => {
   it("shows the agreed heading, mirror warning, report count, sync and compact navigation", async () => {
-    vi.mocked(getLearningSpaces).mockResolvedValue([space]);
     vi.mocked(getLatestSyncSummary).mockResolvedValue({
       startedAt: "2026-08-20T12:00:00.000Z", finishedAt: "2026-08-20T12:01:00.000Z", portfolioCount: 3,
       warningCount: 0, status: "completed", providerType: "google_drive", addedCount: 0, updatedCount: 0, missingCount: 0, failureMessage: null,
@@ -46,7 +44,7 @@ describe("shared LearningSpace admin header", () => {
     expect(markup).toContain("Foutmeldingen");
     expect(markup).toContain("notification-badge");
     expect(markup).toContain("Nu synchroniseren");
-    expect(markup).toContain("6WIS");
+    expect(markup).not.toContain("space-switcher");
     expect(markup).not.toContain(">Foutmeldingen</a></div>");
   });
 });

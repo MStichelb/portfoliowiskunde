@@ -89,7 +89,7 @@ function SourceStatus({ source }: { source: LearningSpaceSource | null }) {
 }
 
 function ProviderOptions() {
-  return <><option value="local">Lokale bestanden (test)</option><option value="onedrive">OneDrive</option><option value="google_drive">Google Drive</option></>;
+  return <><option value="onedrive">OneDrive</option><option value="google_drive">Google Drive</option><option value="local">Lokale bestanden (test)</option></>;
 }
 
 function legacyPrimarySource(space: LearningSpace): LearningSpaceSource {

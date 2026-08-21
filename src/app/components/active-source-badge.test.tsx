@@ -15,7 +15,7 @@ describe("ActiveSourceBadge", () => {
   it("shows the primary provider without a fallback warning style", () => {
     const markup = renderToStaticMarkup(<ActiveSourceBadge space={spaceWithActiveSource("primary", "onedrive")} />);
     expect(markup).toContain("source-role-badge");
-    expect(markup).toContain("Primary · OneDrive");
+    expect(markup).toContain("Bron · OneDrive");
     expect(markup).not.toContain("mirror-active-badge");
   });
 });

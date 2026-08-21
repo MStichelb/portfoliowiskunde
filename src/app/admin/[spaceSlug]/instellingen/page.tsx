@@ -16,7 +16,7 @@ export default async function LearningSpaceSettingsPage({ params, searchParams }
   const { spaceSlug } = await params;
   const [{ saved }, space] = await Promise.all([searchParams, getAdminLearningSpaceBySlug(spaceSlug)]);
   if (!space) notFound();
-  return <main className="page-shell admin-page learning-space-settings-page">
+  return <main className="page-shell admin-page admin-space-page learning-space-settings-page">
     <AdminSpaceHeader current={space} section="settings" />
     {!space.isActive ? <p className="archived-message" role="status">Gearchiveerd. Deze leeromgeving is niet publiek zichtbaar en wordt niet gesynchroniseerd.</p> : null}
     {saved === "1" ? <p className="success-message save-feedback" role="status">Instellingen opgeslagen.</p> : null}

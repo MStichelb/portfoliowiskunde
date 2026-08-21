@@ -125,6 +125,38 @@ describe("Google Drive LearningSpace migration", () => {
     expect(sources.rows.every((row) => row.role === "primary" && row.provider_type === "local" && row.is_active === 1)).toBe(true);
   });
 
+  it("keeps existing anonymous reports valid when reporter names are added", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-report-name-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 18)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-08-21T12:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.batch([
+      { sql: `INSERT INTO portfolios (id, code, title, relative_path, indexed_at, learning_space_id, portfolio_code)
+        VALUES ('legacy-portfolio', 'space-6:3', 'Integralen', 'Portfolio 3 - Integralen', '2026-08-21T12:00:00.000Z', 'space-6', '3')`, args: [] },
+      { sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path)
+        VALUES ('legacy-section', 'legacy-portfolio', 1, 'Integralen', 'Portfolio 3 - Integralen/Uitwerkingen/1 - Integralen')`, args: [] },
+      { sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix)
+        VALUES ('legacy-exercise', 'legacy-portfolio', 'legacy-section', '1', 1, '')`, args: [] },
+      { sql: `INSERT INTO error_reports (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, message, status, created_at, updated_at)
+        VALUES ('legacy-report', 'legacy-portfolio', 'legacy-section', 'legacy-exercise', 'standard', '[]', 'Bestaande anonieme melding', 'TODO', '2026-08-21T12:00:00.000Z', '2026-08-21T12:00:00.000Z')`, args: [] },
+    ], "write");
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT message, reporter_name FROM error_reports WHERE id = 'legacy-report'")).rows[0]).toMatchObject({
+      message: "Bestaande anonieme melding",
+      reporter_name: null,
+    });
+  });
+
   it("migrates previously inactive LearningSpaces to archived while active spaces stay active", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-014-"));
     const databasePath = path.join(temporaryDirectory, "metadata.db");

@@ -23,7 +23,7 @@ export default async function LearningSpacePortfolioAdminPage({ params }: { para
   if (!portfolio) notFound();
   const assetBase = `/api/admin/portfolio-assets/${encodeURIComponent(portfolio.id)}`;
 
-  return <main className="page-shell admin-page portfolio-admin-page">
+  return <main className="page-shell admin-page admin-space-page portfolio-admin-page">
     <AdminSpaceHeader current={space} section="portfolios" />
     <header className="portfolio-detail-heading"><p className="eyebrow">Portfolio {portfolio.code}</p><h2>{portfolio.title}</h2><p className="file-reference">Naam van de map: {portfolio.detectedTitle}</p></header>
     <section className="admin-card"><div className="card-heading"><h2>Portfolio-instellingen</h2><PublicationStatus status={portfolio.effectiveStatus} /></div><PortfolioPublicationForm id={portfolio.id} title={portfolio.title} cardColor={portfolio.cardColor} visible={portfolio.visible} limited={portfolio.limited} publishFrom={formatBrusselsDateTimeInput(portfolio.publishFrom)} publishUntil={formatBrusselsDateTimeInput(portfolio.publishUntil)} action={savePortfolioAction} /><form action={setPortfolioThemeAction} className="theme-assignment"><input type="hidden" name="id" value={portfolio.id} /><input type="hidden" name="learningSpaceId" value={space.id} /><label>Thema<select name="themeId" defaultValue={portfolio.themeId ?? ""}><option value="">Overige portfolio&apos;s</option>{themes.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select></label><button className="secondary-button">Thema opslaan</button></form></section>

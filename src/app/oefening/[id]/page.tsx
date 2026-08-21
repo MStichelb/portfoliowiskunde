@@ -4,6 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ErrorReportForm } from "@/app/components/error-report-form";
+import { SolutionVariantHeading } from "@/app/components/solution-variant-heading";
 import { maybeAutoSynchronize } from "@/lib/auto-sync";
 import { getVisibleExercise } from "@/lib/repositories";
 
@@ -27,5 +28,5 @@ export default async function ExercisePage({ params }: { params: Promise<{ id: s
 
 function SolutionVariant({ title, assets }: { title: string; assets: Array<{ id: string; fileName: string; extension: string; step: number }> }) {
   if (assets.length === 0) return null;
-  return <section className="solution-variant"><h2>{title}</h2>{assets.map((asset) => <figure className="solution-asset" key={asset.id}>{asset.extension === "pdf" ? <iframe title={`${title} ${asset.fileName}`} src={`/api/solution-assets/${encodeURIComponent(asset.id)}`} /> : <img src={`/api/solution-assets/${encodeURIComponent(asset.id)}`} alt={`${title}, ${assets.length > 1 ? `stap ${asset.step}` : "uitwerking"}`} />}<figcaption>{assets.length > 1 ? `Stap ${asset.step}: ` : ""}<a href={`/api/solution-assets/${encodeURIComponent(asset.id)}`} target="_blank" rel="noreferrer">Open het oorspronkelijke bestand</a></figcaption></figure>)}</section>;
+  return <section className="solution-variant"><SolutionVariantHeading kind={title === "Uitwerking" ? "standard" : "alternative"} />{assets.map((asset) => <figure className="solution-asset" key={asset.id}>{asset.extension === "pdf" ? <iframe title={`${title} ${asset.fileName}`} src={`/api/solution-assets/${encodeURIComponent(asset.id)}`} /> : <img src={`/api/solution-assets/${encodeURIComponent(asset.id)}`} alt={`${title}, ${assets.length > 1 ? `stap ${asset.step}` : "uitwerking"}`} />}<figcaption>{assets.length > 1 ? `Stap ${asset.step}: ` : ""}<a href={`/api/solution-assets/${encodeURIComponent(asset.id)}`} target="_blank" rel="noreferrer">Open het oorspronkelijke bestand</a></figcaption></figure>)}</section>;
 }

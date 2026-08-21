@@ -49,7 +49,7 @@ function OneDriveConnectLink({ authorized }: { authorized: boolean }) {
 }
 
 function SpaceList({ spaces }: { spaces: LearningSpace[] }) {
-  return <div className="space-list">{spaces.map((space) => <div className="space-list-item" key={space.id}><div className="space-list-info"><strong>{space.name}</strong><span>/{space.slug}</span><ActiveSourceBadge space={space} /><SourceLine label="Primary" source={space.primarySource} fallback={space} />{space.mirrorSource ? <SourceLine label="Mirror" source={space.mirrorSource} /> : null}</div><LearningSpaceLifecycleActions space={space} /></div>)}</div>;
+  return <div className="space-list">{spaces.map((space) => <div className="space-list-item" key={space.id}><div className="space-list-info"><strong>{space.name}</strong><span>/{space.slug}</span><ActiveSourceBadge space={space} /><SourceLine label="Bron" source={space.primarySource} fallback={space} />{space.mirrorSource ? <SourceLine label="Mirror" source={space.mirrorSource} /> : null}</div><LearningSpaceLifecycleActions space={space} /></div>)}</div>;
 }
 
 function SourceLine({ label, source, fallback }: { label: string; source: LearningSpaceSource | null; fallback?: LearningSpace }) {

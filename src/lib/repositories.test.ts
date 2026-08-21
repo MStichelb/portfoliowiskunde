@@ -212,6 +212,29 @@ describe("persistIndex", () => {
     expect(await getOpenErrorReportCount()).toBe(1);
   });
 
+  it("stores optional reporter names with trimming and a 100 character server limit", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-report-names-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await persistIndex(await indexSource(createTwoPortfolioProvider()), "local");
+    await setPortfolioPublication("portfolio-3", "visible", false, null, null);
+    const database = await getDatabase();
+    const exerciseId = String((await database.execute("SELECT id FROM exercises WHERE portfolio_id = 'portfolio-3' ORDER BY id LIMIT 1")).rows[0].id);
+
+    await createErrorReport({ exerciseId, variant: "standard", message: "Anonieme melding", rateLimitKey: "anonymous" });
+    await createErrorReport({ exerciseId, variant: "standard", message: "Melding met naam", reporterName: "  Noor Janssens  ", rateLimitKey: "named" });
+    await createErrorReport({ exerciseId, variant: "standard", message: "Lege naam", reporterName: "   ", rateLimitKey: "blank-name" });
+    await createErrorReport({ exerciseId, variant: "standard", message: "Naam op grens", reporterName: "A".repeat(100), rateLimitKey: "max-name" });
+    await expect(createErrorReport({ exerciseId, variant: "standard", message: "Naam te lang", reporterName: "A".repeat(101), rateLimitKey: "long-name" })).rejects.toThrow("maximaal 100 tekens");
+
+    const reports = new Map((await getAdminErrorReports()).map((report) => [report.message, report]));
+    expect(reports.get("Anonieme melding")?.reporterName).toBeNull();
+    expect(reports.get("Melding met naam")?.reporterName).toBe("Noor Janssens");
+    expect(reports.get("Lege naam")?.reporterName).toBeNull();
+    expect(reports.get("Naam op grens")?.reporterName).toBe("A".repeat(100));
+    expect(reports.has("Naam te lang")).toBe(false);
+  });
+
   it("deletes individual reports and only old completed reports in bulk", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-delete-")); process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db"); resetDatabaseForTests();
     await persistIndex(await indexSource(createTwoPortfolioProvider()), "local"); await setPortfolioPublication("portfolio-3", "visible", false, null, null);

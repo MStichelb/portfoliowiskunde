@@ -22,7 +22,7 @@ export default async function SpaceReportsPage({ params }: { params: Promise<{ s
   const pinned = reports.filter((report) => report.status === "TODO" && report.pinned);
   const todo = reports.filter((report) => report.status === "TODO" && !report.pinned);
   const done = reports.filter((report) => report.status === "DONE");
-  return <main className="page-shell admin-page reports-page">
+  return <main className="page-shell admin-page admin-space-page reports-page">
     <AdminSpaceHeader current={space} section="reports" />
     <div className="page-section-heading"><h2>Foutmeldingen</h2><p>Meldingen van leerlingen over uitwerkingen.</p></div>
     <Group title="PINNED" reports={pinned} spaceSlug={space.slug} learningSpaceId={space.id} />
@@ -55,6 +55,6 @@ function Card({ report, spaceSlug, learningSpaceId }: { report: AdminErrorReport
       <form action={errorReportStatusAction}><input type="hidden" name="id" value={report.id} /><input type="hidden" name="status" value={todo ? "DONE" : "TODO"} /><button className="icon-button" title="Status wisselen" aria-label="Status wisselen">{todo ? <Check size={16} /> : <RotateCcw size={16} />}</button></form>
       <ConfirmActionButton action={deleteErrorReportAction} fields={{ id: report.id }} label={<Trash2 size={16} />} confirmTitle="Foutmelding verwijderen" confirmText="Deze foutmelding wordt permanent verwijderd." />
     </div></div>
-    <div className="report-content"><div><p className="report-message">{report.message}</p><p className="report-date">Gemeld op {formatReportDate(report.createdAt)}</p>{report.status === "DONE" && report.completedAt ? <p className="report-date">Afgewerkt op {formatReportDate(report.completedAt)}</p> : null}</div><ErrorReportNoteForm reportId={report.id} learningSpaceId={learningSpaceId} note={report.adminNote} /></div>
+    <div className="report-content"><div><p className="report-message">{report.message}</p>{report.reporterName ? <p className="report-reporter">Gemeld door: {report.reporterName}</p> : null}<p className="report-date">Gemeld op {formatReportDate(report.createdAt)}</p>{report.status === "DONE" && report.completedAt ? <p className="report-date">Afgewerkt op {formatReportDate(report.completedAt)}</p> : null}</div><ErrorReportNoteForm reportId={report.id} learningSpaceId={learningSpaceId} note={report.adminNote} /></div>
   </article>;
 }

@@ -13,10 +13,11 @@ const base: LearningSpace = {
 };
 
 describe("LearningSpace admin navigation", () => {
-  it("uses compact labels and the agreed functional tabs", () => {
-    const markup = renderToStaticMarkup(<LearningSpaceNav spaces={[base]} current={base} section="portfolios" />);
-    expect(markup).toContain("5WIS");
+  it("contains only the agreed functional tabs", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceNav current={base} section="portfolios" />);
+    expect(markup).not.toContain("5WIS");
     expect(markup).not.toContain("Vijfde jaar wiskunde");
+    expect(markup).not.toContain("space-switcher");
     expect(markup).toContain("Portfolio");
     expect(markup).toContain("Thema");
     expect(markup).toContain("Instellingen");

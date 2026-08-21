@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { currentSpaceForPath } from "./site-navigation";
 
-const spaces = [{ slug: "5", name: "5de jaar" }, { slug: "zesde-jaar", name: "6de jaar" }];
+const spaces = [{ slug: "5", name: "5de jaar", shortLabel: "5WIS" }, { slug: "zesde-jaar", name: "6de jaar", shortLabel: "6WIS" }];
 
 describe("site navigation context", () => {
   it("detects a LearningSpace in public and admin routes", () => {
