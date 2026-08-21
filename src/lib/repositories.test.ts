@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { adminExercisePortfolioHref } from "./admin-routes";
-import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -68,6 +68,25 @@ describe("persistIndex", () => {
     expect(updated.rows[0].source_version).toBe("replacement-v2");
     expect(updated.rows[0].source_id).toBe("google-replacement-id");
     expect(Number((await database.execute("SELECT COUNT(*) AS count FROM solution_assets")).rows[0].count)).toBe(5);
+  });
+
+  it("uses natural portfolio-ID ordering in admin and public read models", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-order-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const codes = ["12", "2B", "3", "X", "10", "2", "A", "1", "2A", "11"];
+    const indexed = (await Promise.all(codes.map((code) => indexSource(createPortfolioProvider(code, `PF${code}-Oef1.png`))))).flat();
+    indexed.find((portfolio) => portfolio.code === "X")!.warnings.push({
+      severity: "warning", path: "Portfolio X - Test", message: "Testwaarschuwing",
+    });
+    await persistIndex(indexed, "local");
+
+    const expected = ["1", "2", "2A", "2B", "3", "10", "11", "12", "A", "X"];
+    const adminPortfolios = await getAdminPortfolios();
+    expect(adminPortfolios.map((portfolio) => portfolio.code)).toEqual(expected);
+    expect((await getActiveWarningCounts()).get(adminPortfolios.find((portfolio) => portfolio.code === "X")!.id)).toBe(1);
+    for (const portfolio of adminPortfolios) await setPortfolioPublication(portfolio.id, "visible", false, null, null);
+    expect((await getStudentPortfolios()).map((portfolio) => portfolio.code)).toEqual(expected);
   });
 
   it("lets visible sections and exercises follow a visible portfolio without resetting overrides", async () => {

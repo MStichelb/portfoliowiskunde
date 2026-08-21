@@ -23,6 +23,30 @@ describe("source comparison", () => {
     });
   });
 
+  it("treats Portfolio X manifests as the same logical source content", () => {
+    const portfolioX: SourceManifestEntry[] = [
+      { kind: "portfolio", relativePath: "Portfolio X - Kwadraten" },
+      { kind: "section", relativePath: "Portfolio X - Kwadraten/Uitwerkingen/1 - Basis" },
+      { kind: "file", relativePath: "Portfolio X - Kwadraten/Uitwerkingen/1 - Basis/PFX-Oef1.png" },
+    ];
+    expect(compareSourceManifests(portfolioX, [...portfolioX])).toMatchObject({
+      matchedFiles: 1,
+      differenceCount: 0,
+      hasDifferences: false,
+    });
+  });
+
+  it("sorts source-comparison output by natural portfolio ID order", () => {
+    const codes = ["12", "2B", "3", "X", "10", "2", "A", "1", "2A", "11"];
+    const entries = codes.map((code): SourceManifestEntry => ({
+      kind: "file",
+      relativePath: `Portfolio ${code} - Test/bestand.pdf`,
+    }));
+    expect(compareSourceManifests(entries, []).onlyInCurrent.map((entry) => entry.relativePath.split(" ")[1])).toEqual([
+      "1", "2", "2A", "2B", "3", "10", "11", "12", "A", "X",
+    ]);
+  });
+
   it("classifies missing, extra and structurally changed paths", () => {
     const target: SourceManifestEntry[] = [
       ...base.filter((entry) => !entry.relativePath.endsWith("PF7-Oef1.png")),

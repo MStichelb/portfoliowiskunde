@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  comparePortfolioIds,
   parsePortfolioDirectory,
   parseSectionDirectory,
   parseSolutionFileName,
@@ -12,6 +13,14 @@ describe("portfolio parser", () => {
       code: "3A",
       title: "Toepassingen",
     });
+  });
+
+  it("herkent en normaliseert puur alfabetische portfolio-ID's", () => {
+    expect(parsePortfolioDirectory("Portfolio X - Kwadraten")).toEqual({ code: "X", title: "Kwadraten" });
+    expect(parsePortfolioDirectory("Portfolio x - Kwadraten")).toEqual({ code: "X", title: "Kwadraten" });
+    for (const id of ["1", "12", "2A", "12B", "A", "B", "X"]) {
+      expect(parsePortfolioDirectory(`Portfolio ${id} - Test`)).toMatchObject({ code: id });
+    }
   });
 
   it("herkent onderdeelmappen", () => {
@@ -43,6 +52,19 @@ describe("portfolio parser", () => {
       step: 1,
       extension: "jpg",
     });
+    expect(parseSolutionFileName("PFX-Oef1.png")).toMatchObject({ portfolioCode: "X", exerciseCode: "1", variant: "standard", step: 1 });
+    expect(parseSolutionFileName("PFX-Oef2a.png")).toMatchObject({ portfolioCode: "X", exerciseCode: "2a", variant: "standard", step: 1 });
+    expect(parseSolutionFileName("PFX-Oef3-alt(2).png")).toMatchObject({ portfolioCode: "X", exerciseCode: "3", variant: "alternative", step: 2 });
+    expect(parseSolutionFileName("PFX-Oef4b(2).png")).toMatchObject({ portfolioCode: "X", exerciseCode: "4b", variant: "standard", step: 2 });
+    expect(parseSolutionFileName("PF2A-Oef1.png")).toMatchObject({ portfolioCode: "2A", exerciseCode: "1" });
+    expect(parseSolutionFileName("PF12B-Oef1.png")).toMatchObject({ portfolioCode: "12B", exerciseCode: "1" });
+  });
+
+  it("sorteert portfolio-ID's op numeriek deel, suffix en daarna letter-ID's", () => {
+    const input = ["12", "2B", "3", "X", "10", "2", "A", "1", "2A", "11"];
+    expect(input.sort(comparePortfolioIds)).toEqual(["1", "2", "2A", "2B", "3", "10", "11", "12", "A", "X"]);
+    expect(["13", "12B", "12A", "12", "10", "9"].sort(comparePortfolioIds)).toEqual(["9", "10", "12", "12A", "12B", "13"]);
+    expect(["x", "B", "a"].sort(comparePortfolioIds)).toEqual(["a", "B", "x"]);
   });
 
   it("groepeert beschrijvende suffixen bij dezelfde structurele oefening", () => {
@@ -63,5 +85,10 @@ describe("portfolio parser", () => {
     expect(parseSolutionFileName("Uitwerkingen portfolio 3.pdf")).toBeNull();
     expect(parseSolutionFileName("PF3-Oef2b-alt(1)(2).png")).toBeNull();
     expect(parseSolutionFileName("PF3-Oef2b--bewijs.png")).toBeNull();
+    expect(parsePortfolioDirectory("Portfolio 2A3 - Ambigu")).toBeNull();
+    expect(parsePortfolioDirectory("Portfolio X1 - Ambigu")).toBeNull();
+    expect(parsePortfolioDirectory("Portfolio X Y - Vrije tekst")).toBeNull();
+    expect(parseSolutionFileName("PF2A3-Oef1.png")).toBeNull();
+    expect(parseSolutionFileName("PFX1-Oef1.png")).toBeNull();
   });
 });

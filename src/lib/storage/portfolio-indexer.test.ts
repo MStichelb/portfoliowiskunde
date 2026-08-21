@@ -1,7 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 
+import { afterEach, describe, expect, it } from "vitest";
+
+import { LocalFilesystemProvider } from "./local-filesystem-provider";
 import { indexSource } from "./portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./provider";
+
+let temporaryDirectory: string | undefined;
+
+afterEach(async () => {
+  if (temporaryDirectory) await rm(temporaryDirectory, { recursive: true, force: true });
+  temporaryDirectory = undefined;
+});
 
 const tree: Record<string, StorageEntry[]> = {
   "": [{ name: "Portfolio 3 - Toepassingen", relativePath: "Portfolio 3 - Toepassingen", kind: "directory" }],
@@ -42,6 +54,38 @@ describe("portfolio indexer", () => {
     expect(portfolio.finalSolutionsPdfPath).toContain("Eindoplossingen");
     expect(portfolio.warnings).toHaveLength(1);
     expect(portfolio.sections[0].exercises.some((item) => item.code === "7")).toBe(false);
+  });
+
+  it("indexeert Portfolio X en koppelt PFX-assets zonder speciale infrastructuur", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-x-index-"));
+    const portfolioPath = "Portfolio X - Kwadraten";
+    const sectionPath = path.join(temporaryDirectory, portfolioPath, "Uitwerkingen", "1 - Basis");
+    await mkdir(sectionPath, { recursive: true });
+    await Promise.all([
+      path.join(temporaryDirectory, portfolioPath, "Portfolio X - Kwadraten.pdf"),
+      path.join(temporaryDirectory, portfolioPath, "Eindoplossingen portfolio X.pdf"),
+      path.join(sectionPath, "PFX-Oef1.png"),
+      path.join(sectionPath, "PFX-Oef2a.png"),
+      path.join(sectionPath, "PFX-Oef3-alt(2).png"),
+    ].map((filePath) => writeFile(filePath, "fixture")));
+
+    const [portfolio] = await indexSource(new LocalFilesystemProvider(temporaryDirectory));
+    expect(portfolio).toMatchObject({ code: "X", title: "Kwadraten", warnings: [] });
+    expect(portfolio.sections[0].exercises.map((exercise) => exercise.code)).toEqual(["1", "2a", "3"]);
+    expect(portfolio.sections[0].exercises[2].assets[0].parsed).toMatchObject({ portfolioCode: "X", variant: "alternative", step: 2 });
+  });
+
+  it("sorteert geïndexeerde portfolio's met de centrale natuurlijke comparator", async () => {
+    const codes = ["12", "2B", "3", "X", "10", "2", "A", "1", "2A", "11"];
+    const sortingProvider: StorageProvider = {
+      id: "portfolio-order-fixture",
+      async list(relativePath = "") {
+        if (relativePath !== "") return [];
+        return codes.map((code) => ({ name: `Portfolio ${code} - Test`, relativePath: `Portfolio ${code} - Test`, kind: "directory" as const }));
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+    expect((await indexSource(sortingProvider)).map((portfolio) => portfolio.code)).toEqual(["1", "2", "2A", "2B", "3", "10", "11", "12", "A", "X"]);
   });
 
   it("negeert gewone ondersteunende bestanden, maar waarschuwt voor malformed PF/Oef-namen", async () => {

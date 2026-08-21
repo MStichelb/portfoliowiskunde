@@ -1,4 +1,5 @@
 import type { IndexedPortfolio, IndexWarning } from "@/lib/domain";
+import { comparePortfolioRelativePaths } from "@/lib/parser";
 
 export type SourceManifestKind = "portfolio" | "section" | "file";
 
@@ -83,7 +84,7 @@ export function compareSourceManifests(
     fileOverlap,
     onlyInCurrent: sortEntries(onlyInCurrent),
     onlyInTarget: sortEntries(onlyInTarget),
-    changed: changed.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "nl")),
+    changed: changed.sort((left, right) => comparePortfolioRelativePaths(left.relativePath, right.relativePath)),
     ...warningDifferences,
     differenceCount,
     hasDifferences: differenceCount > 0,
@@ -145,9 +146,14 @@ function compareWarnings(
   const currentByKey = uniqueWarnings(current, currentEmptyContainerPaths);
   const targetByKey = uniqueWarnings(target, targetEmptyContainerPaths);
   return {
-    currentWarnings: [...currentByKey].filter(([key]) => !targetByKey.has(key)).map(([, warning]) => warning),
-    targetWarnings: [...targetByKey].filter(([key]) => !currentByKey.has(key)).map(([, warning]) => warning),
+    currentWarnings: sortWarnings([...currentByKey].filter(([key]) => !targetByKey.has(key)).map(([, warning]) => warning)),
+    targetWarnings: sortWarnings([...targetByKey].filter(([key]) => !currentByKey.has(key)).map(([, warning]) => warning)),
   };
+}
+
+function sortWarnings(warnings: IndexWarning[]): IndexWarning[] {
+  return warnings.sort((left, right) =>
+    comparePortfolioRelativePaths(left.path, right.path) || left.message.localeCompare(right.message, "nl"));
 }
 
 function uniqueWarnings(warnings: IndexWarning[], ignoredPaths: Set<string>): Map<string, IndexWarning> {
@@ -181,5 +187,5 @@ function normalizeRelativePath(relativePath: string): string {
 }
 
 function sortEntries(entries: SourceManifestEntry[]): SourceManifestEntry[] {
-  return entries.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "nl"));
+  return entries.sort((left, right) => comparePortfolioRelativePaths(left.relativePath, right.relativePath));
 }
