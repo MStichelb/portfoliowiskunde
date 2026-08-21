@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { compareSourceManifests, type SourceManifestEntry } from "./source-comparison";
+import type { IndexedPortfolio, IndexWarning } from "./domain";
+import { compareSourceManifests, sourceManifestFromIndex, type SourceManifestEntry } from "./source-comparison";
 
 const base: SourceManifestEntry[] = [
   { kind: "portfolio", relativePath: "Portfolio 7 - Analyse" },
@@ -34,9 +35,50 @@ describe("source comparison", () => {
     expect(comparison.hasDifferences).toBe(true);
   });
 
-  it("counts parser warnings as confirmable content differences", () => {
-    const comparison = compareSourceManifests(base, base, [{ severity: "warning", path: "Portfolio 7/PF8-Oef1.png", message: "Portfolio mismatch" }]);
+  it("counts a parser warning that occurs only in the target", () => {
+    const comparison = compareSourceManifests(base, base, [], [{ severity: "warning", path: "Portfolio 7/PF8-Oef1.png", message: "Portfolio mismatch" }]);
     expect(comparison.differenceCount).toBe(1);
     expect(comparison.targetWarnings).toHaveLength(1);
+  });
+
+  it("cancels warnings that occur for the same logical item in both sources", () => {
+    const shared: IndexWarning = {
+      severity: "warning",
+      path: "Portfolio 2A - Rekenen met matrices",
+      message: "Geen eindoplossingen-PDF herkend.",
+    };
+    const comparison = compareSourceManifests(base, base, [shared, shared], [{ ...shared, message: "  Geen eindoplossingen-PDF   herkend. " }]);
+    expect(comparison).toMatchObject({ currentWarnings: [], targetWarnings: [], differenceCount: 0, hasDifferences: false });
+  });
+
+  it("reports warnings that occur in only one source symmetrically", () => {
+    const currentWarning: IndexWarning = { severity: "warning", path: "Portfolio 2A", message: "Alleen actief" };
+    const targetWarning: IndexWarning = { severity: "warning", path: "Portfolio 2B", message: "Alleen target" };
+    const comparison = compareSourceManifests(base, base, [currentWarning], [targetWarning]);
+    expect(comparison.currentWarnings).toEqual([currentWarning]);
+    expect(comparison.targetWarnings).toEqual([targetWarning]);
+    expect(comparison.differenceCount).toBe(2);
+  });
+
+  it("omits a directory-only section but retains sections with relevant indexed files", () => {
+    const emptySection = "Portfolio 5 - Limieten van rijen & reeksen/Uitwerkingen/4 - Limieten van recursieve rijen";
+    const populatedSection = "Portfolio 5 - Limieten van rijen & reeksen/Uitwerkingen/5 - Convergentie";
+    const portfolio: IndexedPortfolio = {
+      code: "5", title: "Limieten van rijen & reeksen", relativePath: "Portfolio 5 - Limieten van rijen & reeksen",
+      assignmentPdfPath: null, assignmentPdfSourceId: null, finalSolutionsPdfPath: null, finalSolutionsPdfSourceId: null, warnings: [],
+      sections: [
+        { order: 4, title: "Limieten van recursieve rijen", relativePath: emptySection, exercises: [] },
+        { order: 5, title: "Convergentie", relativePath: populatedSection, exercises: [{
+          code: "1", number: 1, suffix: "", assets: [{
+            relativePath: `${populatedSection}/PF5-Oef1.png`, sourceId: "asset-1", fileName: "PF5-Oef1.png",
+            lastModifiedAt: null, sourceVersion: null,
+            parsed: { portfolioCode: "5", exerciseNumber: 1, exerciseSuffix: "", exerciseCode: "1", variant: "standard", step: 1, extension: "png" },
+          }],
+        }] },
+      ],
+    };
+    const manifest = sourceManifestFromIndex([portfolio]);
+    expect(manifest).not.toContainEqual({ kind: "section", relativePath: emptySection });
+    expect(manifest).toContainEqual({ kind: "section", relativePath: populatedSection });
   });
 });

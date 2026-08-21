@@ -12,6 +12,7 @@ export interface SourceComparison {
   onlyInCurrent: SourceManifestEntry[];
   onlyInTarget: SourceManifestEntry[];
   changed: Array<{ relativePath: string; currentKind: SourceManifestKind; targetKind: SourceManifestKind }>;
+  currentWarnings: IndexWarning[];
   targetWarnings: IndexWarning[];
   differenceCount: number;
   hasDifferences: boolean;
@@ -24,7 +25,8 @@ export function sourceManifestFromIndex(portfolios: IndexedPortfolio[]): SourceM
     if (portfolio.assignmentPdfPath) entries.push({ kind: "file", relativePath: portfolio.assignmentPdfPath });
     if (portfolio.finalSolutionsPdfPath) entries.push({ kind: "file", relativePath: portfolio.finalSolutionsPdfPath });
     for (const section of portfolio.sections) {
-      entries.push({ kind: "section", relativePath: section.relativePath });
+      const assets = section.exercises.flatMap((exercise) => exercise.assets);
+      if (assets.length > 0) entries.push({ kind: "section", relativePath: section.relativePath });
       for (const exercise of section.exercises) {
         for (const asset of exercise.assets) entries.push({ kind: "file", relativePath: asset.relativePath });
       }
@@ -36,6 +38,7 @@ export function sourceManifestFromIndex(portfolios: IndexedPortfolio[]): SourceM
 export function compareSourceManifests(
   current: SourceManifestEntry[],
   target: SourceManifestEntry[],
+  currentWarnings: IndexWarning[] = [],
   targetWarnings: IndexWarning[] = [],
 ): SourceComparison {
   const currentByPath = new Map(uniqueSortedEntries(current).map((entry) => [entry.relativePath, entry]));
@@ -59,16 +62,37 @@ export function compareSourceManifests(
     if (!currentByPath.has(relativePath)) onlyInTarget.push(targetEntry);
   }
 
-  const differenceCount = onlyInCurrent.length + onlyInTarget.length + changed.length + targetWarnings.length;
+  const warningDifferences = compareWarnings(currentWarnings, targetWarnings);
+  const differenceCount = onlyInCurrent.length + onlyInTarget.length + changed.length
+    + warningDifferences.currentWarnings.length + warningDifferences.targetWarnings.length;
   return {
     matchedFiles,
     onlyInCurrent: sortEntries(onlyInCurrent),
     onlyInTarget: sortEntries(onlyInTarget),
     changed: changed.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "nl")),
-    targetWarnings,
+    ...warningDifferences,
     differenceCount,
     hasDifferences: differenceCount > 0,
   };
+}
+
+function compareWarnings(current: IndexWarning[], target: IndexWarning[]): Pick<SourceComparison, "currentWarnings" | "targetWarnings"> {
+  const currentByKey = uniqueWarnings(current);
+  const targetByKey = uniqueWarnings(target);
+  return {
+    currentWarnings: [...currentByKey].filter(([key]) => !targetByKey.has(key)).map(([, warning]) => warning),
+    targetWarnings: [...targetByKey].filter(([key]) => !currentByKey.has(key)).map(([, warning]) => warning),
+  };
+}
+
+function uniqueWarnings(warnings: IndexWarning[]): Map<string, IndexWarning> {
+  const unique = new Map<string, IndexWarning>();
+  for (const warning of warnings) {
+    const normalizedPath = warning.path.replaceAll("\\", "/").replace(/^\.\//, "").trim();
+    const normalizedMessage = warning.message.replace(/\s+/g, " ").trim();
+    unique.set(`${normalizedPath}\u0000${normalizedMessage}`, { ...warning, path: normalizedPath, message: normalizedMessage });
+  }
+  return unique;
 }
 
 function uniqueSortedEntries(entries: SourceManifestEntry[]): SourceManifestEntry[] {

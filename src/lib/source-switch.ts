@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import type { IndexedPortfolio } from "@/lib/domain";
+import type { IndexedPortfolio, IndexWarning } from "@/lib/domain";
 import {
   getIndexedSourceManifest,
   getLearningSpace,
   getLearningSpaceSource,
+  getLatestWarnings,
   persistIndex,
   recordLearningSpaceSourceValidation,
   releaseSyncLease,
@@ -36,6 +37,7 @@ interface SourceSwitchDependencies {
   getSource?: typeof getLearningSpaceSource;
   getProvider?: (learningSpaceId: string, sourceId: string) => Promise<{ provider: StorageProvider; type: LearningSpaceSource["providerType"]; space: LearningSpace; source: LearningSpaceSource }>;
   getCurrentManifest?: (learningSpaceId: string) => Promise<SourceManifestEntry[]>;
+  getCurrentWarnings?: (learningSpaceId: string) => Promise<IndexWarning[]>;
   index?: typeof indexSource;
   persist?: typeof persistIndex;
   recordValidation?: typeof recordLearningSpaceSourceValidation;
@@ -131,13 +133,22 @@ async function inspectSwitchTarget(
   await configured.provider.assertReadyForIndex?.();
   const readiness = configured.provider.getReadinessMetadata?.();
   const portfolios = await (dependencies.index ?? indexSource)(configured.provider);
-  const currentManifest = await (dependencies.getCurrentManifest ?? getIndexedSourceManifest)(learningSpaceId);
+  const [currentManifest, currentWarnings] = await Promise.all([
+    (dependencies.getCurrentManifest ?? getIndexedSourceManifest)(learningSpaceId),
+    dependencies.getCurrentWarnings
+      ? dependencies.getCurrentWarnings(learningSpaceId)
+      : getLatestWarnings(learningSpaceId).then((warnings) => warnings.map((warning): IndexWarning => ({
+        severity: warning.severity === "info" ? "info" : "warning",
+        path: warning.relativePath,
+        message: warning.message,
+      }))),
+  ]);
   const targetWarnings = portfolios.flatMap((portfolio) => portfolio.warnings);
   return {
     source,
     portfolios,
     mirrorCompletedAt: readiness?.mirrorCompletedAt ?? null,
-    comparison: compareSourceManifests(currentManifest, sourceManifestFromIndex(portfolios), targetWarnings),
+    comparison: compareSourceManifests(currentManifest, sourceManifestFromIndex(portfolios), currentWarnings, targetWarnings),
   };
 }
 

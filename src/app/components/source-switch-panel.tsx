@@ -5,6 +5,7 @@ import { useActionState } from "react";
 
 import { compareSourcesAction, switchSourceAction, type SourceSwitchActionState } from "@/app/admin/actions";
 import { SubmitButton } from "@/app/components/submit-button";
+import type { IndexWarning } from "@/lib/domain";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
 
 const initialState: SourceSwitchActionState = { error: null };
@@ -66,8 +67,14 @@ function SourceComparisonView({ state }: { state: SourceSwitchActionState }) {
     <DifferenceList title="Alleen in huidige bron" paths={comparison.onlyInCurrent.map((entry) => entry.relativePath)} />
     <DifferenceList title="Alleen in switchdoel" paths={comparison.onlyInTarget.map((entry) => entry.relativePath)} />
     <DifferenceList title="Afwijkend type" paths={comparison.changed.map((entry) => entry.relativePath)} />
-    {comparison.targetWarnings.length > 0 ? <div className="comparison-group"><h4>Parserwaarschuwingen in switchdoel</h4><ul>{comparison.targetWarnings.slice(0, 20).map((warning, index) => <li key={`${warning.path}-${index}`}><span>{warning.message}</span><small>{warning.path}</small></li>)}</ul>{comparison.targetWarnings.length > 20 ? <p>En nog {comparison.targetWarnings.length - 20} waarschuwingen.</p> : null}</div> : null}
+    <WarningList title="Parserwaarschuwingen alleen in huidige bron" warnings={comparison.currentWarnings} />
+    <WarningList title="Parserwaarschuwingen alleen in switchdoel" warnings={comparison.targetWarnings} />
   </div>;
+}
+
+function WarningList({ title, warnings }: { title: string; warnings: IndexWarning[] }) {
+  if (warnings.length === 0) return null;
+  return <div className="comparison-group"><h4>{title}</h4><ul>{warnings.slice(0, 20).map((warning, index) => <li key={`${warning.path}-${warning.message}-${index}`}><span>{warning.message}</span><small>{warning.path}</small></li>)}</ul>{warnings.length > 20 ? <p>En nog {warnings.length - 20} waarschuwingen.</p> : null}</div>;
 }
 
 function DifferenceList({ title, paths }: { title: string; paths: string[] }) {

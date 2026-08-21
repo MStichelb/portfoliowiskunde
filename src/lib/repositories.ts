@@ -716,7 +716,12 @@ export async function getIndexedSourceManifest(learningSpaceId: string): Promise
     database.execute({ sql: `SELECT relative_path, assignment_pdf_path, final_solutions_pdf_path FROM portfolios
       WHERE learning_space_id = ? AND is_indexed = 1`, args: [learningSpaceId] }),
     database.execute({ sql: `SELECT sections.relative_path FROM sections JOIN portfolios ON portfolios.id = sections.portfolio_id
-      WHERE portfolios.learning_space_id = ? AND sections.is_indexed = 1`, args: [learningSpaceId] }),
+      WHERE portfolios.learning_space_id = ? AND sections.is_indexed = 1 AND EXISTS (
+        SELECT 1 FROM exercises
+        JOIN solution_variants ON solution_variants.exercise_id = exercises.id
+        JOIN solution_assets ON solution_assets.variant_id = solution_variants.id
+        WHERE exercises.section_id = sections.id AND solution_assets.is_indexed = 1
+      )`, args: [learningSpaceId] }),
     database.execute({ sql: `SELECT solution_assets.relative_path FROM solution_assets
       JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
       JOIN exercises ON exercises.id = solution_variants.exercise_id

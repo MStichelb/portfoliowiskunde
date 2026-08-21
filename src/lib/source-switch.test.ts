@@ -16,6 +16,7 @@ import {
   updateLearningSpace,
 } from "./repositories";
 import { SourceAccessError } from "./source-errors";
+import { sourceManifestFromIndex } from "./source-comparison";
 import { compareLearningSpaceSources, switchLearningSpaceSource } from "./source-switch";
 import { indexSource } from "./storage/portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./storage/provider";
@@ -86,6 +87,21 @@ describe("manual LearningSpace source switching", () => {
     const confirmed = await switchLearningSpaceSource("space-5", mirror.id, true, providerDependencies(target, "2026-08-21T13:39:00.000Z"));
     expect(confirmed.switched).toBe(true);
     expect((await getActiveLearningSpaceSource("space-5"))?.id).toBe(mirror.id);
+  });
+
+  it("does not report a parser warning shared by the active source and switch target", async () => {
+    await setupDatabase();
+    const { mirror } = await configureDualSource();
+    const warning = { severity: "warning" as const, path: "Portfolio 2A - Rekenen met matrices", message: "Geen eindoplossingen-PDF herkend." };
+    const target = await indexSource(portfolioProvider("mirror"));
+    target[0].warnings.push(warning);
+    const preview = await compareLearningSpaceSources("space-5", mirror.id, {
+      ...providerDependencies(portfolioProvider("mirror"), "2026-08-21T13:39:00.000Z"),
+      getCurrentManifest: async () => sourceManifestFromIndex(target),
+      getCurrentWarnings: async () => [warning],
+      index: async () => target,
+    });
+    expect(preview.comparison).toMatchObject({ currentWarnings: [], targetWarnings: [], differenceCount: 0, hasDifferences: false });
   });
 
   it("blocks inaccessible and incomplete Google targets while preserving the active index", async () => {
