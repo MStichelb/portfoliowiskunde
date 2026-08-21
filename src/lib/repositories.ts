@@ -9,6 +9,7 @@ import type { IndexedPortfolio } from "@/lib/domain";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRelativePath } from "@/lib/parser";
 import type { SourceManifestEntry } from "@/lib/source-comparison";
+import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
 import {
   resolveChildPublication,
   resolvePortfolioPublication,
@@ -75,6 +76,7 @@ export interface AdminPortfolio {
   learningSpaceId: string;
   themeId: string | null;
   themeName: string | null;
+  cardColor: string;
   sections: AdminSection[];
 }
 
@@ -84,6 +86,7 @@ export interface StudentPortfolio {
   title: string;
   themeId: string | null;
   themeName: string | null;
+  cardColor: string;
   sections: Array<{
     id: string;
     title: string;
@@ -115,6 +118,8 @@ export interface LearningSpace {
   name: string;
   slug: string;
   shortLabel: string;
+  description: string;
+  cardColor: string;
   sortOrder: number;
   isActive: boolean;
   archivedAt: string | null;
@@ -166,6 +171,8 @@ export interface LearningSpaceInput {
   name: string;
   slug: string;
   shortLabel: string;
+  description?: string;
+  cardColor?: string;
   sortOrder: number;
   sourceType: StorageSourceType;
   localSourcePath?: string | null;
@@ -229,6 +236,7 @@ function learningSpaceFromRow(row: DatabaseRow, sources: LearningSpaceSource[]):
   const archivedAt = nullableText(row, "archived_at");
   return {
     id: text(row, "id"), name: text(row, "name"), slug: text(row, "slug"), shortLabel: text(row, "short_label"),
+    description: text(row, "description"), cardColor: text(row, "card_color"),
     sortOrder: Number(row.sort_order), isActive: bool(row.is_active) && archivedAt === null, archivedAt, sourceType,
     localSourcePath: localSource?.localSourcePath ?? nullableText(row, "local_source_path"),
     oneDriveDriveId: oneDriveSource?.oneDriveDriveId ?? nullableText(row, "onedrive_drive_id"),
@@ -303,9 +311,9 @@ export async function createLearningSpace(input: LearningSpaceInput): Promise<Le
   const id = stableId("space", input.slug);
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
   const mirror = input.mirrorSource ?? null;
-  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, sort_order, is_active, storage_provider, source_type,
+  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
     local_source_path, onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, google_drive_folder_id, google_drive_folder_label, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args: [id, input.name, input.slug, input.shortLabel, input.sortOrder,
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args: [id, input.name, input.slug, input.shortLabel, input.description ?? DEFAULT_LEARNING_SPACE_DESCRIPTION, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder,
       legacyStorageProvider(primary.providerType), primary.providerType, primary.localSourcePath ?? null, primary.oneDriveDriveId ?? null,
       primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now] }];
   statements.push(sourceUpsertStatement(id, "primary", primary, true, now));
@@ -326,9 +334,9 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
   const oneDrive = configured.find((source) => source.providerType === "onedrive");
   const googleDrive = configured.find((source) => source.providerType === "google_drive");
   const now = new Date().toISOString();
-  const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET name = ?, slug = ?, short_label = ?, sort_order = ?, storage_provider = ?, source_type = ?,
+  const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
     local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, google_drive_folder_id = ?, google_drive_folder_label = ?, updated_at = ? WHERE id = ?`,
-    args: [input.name, input.slug, input.shortLabel, input.sortOrder, legacyStorageProvider(active.providerType), active.providerType,
+    args: [input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder, legacyStorageProvider(active.providerType), active.providerType,
       local?.localSourcePath ?? existing.localSourcePath,
       oneDrive?.oneDriveDriveId ?? existing.oneDriveDriveId, oneDrive?.oneDriveFolderId ?? existing.oneDriveFolderId,
       oneDrive?.oneDriveFolderPath ?? existing.oneDriveFolderPath, googleDrive?.googleDriveFolderId ?? existing.googleDriveFolderId,
@@ -842,6 +850,7 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
       assignmentPdfPath: nullableText(portfolio, "assignment_pdf_path"),
       finalSolutionsPdfPath: nullableText(portfolio, "final_solutions_pdf_path"),
       learningSpaceId: text(portfolio, "learning_space_id"), themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
+      cardColor: text(portfolio, "card_color"),
       sections: sections.rows.filter((section) => text(section, "portfolio_id") === portfolioId).map((section) => {
         const sectionId = text(section, "id");
         const sectionPublication = { mode: childMode(section), limited: bool(section.publication_limited), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
@@ -939,6 +948,11 @@ export async function setPortfolioTitle(id: string, title: string): Promise<void
   await database.execute({ sql: "UPDATE portfolios SET title_override = ? WHERE id = ?", args: [title.trim() || null, id] });
 }
 
+export async function setPortfolioCardColor(id: string, cardColor: string): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "UPDATE portfolios SET card_color = ? WHERE id = ?", args: [cardColor, id] });
+}
+
 export async function setSectionPublication(id: string, mode: ChildVisibilityMode, limited: boolean, publishFrom: string | null, publishUntil: string | null): Promise<void> {
   const database = await getDatabase();
   await database.execute({ sql: "UPDATE sections SET visibility_mode = ?, publication_limited = ?, publish_from = ?, publish_until = ? WHERE id = ?", args: [mode, limited ? 1 : 0, publishFrom, publishUntil, id] });
@@ -994,6 +1008,7 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
       code: nullableText(portfolio, "portfolio_code") ?? text(portfolio, "code"),
       title: nullableText(portfolio, "title_override") ?? text(portfolio, "title"),
       themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
+      cardColor: text(portfolio, "card_color"),
       sections: [],
     };
     for (const section of sections.rows.filter((row) => text(row, "portfolio_id") === portfolioId)) {

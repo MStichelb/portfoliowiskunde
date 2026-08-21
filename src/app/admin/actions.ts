@@ -24,6 +24,7 @@ import {
   setExerciseAlternativeVisibility,
   setPortfolioPublication,
   setPortfolioTitle,
+  setPortfolioCardColor,
   setPortfolioTheme,
   setErrorReportStatus,
   saveErrorReportNote,
@@ -38,6 +39,7 @@ import {
   type LearningSpaceInput,
   type LearningSpaceSourceInput,
 } from "@/lib/repositories";
+import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION, DEFAULT_PORTFOLIO_COLOR, isHexColor, normalizeHexColor } from "@/lib/ui-colors";
 import { compareLearningSpaceSources, switchLearningSpaceSource, type SourceSwitchPreview } from "@/lib/source-switch";
 import { synchronizeSource } from "@/lib/sync";
 import { userFacingSourceError } from "@/lib/source-errors";
@@ -236,11 +238,12 @@ export async function savePortfolioAction(formData: FormData) {
   const title = stringValue(formData, "title");
   const mode = portfolioModeSchema.safeParse(stringValue(formData, "mode"));
   const limited = stringValue(formData, "publicationMode") === "limited";
-  if (!id || !mode.success || title.length > 180) throw new Error("Ongeldige portfolio-invoer.");
+  const cardColorInput = stringValue(formData, "cardColor");
+  if (!id || !mode.success || title.length > 180 || !isHexColor(cardColorInput)) throw new Error("Ongeldige portfolio-invoer.");
   const existing = await getAdminPortfolioAny(id);
   if (!existing) throw new Error("Portfolio niet gevonden.");
   const window = limited ? parsePublicationWindow(formData) : { publishFrom: existing.publishFrom, publishUntil: existing.publishUntil };
-  await Promise.all([setPortfolioTitle(id, title), setPortfolioPublication(id, mode.data, limited, window.publishFrom, window.publishUntil)]);
+  await Promise.all([setPortfolioTitle(id, title), setPortfolioCardColor(id, normalizeHexColor(cardColorInput, DEFAULT_PORTFOLIO_COLOR)), setPortfolioPublication(id, mode.data, limited, window.publishFrom, window.publishUntil)]);
   refreshPublicationPaths(id);
 }
 
@@ -428,6 +431,8 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const name = stringValue(formData, "name");
   const slug = stringValue(formData, "slug").toLowerCase();
   const shortLabel = stringValue(formData, "shortLabel");
+  const description = stringValue(formData, "description") || DEFAULT_LEARNING_SPACE_DESCRIPTION;
+  const cardColorInput = stringValue(formData, "cardColor");
   const hasRoleSources = Boolean(formData.get("primaryProviderType"));
   const requestedSourceType = stringValue(formData, hasRoleSources ? "primaryProviderType" : "sourceType");
   const sourceType: LearningSpaceInput["sourceType"] = parseProviderType(requestedSourceType);
@@ -437,8 +442,9 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const oneDriveFolderPath = stringValue(formData, "oneDriveFolderPath");
   const googleDriveFolderId = stringValue(formData, "googleDriveFolderId");
   const googleDriveFolderLabel = stringValue(formData, "googleDriveFolderLabel");
-  if (!name || !shortLabel || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik een unieke URL-veilige slug.");
-  const common = { name, slug, shortLabel, sortOrder: Number(stringValue(formData, "sortOrder")) || 0, sourceType };
+  if (!name || !shortLabel || description.length > 240 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik geldige algemene instellingen.");
+  if (cardColorInput && !isHexColor(cardColorInput)) throw new Error("Kies een geldige kaartkleur.");
+  const common = { name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder: Number(stringValue(formData, "sortOrder")) || 0, sourceType };
   if (!hasRoleSources) {
     if (sourceType === "local") return { ...common, localSourcePath: localSourcePath ? path.resolve(localSourcePath) : null };
     if (sourceType === "onedrive") {

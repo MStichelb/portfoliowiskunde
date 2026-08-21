@@ -49,7 +49,7 @@ async function providerForSource(space: LearningSpace, source: LearningSpaceSour
     return { provider: GoogleDriveProvider.fromSpaceConnection({ folderId: source.googleDriveFolderId }), type: "google_drive" };
   }
   if (process.env.NODE_ENV === "production") {
-    throw new SourceConfigurationError("Local filesystem is alleen beschikbaar voor lokale ontwikkeling. Configureer OneDrive of Google Drive voor productie.");
+    throw new SourceConfigurationError("Lokale bestanden (test) zijn alleen beschikbaar voor lokale ontwikkeling. Configureer OneDrive of Google Drive voor productie.");
   }
   const legacyDefaultSpaceId = await getSetting("legacy_default_learning_space_id");
   const root = source.localSourcePath || (legacyDefaultSpaceId === space.id ? DEFAULT_LOCAL_SOURCE_PATH : "");

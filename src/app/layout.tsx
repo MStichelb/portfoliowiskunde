@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+
+import { SiteNavigation } from "@/app/components/site-navigation";
+import { getLearningSpaces } from "@/lib/repositories";
 
 import "./globals.css";
 
@@ -8,14 +10,14 @@ export const metadata: Metadata = {
   description: "Gepubliceerde wiskunde-uitwerkingen",
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export const dynamic = "force-dynamic";
+
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const spaces = await getLearningSpaces(true);
   return (
     <html lang="nl">
       <body>
-        <nav className="site-nav">
-          <Link href="/">Portfolio Wiskunde</Link>
-          <Link href="/admin">Beheer</Link>
-        </nav>
+        <SiteNavigation spaces={spaces.map(({ slug, name }) => ({ slug, name }))} />
         {children}
       </body>
     </html>

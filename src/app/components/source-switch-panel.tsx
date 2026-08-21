@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, CheckCircle2, TriangleAlert } from "lucide-react";
+import { ArrowLeftRight, CheckCircle2, Search, TriangleAlert } from "lucide-react";
 import { useActionState } from "react";
 
 import { compareSourcesAction, switchSourceAction, type SourceSwitchActionState } from "@/app/admin/actions";
@@ -27,8 +27,8 @@ export function SourceSwitchPanel({ space }: { space: LearningSpace }) {
 
   return <section className="settings-card source-switch-card" aria-labelledby="active-source-heading">
     <div className="source-settings-heading">
-      <div><h2 id="active-source-heading">Actieve bron</h2><p>De actieve index en bronconfiguratie wijzigen pas na een geslaagde controle en bevestiging.</p></div>
-      {active.role === "mirror" ? <span className="mirror-active-badge">Fallbackbron actief</span> : <span className="active-source-badge">Primaire bron actief</span>}
+      <div><h2 id="active-source-heading">Actieve bron</h2><p>Bij problemen met de primaire bron, kan je de mirror inschakelen om over te nemen.</p></div>
+      {active.role === "mirror" ? <span className="mirror-active-badge">Mirror actief</span> : <span className="active-source-badge">Primaire bron actief</span>}
     </div>
     <div className="active-source-summary">
       <div><span>Nu actief</span><strong>{sourceName(active)}</strong></div>
@@ -40,7 +40,7 @@ export function SourceSwitchPanel({ space }: { space: LearningSpace }) {
     <form action={compareAction} className="source-switch-actions">
       <input type="hidden" name="learningSpaceId" value={space.id} />
       <input type="hidden" name="targetSourceId" value={target.id} />
-      <SubmitButton className="secondary-button" pendingLabel="Bronnen controleren...">Bronnen vergelijken</SubmitButton>
+      <SubmitButton className="secondary-button" pendingLabel="Bronnen controleren..."><Search size={17} aria-hidden />Bronnen vergelijken</SubmitButton>
     </form>
     {comparisonState.error ? <p className="form-message" role="alert">{comparisonState.error}</p> : null}
     {preview ? <SourceComparisonView state={comparisonState} /> : null}
@@ -96,7 +96,7 @@ function sourceName(source: LearningSpaceSource): string {
 function providerLabel(provider: StorageSourceType): string {
   if (provider === "onedrive") return "OneDrive";
   if (provider === "google_drive") return "Google Drive";
-  return "Local filesystem";
+  return "Lokale bestanden (test)";
 }
 
 function formatBrussels(value: string): string {

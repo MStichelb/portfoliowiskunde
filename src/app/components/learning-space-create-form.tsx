@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import type { StorageSourceType } from "@/lib/repositories";
+import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
 
 export function LearningSpaceCreateForm({ action }: { action: (formData: FormData) => void | Promise<void> }) {
   const [sourceType, setSourceType] = useState<StorageSourceType>("local");
@@ -15,12 +16,14 @@ export function LearningSpaceCreateForm({ action }: { action: (formData: FormDat
         <label>Publieke slug<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="4" /><small>Wordt gebruikt in de URL, bijvoorbeeld /4.</small></label>
         <label>Kort label<input name="shortLabel" required maxLength={20} placeholder="4" /><small>Compacte naam voor de navigatie, bijvoorbeeld 4.</small></label>
         <label>Sortering<input name="sortOrder" type="number" defaultValue={40} /><small>Bepaalt de volgorde in de navigatie.</small></label>
+        <label className="field-full">Beschrijving<textarea name="description" defaultValue={DEFAULT_LEARNING_SPACE_DESCRIPTION} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
+        <label className="color-field">Kleur<span><input name="cardColor" type="color" defaultValue={DEFAULT_LEARNING_SPACE_COLOR} /><code>{DEFAULT_LEARNING_SPACE_COLOR}</code></span></label>
       </div>
     </fieldset>
     <fieldset>
       <legend>Bronbestanden</legend>
       <div className="create-source-fields">
-        <label className="source-type">Brontype<select name="sourceType" value={sourceType} onChange={(event) => setSourceType(parseSourceType(event.target.value))}><option value="local">Local filesystem</option><option value="onedrive">OneDrive</option><option value="google_drive">Google Drive</option></select></label>
+        <label className="source-type">Brontype<select name="sourceType" value={sourceType} onChange={(event) => setSourceType(parseSourceType(event.target.value))}><option value="local">Lokale bestanden (test)</option><option value="onedrive">OneDrive</option><option value="google_drive">Google Drive</option></select></label>
         {sourceType === "local" ? <label className="source-path">Lokale bronmap<input name="localSourcePath" placeholder="C:\\..." /></label> : null}
         {sourceType === "onedrive" ? <div className="settings-grid"><label>OneDrive drive-ID<input name="oneDriveDriveId" required /></label><label>OneDrive map-ID<input name="oneDriveFolderId" required /></label><label className="field-full">OneDrive mapnaam of pad<input name="oneDriveFolderPath" /></label></div> : null}
         {sourceType === "google_drive" ? <div className="settings-grid"><label>Google Drive folder-ID<input name="googleDriveFolderId" required pattern="[A-Za-z0-9_-]+" /></label><label>Herkenbaar label of pad<input name="googleDriveFolderLabel" maxLength={240} /></label><p className="source-connection-status">De Google Drive-map moet gedeeld zijn met het geconfigureerde service account als Viewer.</p></div> : null}

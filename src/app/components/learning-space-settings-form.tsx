@@ -1,6 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { CircleHelp } from "lucide-react";
+import Link from "next/link";
 
 import type { AdminActionState } from "@/app/admin/actions";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
@@ -17,6 +19,7 @@ export function LearningSpaceSettingsForm({
   const [mirrorEnabled, setMirrorEnabled] = useState(Boolean(space.mirrorSource));
   const [mirrorProvider, setMirrorProvider] = useState<StorageSourceType>(space.mirrorSource?.providerType ?? "google_drive");
   const [state, actionState] = useActionState(action, { error: null });
+  const [cardColor, setCardColor] = useState(space.cardColor);
 
   return <form action={actionState} className="learning-space-settings-form">
     <input type="hidden" name="id" value={space.id} />
@@ -24,16 +27,19 @@ export function LearningSpaceSettingsForm({
     <section className="settings-card" aria-labelledby="general-settings-heading">
       <h2 id="general-settings-heading">Algemeen</h2>
       <div className="settings-grid">
-        <label>Naam<input name="name" defaultValue={space.name} required maxLength={100} /></label>
-        <label>Publieke slug<input name="slug" defaultValue={space.slug} required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" /><small>Wordt gebruikt in de URL, bijvoorbeeld /6.</small></label>
-        <label>Kort label<input name="shortLabel" defaultValue={space.shortLabel} required maxLength={20} /><small>Compacte naam voor de navigatie, bijvoorbeeld 6.</small></label>
+        <label>Naam<input name="name" defaultValue={space.name} required maxLength={100} /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
+        <label>Publieke slug<input name="slug" defaultValue={space.slug} required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" /><small>Dit wordt gebruikt in de URL.</small></label>
+        <label>Kort label<input name="shortLabel" defaultValue={space.shortLabel} required maxLength={20} /><small>Compacte naam voor de navigatie in de adminomgeving.</small></label>
         <label>Sortering<input name="sortOrder" type="number" defaultValue={space.sortOrder} required /><small>Bepaalt de volgorde van leeromgevingen in de navigatie.</small></label>
+        <label className="field-full">Beschrijving<textarea name="description" defaultValue={space.description} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
+        <label className="color-field">Kleur<span><input name="cardColor" type="color" value={cardColor} onChange={(event) => setCardColor(event.target.value.toUpperCase())} /><code>{cardColor.toUpperCase()}</code></span><small>Accentkleur van het kaartje.</small></label>
       </div>
     </section>
 
     <section className="settings-card source-settings-card" aria-labelledby="source-settings-heading">
       <div className="source-settings-heading">
-        <div><h2 id="source-settings-heading">Bronnen</h2><p>Beide configuraties blijven onafhankelijk bewaard. Wisselen gebeurt afzonderlijk na een bronvergelijking.</p></div>
+        <div><h2 id="source-settings-heading">Bronnen</h2><p>Stel een primaire bron in waaruit de portfolio&apos;s worden gehaald. Daarnaast kan je een mirror instellen in geval van problemen met de primaire bron.</p></div>
+        <Link className="icon-button source-help-link" href="/admin/help/bronnen" aria-label="Hulp bij bronnen instellen" title="Hulp bij bronnen instellen"><CircleHelp size={18} aria-hidden /></Link>
         {space.mirrorSource?.isActive ? <span className="mirror-active-badge">Mirror actief</span> : null}
       </div>
       <div className="source-role-grid">
@@ -52,7 +58,7 @@ export function LearningSpaceSettingsForm({
             <SourceStatus source={space.mirrorSource} />
             <label>Provider<select name="mirrorProviderType" value={mirrorProvider} onChange={(event) => setMirrorProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
             <SourceFields prefix="mirror" provider={mirrorProvider} source={space.mirrorSource} />
-          </> : <p className="source-connection-status">Nog geen fallbackbron geconfigureerd.</p>}
+          </> : <p className="source-connection-status">Nog geen mirror geconfigureerd.</p>}
         </fieldset>
       </div>
     </section>
@@ -83,7 +89,7 @@ function SourceStatus({ source }: { source: LearningSpaceSource | null }) {
 }
 
 function ProviderOptions() {
-  return <><option value="local">Local filesystem</option><option value="onedrive">OneDrive</option><option value="google_drive">Google Drive</option></>;
+  return <><option value="local">Lokale bestanden (test)</option><option value="onedrive">OneDrive</option><option value="google_drive">Google Drive</option></>;
 }
 
 function legacyPrimarySource(space: LearningSpace): LearningSpaceSource {
@@ -104,5 +110,5 @@ function parseSourceType(value: string): StorageSourceType {
 function providerLabel(provider: StorageSourceType): string {
   if (provider === "onedrive") return "OneDrive";
   if (provider === "google_drive") return "Google Drive";
-  return "Local filesystem";
+  return "Lokale bestanden (test)";
 }

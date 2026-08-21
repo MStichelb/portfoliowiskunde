@@ -10,6 +10,8 @@ const activeSpace: LearningSpace = {
   name: "Actieve leeromgeving",
   slug: "actief",
   shortLabel: "A",
+  description: "Actieve testomgeving",
+  cardColor: "#DCEFE9",
   sortOrder: 1,
   isActive: true,
   archivedAt: null,

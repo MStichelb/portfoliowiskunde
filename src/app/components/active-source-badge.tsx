@@ -12,5 +12,5 @@ export function ActiveSourceBadge({ space, compact = false }: { space: LearningS
 function providerLabel(provider: StorageSourceType): string {
   if (provider === "onedrive") return "OneDrive";
   if (provider === "google_drive") return "Google Drive";
-  return "Local filesystem";
+  return "Lokale bestanden (test)";
 }

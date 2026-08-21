@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { adminExercisePortfolioHref } from "./admin-routes";
-import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioCardColor, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -348,6 +348,28 @@ describe("persistIndex", () => {
     resetDatabaseForTests();
     await expect(createLearningSpace({ name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, sourceType: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4", sourceType: "local", isActive: true, archivedAt: null });
     await expect(createLearningSpace({ name: "Dubbel", slug: "fysica-4", shortLabel: "D", sortOrder: 41, sourceType: "local", localSourcePath: null })).rejects.toThrow();
+  });
+
+  it("persists presentation metadata and keeps portfolio colors across resync", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-card-metadata-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    await updateLearningSpace("space-5", {
+      name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Publieke beschrijving",
+      cardColor: "#A1B2C3", sortOrder: 50, sourceType: "local", localSourcePath: null,
+    });
+    expect(await getLearningSpace("space-5")).toMatchObject({
+      name: "Vijfde jaar", shortLabel: "5WIS", description: "Publieke beschrijving", cardColor: "#A1B2C3",
+    });
+
+    const index = await indexSource(createTwoPortfolioProvider());
+    await persistIndex(index, "local", "space-5");
+    const portfolio = (await getAdminPortfolios("space-5"))[0];
+    await setPortfolioCardColor(portfolio.id, "#C4D5E6");
+    await setPortfolioPublication(portfolio.id, "visible", false, null, null);
+    await persistIndex(index, "local", "space-5");
+    expect((await getAdminPortfolios("space-5")).find((item) => item.id === portfolio.id)?.cardColor).toBe("#C4D5E6");
+    expect((await getStudentPortfolios("space-5")).find((item) => item.id === portfolio.id)?.cardColor).toBe("#C4D5E6");
   });
 
   it("preserves dormant OneDrive and Google Drive configuration while switching providers", async () => {

@@ -329,4 +329,12 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE sync_runs ADD COLUMN source_id TEXT REFERENCES learning_space_sources(id)",
     ],
   },
+  {
+    version: "018_ui_card_metadata",
+    statements: [
+      "ALTER TABLE learning_spaces ADD COLUMN description TEXT NOT NULL DEFAULT 'Portfolio''s en uitwerkingen.'",
+      "ALTER TABLE learning_spaces ADD COLUMN card_color TEXT NOT NULL DEFAULT '#DCEFE9'",
+      "ALTER TABLE portfolios ADD COLUMN card_color TEXT NOT NULL DEFAULT '#E7EEF2'",
+    ],
+  },
 ];

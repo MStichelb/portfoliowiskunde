@@ -28,7 +28,7 @@ function spaceWithActiveSource(role: LearningSpaceSource["role"], providerType: 
     lastValidationStatus: null, lastValidationMessage: null, mirrorCompletedAt: null,
   };
   return {
-    id: "space-test", name: "Test", slug: "test", shortLabel: "T", sortOrder: 1, isActive: true,
+    id: "space-test", name: "Test", slug: "test", shortLabel: "T", description: "Testomgeving", cardColor: "#DCEFE9", sortOrder: 1, isActive: true,
     archivedAt: null, sourceType: providerType, localSourcePath: null, oneDriveDriveId: null,
     oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: null,
     googleDriveFolderLabel: null, sources: [source], activeSourceId: source.id,
