@@ -20,6 +20,10 @@ const activeSpace: LearningSpace = {
   oneDriveFolderPath: null,
   googleDriveFolderId: null,
   googleDriveFolderLabel: null,
+  sources: [],
+  activeSourceId: null,
+  primarySource: null,
+  mirrorSource: null,
 };
 
 describe("LearningSpace lifecycle actions", () => {

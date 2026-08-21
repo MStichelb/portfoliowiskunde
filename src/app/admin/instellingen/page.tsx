@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ActiveSourceBadge } from "@/app/components/active-source-badge";
 import { LearningSpaceCreateForm } from "@/app/components/learning-space-create-form";
 import { LearningSpaceLifecycleActions } from "@/app/components/learning-space-lifecycle-actions";
 import { requireAdmin } from "@/lib/auth";
@@ -58,7 +59,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
 function SpaceList({ spaces }: { spaces: LearningSpace[] }) {
   return <div className="space-list">{spaces.map((space) => <div className="space-list-item" key={space.id}>
-    <div className="space-list-info"><strong>{space.name}</strong><span>/{space.slug}</span><span>{sourceLabel(space)}</span></div>
+    <div className="space-list-info"><strong>{space.name}</strong><span>/{space.slug}</span><ActiveSourceBadge space={space} /><span>{sourceLabel(space)}</span></div>
     <LearningSpaceLifecycleActions space={space} />
   </div>)}</div>;
 }

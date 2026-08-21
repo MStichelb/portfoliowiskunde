@@ -36,13 +36,16 @@ import {
   permanentlyDeleteLearningSpace,
   restoreLearningSpace,
   type LearningSpaceInput,
+  type LearningSpaceSourceInput,
 } from "@/lib/repositories";
+import { compareLearningSpaceSources, switchLearningSpaceSource, type SourceSwitchPreview } from "@/lib/source-switch";
 import { synchronizeSource } from "@/lib/sync";
 import { userFacingSourceError } from "@/lib/source-errors";
 
 const childModeSchema = z.enum(["hidden", "visible"]);
 const portfolioModeSchema = z.enum(["hidden", "visible"]);
 export interface AdminActionState { error: string | null; }
+export interface SourceSwitchActionState extends AdminActionState { preview?: SourceSwitchPreview; switched?: boolean; }
 
 export async function syncAction() {
   await requireAdmin();
@@ -69,6 +72,37 @@ export async function syncSpaceAction(_previousState: AdminActionState, formData
   }
   revalidatePath("/admin");
   return { error: null };
+}
+
+export async function compareSourcesAction(_previousState: SourceSwitchActionState, formData: FormData): Promise<SourceSwitchActionState> {
+  await requireAdmin();
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  const targetSourceId = stringValue(formData, "targetSourceId");
+  if (!learningSpaceId || !targetSourceId) return { error: "Switchdoel ontbreekt." };
+  try {
+    const preview = await compareLearningSpaceSources(learningSpaceId, targetSourceId);
+    return { error: null, preview };
+  } catch (error) {
+    return { error: userFacingSourceError(error) ?? (error instanceof Error ? error.message : "De bron kon niet worden gecontroleerd.") };
+  }
+}
+
+export async function switchSourceAction(_previousState: SourceSwitchActionState, formData: FormData): Promise<SourceSwitchActionState> {
+  await requireAdmin();
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  const targetSourceId = stringValue(formData, "targetSourceId");
+  if (!learningSpaceId || !targetSourceId) return { error: "Switchdoel ontbreekt." };
+  try {
+    const result = await switchLearningSpaceSource(learningSpaceId, targetSourceId, true);
+    revalidatePath("/");
+    revalidatePath("/admin");
+    revalidatePath("/admin/instellingen");
+    const space = await getLearningSpace(learningSpaceId);
+    if (space) revalidatePath(`/admin/${encodeURIComponent(space.slug)}`);
+    return { error: null, preview: result, switched: result.switched };
+  } catch (error) {
+    return { error: userFacingSourceError(error) ?? (error instanceof Error ? error.message : "Overschakelen is niet gelukt.") };
+  }
 }
 
 export async function archiveMissingIndexAction(formData: FormData) {
@@ -394,8 +428,9 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const name = stringValue(formData, "name");
   const slug = stringValue(formData, "slug").toLowerCase();
   const shortLabel = stringValue(formData, "shortLabel");
-  const requestedSourceType = stringValue(formData, "sourceType");
-  const sourceType: LearningSpaceInput["sourceType"] = requestedSourceType === "onedrive" || requestedSourceType === "google_drive" ? requestedSourceType : "local";
+  const hasRoleSources = Boolean(formData.get("primaryProviderType"));
+  const requestedSourceType = stringValue(formData, hasRoleSources ? "primaryProviderType" : "sourceType");
+  const sourceType: LearningSpaceInput["sourceType"] = parseProviderType(requestedSourceType);
   const localSourcePath = stringValue(formData, "localSourcePath");
   const oneDriveDriveId = stringValue(formData, "oneDriveDriveId");
   const oneDriveFolderId = stringValue(formData, "oneDriveFolderId");
@@ -404,14 +439,45 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const googleDriveFolderLabel = stringValue(formData, "googleDriveFolderLabel");
   if (!name || !shortLabel || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik een unieke URL-veilige slug.");
   const common = { name, slug, shortLabel, sortOrder: Number(stringValue(formData, "sortOrder")) || 0, sourceType };
-  if (sourceType === "local") return { ...common, localSourcePath: localSourcePath ? path.resolve(localSourcePath) : null };
-  if (sourceType === "onedrive") {
-    if (!oneDriveDriveId || !oneDriveFolderId) throw new Error("Vul OneDrive drive- en map-ID in.");
-    return { ...common, oneDriveDriveId, oneDriveFolderId, oneDriveFolderPath: oneDriveFolderPath || null };
+  if (!hasRoleSources) {
+    if (sourceType === "local") return { ...common, localSourcePath: localSourcePath ? path.resolve(localSourcePath) : null };
+    if (sourceType === "onedrive") {
+      if (!oneDriveDriveId || !oneDriveFolderId) throw new Error("Vul OneDrive drive- en map-ID in.");
+      return { ...common, oneDriveDriveId, oneDriveFolderId, oneDriveFolderPath: oneDriveFolderPath || null };
+    }
+    if (!googleDriveFolderId || !/^[A-Za-z0-9_-]+$/.test(googleDriveFolderId)) throw new Error("Vul een geldige Google Drive folder-ID in.");
+    if (googleDriveFolderLabel.length > 240) throw new Error("Het Google Drive-label is te lang.");
+    return { ...common, googleDriveFolderId, googleDriveFolderLabel: googleDriveFolderLabel || null };
   }
-  if (!googleDriveFolderId || !/^[A-Za-z0-9_-]+$/.test(googleDriveFolderId)) throw new Error("Vul een geldige Google Drive folder-ID in.");
-  if (googleDriveFolderLabel.length > 240) throw new Error("Het Google Drive-label is te lang.");
-  return { ...common, googleDriveFolderId, googleDriveFolderLabel: googleDriveFolderLabel || null };
+  const primarySource = roleSourceInput(formData, "primary", true)!;
+  const mirrorSource = formData.get("mirrorEnabled") === "true" ? roleSourceInput(formData, "mirror", true) : null;
+  return { ...common, primarySource, mirrorSource };
+}
+
+function roleSourceInput(formData: FormData, prefix: "primary" | "mirror", required: boolean): LearningSpaceSourceInput | null {
+  const providerValue = stringValue(formData, `${prefix}ProviderType`);
+  if (!providerValue && !required) return null;
+  const providerType = parseProviderType(providerValue);
+  if (providerType === "local") {
+    const sourcePath = stringValue(formData, `${prefix}LocalSourcePath`);
+    return { providerType, localSourcePath: sourcePath ? path.resolve(sourcePath) : null };
+  }
+  if (providerType === "onedrive") {
+    const driveId = stringValue(formData, `${prefix}OneDriveDriveId`);
+    const folderId = stringValue(formData, `${prefix}OneDriveFolderId`);
+    if (!driveId || !folderId) throw new Error(`Vul voor de ${prefix === "primary" ? "primaire bron" : "mirror"} de OneDrive drive- en map-ID in.`);
+    return { providerType, oneDriveDriveId: driveId, oneDriveFolderId: folderId, oneDriveFolderPath: stringValue(formData, `${prefix}OneDriveFolderPath`) || null };
+  }
+  const folderId = stringValue(formData, `${prefix}GoogleDriveFolderId`);
+  const label = stringValue(formData, `${prefix}GoogleDriveFolderLabel`);
+  if (!folderId || !/^[A-Za-z0-9_-]+$/.test(folderId)) throw new Error(`Vul voor de ${prefix === "primary" ? "primaire bron" : "mirror"} een geldige Google Drive folder-ID in.`);
+  if (label.length > 240) throw new Error("Het Google Drive-label is te lang.");
+  return { providerType, googleDriveFolderId: folderId, googleDriveFolderLabel: label || null };
+}
+
+function parseProviderType(value: string): LearningSpaceInput["sourceType"] {
+  if (value === "onedrive" || value === "google_drive") return value;
+  return "local";
 }
 
 function refreshPublicationPaths(portfolioId: string) {

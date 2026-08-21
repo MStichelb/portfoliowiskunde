@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { isSyncStale, maybeAutoSynchronize } from "./auto-sync";
+import { SourceConfigurationError } from "./source-errors";
+import { safeSynchronizationError } from "./sync";
 
 describe("automatic synchronization freshness", () => {
   const now = Date.parse("2026-08-11T12:00:00.000Z");
@@ -40,5 +42,16 @@ describe("automatic synchronization freshness", () => {
     expect(calls).toBe(1);
     finish?.();
     await Promise.all([first, second]);
+  });
+
+  it("logs diagnostic sync details without exposing an absolute local source path", () => {
+    const ioError = Object.assign(new Error("ENOENT: scandir 'C:\\Users\\teacher\\private-source'"), { code: "ENOENT" });
+    expect(safeSynchronizationError(ioError, "space-5", "local", "indexing")).toMatchObject({
+      learningSpaceId: "space-5", providerType: "local", stage: "indexing", errorName: "Error",
+      errorMessage: "ENOENT: de lokale bron kon niet worden gelezen.", errorCode: "ENOENT",
+    });
+    const configuration = safeSynchronizationError(new SourceConfigurationError("Driveconfiguratie ontbreekt."), "space-5", "onedrive", "provider-resolution");
+    expect(configuration.errorName).toBe("SourceConfigurationError");
+    expect(JSON.stringify(configuration)).not.toContain("private-source");
   });
 });

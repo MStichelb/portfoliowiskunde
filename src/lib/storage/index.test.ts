@@ -1,11 +1,11 @@
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { resetDatabaseForTests } from "../database";
-import { updateLearningSpace } from "../repositories";
+import { getLearningSpace, persistIndex, updateLearningSpace } from "../repositories";
 import { getStorageProviderWithType } from ".";
 
 const originalEnvironment = { ...process.env };
@@ -33,6 +33,27 @@ describe("LearningSpace provider selection", () => {
 
     await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "google_drive", googleDriveFolderId: "google-root-id" });
     await expect(getStorageProviderWithType("space-5")).resolves.toMatchObject({ type: "google_drive", provider: { id: "google-drive" } });
+  });
+
+  it("resolves the active source for ordinary synchronization after a role switch", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-active-source-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const primaryRoot = path.join(temporaryDirectory, "primary");
+    const mirrorRoot = path.join(temporaryDirectory, "mirror");
+    await Promise.all([mkdir(primaryRoot), mkdir(mirrorRoot)]);
+    await Promise.all([writeFile(path.join(primaryRoot, "primary.txt"), "primary"), writeFile(path.join(mirrorRoot, "mirror.txt"), "mirror")]);
+    await updateLearningSpace("space-5", {
+      name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local",
+      primarySource: { providerType: "local", localSourcePath: primaryRoot },
+      mirrorSource: { providerType: "local", localSourcePath: mirrorRoot },
+    });
+    const space = (await getLearningSpace("space-5"))!;
+    await persistIndex([], "local", space.id, { sourceId: space.mirrorSource!.id, activateSourceId: space.mirrorSource!.id });
+
+    const configured = await getStorageProviderWithType(space.id);
+    expect(configured.source).toMatchObject({ id: space.mirrorSource!.id, role: "mirror", isActive: true });
+    await expect(configured.provider.list("")).resolves.toEqual([expect.objectContaining({ name: "mirror.txt" })]);
   });
 });
 

@@ -861,12 +861,18 @@ Voor iedere LearningSpace:
 
 1. open **Globaal beheer > Leeromgevingen**;
 2. maak de LearningSpace aan of kies **Beheren**;
-3. kies provider **Google Drive**;
-4. open in Google Drive `Portfolio Wiskunde Mirror/current/5WIS`, `current/6WIS`, enzovoort;
-5. kopieer de folder-ID uit de Drive-URL, het deel na `/folders/`;
-6. plak die ID bij de overeenkomstige LearningSpace;
-7. sla op en kies **Nu synchroniseren**;
-8. controleer portfolio's, warnings, markeracceptatie en een asset.
+3. configureer OneDrive als **Primaire bron** met de juiste drive- en map-ID;
+4. schakel **Mirror configureren** in en kies daar **Google Drive**;
+5. open in Google Drive `Portfolio Wiskunde Mirror/current/5WIS`, `current/6WIS`, enzovoort;
+6. kopieer de folder-ID uit de Drive-URL, het deel na `/folders/`, en plak die bij de overeenkomstige mirror;
+7. sla op en kies **Bronnen vergelijken**;
+8. controleer de gevonden aantallen, eventuele padverschillen en **Laatste volledige mirror**;
+9. laat de primaire bron actief of bevestig bewust **Overschakelen naar mirror**;
+10. kies **Nu synchroniseren** en controleer portfolio's, warnings, markeracceptatie en een asset.
+
+De primaire bron en mirror blijven permanent en onafhankelijk opgeslagen. Omschakelen verandert hun drive- of folder-ID's niet. Gewone synchronisatie gebruikt altijd de actieve rol en schakelt nooit automatisch om. Terugschakelen naar de primaire bron gebeurt via dezelfde vergelijking en expliciete bevestiging.
+
+Een ontbrekende of ongeldige Google completion marker is een harde fout: vergelijken en omschakelen worden geweigerd en de bestaande actieve bron/index blijven behouden. Inhoudsverschillen zijn waarschuwingen; na beoordeling kan de admin de switch wel bevestigen. Rclone en zijn OAuth-account blijven buiten de webapp draaien en de applicatie gebruikt beide cloudproviders uitsluitend read-only.
 
 > **Belangrijk:** lokale bronconfiguratie staat in de lokale SQLite-database. Productieconfiguratie staat in Neon PostgreSQL. Google Drive folder-ID's worden niet via Git meegenomen en moeten in productie eenmalig afzonderlijk worden ingesteld.
 
@@ -932,9 +938,12 @@ Na redeploy moeten Function logs `Routed to Frankfurt (fra1)` tonen. Dit maakte 
 9. Windows Taakplanner met `wscript.exe` en herhaling iedere vijf minuten instellen.
 10. Een automatische run, log en resultaatcode controleren.
 11. Service-account Viewer-sharing op alle `current/<LearningSpace>`-mappen controleren.
-12. Iedere webapp-LearningSpace handmatig synchroniseren.
-13. Completion marker en fail-closed behoud van de vorige index testen.
-14. Controleren dat een stabiele dry-run nul transfers en nul deletes toont.
+12. Per LearningSpace primaire bron en Google mirror onafhankelijk controleren.
+13. **Bronnen vergelijken** uitvoeren en de weergegeven `completedAt` controleren.
+14. Een gecontroleerde switch naar mirror en terug naar primair testen.
+15. Iedere webapp-LearningSpace op de actieve bron handmatig synchroniseren.
+16. Completion marker en fail-closed behoud van de vorige index testen.
+17. Controleren dat een stabiele dry-run nul transfers en nul deletes toont.
 
 ## 16. Wat bij alleen een nieuwe pc niet opnieuw hoeft
 
@@ -992,6 +1001,8 @@ Een herstelde installatie is pas klaar wanneer:
 - Task Scheduler zonder zichtbaar venster draait en overlap weigert;
 - een stabiele dry-run nul onverwachte transfers/deletes toont;
 - de webapp de correcte folder-ID's gebruikt;
+- primaire bron en mirror afzonderlijk bewaard blijven;
+- omschakelen alleen na een verse vergelijking en expliciete bevestiging lukt;
 - een handmatige webappsync en beveiligde assetweergave slagen;
 - lint, typecheck, tests en build groen zijn.
 

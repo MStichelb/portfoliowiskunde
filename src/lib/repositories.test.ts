@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { adminExercisePortfolioHref } from "./admin-routes";
-import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -430,6 +430,7 @@ describe("persistIndex", () => {
     expect(await getThemes("space-5")).toEqual([]);
     expect((await database.execute("SELECT id FROM sync_runs WHERE learning_space_id = 'space-5'")).rows).toEqual([]);
     expect((await database.execute("SELECT learning_space_id FROM sync_leases WHERE learning_space_id = 'space-5'")).rows).toEqual([]);
+    expect((await database.execute("SELECT id FROM learning_space_sources WHERE learning_space_id = 'space-5'")).rows).toEqual([]);
     expect((await database.execute("SELECT id FROM error_reports WHERE id = 'report-space-5'")).rows).toEqual([]);
     expect((await database.execute("SELECT id FROM sync_warnings WHERE id = 'warning-space-5'")).rows).toEqual([]);
     expect((await database.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
@@ -496,6 +497,42 @@ describe("persistIndex", () => {
     await expect(synchronizeSource("space-6", {
       getConfiguredProvider: async () => ({ provider: createTwoPortfolioProvider(), type: sourceType, space: { ...space, sourceType } }),
     })).resolves.toMatchObject({ portfolios: 2, skipped: false });
+  });
+
+  it("keeps a valid source and existing index intact when persistence fails internally", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-sync-persist-failure-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const source = (await getActiveLearningSpaceSource("space-6"))!;
+    const provider = createTwoPortfolioProvider();
+    await persistIndex(await indexSource(provider), "local", "space-6", { sourceId: source.id });
+    const database = await getDatabase();
+    const before = await database.execute("SELECT id, source_id, is_indexed FROM solution_assets ORDER BY id");
+    await database.execute(`CREATE TRIGGER fail_running_sync BEFORE INSERT ON sync_runs
+      WHEN NEW.status = 'running' BEGIN SELECT RAISE(ABORT, 'forced internal persistence failure'); END`);
+
+    await expect(synchronizeSource("space-6", {
+      getConfiguredProvider: async () => ({ provider, type: "local", space: (await getLearningSpace("space-6"))!, source }),
+    })).rejects.toThrow("forced internal persistence failure");
+    expect((await getActiveLearningSpaceSource("space-6"))?.lastValidationStatus).toBe("valid");
+    expect((await database.execute("SELECT id, source_id, is_indexed FROM solution_assets ORDER BY id")).rows).toEqual(before.rows);
+  });
+
+  it("marks a source invalid only for an explicit source configuration failure", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-sync-config-failure-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const source = (await getActiveLearningSpaceSource("space-6"))!;
+    const provider: StorageProvider = {
+      id: "invalid-source",
+      async assertReadyForIndex() { throw new SourceConfigurationError("Bronconfiguratie is ongeldig."); },
+      async list() { return []; },
+      async readFile() { return Buffer.from(""); },
+    };
+    await expect(synchronizeSource("space-6", {
+      getConfiguredProvider: async () => ({ provider, type: "local", space: (await getLearningSpace("space-6"))!, source }),
+    })).rejects.toBeInstanceOf(SourceConfigurationError);
+    expect((await getActiveLearningSpaceSource("space-6"))?.lastValidationStatus).toBe("invalid");
   });
 });
 

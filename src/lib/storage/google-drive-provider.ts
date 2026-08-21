@@ -39,6 +39,7 @@ export class GoogleDriveProvider implements StorageProvider {
   private readonly sleep: (milliseconds: number) => Promise<void>;
   private readonly maxRetries: number;
   private rootVerified = false;
+  private mirrorCompletedAt: string | undefined;
 
   private constructor(private readonly rootFolderId: string, dependencies: GoogleDriveProviderDependencies = {}) {
     if (!isGoogleDriveId(rootFolderId)) throw new SourceConfigurationError("De Google Drive folder-ID is ongeldig.");
@@ -71,7 +72,13 @@ export class GoogleDriveProvider implements StorageProvider {
       if (error instanceof SourceTransientError) throw error;
       throw incompleteMirrorError();
     }
-    if (!isCompleteMirrorMarker(payload)) throw incompleteMirrorError();
+    const completedAt = completeMirrorTimestamp(payload);
+    if (!completedAt) throw incompleteMirrorError();
+    this.mirrorCompletedAt = completedAt;
+  }
+
+  getReadinessMetadata(): { mirrorCompletedAt?: string } {
+    return { mirrorCompletedAt: this.mirrorCompletedAt };
   }
 
   async list(relativePath = ""): Promise<StorageEntry[]> {
@@ -214,13 +221,13 @@ function assertUniqueNames(entries: StorageEntry[], parentPath: string): void {
   }
 }
 
-function isCompleteMirrorMarker(value: unknown): boolean {
-  if (!value || typeof value !== "object") return false;
+function completeMirrorTimestamp(value: unknown): string | null {
+  if (!value || typeof value !== "object") return null;
   const marker = value as Record<string, unknown>;
-  return marker.status === "complete" && isIsoDate(marker.completedAt);
+  return marker.status === "complete" && isIsoDate(marker.completedAt) ? marker.completedAt : null;
 }
 
-function isIsoDate(value: unknown): boolean {
+function isIsoDate(value: unknown): value is string {
   return typeof value === "string" &&
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
     Number.isFinite(Date.parse(value));

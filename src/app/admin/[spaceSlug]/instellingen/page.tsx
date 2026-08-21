@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { LearningSpaceLifecycleActions } from "@/app/components/learning-space-lifecycle-actions";
 import { LearningSpaceNav } from "@/app/components/learning-space-nav";
 import { LearningSpaceSettingsForm } from "@/app/components/learning-space-settings-form";
+import { SourceSwitchPanel } from "@/app/components/source-switch-panel";
 import { requireAdmin } from "@/lib/auth";
 import { getAdminLearningSpaceBySlug, getLearningSpaces } from "@/lib/repositories";
 
@@ -27,7 +28,7 @@ export default async function LearningSpaceSettingsPage({
   ]);
   if (!space) notFound();
 
-  return <main className="page-shell narrow-page">
+  return <main className="page-shell learning-space-settings-page">
     <Link href={space.isActive ? `/admin/${encodeURIComponent(space.slug)}` : "/admin/instellingen"} className="back-link">{space.isActive ? "Terug naar portfolio's" : "Terug naar leeromgevingen"}</Link>
     <LearningSpaceNav spaces={spaces} current={space} section="settings" />
     <header className="settings-heading">
@@ -38,6 +39,7 @@ export default async function LearningSpaceSettingsPage({
     {!space.isActive ? <p className="archived-message" role="status">Gearchiveerd. Deze leeromgeving is niet publiek zichtbaar en wordt niet gesynchroniseerd.</p> : null}
     {saved === "1" ? <p className="success-message" role="status">Instellingen opgeslagen.</p> : null}
     <LearningSpaceSettingsForm space={space} action={saveLearningSpaceAction} />
+    {space.isActive ? <SourceSwitchPanel space={space} /> : null}
     <section className="settings-section" aria-labelledby="lifecycle-heading">
       <h2 id="lifecycle-heading">Status leeromgeving</h2>
       <p>{space.isActive ? "Archiveer deze leeromgeving om alle instellingen te bewaren zonder ze publiek te tonen of te synchroniseren." : "Herstel deze leeromgeving om ze opnieuw publiek beschikbaar en synchroniseerbaar te maken. Permanent verwijderen wist alleen de databasegegevens; bronbestanden blijven onaangeraakt."}</p>

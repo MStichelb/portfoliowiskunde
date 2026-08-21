@@ -291,4 +291,42 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX learning_spaces_lifecycle_index ON learning_spaces(archived_at, sort_order)",
     ],
   },
+  {
+    version: "016_learning_space_sources",
+    statements: [
+      `CREATE TABLE learning_space_sources (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK(role IN ('primary', 'mirror')),
+        provider_type TEXT NOT NULL CHECK(provider_type IN ('local', 'onedrive', 'google_drive')),
+        is_active INTEGER NOT NULL DEFAULT 0,
+        local_source_path TEXT,
+        onedrive_drive_id TEXT,
+        onedrive_folder_id TEXT,
+        onedrive_folder_path TEXT,
+        google_drive_folder_id TEXT,
+        google_drive_folder_label TEXT,
+        last_validated_at TEXT,
+        last_validation_status TEXT CHECK(last_validation_status IN ('valid', 'invalid')),
+        last_validation_message TEXT,
+        mirror_completed_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(learning_space_id, role)
+      )`,
+      "CREATE UNIQUE INDEX learning_space_active_source_index ON learning_space_sources(learning_space_id) WHERE is_active = 1",
+      "CREATE INDEX learning_space_sources_provider_index ON learning_space_sources(provider_type, learning_space_id)",
+      `INSERT INTO learning_space_sources (id, learning_space_id, role, provider_type, is_active, local_source_path,
+        onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, google_drive_folder_id, google_drive_folder_label, created_at, updated_at)
+        SELECT id || ':primary', id, 'primary', source_type, 1, local_source_path,
+          onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, google_drive_folder_id, google_drive_folder_label, created_at, updated_at
+        FROM learning_spaces`,
+    ],
+  },
+  {
+    version: "017_sync_run_source_reference",
+    statements: [
+      "ALTER TABLE sync_runs ADD COLUMN source_id TEXT REFERENCES learning_space_sources(id)",
+    ],
+  },
 ];

@@ -2,8 +2,8 @@
 
 import { useActionState, useState } from "react";
 
-import type { LearningSpace, StorageSourceType } from "@/lib/repositories";
 import type { AdminActionState } from "@/app/admin/actions";
+import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
 
 export function LearningSpaceSettingsForm({
   space,
@@ -12,7 +12,10 @@ export function LearningSpaceSettingsForm({
   space: LearningSpace;
   action: (previousState: AdminActionState, formData: FormData) => AdminActionState | Promise<AdminActionState>;
 }) {
-  const [sourceType, setSourceType] = useState<StorageSourceType>(space.sourceType);
+  const primary = space.primarySource ?? legacyPrimarySource(space);
+  const [primaryProvider, setPrimaryProvider] = useState<StorageSourceType>(primary.providerType);
+  const [mirrorEnabled, setMirrorEnabled] = useState(Boolean(space.mirrorSource));
+  const [mirrorProvider, setMirrorProvider] = useState<StorageSourceType>(space.mirrorSource?.providerType ?? "google_drive");
   const [state, actionState] = useActionState(action, { error: null });
 
   return <form action={actionState} className="learning-space-settings-form">
@@ -28,29 +31,78 @@ export function LearningSpaceSettingsForm({
       </div>
     </section>
 
-    <section className="settings-card" aria-labelledby="source-settings-heading">
-      <h2 id="source-settings-heading">Bronbestanden</h2>
-      <label className="source-type">Brontype<select name="sourceType" value={sourceType} onChange={(event) => setSourceType(parseSourceType(event.target.value))}><option value="local">Local filesystem</option><option value="onedrive">OneDrive</option><option value="google_drive">Google Drive</option></select></label>
-      {sourceType === "local" ? <label className="source-path">Lokale bronmap<input name="localSourcePath" defaultValue={space.localSourcePath ?? ""} placeholder="C:\\..." /></label> : null}
-      {sourceType === "onedrive" ? <div className="settings-grid one-drive-fields">
-        <label>OneDrive drive-ID<input name="oneDriveDriveId" defaultValue={space.oneDriveDriveId ?? ""} required /></label>
-        <label>OneDrive map-ID<input name="oneDriveFolderId" defaultValue={space.oneDriveFolderId ?? ""} required /></label>
-        <label className="field-full">OneDrive mapnaam of pad<input name="oneDriveFolderPath" defaultValue={space.oneDriveFolderPath ?? ""} /></label>
-        <p className="source-connection-status">{space.oneDriveDriveId && space.oneDriveFolderId ? "Een OneDrive-bron is voor deze leeromgeving geconfigureerd." : "Vul drive-ID en map-ID in om deze OneDrive-bron te configureren."}</p>
-      </div> : null}
-      {sourceType === "google_drive" ? <div className="settings-grid google-drive-fields">
-        <label>Google Drive folder-ID<input name="googleDriveFolderId" defaultValue={space.googleDriveFolderId ?? ""} required pattern="[A-Za-z0-9_-]+" /></label>
-        <label>Herkenbaar label of pad<input name="googleDriveFolderLabel" defaultValue={space.googleDriveFolderLabel ?? ""} maxLength={240} placeholder="Mirror 6de jaar" /></label>
-        <p className="source-connection-status">De Google Drive-map moet gedeeld zijn met het geconfigureerde service account als Viewer.</p>
-      </div> : null}
+    <section className="settings-card source-settings-card" aria-labelledby="source-settings-heading">
+      <div className="source-settings-heading">
+        <div><h2 id="source-settings-heading">Bronnen</h2><p>Beide configuraties blijven onafhankelijk bewaard. Wisselen gebeurt afzonderlijk na een bronvergelijking.</p></div>
+        {space.mirrorSource?.isActive ? <span className="mirror-active-badge">Mirror actief</span> : null}
+      </div>
+      <div className="source-role-grid">
+        <fieldset className={`source-role-card${primary.isActive ? " active-source-card" : ""}`}>
+          <legend>Primaire bron</legend>
+          <SourceStatus source={primary} />
+          <label>Provider<select name="primaryProviderType" value={primaryProvider} onChange={(event) => setPrimaryProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
+          <SourceFields prefix="primary" provider={primaryProvider} source={primary} />
+        </fieldset>
+
+        <fieldset className={`source-role-card${space.mirrorSource?.isActive ? " active-source-card" : ""}`}>
+          <legend>Mirror</legend>
+          <label className="source-enabled-control"><input type="checkbox" name="mirrorEnabled" value="true" checked={mirrorEnabled} disabled={space.mirrorSource?.isActive} onChange={(event) => setMirrorEnabled(event.target.checked)} />Mirror configureren</label>
+          {space.mirrorSource?.isActive ? <input type="hidden" name="mirrorEnabled" value="true" /> : null}
+          {mirrorEnabled ? <>
+            <SourceStatus source={space.mirrorSource} />
+            <label>Provider<select name="mirrorProviderType" value={mirrorProvider} onChange={(event) => setMirrorProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
+            <SourceFields prefix="mirror" provider={mirrorProvider} source={space.mirrorSource} />
+          </> : <p className="source-connection-status">Nog geen fallbackbron geconfigureerd.</p>}
+        </fieldset>
+      </div>
     </section>
 
     {state.error ? <p className="form-message" role="alert">{state.error}</p> : null}
-    <button className="primary-button settings-save-button" type="submit">Opslaan</button>
+    <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
   </form>;
+}
+
+function SourceFields({ prefix, provider, source }: { prefix: "primary" | "mirror"; provider: StorageSourceType; source: LearningSpaceSource | null }) {
+  if (provider === "local") return <label className="source-path">Lokale bronmap<input name={`${prefix}LocalSourcePath`} defaultValue={source?.localSourcePath ?? ""} placeholder="C:\\..." /></label>;
+  if (provider === "onedrive") return <div className="settings-grid one-drive-fields">
+    <label>OneDrive drive-ID<input name={`${prefix}OneDriveDriveId`} defaultValue={source?.oneDriveDriveId ?? ""} required /></label>
+    <label>OneDrive map-ID<input name={`${prefix}OneDriveFolderId`} defaultValue={source?.oneDriveFolderId ?? ""} required /></label>
+    <label className="field-full">OneDrive mapnaam of pad<input name={`${prefix}OneDriveFolderPath`} defaultValue={source?.oneDriveFolderPath ?? ""} /></label>
+  </div>;
+  return <div className="settings-grid google-drive-fields">
+    <label>Google Drive folder-ID<input name={`${prefix}GoogleDriveFolderId`} defaultValue={source?.googleDriveFolderId ?? ""} required pattern="[A-Za-z0-9_-]+" /></label>
+    <label>Herkenbaar label of pad<input name={`${prefix}GoogleDriveFolderLabel`} defaultValue={source?.googleDriveFolderLabel ?? ""} maxLength={240} placeholder="Mirror leeromgeving" /></label>
+    <p className="source-connection-status">De map moet gedeeld zijn met het geconfigureerde service account als Viewer.</p>
+  </div>;
+}
+
+function SourceStatus({ source }: { source: LearningSpaceSource | null }) {
+  if (!source) return null;
+  const status = source.lastValidationStatus === "valid" ? "Bron getest" : source.lastValidationStatus === "invalid" ? "Controle mislukt" : "Geconfigureerd";
+  return <div className="source-status-line"><span className={source.isActive ? "active-source-badge" : "source-role-badge"}>{source.isActive ? "Actieve bron" : "Stand-by"}</span><span>{providerLabel(source.providerType)} · {status}</span></div>;
+}
+
+function ProviderOptions() {
+  return <><option value="local">Local filesystem</option><option value="onedrive">OneDrive</option><option value="google_drive">Google Drive</option></>;
+}
+
+function legacyPrimarySource(space: LearningSpace): LearningSpaceSource {
+  return {
+    id: `${space.id}:primary`, learningSpaceId: space.id, role: "primary", providerType: space.sourceType, isActive: true,
+    localSourcePath: space.localSourcePath, oneDriveDriveId: space.oneDriveDriveId, oneDriveFolderId: space.oneDriveFolderId,
+    oneDriveFolderPath: space.oneDriveFolderPath, googleDriveFolderId: space.googleDriveFolderId,
+    googleDriveFolderLabel: space.googleDriveFolderLabel, lastValidatedAt: null, lastValidationStatus: null,
+    lastValidationMessage: null, mirrorCompletedAt: null,
+  };
 }
 
 function parseSourceType(value: string): StorageSourceType {
   if (value === "onedrive" || value === "google_drive") return value;
   return "local";
+}
+
+function providerLabel(provider: StorageSourceType): string {
+  if (provider === "onedrive") return "OneDrive";
+  if (provider === "google_drive") return "Google Drive";
+  return "Local filesystem";
 }

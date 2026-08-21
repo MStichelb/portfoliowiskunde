@@ -13,9 +13,10 @@ School-OneDrive
   -> lokale OneDrive-client op een vaste Windows-pc
   -> rclone eenrichtingsmirror
   -> persoonlijke Google Drive
-  -> GoogleDriveProvider
-  -> Portfolio Wiskunde op Vercel
+  -> Google Drive fallbackbron voor Portfolio Wiskunde
 ```
+
+De webapp bewaart per LearningSpace twee provider-onafhankelijke rollen: **primaire bron** en optionele **mirror**. Exact een geconfigureerde rol is actief. Normaal is de directe OneDrive-provider primair en actief en is Google Drive de mirror. De gewone synchronisatie en alle beveiligde assetroutes gebruiken uitsluitend de actieve rol. Er is geen automatische failover.
 
 De persoonlijke Google Drive gebruikt deze structuur:
 
@@ -29,7 +30,7 @@ Portfolio Wiskunde Mirror/
     `-- YYYY-MM-DD/
 ```
 
-De webapp leest per LearningSpace uitsluitend de bijbehorende map onder `current/`. `history/` is nooit een webappbron en wordt niet geindexeerd. De persoonlijke Google Drive is een gecontroleerde mirror en niet de plaats waar dagelijks bronbestanden worden bewerkt.
+Wanneer Google Drive actief is, leest de webapp per LearningSpace uitsluitend de bijbehorende map onder `current/`. `history/` is nooit een webappbron en wordt niet geindexeerd. De persoonlijke Google Drive is een gecontroleerde mirror en niet de plaats waar dagelijks bronbestanden worden bewerkt.
 
 ## 2. Dynamische LearningSpaces
 
@@ -52,9 +53,10 @@ PORTFOLIO/
 De mirror en de applicatieconfiguratie zijn twee afzonderlijke stappen. Nadat een nieuwe map voor het eerst succesvol is gemirrord:
 
 1. maak in **Globaal beheer > Leeromgevingen** een LearningSpace aan;
-2. kies **Google Drive** als brontype;
-3. vul de Google Drive folder-ID van `current/<LearningSpace>` in;
-4. synchroniseer en controleer portfolio's, waarschuwingen en assets.
+2. configureer de normale productiebron als primaire bron;
+3. voeg Google Drive als mirror toe met de folder-ID van `current/<LearningSpace>`;
+4. vergelijk beide bronnen en controleer portfolio's, waarschuwingen en assets;
+5. laat de primaire bron actief of voer de gecontroleerde switchflow uit wanneer de mirror nodig is.
 
 ## 3. Rclone op de mirror-pc
 
@@ -147,7 +149,7 @@ Herstel een bestand bij voorkeur naar School-OneDrive, de bron van waarheid, en 
 | Hosting | Vercel Hobby, Next.js Node.js Functions |
 | Compute region | Frankfurt, `fra1`, projectbreed via `vercel.json` |
 | Database | Neon PostgreSQL in Frankfurt |
-| Bestandsbron | Persoonlijke Google Drive via `GoogleDriveProvider` |
+| Bestandsbronnen | Primaire bron en optionele mirror per LearningSpace; exact een actief |
 | Google-auth | App-breed service account, mirrorfolder gedeeld als Viewer |
 | Lokale opslag | Niet gebruikt in productie |
 
@@ -177,11 +179,25 @@ Bewaar secrets uitsluitend in de deploymentomgeving, bij voorkeur als Vercel Sen
 
 ## 7. Storage providers
 
-- **Google Drive:** huidige productieroute voor indexering en assetstreaming. Elke LearningSpace wijst naar zijn eigen folder onder `current/`.
-- **OneDrive:** volledig ondersteunde alternatieve productieprovider via Microsoft Entra, delegated OAuth en `Files.Read`.
+- **OneDrive:** normale primaire productiebron via Microsoft Entra, delegated OAuth en `Files.Read`.
+- **Google Drive:** normale mirror/fallbackbron. Elke LearningSpace wijst naar zijn eigen folder onder `current/`.
 - **Local filesystem:** uitsluitend voor lokale ontwikkeling en acceptance-tests.
 
 Alle providers implementeren dezelfde read-only `StorageProvider`-grens. De webapp mag bestanden listen, lezen en streamen, maar wijzigt of verwijdert nooit bron- of mirrorbestanden. Publicatie- en adminautorisatie worden gecontroleerd voordat een provider een asset opent.
+
+### Handmatig omschakelen
+
+De primaire en mirrorconfiguratie blijven onafhankelijk in PostgreSQL opgeslagen. Portfolio-ID's, oefening-ID's, publicatieplanning, visibility en foutmeldingen blijven LearningSpace-metadata en worden niet per provider gedupliceerd.
+
+1. Open de instellingen van de LearningSpace en kies **Bronnen vergelijken**.
+2. De server initialiseert de niet-actieve provider, voert een verse read-only indexanalyse uit en vergelijkt logische relatieve paden met de huidige geldige index. Provider-item-ID's tellen niet mee.
+3. Een onbereikbare of fout geconfigureerde bron blokkeert de switch. Voor Google Drive blokkeert ook een ontbrekende of ongeldige completion marker.
+4. Ontbrekende of extra inhoud en parserwaarschuwingen worden getoond als inhoudsverschillen. Ze blokkeren niet, maar de admin moet expliciet bevestigen.
+5. Na bevestiging analyseert de server het doel opnieuw. De doelindex en actieve bron worden in een database-transactie opgeslagen. Pas na een volledig geslaagde transactie gebruiken sync en assetstreaming de nieuwe bron.
+
+Er is bewust geen automatische failover of automatische terugschakeling. Een mislukte validatie of persist laat de vorige actieve bron en index volledig intact. Terugschakelen volgt exact dezelfde flow. Bij een actieve Google mirror toont admin de laatst geldige `completedAt` in `Europe/Brussels`.
+
+Bestaande single-source LearningSpaces worden door de database-migratie automatisch als **primaire, actieve bron** opgenomen. Hun huidige provider en configuratie blijven ongewijzigd; er is geen handmatige datamigratie nodig.
 
 ## 8. LearningSpace-lifecycle
 
@@ -197,6 +213,12 @@ Permanent verwijderen wist alleen LearningSpace-gebonden applicatie- en database
 ### Mirror faalt of marker ontbreekt
 
 De marker blijft afwezig en de webapp weigert de nieuwe indexering. De laatst geldige index blijft actief. Los de mirrorfout op en voer de mirror opnieuw uit; na succes verschijnt een nieuwe marker.
+
+Staat de primaire bron nog actief, dan blokkeert een ontbrekende marker alleen vergelijken of omschakelen naar Google Drive. Staat Google Drive al actief, dan blijft een mislukte gewone sync eveneens fail-closed op de laatst geldige index. De applicatie schakelt nooit zelfstandig van rol.
+
+### Primaire bron tijdelijk onbereikbaar
+
+Open de LearningSpace-instellingen, vergelijk de mirror en controleer `completedAt` en eventuele inhoudsverschillen. Bevestig daarna handmatig **Overschakelen naar mirror**. Wanneer de primaire bron hersteld is, kies **Bronnen vergelijken** en vervolgens **Terugschakelen naar primaire bron**. Bronconfiguraties hoeven daarbij niet opnieuw te worden ingevoerd.
 
 ### Meer dan tien onverwachte deletes
 
@@ -258,6 +280,8 @@ Controleer na deployment minimaal:
 4. Een handmatige Google Drive-sync accepteert een geldige marker.
 5. Een tijdelijk ontbrekende marker geeft een vriendelijke adminfout en behoudt de bestaande index.
 6. De vaste Windows-taak maakt na herstel opnieuw markers aan.
+7. Een vergelijking met gelijke bronnen geen verschillen toont en een doelverschil expliciete bevestiging vereist.
+8. Een switch naar mirror en terug dezelfde publieke URL's, visibility en portfolio-ID's behoudt.
 
 ## 11. Portabiliteit
 

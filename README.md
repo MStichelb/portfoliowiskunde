@@ -4,7 +4,7 @@ Een read-only index- en publicatielaag voor wiskundeportfolio's. Bronbestanden b
 
 De lokaal geaccepteerde V1 staat op Git-tag `v1.0-local-accepted`.
 
-De definitieve productiearchitectuur, Windows/rclone-mirror, completion markers, retentie en recovery staan in [PRODUCTION_RUNBOOK.md](./PRODUCTION_RUNBOOK.md). Voor volledige herinstallatie op een nieuwe Windows-pc, inclusief de actuele scripts en Taakplanner, gebruik je [docs/SETUP-NIEUWE-PC.md](./docs/SETUP-NIEUWE-PC.md). School-OneDrive blijft de bron van waarheid; de huidige webapp-productieroute leest een gecontroleerde persoonlijke Google Drive-mirror.
+De definitieve productiearchitectuur, Windows/rclone-mirror, completion markers, retentie en recovery staan in [PRODUCTION_RUNBOOK.md](./PRODUCTION_RUNBOOK.md). Voor volledige herinstallatie op een nieuwe Windows-pc, inclusief de actuele scripts en Taakplanner, gebruik je [docs/SETUP-NIEUWE-PC.md](./docs/SETUP-NIEUWE-PC.md). School-OneDrive blijft de bron van waarheid; de webapp bewaart de directe OneDrive-bron en de gecontroleerde persoonlijke Google Drive-mirror afzonderlijk en gebruikt uitsluitend de handmatig gekozen actieve bron.
 
 ## A. Local development
 
@@ -120,19 +120,23 @@ Er is geen `APP_URL` of `BASE_URL` nodig: interne links zijn relatief en OAuth g
 
 ## G. LearningSpace source folders instellen
 
-De actuele productiebron is de persoonlijke Google Drive-mirror uit [het production runbook](./PRODUCTION_RUNBOOK.md). OneDrive blijft een volledig ondersteunde alternatieve provider en Local filesystem blijft voor development beschikbaar.
+Een LearningSpace bewaart maximaal twee onafhankelijke bronconfiguraties: een **primaire bron** en een **mirror**. Exact een daarvan is actief. De normale productieopstelling gebruikt OneDrive als primaire bron en de persoonlijke Google Drive-mirror als fallback, maar de rollen zijn niet aan een providertype gekoppeld. Local filesystem blijft uitsluitend voor development beschikbaar.
 
 1. Open `/admin/instellingen`. Verbind OneDrive app-breed wanneer je OneDrive gebruikt; voor Google Drive controleert deze pagina de app-brede service-accountenvironment.
 2. Open elke LearningSpace afzonderlijk.
-3. Kies **Local filesystem**, **OneDrive** of **Google Drive**.
-4. Vul alleen de velden van de gekozen bron in. Google Drive gebruikt de folder-ID en een optioneel herkenbaar label; credentials verschijnen nooit in de UI.
-5. Sla op. Elke LearningSpace houdt zijn eigen bronconfiguratie en index. Wisselen van provider bewaart de inactieve OneDrive- en Google Drive-instellingen.
+3. Configureer de primaire bron en schakel desgewenst de mirrorconfiguratie in. Beide rollen kunnen Local filesystem, OneDrive of Google Drive gebruiken.
+4. Vul alleen de providervelden van iedere rol in. Google Drive gebruikt de folder-ID en een optioneel herkenbaar label; credentials verschijnen nooit in de UI.
+5. Sla op. Configureren wijzigt de actieve rol niet en de twee configuraties overschrijven elkaar niet.
+6. Kies **Bronnen vergelijken** voordat je omschakelt. De app scant het switchdoel opnieuw en vergelijkt portfolio's, onderdelen en bestanden op logische relatieve paden.
+7. Controleer eventuele verschillen en bevestig expliciet **Overschakelen naar mirror** of **Terugschakelen naar primaire bron**.
+
+Bij een technisch probleem, zoals een onbereikbare bron of ongeldige Google completion marker, blijft de actieve bron en de laatst geldige index ongewijzigd. Inhoudsverschillen blokkeren niet, maar vereisen een bewuste bevestiging. Bestaande single-source LearningSpaces worden automatisch als primaire en actieve bron gemigreerd.
 
 Gebruik Local filesystem niet in productie; de server weigert dit bewust omdat Vercel geen blijvende lokale bronmap biedt.
 
 ## H. First sync
 
-Kies per LearningSpace **Nu synchroniseren**. OneDrive en Google Drive gebruiken alleen read-only list/read/download-aanroepen. De app schrijft of verwijdert nooit bronbestanden. Controleer daarna portfolio's, waarschuwingen en de laatste synchronisatietijd.
+Kies per LearningSpace **Nu synchroniseren**. Deze actie gebruikt uitsluitend de actieve bron; ze schakelt nooit automatisch naar de andere rol. OneDrive en Google Drive gebruiken alleen read-only list/read/download-aanroepen. De app schrijft of verwijdert nooit bronbestanden. Controleer daarna portfolio's, waarschuwingen en de laatste synchronisatietijd.
 
 Automatische sync is request-gestuurd:
 
@@ -177,6 +181,8 @@ Zie voor mirrorfouten, completion markers, `--max-delete 10`, historyherstel, lo
 - **Graph 403:** controleer of de ingelogde gebruiker toegang heeft tot de bron en of delegated `Files.Read` consent kreeg.
 - **Google-configuratiefout:** controleer of `GOOGLE_SERVICE_ACCOUNT_JSON_B64` het volledige, geldig base64-gecodeerde JSON-keybestand bevat en herstart de server na een environmentwijziging.
 - **Google Drive 403/404:** controleer de folder-ID en deel de rootfolder als Viewer met exact het `client_email` van het service account.
+- **Bronwissel geblokkeerd:** controleer de doelconfiguratie en, voor Google Drive, `_mirror-complete.json`. Een mislukte vergelijking of switch laat de actieve bron en bestaande index intact.
+- **Bronnen verschillen:** bekijk de paden in de vergelijking. Dit is een inhoudswaarschuwing; na controle kan een admin de switch expliciet bevestigen.
 - **Sync al bezig:** wacht tot de actieve run klaar is. Na een crash verloopt de lease standaard na tien minuten.
 - **Sync failure:** de laatste geldige index blijft actief. Bekijk Vercel runtime logs en de adminsyncsamenvatting; tokens, passwords en secrets worden niet gelogd.
 - **Code rollback:** promote in Vercel een eerdere deployment of revert de Git-commit. Voor de volledig lokaal geaccepteerde baseline bestaat tag `v1.0-local-accepted`.
