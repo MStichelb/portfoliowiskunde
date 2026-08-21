@@ -31,7 +31,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <p>{oneDriveAuthorized ? "OneDrive is app-breed verbonden. Drive- en map-ID's blijven per leeromgeving ingesteld." : "Verbind een Microsoft-account voordat je OneDrive-bronnen synchroniseert."}</p>
       {onedrive === "connected" ? <p className="success-message" role="status">OneDrive is verbonden.</p> : null}
       {onedrive === "authorization-failed" || onedrive === "connection-failed" ? <p className="form-message" role="alert">OneDrive verbinden is niet gelukt. Controleer de Microsoft-configuratie en probeer opnieuw.</p> : null}
-      {microsoftProblem ? <p className="form-message" role="alert">{microsoftProblem}</p> : <Link className="secondary-button link-button" href="/api/onedrive/connect">{oneDriveAuthorized ? "OneDrive opnieuw verbinden" : "OneDrive verbinden"}</Link>}
+      {microsoftProblem ? <p className="form-message" role="alert">{microsoftProblem}</p> : <OneDriveConnectLink authorized={oneDriveAuthorized} />}
     </section>
     <section className="settings-section">
       <h2>Google Drive-verbinding</h2>
@@ -55,6 +55,12 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       <LearningSpaceCreateForm action={createLearningSpaceAction} />
     </section>
   </main>;
+}
+
+function OneDriveConnectLink({ authorized }: { authorized: boolean }) {
+  // OAuth initiation requires a full browser navigation so the external Microsoft redirect is not fetched by the App Router.
+  // eslint-disable-next-line @next/next/no-html-link-for-pages
+  return <a className="secondary-button link-button" href="/api/onedrive/connect">{authorized ? "OneDrive opnieuw verbinden" : "OneDrive verbinden"}</a>;
 }
 
 function SpaceList({ spaces }: { spaces: LearningSpace[] }) {
