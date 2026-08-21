@@ -49,8 +49,10 @@ export function compareSourceManifests(
   currentWarnings: IndexWarning[] = [],
   targetWarnings: IndexWarning[] = [],
 ): SourceComparison {
-  const currentByPath = new Map(uniqueSortedEntries(current).map((entry) => [entry.relativePath, entry]));
-  const targetByPath = new Map(uniqueSortedEntries(target).map((entry) => [entry.relativePath, entry]));
+  const currentManifest = comparableManifest(current);
+  const targetManifest = comparableManifest(target);
+  const currentByPath = currentManifest.byPath;
+  const targetByPath = targetManifest.byPath;
   const onlyInCurrent: SourceManifestEntry[] = [];
   const onlyInTarget: SourceManifestEntry[] = [];
   const changed: SourceComparison["changed"] = [];
@@ -67,7 +69,12 @@ export function compareSourceManifests(
     if (!currentByPath.has(relativePath)) onlyInTarget.push(targetEntry);
   }
 
-  const warningDifferences = compareWarnings(currentWarnings, targetWarnings);
+  const warningDifferences = compareWarnings(
+    currentWarnings,
+    targetWarnings,
+    currentManifest.emptyContainerPaths,
+    targetManifest.emptyContainerPaths,
+  );
   const fileOverlap = calculateFileOverlap(currentByPath, targetByPath);
   const differenceCount = onlyInCurrent.length + onlyInTarget.length + changed.length
     + warningDifferences.currentWarnings.length + warningDifferences.targetWarnings.length;
@@ -81,6 +88,33 @@ export function compareSourceManifests(
     differenceCount,
     hasDifferences: differenceCount > 0,
   };
+}
+
+function comparableManifest(entries: SourceManifestEntry[]): {
+  byPath: Map<string, SourceManifestEntry>;
+  emptyContainerPaths: Set<string>;
+} {
+  // Structural entries are comparable only when an indexed file exists beneath them.
+  const normalized = uniqueSortedEntries(entries);
+  const filePaths = normalized
+    .filter((entry) => entry.kind === "file")
+    .map((entry) => entry.relativePath);
+  const emptyContainerPaths = new Set(
+    normalized
+      .filter((entry) => entry.kind !== "file" && !hasDescendantFile(entry.relativePath, filePaths))
+      .map((entry) => entry.relativePath),
+  );
+  return {
+    byPath: new Map(normalized
+      .filter((entry) => entry.kind === "file" || !emptyContainerPaths.has(entry.relativePath))
+      .map((entry) => [entry.relativePath, entry])),
+    emptyContainerPaths,
+  };
+}
+
+function hasDescendantFile(containerPath: string, filePaths: string[]): boolean {
+  const prefix = `${containerPath}/`;
+  return filePaths.some((filePath) => filePath.startsWith(prefix));
 }
 
 function calculateFileOverlap(
@@ -102,19 +136,25 @@ function calculateFileOverlap(
   };
 }
 
-function compareWarnings(current: IndexWarning[], target: IndexWarning[]): Pick<SourceComparison, "currentWarnings" | "targetWarnings"> {
-  const currentByKey = uniqueWarnings(current);
-  const targetByKey = uniqueWarnings(target);
+function compareWarnings(
+  current: IndexWarning[],
+  target: IndexWarning[],
+  currentEmptyContainerPaths: Set<string>,
+  targetEmptyContainerPaths: Set<string>,
+): Pick<SourceComparison, "currentWarnings" | "targetWarnings"> {
+  const currentByKey = uniqueWarnings(current, currentEmptyContainerPaths);
+  const targetByKey = uniqueWarnings(target, targetEmptyContainerPaths);
   return {
     currentWarnings: [...currentByKey].filter(([key]) => !targetByKey.has(key)).map(([, warning]) => warning),
     targetWarnings: [...targetByKey].filter(([key]) => !currentByKey.has(key)).map(([, warning]) => warning),
   };
 }
 
-function uniqueWarnings(warnings: IndexWarning[]): Map<string, IndexWarning> {
+function uniqueWarnings(warnings: IndexWarning[], ignoredPaths: Set<string>): Map<string, IndexWarning> {
   const unique = new Map<string, IndexWarning>();
   for (const warning of warnings) {
-    const normalizedPath = warning.path.replaceAll("\\", "/").replace(/^\.\//, "").trim();
+    const normalizedPath = normalizeRelativePath(warning.path);
+    if (ignoredPaths.has(normalizedPath)) continue;
     const normalizedMessage = warning.message.replace(/\s+/g, " ").trim();
     unique.set(`${normalizedPath}\u0000${normalizedMessage}`, { ...warning, path: normalizedPath, message: normalizedMessage });
   }

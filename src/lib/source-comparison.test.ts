@@ -83,6 +83,57 @@ describe("source comparison", () => {
     expect(manifest).toContainEqual({ kind: "section", relativePath: populatedSection });
   });
 
+  it("ignores a completely empty portfolio that exists only in the current source", () => {
+    const emptyPortfolio = { kind: "portfolio" as const, relativePath: "Portfolio 2A - Extra oef" };
+    const comparison = compareSourceManifests([...base, emptyPortfolio], base);
+    expect(comparison).toMatchObject({ onlyInCurrent: [], differenceCount: 0, hasDifferences: false });
+  });
+
+  it("ignores a completely empty portfolio that exists only in the target source", () => {
+    const emptyPortfolio = { kind: "portfolio" as const, relativePath: "Portfolio 7 - Kwadraten" };
+    const comparison = compareSourceManifests(base, [...base, emptyPortfolio]);
+    expect(comparison).toMatchObject({ onlyInTarget: [], differenceCount: 0, hasDifferences: false });
+  });
+
+  it("ignores structural parser warnings attached to a completely empty portfolio", () => {
+    const path = "Portfolio 2A - Extra oef";
+    const warnings: IndexWarning[] = [
+      { severity: "warning", path, message: "Geen opgaven-PDF herkend." },
+      { severity: "info", path, message: "Geen eindoplossingen-PDF herkend." },
+      { severity: "warning", path, message: "Map Uitwerkingen ontbreekt." },
+    ];
+    const currentOnly = compareSourceManifests([...base, { kind: "portfolio", relativePath: path }], base, warnings);
+    const targetOnly = compareSourceManifests(base, [...base, { kind: "portfolio", relativePath: path }], [], warnings);
+    expect(currentOnly).toMatchObject({ currentWarnings: [], differenceCount: 0, hasDifferences: false });
+    expect(targetOnly).toMatchObject({ targetWarnings: [], differenceCount: 0, hasDifferences: false });
+  });
+
+  it("retains a source-only portfolio when it contains a relevant file", () => {
+    const path = "Portfolio 7 - Kwadraten";
+    const comparison = compareSourceManifests([
+      ...base,
+      { kind: "portfolio", relativePath: path },
+      { kind: "file", relativePath: `${path}/Portfolio 7 - Kwadraten.pdf` },
+    ], base);
+    expect(comparison.onlyInCurrent.map((entry) => entry.relativePath)).toEqual([
+      path,
+      `${path}/Portfolio 7 - Kwadraten.pdf`,
+    ]);
+    expect(comparison.hasDifferences).toBe(true);
+  });
+
+  it("retains a concrete parser warning below an otherwise empty portfolio", () => {
+    const path = "Portfolio 7 - Kwadraten";
+    const malformed: IndexWarning = {
+      severity: "warning",
+      path: `${path}/Uitwerkingen/1 - Basis/PF7-Oef-onvolledig.png`,
+      message: "Uitwerking niet herkend.",
+    };
+    const comparison = compareSourceManifests([{ kind: "portfolio", relativePath: path }], [], [malformed]);
+    expect(comparison.currentWarnings).toEqual([malformed]);
+    expect(comparison.hasDifferences).toBe(true);
+  });
+
   it("does not suggest a wrong source when the mirror misses one of one hundred files", () => {
     const current = fileEntries("Portfolio 1", 100);
     const comparison = compareSourceManifests(current, current.slice(0, 99));
@@ -133,6 +184,19 @@ describe("source comparison", () => {
       [...fileEntries("Portfolio 2", 4), ...directories.map((entry) => ({ ...entry, relativePath: `Target/${entry.relativePath}` }))],
     );
     expect(comparison.fileOverlap).toMatchObject({ currentFileCount: 4, targetFileCount: 4, matchingFileCount: 0, suggestsWrongSource: false });
+    expect([...comparison.onlyInCurrent, ...comparison.onlyInTarget].every((entry) => entry.kind === "file")).toBe(true);
+  });
+
+  it("ignores a source-only section without relevant files", () => {
+    const emptySection: SourceManifestEntry = {
+      kind: "section",
+      relativePath: "Portfolio 7 - Analyse/Uitwerkingen/9 - Leeg onderdeel",
+    };
+    expect(compareSourceManifests([...base, emptySection], base)).toMatchObject({
+      onlyInCurrent: [],
+      differenceCount: 0,
+      hasDifferences: false,
+    });
   });
 
   it("normalizes relative path separators before calculating overlap", () => {
