@@ -48,7 +48,9 @@ export function SourceSwitchPanel({ space }: { space: LearningSpace }) {
     {preview ? <form action={switchAction} className="source-switch-confirmation">
       <input type="hidden" name="learningSpaceId" value={space.id} />
       <input type="hidden" name="targetSourceId" value={target.id} />
-      <p>{preview.comparison.hasDifferences
+      <p>{preview.comparison.fileOverlap.suggestsWrongSource
+        ? "Zeer grote verschillen gevonden. Mogelijk is de verkeerde mirror-map geconfigureerd. Toch overschakelen?"
+        : preview.comparison.hasDifferences
         ? `De bronnen verschillen op ${preview.comparison.differenceCount} punten. Controleer de lijst en bevestig alleen als deze afwijkingen aanvaardbaar zijn.`
         : "De geïndexeerde bronstructuur loopt gelijk. Bevestig om de actieve bron te wijzigen."}</p>
       <SubmitButton pendingLabel="Opnieuw controleren en omschakelen...">{switchLabel}</SubmitButton>
@@ -64,6 +66,11 @@ function SourceComparisonView({ state }: { state: SourceSwitchActionState }) {
     <h3>Mirrorvergelijking</h3>
     <p className="comparison-summary"><CheckCircle2 size={17} aria-hidden />{comparison.matchedFiles} bestanden gelijk</p>
     {comparison.hasDifferences ? <p className="comparison-warning"><TriangleAlert size={17} aria-hidden />{comparison.differenceCount} verschillen of waarschuwingen</p> : <p>Geen inhoudsverschillen gevonden.</p>}
+    {comparison.fileOverlap.suggestsWrongSource ? <div className="source-mismatch-warning" role="alert">
+      <h4><TriangleAlert size={18} aria-hidden />De bronnen lijken niet bij elkaar te horen</h4>
+      <p>Er is zeer weinig overlap tussen de bestanden in de huidige bron en het switchdoel. Controleer of de juiste mirror-map is gekoppeld voordat je overschakelt.</p>
+      <p><strong>{comparison.fileOverlap.matchingFileCount} van {comparison.fileOverlap.uniqueFileCount} unieke bestandspaden komen in beide bronnen voor.</strong></p>
+    </div> : null}
     <DifferenceList title="Alleen in huidige bron" paths={comparison.onlyInCurrent.map((entry) => entry.relativePath)} />
     <DifferenceList title="Alleen in switchdoel" paths={comparison.onlyInTarget.map((entry) => entry.relativePath)} />
     <DifferenceList title="Afwijkend type" paths={comparison.changed.map((entry) => entry.relativePath)} />

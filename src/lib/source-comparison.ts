@@ -9,6 +9,14 @@ export interface SourceManifestEntry {
 
 export interface SourceComparison {
   matchedFiles: number;
+  fileOverlap: {
+    currentFileCount: number;
+    targetFileCount: number;
+    matchingFileCount: number;
+    uniqueFileCount: number;
+    ratio: number;
+    suggestsWrongSource: boolean;
+  };
   onlyInCurrent: SourceManifestEntry[];
   onlyInTarget: SourceManifestEntry[];
   changed: Array<{ relativePath: string; currentKind: SourceManifestKind; targetKind: SourceManifestKind }>;
@@ -46,7 +54,6 @@ export function compareSourceManifests(
   const onlyInCurrent: SourceManifestEntry[] = [];
   const onlyInTarget: SourceManifestEntry[] = [];
   const changed: SourceComparison["changed"] = [];
-  let matchedFiles = 0;
 
   for (const [relativePath, currentEntry] of currentByPath) {
     const targetEntry = targetByPath.get(relativePath);
@@ -54,8 +61,6 @@ export function compareSourceManifests(
       onlyInCurrent.push(currentEntry);
     } else if (currentEntry.kind !== targetEntry.kind) {
       changed.push({ relativePath, currentKind: currentEntry.kind, targetKind: targetEntry.kind });
-    } else if (currentEntry.kind === "file") {
-      matchedFiles += 1;
     }
   }
   for (const [relativePath, targetEntry] of targetByPath) {
@@ -63,16 +68,37 @@ export function compareSourceManifests(
   }
 
   const warningDifferences = compareWarnings(currentWarnings, targetWarnings);
+  const fileOverlap = calculateFileOverlap(currentByPath, targetByPath);
   const differenceCount = onlyInCurrent.length + onlyInTarget.length + changed.length
     + warningDifferences.currentWarnings.length + warningDifferences.targetWarnings.length;
   return {
-    matchedFiles,
+    matchedFiles: fileOverlap.matchingFileCount,
+    fileOverlap,
     onlyInCurrent: sortEntries(onlyInCurrent),
     onlyInTarget: sortEntries(onlyInTarget),
     changed: changed.sort((left, right) => left.relativePath.localeCompare(right.relativePath, "nl")),
     ...warningDifferences,
     differenceCount,
     hasDifferences: differenceCount > 0,
+  };
+}
+
+function calculateFileOverlap(
+  current: Map<string, SourceManifestEntry>,
+  target: Map<string, SourceManifestEntry>,
+): SourceComparison["fileOverlap"] {
+  const currentFiles = new Set([...current].filter(([, entry]) => entry.kind === "file").map(([relativePath]) => relativePath));
+  const targetFiles = new Set([...target].filter(([, entry]) => entry.kind === "file").map(([relativePath]) => relativePath));
+  const matchingFileCount = [...currentFiles].filter((relativePath) => targetFiles.has(relativePath)).length;
+  const uniqueFileCount = new Set([...currentFiles, ...targetFiles]).size;
+  const ratio = uniqueFileCount === 0 ? 1 : matchingFileCount / uniqueFileCount;
+  return {
+    currentFileCount: currentFiles.size,
+    targetFileCount: targetFiles.size,
+    matchingFileCount,
+    uniqueFileCount,
+    ratio,
+    suggestsWrongSource: currentFiles.size >= 5 && targetFiles.size >= 5 && ratio < 0.25,
   };
 }
 
@@ -97,8 +123,21 @@ function uniqueWarnings(warnings: IndexWarning[]): Map<string, IndexWarning> {
 
 function uniqueSortedEntries(entries: SourceManifestEntry[]): SourceManifestEntry[] {
   const unique = new Map<string, SourceManifestEntry>();
-  for (const entry of entries) unique.set(entry.relativePath, entry);
+  for (const entry of entries) {
+    const normalizedEntry = { ...entry, relativePath: normalizeRelativePath(entry.relativePath) };
+    unique.set(normalizedEntry.relativePath, normalizedEntry);
+  }
   return sortEntries([...unique.values()]);
+}
+
+function normalizeRelativePath(relativePath: string): string {
+  return relativePath
+    .normalize("NFC")
+    .replaceAll("\\", "/")
+    .replace(/\/+/g, "/")
+    .replace(/^\.\//, "")
+    .replace(/^\/|\/$/g, "")
+    .trim();
 }
 
 function sortEntries(entries: SourceManifestEntry[]): SourceManifestEntry[] {

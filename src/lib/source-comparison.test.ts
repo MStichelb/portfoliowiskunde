@@ -17,6 +17,7 @@ describe("source comparison", () => {
       onlyInCurrent: [],
       onlyInTarget: [],
       changed: [],
+      fileOverlap: { matchingFileCount: 2, uniqueFileCount: 2, ratio: 1, suggestsWrongSource: false },
       differenceCount: 0,
       hasDifferences: false,
     });
@@ -81,4 +82,66 @@ describe("source comparison", () => {
     expect(manifest).not.toContainEqual({ kind: "section", relativePath: emptySection });
     expect(manifest).toContainEqual({ kind: "section", relativePath: populatedSection });
   });
+
+  it("does not suggest a wrong source when the mirror misses one of one hundred files", () => {
+    const current = fileEntries("Portfolio 1", 100);
+    const comparison = compareSourceManifests(current, current.slice(0, 99));
+    expect(comparison.fileOverlap).toMatchObject({ matchingFileCount: 99, uniqueFileCount: 100, ratio: 0.99, suggestsWrongSource: false });
+  });
+
+  it("does not suggest a wrong source for a substantial eighty-percent overlap", () => {
+    const current = fileEntries("Portfolio 1", 100);
+    const comparison = compareSourceManifests(current, current.slice(0, 80));
+    expect(comparison.fileOverlap).toMatchObject({ matchingFileCount: 80, uniqueFileCount: 100, ratio: 0.8, suggestsWrongSource: false });
+  });
+
+  it("suggests a wrong source for two substantial sources with zero overlap", () => {
+    const comparison = compareSourceManifests(fileEntries("Portfolio 1", 10), fileEntries("Portfolio 2", 10));
+    expect(comparison.fileOverlap).toMatchObject({
+      currentFileCount: 10, targetFileCount: 10, matchingFileCount: 0, uniqueFileCount: 20, ratio: 0, suggestsWrongSource: true,
+    });
+  });
+
+  it("suggests a wrong source below twenty-five percent overlap", () => {
+    const shared = fileEntries("Gedeeld", 2);
+    const current = [...shared, ...fileEntries("Alleen actief", 8)];
+    const target = [...shared, ...fileEntries("Alleen target", 8)];
+    const comparison = compareSourceManifests(current, target);
+    expect(comparison.fileOverlap.ratio).toBeCloseTo(2 / 18);
+    expect(comparison.fileOverlap.suggestsWrongSource).toBe(true);
+  });
+
+  it("does not make a misleading suggestion for two nearly empty sources", () => {
+    const comparison = compareSourceManifests(fileEntries("Portfolio 1", 4), fileEntries("Portfolio 2", 4));
+    expect(comparison.fileOverlap).toMatchObject({ matchingFileCount: 0, ratio: 0, suggestsWrongSource: false });
+  });
+
+  it("keeps parser warnings outside the file overlap score", () => {
+    const files = fileEntries("Portfolio 1", 5);
+    const warning: IndexWarning = { severity: "warning", path: "Portfolio 1", message: "Parserwaarschuwing" };
+    const comparison = compareSourceManifests(files, files, [], [warning]);
+    expect(comparison.fileOverlap).toMatchObject({ matchingFileCount: 5, uniqueFileCount: 5, ratio: 1, suggestsWrongSource: false });
+    expect(comparison.differenceCount).toBe(1);
+  });
+
+  it("keeps empty directory structures outside the file overlap score", () => {
+    const directories = Array.from({ length: 50 }, (_, index): SourceManifestEntry => ({
+      kind: "section", relativePath: `Lege map ${index + 1}`,
+    }));
+    const comparison = compareSourceManifests(
+      [...fileEntries("Portfolio 1", 4), ...directories],
+      [...fileEntries("Portfolio 2", 4), ...directories.map((entry) => ({ ...entry, relativePath: `Target/${entry.relativePath}` }))],
+    );
+    expect(comparison.fileOverlap).toMatchObject({ currentFileCount: 4, targetFileCount: 4, matchingFileCount: 0, suggestsWrongSource: false });
+  });
+
+  it("normalizes relative path separators before calculating overlap", () => {
+    const current = fileEntries("Portfolio 1", 5);
+    const target = current.map((entry) => ({ ...entry, relativePath: `.\\${entry.relativePath.replaceAll("/", "\\")}` }));
+    expect(compareSourceManifests(current, target).fileOverlap).toMatchObject({ matchingFileCount: 5, ratio: 1, suggestsWrongSource: false });
+  });
 });
+
+function fileEntries(prefix: string, count: number): SourceManifestEntry[] {
+  return Array.from({ length: count }, (_, index) => ({ kind: "file", relativePath: `${prefix}/bestand-${index + 1}.png` }));
+}
