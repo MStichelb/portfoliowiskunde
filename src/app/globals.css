@@ -232,9 +232,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .theme-editor input, .theme-assignment select { min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; font: inherit; }
 .theme-assignment { display: flex; flex-wrap: wrap; align-items: end; gap: 12px; margin-top: 18px; padding-top: 18px; border-top: 1px solid #d9dfdb; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.report-sort { display: flex; gap: 10px; align-items: center; color: #52616a; font-size: 14px; }
-.report-sort a { padding: 4px 7px; border-radius: 4px; text-decoration: none; }
-.report-sort .sort-active { background: #e2edf2; color: #173e4e; font-weight: 700; }
+.report-sort { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 20px 0 4px; }
+.report-sort button { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 7px 10px; }
 .report-group { margin: 28px 0; }
 .report-group h2 { display: flex; gap: 8px; align-items: baseline; padding-bottom: 10px; border-bottom: 1px solid #c9d0cc; }
 .report-group h2 span { color: #52616a; font-size: 15px; }

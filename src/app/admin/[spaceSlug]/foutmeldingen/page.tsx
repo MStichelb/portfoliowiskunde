@@ -5,26 +5,27 @@ import { notFound } from "next/navigation";
 import { AdminSpaceHeader } from "@/app/components/admin-space-header";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import { ErrorReportNoteForm } from "@/app/components/error-report-note-form";
+import { ErrorReportSortControls } from "@/app/components/error-report-sort-controls";
 import { PublicationStatus } from "@/app/components/publication-status";
 import { requireAdmin } from "@/lib/auth";
+import { errorReportSortFromValue, groupErrorReports } from "@/lib/error-report-sort";
 import { getAdminErrorReports, getAdminLearningSpaceBySlug, getOldDoneErrorReportCount, type AdminErrorReport } from "@/lib/repositories";
 
 import { deleteErrorReportAction, deleteOldDoneErrorReportsAction, errorReportPinAction, errorReportStatusAction, toggleReportedExerciseVisibilityAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function SpaceReportsPage({ params }: { params: Promise<{ spaceSlug: string }> }) {
+export default async function SpaceReportsPage({ params, searchParams }: { params: Promise<{ spaceSlug: string }>; searchParams: Promise<{ sort?: string }> }) {
   await requireAdmin();
   const { spaceSlug } = await params;
+  const sort = errorReportSortFromValue((await searchParams).sort);
   const space = await getAdminLearningSpaceBySlug(spaceSlug);
   if (!space) notFound();
   const [reports, oldDone] = await Promise.all([getAdminErrorReports(space.id), getOldDoneErrorReportCount(undefined, space.id)]);
-  const pinned = reports.filter((report) => report.status === "TODO" && report.pinned);
-  const todo = reports.filter((report) => report.status === "TODO" && !report.pinned);
-  const done = reports.filter((report) => report.status === "DONE");
+  const { pinned, todo, done } = groupErrorReports(reports, sort);
   return <main className="page-shell admin-page admin-space-page reports-page">
     <AdminSpaceHeader current={space} section="reports" />
-    <div className="page-section-heading"><h2>Foutmeldingen</h2><p>Meldingen van leerlingen over uitwerkingen.</p></div>
+    <ErrorReportSortControls sort={sort} />
     <Group title="PINNED" reports={pinned} spaceSlug={space.slug} learningSpaceId={space.id} />
     <Group title="TO DO" reports={todo} spaceSlug={space.slug} learningSpaceId={space.id} />
     <details className="report-group done-group"><summary><h2>DONE <span>{done.length}</span></h2></summary>{oldDone > 0 ? <div className="done-group-actions"><ConfirmActionButton action={deleteOldDoneErrorReportsAction} fields={{ learningSpaceId: space.id }} className="danger-button" label={<><Trash2 size={16} aria-hidden />Verwijder DONE ouder dan 2 weken</>} confirmTitle="Afgewerkte meldingen verwijderen" confirmText={`${oldDone} afgewerkte meldingen worden verwijderd.`} /></div> : null}<Cards reports={done} spaceSlug={space.slug} learningSpaceId={space.id} /></details>

@@ -16,6 +16,11 @@ export function normalizePortfolioCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
+export function isValidPortfolioId(code: string): boolean {
+  const normalized = normalizePortfolioCode(code);
+  return NUMERIC_PORTFOLIO_ID.test(normalized) || ALPHABETIC_PORTFOLIO_ID.test(normalized);
+}
+
 export function comparePortfolioIds(left: string, right: string): number {
   const leftId = portfolioIdParts(left);
   const rightId = portfolioIdParts(right);
