@@ -14,7 +14,7 @@ const space: LearningSpace = {
 };
 
 describe("LearningSpaceSettingsForm", () => {
-  it("keeps Primaire bron in source configuration and orders provider options", () => {
+  it("preserves a stored Local provider and orders provider options", () => {
     const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} action={() => ({ error: null })} />);
     const oneDrive = markup.indexOf('<option value="onedrive">');
     const googleDrive = markup.indexOf('<option value="google_drive">');
@@ -24,5 +24,19 @@ describe("LearningSpaceSettingsForm", () => {
     expect(oneDrive).toBeGreaterThan(-1);
     expect(oneDrive).toBeLessThan(googleDrive);
     expect(googleDrive).toBeLessThan(local);
+  });
+
+  it("preserves a stored Google Drive provider", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={{
+      ...space,
+      sourceType: "google_drive",
+      localSourcePath: null,
+      googleDriveFolderId: "folder-6",
+      googleDriveFolderLabel: "Mirror 6",
+    }} action={() => ({ error: null })} />);
+
+    expect(markup).toContain('<option value="google_drive" selected="">Google Drive</option>');
+    expect(markup).toContain('name="primaryGoogleDriveFolderId"');
+    expect(markup).not.toContain('name="primaryLocalSourcePath"');
   });
 });

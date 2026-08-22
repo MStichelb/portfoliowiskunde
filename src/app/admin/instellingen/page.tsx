@@ -1,12 +1,13 @@
 import { CheckCircle2, CircleAlert } from "lucide-react";
 
-import { ActiveSourceBadge } from "@/app/components/active-source-badge";
+import { LearningSpaceSourceSummary } from "@/app/components/active-source-badge";
 import { LearningSpaceCreateForm } from "@/app/components/learning-space-create-form";
 import { LearningSpaceLifecycleActions } from "@/app/components/learning-space-lifecycle-actions";
+import { OneDriveConnectLink } from "@/app/components/onedrive-connect-link";
 import { requireAdmin } from "@/lib/auth";
 import { getGoogleServiceAccountConfigurationProblem } from "@/lib/google-service-account-config";
 import { getMicrosoftConfigurationProblem, hasOneDriveAuthorization } from "@/lib/onedrive";
-import { getLearningSpaces, type LearningSpace, type LearningSpaceSource } from "@/lib/repositories";
+import { getLearningSpaces, type LearningSpace } from "@/lib/repositories";
 
 import { createLearningSpaceAction } from "../actions";
 
@@ -42,32 +43,8 @@ function ConnectionStatus({ ok, label, detail }: { ok: boolean; label: string; d
   return <div className={`connection-status ${ok ? "connection-ok" : "connection-problem"}`}>{ok ? <CheckCircle2 size={19} aria-hidden /> : <CircleAlert size={19} aria-hidden />}<div><strong>{label}</strong>{detail ? <small>{detail}</small> : null}</div></div>;
 }
 
-function OneDriveConnectLink({ authorized }: { authorized: boolean }) {
-  // OAuth initiation is a browser navigation because Microsoft is an external redirect target.
-  // eslint-disable-next-line @next/next/no-html-link-for-pages
-  return <a className="secondary-button link-button" href="/api/onedrive/connect">{authorized ? "OneDrive opnieuw verbinden" : "OneDrive verbinden"}</a>;
-}
-
 function SpaceList({ spaces }: { spaces: LearningSpace[] }) {
-  return <div className="space-list">{spaces.map((space) => <div className="space-list-item" key={space.id}><div className="space-list-info"><strong>{space.name}</strong><span>/{space.slug}</span><ActiveSourceBadge space={space} /><SourceLine label="Bron" source={space.primarySource} fallback={space} />{space.mirrorSource ? <SourceLine label="Mirror" source={space.mirrorSource} /> : null}</div><LearningSpaceLifecycleActions space={space} /></div>)}</div>;
-}
-
-function SourceLine({ label, source, fallback }: { label: string; source: LearningSpaceSource | null; fallback?: LearningSpace }) {
-  const provider = source?.providerType ?? fallback?.sourceType;
-  if (!provider) return null;
-  return <span><strong>{label}</strong> • {providerLabel(provider)}{source ? ` • ${sourceLabel(source)}` : ""}</span>;
-}
-
-function sourceLabel(source: LearningSpaceSource): string {
-  if (source.providerType === "local") return source.localSourcePath || "Bronmap nog instellen";
-  if (source.providerType === "google_drive") return source.googleDriveFolderLabel || "Map-ID ingesteld";
-  return source.oneDriveFolderPath || "Drive- en map-ID ingesteld";
-}
-
-function providerLabel(provider: LearningSpace["sourceType"]): string {
-  if (provider === "onedrive") return "OneDrive";
-  if (provider === "google_drive") return "Google Drive";
-  return "Lokale bestanden (test)";
+  return <div className="space-list">{spaces.map((space) => <div className="space-list-item" key={space.id}><div className="space-list-info"><strong>{space.name}</strong><span>/{space.slug}</span><LearningSpaceSourceSummary space={space} /></div><LearningSpaceLifecycleActions space={space} /></div>)}</div>;
 }
 
 function settingsErrorMessage(error: string): string {

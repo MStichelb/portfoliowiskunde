@@ -18,9 +18,9 @@ export function SiteNavigation({ spaces }: { spaces: SiteNavigationSpace[] }) {
   const current = currentSpaceForPath(pathname, spaces);
   return <nav className={`site-nav${adminRoute ? " admin-site-nav" : ""}`} aria-label="Hoofdnavigatie">
     <div className="site-nav-primary">
-      <Link className="site-nav-icon" href={adminRoute ? "/admin" : "/"} aria-label={adminRoute ? "Beheerhome" : "Startpagina"} title={adminRoute ? "Beheerhome" : "Startpagina"}><Home size={20} aria-hidden /></Link>
+      <Link className="site-nav-icon" href="/" aria-label="Startpagina" title="Startpagina"><Home size={20} aria-hidden /></Link>
       {adminRoute ? <><span className="site-nav-divider" aria-hidden /><span className="admin-space-context" title="Leeromgevingen beheren"><FolderCog size={19} aria-hidden /><span className="sr-only">Leeromgevingen beheren</span></span><div className="admin-navbar-spaces" aria-label="Leeromgeving kiezen">{spaces.map((space) => <Link key={space.slug} className={space.slug === current?.slug ? "admin-navbar-space-current" : ""} href={`/admin/${encodeURIComponent(space.slug)}`}>{space.shortLabel}</Link>)}</div></> : current ? <><span className="site-nav-divider" aria-hidden /><Link className="site-nav-space" href={`/${encodeURIComponent(current.slug)}`}><Folder size={18} aria-hidden /><span>{current.name}</span></Link></> : null}
     </div>
-    <Link className="site-nav-icon" href={adminRoute ? "/admin/instellingen" : "/admin"} aria-label={adminRoute ? "Globale beheerinstellingen" : "Beheer"} title={adminRoute ? "Globale beheerinstellingen" : "Beheer"}><Settings size={20} aria-hidden /></Link>
+    <Link className="site-nav-icon" href="/admin" aria-label="Beheer" title="Beheer"><Settings size={20} aria-hidden /></Link>
   </nav>;
 }

@@ -22,5 +22,9 @@ describe("SiteNavigation admin context", () => {
     expect(markup).toContain(">6WIS</a>");
     expect(markup).toContain("admin-navbar-space-current");
     expect(markup).toContain("lucide-folder-cog");
+    expect(markup).toMatch(/<a[^>]*aria-label="Startpagina"[^>]*href="\/"/);
+    expect(markup).toMatch(/<a[^>]*aria-label="Beheer"[^>]*href="\/admin"/);
+    expect(markup).not.toContain("Beheerhome");
+    expect(markup).not.toContain("Globale beheerinstellingen");
   });
 });
