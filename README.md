@@ -6,13 +6,24 @@ De lokaal geaccepteerde V1 staat op Git-tag `v1.0-local-accepted`.
 
 De definitieve productiearchitectuur, Windows/rclone-mirror, completion markers, retentie en recovery staan in [PRODUCTION_RUNBOOK.md](./PRODUCTION_RUNBOOK.md). Voor volledige herinstallatie op een nieuwe Windows-pc, inclusief de actuele scripts en Taakplanner, gebruik je [docs/SETUP-NIEUWE-PC.md](./docs/SETUP-NIEUWE-PC.md). School-OneDrive blijft de bron van waarheid; de webapp bewaart de directe OneDrive-bron en de gecontroleerde persoonlijke Google Drive-mirror afzonderlijk en gebruikt uitsluitend de handmatig gekozen actieve bron.
 
+## Applicatiestructuur
+
+- `/` toont de actieve leeromgevingen. `/<spaceSlug>` toont de zichtbare portfolio's per thema; portfolio- en oefeningroutes blijven binnen die LearningSpace.
+- `/admin` is het overzicht van leeromgevingen. **Leeromgevingen beheren** opent `/admin/instellingen`; binnen een LearningSpace zijn **Portfolio's**, **Thema's** en **Instellingen** beschikbaar en opent **Foutmeldingen** het meldingenbeheer.
+- De globale Home-knop verwijst altijd naar `/`; de beheerknop altijd naar `/admin`. De adminnavigatie toont de korte labels van actieve LearningSpaces.
+- Compacte overzichten noemen de actieve primaire configuratie **Bron**. In configuratie en bronvergelijking heten de rollen **Primaire bron** en **Mirror**.
+
+Nieuwe LearningSpaces kiezen standaard OneDrive als provider. Google Drive blijft beschikbaar als mirror of andere expliciete bronconfiguratie; **Lokale bestanden (test)** is uitsluitend voor lokale ontwikkeling en acceptance-tests.
+
+Portfoliofolders volgen `Portfolio <ID> - <titel>`. Ondersteunde ID's zijn numeriek (`2`, `12`), numeriek met letters (`2A`, `12B`) of uitsluitend letters (`X`); parsing is case-insensitive en normaliseert naar uppercase. Oplossingsbestanden gebruiken dezelfde ID in de `PF<ID>-Oef...`-conventie. Overzichten en bronvergelijkingen sorteren deze codes natuurlijk: `2`, `2A`, `2B`, `10`, `12`, daarna `A`, `B`, `X`.
+
 ## A. Local development
 
 Vereisten: Node.js 20 of nieuwer en pnpm via Corepack.
 
 1. Voer `pnpm install` uit.
 2. Kopieer `.env.example` naar `.env.local`.
-3. Vul minstens `ADMIN_PASSWORD`, `ADMIN_SESSION_SECRET` en `PORTFOLIO_SOURCE_PATH` in.
+3. Vul minstens `ADMIN_PASSWORD` en `ADMIN_SESSION_SECRET` in. Stel `PORTFOLIO_SOURCE_PATH` alleen in wanneer je de lokale testprovider gebruikt.
 4. Start met `pnpm dev`.
 5. Open `http://localhost:3000/admin` en synchroniseer de gewenste leeromgeving.
 
@@ -68,7 +79,7 @@ Productie weigert bewust te starten zonder een `postgres://` of `postgresql://` 
 3. Kopieer de TLS-verbinding als `DATABASE_URL`; gebruik `sslmode=require` wanneer de provider dat voorschrijft.
 4. Maak vóór elke latere schemamigratie een providerbackup of herstelpunt.
 
-Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001` tot en met de nieuwste versie uit. PostgreSQL-starts worden met een advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
+Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001_initial` tot en met de huidige `019_error_report_reporter_name` uit. PostgreSQL-starts worden met een advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
 
 Toekomstige rollout:
 
@@ -120,7 +131,7 @@ Er is geen `APP_URL` of `BASE_URL` nodig: interne links zijn relatief en OAuth g
 
 ## G. LearningSpace source folders instellen
 
-Een LearningSpace bewaart maximaal twee onafhankelijke bronconfiguraties: een **primaire bron** en een **mirror**. Exact een daarvan is actief. De normale productieopstelling gebruikt OneDrive als primaire bron en de persoonlijke Google Drive-mirror als fallback, maar de rollen zijn niet aan een providertype gekoppeld. Local filesystem blijft uitsluitend voor development beschikbaar.
+Een LearningSpace bewaart maximaal twee onafhankelijke bronconfiguraties: een **primaire bron** en een **mirror**. Exact een daarvan is actief. De normale productieopstelling gebruikt OneDrive als primaire bron en de persoonlijke Google Drive-kopie als mirror, maar de rollen zijn niet aan een providertype gekoppeld. Local filesystem blijft uitsluitend voor development beschikbaar.
 
 1. Open `/admin/instellingen`. Verbind OneDrive app-breed wanneer je OneDrive gebruikt; voor Google Drive controleert deze pagina de app-brede service-accountenvironment.
 2. Open elke LearningSpace afzonderlijk.
@@ -137,6 +148,8 @@ Gebruik Local filesystem niet in productie; de server weigert dit bewust omdat V
 ## H. First sync
 
 Kies per LearningSpace **Nu synchroniseren**. Deze actie gebruikt uitsluitend de actieve bron; ze schakelt nooit automatisch naar de andere rol. OneDrive en Google Drive gebruiken alleen read-only list/read/download-aanroepen. De app schrijft of verwijdert nooit bronbestanden. Controleer daarna portfolio's, waarschuwingen en de laatste synchronisatietijd.
+
+Leerlingen kunnen bij een uitwerking een melding indienen met een optionele, vrij ingevulde naam van maximaal 100 tekens. Admin groepeert open meldingen als **PINNED** en **TO DO**; afgewerkte meldingen staan onder **DONE**. PINNED en TO DO kunnen lokaal op datum of natuurlijke portfolio-ID worden gesorteerd en op een portfolio worden gefilterd. De resetknop wist alleen het portfoliofilter. DONE behoudt zijn eigen volgorde en bulkcleanup gebruikt `completedAt < now - 14 dagen`.
 
 Automatische sync is request-gestuurd:
 
@@ -166,7 +179,7 @@ Voer na de eerste production sync uit:
 3. Open PNG/JPG/PDF-uitwerkingen en de opgaven- en eindoplossingen-PDF.
 4. Controleer dat verborgen content en directe verborgen asset-URL's 404 geven.
 5. Controleer dat alternatieve uitwerkingen alleen voor leerlingen verschijnen wanneer de toggle actief is; adminpreview toont ze altijd.
-6. Dien een foutmelding in en controleer TODO, pin, notitie, DONE en delete in admin.
+6. Dien zowel anoniem als met een optionele naam een foutmelding in. Controleer in admin PINNED, TO DO, sorteren op datum/portfolio, filteren op portfolio, notitie, DONE en individuele/bulkdelete.
 7. Wijzig een bestand in de gekozen cloudbron, wacht minstens de TTL en open opnieuw een leerlingroute; controleer de nieuwe syncsamenvatting.
 8. Maak tijdelijk een ongeldige folder-ID, voer handmatige sync uit en controleer de vriendelijke fout. Herstel de ID en verifieer dat de oude index tijdens de fout beschikbaar bleef.
 9. Log uit en controleer dat adminpagina's en admin-assetendpoints niet meer toegankelijk zijn.

@@ -136,14 +136,21 @@ Copy-Item -LiteralPath ".env.example" -Destination ".env.local"
 notepad .env.local
 ```
 
-Vul lokale waarden in zonder ze te committen. Minimaal:
+Vul lokale waarden in zonder ze te committen. Minimaal voor de applicatie:
 
 ```dotenv
 ADMIN_PASSWORD=<STERK-UNIEK-LOKAAL-WACHTWOORD>
 ADMIN_SESSION_SECRET=<AFZONDERLIJKE-WILLEKEURIGE-SLEUTEL-MINSTENS-32-TEKENS>
+```
+
+Voeg providerinstellingen alleen toe wanneer je die provider lokaal test:
+
+```dotenv
 PORTFOLIO_SOURCE_PATH=C:\Users\<WINDOWS_USER>\OneDrive\PORTFOLIO
 GOOGLE_SERVICE_ACCOUNT_JSON_B64=<ALLEEN-INDIEN-GOOGLE-LOKAAL-WORDT-GETEST>
 ```
+
+`PORTFOLIO_SOURCE_PATH` hoort uitsluitend bij **Lokale bestanden (test)**. Nieuwe LearningSpaces kiezen in de UI standaard OneDrive; een lokaal pad is dus niet verplicht voor OneDrive- of Google Drive-tests.
 
 Gebruik lokaal bij voorkeur andere adminsecrets dan in productie. Productievariabelen blijven in Vercel; ze hoeven niet naar een nieuwe mirror-pc te worden gekopieerd om rclone te laten werken.
 
@@ -905,6 +912,8 @@ GRAPH_TOKEN_ENCRYPTION_KEY                  (optionele OneDrive-route)
 
 Markeer secrets in Vercel waar mogelijk als **Sensitive** en selecteer **Production**. Een environmentwijziging vereist een nieuwe deployment.
 
+De webapp voert database-migrations bij de eerste databaseaanroep automatisch en onder lock uit. De actuele release verwacht `schema_migrations` tot en met `019_error_report_reporter_name`; controleer deze versie na deployment. Bestaande foutmeldingen blijven bij deze migration geldig en anoniem.
+
 ### Bekende regiovalkuil
 
 Aanvankelijk ontving Vercel requests in Parijs maar routeerde Functions naar Washington:
@@ -940,7 +949,7 @@ Na redeploy moeten Function logs `Routed to Frankfurt (fra1)` tonen. Dit maakte 
 11. Service-account Viewer-sharing op alle `current/<LearningSpace>`-mappen controleren.
 12. Per LearningSpace primaire bron en Google mirror onafhankelijk controleren.
 13. **Bronnen vergelijken** uitvoeren en de weergegeven `completedAt` controleren.
-14. Een gecontroleerde switch naar mirror en terug naar primair testen.
+14. Een gecontroleerde switch naar mirror en terug naar de primaire bron testen.
 15. Iedere webapp-LearningSpace op de actieve bron handmatig synchroniseren.
 16. Completion marker en fail-closed behoud van de vorige index testen.
 17. Controleren dat een stabiele dry-run nul transfers en nul deletes toont.

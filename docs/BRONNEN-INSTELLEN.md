@@ -8,11 +8,15 @@ De webapp leest bronbestanden altijd read-only. Ze wijzigt of verwijdert nooit b
 - Mirror: een tweede, onafhankelijk geconfigureerde kopie die bij problemen kan overnemen.
 - Actieve bron: de bron waarvan de laatst geslaagde index momenteel wordt gebruikt.
 
+Compacte beheerkaarten noemen de actieve primaire configuratie **Bron**. In de configuratie en bronvergelijking gebruikt de UI de volledige termen **Primaire bron** en **Mirror**.
+
 Een ingestelde mirror wordt niet vanzelf actief. Eerst vergelijk je beide bronnen en daarna bevestig je de omschakeling.
+
+Bij een nieuwe leeromgeving is OneDrive de normale standaardkeuze. Google Drive is beschikbaar als expliciete bron of mirror; **Lokale bestanden (test)** is uitsluitend voor lokale ontwikkeling en acceptance-tests.
 
 ## 2. OneDrive verbinden
 
-1. Open Globaal beheer en ga naar Verbindingen.
+1. Open `/admin`, kies **Leeromgevingen beheren** en ga op de pagina **Leeromgevingen** naar **OneDrive-verbinding**.
 2. Kies OneDrive verbinden of OneDrive opnieuw verbinden.
 3. Meld je aan met het Microsoft-account dat leestoegang heeft tot de bronmap.
 4. Controleer dat de status OneDrive geconnecteerd verschijnt.
@@ -49,11 +53,11 @@ De marker moet status complete en een geldige completedAt bevatten. Er geldt gee
 3. Kies Bronnen vergelijken.
 4. Controleer gelijke bestanden, ontbrekende paden en parserwaarschuwingen.
 
-Lege mappen tellen niet als inhoudsverschil. Waarschuwingen die in beide bronnen gelijk voorkomen tellen evenmin als mirrorverschil.
+Lege portfolio's, onderdelen en andere structurele containers zonder indexeerbare bestanden tellen niet als inhoudsverschil. Waarschuwingen worden symmetrisch vergeleken: dezelfde waarschuwing voor hetzelfde logische pad in beide bronnen telt niet mee; een waarschuwing in slechts een bron wel.
 
 ## 7. Lage overlap
 
-Bij zeer weinig overlap verschijnt de waarschuwing dat de bronnen mogelijk niet bij elkaar horen. Controleer dan vooral of de juiste map-ID voor dezelfde leeromgeving werd ingevoerd. Dit is een waarschuwing: omschakelen blijft mogelijk na expliciete bevestiging.
+De overlapscore gebruikt alleen genormaliseerde relatieve paden van indexeerbare bestanden, niet lege mappen, parserwaarschuwingen of provider-ID's. Wanneer beide bronnen minstens vijf relevante bestanden bevatten en minder dan 25% van alle unieke bestandspaden in beide voorkomt, verschijnt de waarschuwing dat de bronnen mogelijk niet bij elkaar horen. Controleer dan vooral of de juiste map-ID voor dezelfde leeromgeving werd ingevoerd. Dit is een waarschuwing: omschakelen blijft mogelijk na expliciete bevestiging.
 
 ## 8. Omschakelen en terugschakelen
 
@@ -66,7 +70,7 @@ Bij een providerfout, ongeldige marker of mislukte scan wordt niet omgeschakeld 
 - OneDrive-fout: verbind OneDrive opnieuw en controleer drive-ID, map-ID en toegangsrechten.
 - Google Drive-fout: controleer de serverconfiguratie, Viewer-deling en folder-ID.
 - Mirror onvolledig: controleer het externe rclone-proces en _mirror-complete.json.
-- Veel verschillen: verifieer dat primary en mirror naar dezelfde leeromgeving wijzen.
+- Veel verschillen: verifieer dat de primaire bron en mirror naar dezelfde leeromgeving wijzen.
 - Parserwaarschuwing: controleer de map- en bestandsnaamconventies van de relevante portfolio-inhoud.
 
 Rclone, Taakplanner en mirrorretentie worden buiten de webapp beheerd.

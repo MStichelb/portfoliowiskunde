@@ -1,6 +1,6 @@
 # Production runbook
 
-Dit document beschrijft het eerste definitieve productie-ijkpunt van Portfolio Wiskunde. De webapp is een read-only index- en publicatielaag: bronbestanden worden uitsluitend buiten de webapp beheerd.
+Dit document beschrijft de actuele productiearchitectuur van Portfolio Wiskunde. De webapp is een read-only index- en publicatielaag: bronbestanden worden uitsluitend buiten de webapp beheerd.
 
 Voor een volledige herinstallatie van de vaste mirror-pc, met copy/paste-scripts, Google OAuth en Windows Taakplanner, zie [docs/SETUP-NIEUWE-PC.md](./docs/SETUP-NIEUWE-PC.md).
 
@@ -13,10 +13,12 @@ School-OneDrive
   -> lokale OneDrive-client op een vaste Windows-pc
   -> rclone eenrichtingsmirror
   -> persoonlijke Google Drive
-  -> Google Drive fallbackbron voor Portfolio Wiskunde
+  -> Google Drive mirror voor Portfolio Wiskunde
 ```
 
 De webapp bewaart per LearningSpace twee provider-onafhankelijke rollen: **primaire bron** en optionele **mirror**. Exact een geconfigureerde rol is actief. Normaal is de directe OneDrive-provider primair en actief en is Google Drive de mirror. De gewone synchronisatie en alle beveiligde assetroutes gebruiken uitsluitend de actieve rol. Er is geen automatische failover.
+
+In compacte overzichten heet de actieve primaire configuratie **Bron**. Op de instellingen- en vergelijkingspagina gebruikt de UI de volledige rollen **Primaire bron** en **Mirror**.
 
 De persoonlijke Google Drive gebruikt deze structuur:
 
@@ -177,10 +179,12 @@ De volledig ondersteunde optionele OneDrive/Entra-route gebruikt daarnaast:
 
 Bewaar secrets uitsluitend in de deploymentomgeving, bij voorkeur als Vercel Sensitive Environment Variables, en redeploy na rotatie.
 
+De applicatie voert migrations automatisch en alleen voorwaarts uit onder database-lock. De huidige keten loopt van `001_initial` tot en met `019_error_report_reporter_name`; controleer na een release dat `schema_migrations` deze laatste versie bevat. Migration 019 voegt de optionele naam van de melder toe en vereist geen handmatige dataconversie voor bestaande anonieme meldingen.
+
 ## 7. Storage providers
 
 - **OneDrive:** normale primaire productiebron via Microsoft Entra, delegated OAuth en `Files.Read`.
-- **Google Drive:** normale mirror/fallbackbron. Elke LearningSpace wijst naar zijn eigen folder onder `current/`.
+- **Google Drive:** normale mirror. Elke LearningSpace wijst naar zijn eigen folder onder `current/`.
 - **Local filesystem:** uitsluitend voor lokale ontwikkeling en acceptance-tests.
 
 Alle providers implementeren dezelfde read-only `StorageProvider`-grens. De webapp mag bestanden listen, lezen en streamen, maar wijzigt of verwijdert nooit bron- of mirrorbestanden. Publicatie- en adminautorisatie worden gecontroleerd voordat een provider een asset opent.
@@ -192,8 +196,12 @@ De primaire en mirrorconfiguratie blijven onafhankelijk in PostgreSQL opgeslagen
 1. Open de instellingen van de LearningSpace en kies **Bronnen vergelijken**.
 2. De server initialiseert de niet-actieve provider, voert een verse read-only indexanalyse uit en vergelijkt logische relatieve paden met de huidige geldige index. Provider-item-ID's tellen niet mee.
 3. Een onbereikbare of fout geconfigureerde bron blokkeert de switch. Voor Google Drive blokkeert ook een ontbrekende of ongeldige completion marker.
-4. Ontbrekende of extra inhoud en parserwaarschuwingen worden getoond als inhoudsverschillen. Ze blokkeren niet, maar de admin moet expliciet bevestigen.
+4. Ontbrekende of extra indexeerbare inhoud en waarschuwingen die slechts in een bron voorkomen worden getoond als inhoudsverschillen. Lege structurele containers en identieke waarschuwingen in beide bronnen tellen niet mee.
 5. Na bevestiging analyseert de server het doel opnieuw. De doelindex en actieve bron worden in een database-transactie opgeslagen. Pas na een volledig geslaagde transactie gebruiken sync en assetstreaming de nieuwe bron.
+
+De vergelijking berekent daarnaast overlap uitsluitend op genormaliseerde relatieve paden van indexeerbare bestanden. Wanneer beide bronnen minstens vijf bestanden bevatten en minder dan 25% van de unieke bestandspaden overeenkomt, waarschuwt de UI dat mogelijk de verkeerde map is gekoppeld. Dit blijft een inhoudswaarschuwing en geen technische blokkade; omschakelen vereist dan wel een expliciete bevestiging.
+
+Portfolio-ID's blijven provider-onafhankelijke strings. Numerieke, numeriek-alfabetische en alfabetische codes zoals `2`, `2A`, `12B` en `X` worden canoniek uppercase behandeld en natuurlijk gesorteerd. Source comparison vergelijkt dezelfde logische relatieve paden en construeert geen identiteit uit provider-item-ID's.
 
 Er is bewust geen automatische failover of automatische terugschakeling. Een mislukte validatie of persist laat de vorige actieve bron en index volledig intact. Terugschakelen volgt exact dezelfde flow. Bij een actieve Google mirror toont admin de laatst geldige `completedAt` in `Europe/Brussels`.
 
@@ -282,6 +290,7 @@ Controleer na deployment minimaal:
 6. De vaste Windows-taak maakt na herstel opnieuw markers aan.
 7. Een vergelijking met gelijke bronnen geen verschillen toont en een doelverschil expliciete bevestiging vereist.
 8. Een switch naar mirror en terug dezelfde publieke URL's, visibility en portfolio-ID's behoudt.
+9. Een leerlingmelding zonder en met optionele naam aankomt; admin PINNED/TO DO op datum en portfolio kan sorteren, op een portfolio kan filteren en DONE ongewijzigd beheert.
 
 ## 11. Portabiliteit
 
