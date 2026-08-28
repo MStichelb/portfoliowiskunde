@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   comparePortfolioIds,
   parsePortfolioDirectory,
+  parsePortfolioDocumentCode,
   parseSectionDirectory,
   parseSolutionFileName,
 } from "./parser";
@@ -21,6 +22,15 @@ describe("portfolio parser", () => {
     for (const id of ["1", "12", "2A", "12B", "A", "B", "X"]) {
       expect(parsePortfolioDirectory(`Portfolio ${id} - Test`)).toMatchObject({ code: id });
     }
+  });
+
+  it("herkent een begrensde Portfolio-prefix voor documentnamen", () => {
+    expect(parsePortfolioDocumentCode("Portfolio 1.pdf")).toBe("1");
+    expect(parsePortfolioDocumentCode("portfolio 2a - Integralen.PDF")).toBe("2A");
+    expect(parsePortfolioDocumentCode("Portfolio X - Extra oefeningen.pdf")).toBe("X");
+    expect(parsePortfolioDocumentCode("Portfolio 10 - Test.pdf")).toBe("10");
+    expect(parsePortfolioDocumentCode("Hints portfolio 1.pdf")).toBeNull();
+    expect(parsePortfolioDocumentCode("Portfolio 1_test.pdf")).toBeNull();
   });
 
   it("herkent onderdeelmappen", () => {

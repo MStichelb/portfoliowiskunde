@@ -4,6 +4,7 @@ import {
   looksLikeSolutionFileName,
   normalizePortfolioCode,
   parsePortfolioDirectory,
+  parsePortfolioDocumentCode,
   parseSectionDirectory,
   parseSolutionFileName,
 } from "@/lib/parser";
@@ -18,13 +19,7 @@ function canonicalName(value: string): string {
 }
 
 function isAssignmentPdf(entry: StorageEntry, code: string): boolean {
-  const name = canonicalName(entry.name);
-  return (
-    isPdf(entry) &&
-    name.includes(`portfolio ${code.toLowerCase()}`) &&
-    !name.includes("eindoplossingen") &&
-    !name.includes("voorblad")
-  );
+  return isPdf(entry) && parsePortfolioDocumentCode(entry.name) === normalizePortfolioCode(code);
 }
 
 function isFinalSolutionsPdf(entry: StorageEntry, code: string): boolean {
@@ -54,14 +49,23 @@ async function indexPortfolio(
 ): Promise<IndexedPortfolio> {
   const warnings: IndexWarning[] = [];
   const entries = await provider.list(directory.relativePath);
-  const assignmentPdf = entries.find((entry) => isAssignmentPdf(entry, code));
+  const assignmentCandidates = entries
+    .filter((entry) => isAssignmentPdf(entry, code))
+    .sort((left, right) => left.name.localeCompare(right.name, "nl"));
+  const assignmentPdf = assignmentCandidates.length === 1 ? assignmentCandidates[0] : undefined;
   const finalSolutionsPdf = entries.find((entry) => isFinalSolutionsPdf(entry, code));
   const solutionsDirectory = entries.find(
     (entry) => entry.kind === "directory" && canonicalName(entry.name) === "uitwerkingen",
   );
 
-  if (!assignmentPdf) {
+  if (assignmentCandidates.length === 0) {
     warnings.push({ severity: "warning", path: directory.relativePath, message: "Geen opgaven-PDF herkend." });
+  } else if (assignmentCandidates.length > 1) {
+    warnings.push({
+      severity: "warning",
+      path: directory.relativePath,
+      message: `Meerdere mogelijke opgaven-PDF's herkend: ${assignmentCandidates.map((entry) => entry.name).join(", ")}. Geen bestand gekozen.`,
+    });
   }
   if (!finalSolutionsPdf) {
     warnings.push({ severity: "info", path: directory.relativePath, message: "Geen eindoplossingen-PDF herkend." });

@@ -6,6 +6,7 @@ import type {
 
 const PORTFOLIO_ID_SOURCE = "(?:\\d+[a-z]*|[a-z]+)";
 const PORTFOLIO_DIRECTORY = new RegExp(`^portfolio\\s+(${PORTFOLIO_ID_SOURCE})\\s*-\\s*(.+)$`, "i");
+const PORTFOLIO_DOCUMENT_PREFIX = new RegExp(`^portfolio\\s+(${PORTFOLIO_ID_SOURCE})(?=\\s|-|\\.|$)`, "i");
 const SECTION_DIRECTORY = /^(\d+)\s*-\s*(.+)$/;
 const SOLUTION_PREFIX = new RegExp(`^pf(${PORTFOLIO_ID_SOURCE})\\s*-\\s*oef(\\d+)([a-z]?)(.*)\\.(pdf|png|jpe?g)$`, "i");
 const STEP_TOKEN = /\((\d+)\)/g;
@@ -64,6 +65,11 @@ export function parsePortfolioDirectory(
     code: normalizePortfolioCode(match[1]),
     title: match[2].trim(),
   };
+}
+
+export function parsePortfolioDocumentCode(name: string): string | null {
+  const match = name.trim().match(PORTFOLIO_DOCUMENT_PREFIX);
+  return match ? normalizePortfolioCode(match[1]) : null;
 }
 
 export function parseSectionDirectory(name: string): ParsedSectionDirectory | null {

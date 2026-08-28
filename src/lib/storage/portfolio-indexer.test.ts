@@ -56,6 +56,80 @@ describe("portfolio indexer", () => {
     expect(portfolio.sections[0].exercises.some((item) => item.code === "7")).toBe(false);
   });
 
+  describe("opgaven-PDF-herkenning", () => {
+    it("kiest een positief herkende Portfolio-prefix boven een Hints-bestand", async () => {
+      const [portfolio] = await indexSource(assignmentProvider("1", "Test", [
+        "Hints portfolio 1.pdf",
+        "Portfolio 1 - Test.pdf",
+      ]));
+
+      expect(portfolio.assignmentPdfPath).toBe("Portfolio 1 - Test/Portfolio 1 - Test.pdf");
+    });
+
+    it("sluit Eindoplossingen en Voorblad uit doordat hun naam niet met Portfolio begint", async () => {
+      const [portfolio] = await indexSource(assignmentProvider("1", "Test", [
+        "Eindoplossingen portfolio 1 - Test.pdf",
+        "Voorblad portfolio 1 - Test.pdf",
+        "Portfolio 1 - Test.pdf",
+      ]));
+
+      expect(portfolio.assignmentPdfPath).toBe("Portfolio 1 - Test/Portfolio 1 - Test.pdf");
+    });
+
+    it("houdt portfolio-ID 1 en 10 door de prefixbegrenzing uit elkaar", async () => {
+      const candidates = ["Portfolio 1 - Test.pdf", "Portfolio 10 - Test.pdf"];
+      const [portfolio1] = await indexSource(assignmentProvider("1", "Test", candidates));
+      const [portfolio10] = await indexSource(assignmentProvider("10", "Test", candidates));
+
+      expect(portfolio1.assignmentPdfPath).toBe("Portfolio 1 - Test/Portfolio 1 - Test.pdf");
+      expect(portfolio10.assignmentPdfPath).toBe("Portfolio 10 - Test/Portfolio 10 - Test.pdf");
+    });
+
+    it("ondersteunt een alfanumerieke portfolio-ID", async () => {
+      const [portfolio] = await indexSource(assignmentProvider("2A", "Test", ["Portfolio 2A - Test.pdf"]));
+      expect(portfolio.assignmentPdfPath).toBe("Portfolio 2A - Test/Portfolio 2A - Test.pdf");
+    });
+
+    it("ondersteunt een letter-ID", async () => {
+      const [portfolio] = await indexSource(assignmentProvider("X", "Test", ["Portfolio X - Test.pdf"]));
+      expect(portfolio.assignmentPdfPath).toBe("Portfolio X - Test/Portfolio X - Test.pdf");
+    });
+
+    it("vereist na het portfolio-ID geen exacte titelovereenkomst", async () => {
+      const title = "Goniometrische & cyclometrische functies";
+      const [portfolio] = await indexSource(assignmentProvider("1", title, [
+        "Portfolio 1 - Goniometrische functies & cyclometrische functies.pdf",
+      ]));
+
+      expect(portfolio.assignmentPdfPath).toContain("Portfolio 1 - Goniometrische functies & cyclometrische functies.pdf");
+    });
+
+    it("selecteert niets en waarschuwt deterministisch bij meerdere geldige kandidaten", async () => {
+      const [portfolio] = await indexSource(assignmentProvider("1", "Test", [
+        "Portfolio 1 - B.pdf",
+        "Portfolio 1 - A.pdf",
+      ]));
+
+      expect(portfolio.assignmentPdfPath).toBeNull();
+      expect(portfolio.warnings).toContainEqual({
+        severity: "warning",
+        path: "Portfolio 1 - Test",
+        message: "Meerdere mogelijke opgaven-PDF's herkend: Portfolio 1 - A.pdf, Portfolio 1 - B.pdf. Geen bestand gekozen.",
+      });
+    });
+
+    it("behoudt de bestaande missing-documentwarning zonder geldige kandidaat", async () => {
+      const [portfolio] = await indexSource(assignmentProvider("1", "Test", ["Hints portfolio 1.pdf"]));
+
+      expect(portfolio.assignmentPdfPath).toBeNull();
+      expect(portfolio.warnings).toContainEqual({
+        severity: "warning",
+        path: "Portfolio 1 - Test",
+        message: "Geen opgaven-PDF herkend.",
+      });
+    });
+  });
+
   it("indexeert Portfolio X en koppelt PFX-assets zonder speciale infrastructuur", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-x-index-"));
     const portfolioPath = "Portfolio X - Kwadraten";
@@ -153,3 +227,22 @@ describe("portfolio indexer", () => {
     expect(portfolio.warnings[0]).toMatchObject({ path: `${sectionPath}/PF5-Oef1.png`, message: "Portfolio-code PF5 komt niet overeen met Portfolio 4." });
   });
 });
+
+function assignmentProvider(code: string, title: string, fileNames: string[]): StorageProvider {
+  const portfolioPath = `Portfolio ${code} - ${title}`;
+  const solutionsPath = `${portfolioPath}/Uitwerkingen`;
+
+  return {
+    id: `assignment-${code}`,
+    async list(relativePath = "") {
+      if (relativePath === "") return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+      if (relativePath === portfolioPath) return [
+        ...fileNames.map((name) => ({ name, relativePath: `${portfolioPath}/${name}`, kind: "file" as const })),
+        { name: `Eindoplossingen portfolio ${code}.pdf`, relativePath: `${portfolioPath}/Eindoplossingen portfolio ${code}.pdf`, kind: "file" as const },
+        { name: "Uitwerkingen", relativePath: solutionsPath, kind: "directory" as const },
+      ];
+      return [];
+    },
+    async readFile() { return Buffer.from(""); },
+  };
+}
