@@ -1,8 +1,8 @@
-/* eslint-disable @next/next/no-img-element -- authenticated source previews use direct protected URLs. */
 import { notFound } from "next/navigation";
 
 import { AdminExercisePreviewToolbar } from "@/app/components/admin-exercise-preview-toolbar";
 import { AdminSpaceHeader } from "@/app/components/admin-space-header";
+import { SolutionImage } from "@/app/components/solution-image";
 import { SolutionVariantHeading } from "@/app/components/solution-variant-heading";
 import { requireAdmin } from "@/lib/auth";
 import { adminExercisePortfolioHref } from "@/lib/admin-routes";
@@ -24,7 +24,7 @@ export default async function LearningSpaceAdminExercisePage({ params }: { param
     <h2>Oefening {exercise.code}</h2><p>{exercise.portfolioTitle} - {exercise.sectionTitle}</p>
     {!exercise.isIndexed ? <p className="form-message" role="status">Deze oefening is niet meer aanwezig in de bronmap. De historische metadata blijft behouden tot je de index opschoont.</p> : (["standard", "alternative"] as const).map((kind) => {
       const assets = exercise.assets.filter((asset) => asset.kind === kind);
-      return assets.length === 0 ? null : <section className="solution-variant" key={kind}><SolutionVariantHeading kind={kind} />{assets.map((asset) => <figure className="solution-asset" key={asset.id}>{asset.extension === "pdf" ? <iframe title={asset.fileName} src={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} /> : <img src={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} alt={asset.fileName} />}<figcaption><a href={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} target="_blank" rel="noreferrer">Open oorspronkelijk bestand</a></figcaption></figure>)}</section>;
+      return assets.length === 0 ? null : <section className="solution-variant" key={kind}><SolutionVariantHeading kind={kind} />{assets.map((asset) => <figure className="solution-asset" key={asset.id}>{asset.extension === "pdf" ? <iframe title={asset.fileName} src={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} /> : <SolutionImage src={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} alt={asset.fileName} />}<figcaption><a href={`/api/admin/solution-assets/${encodeURIComponent(asset.id)}?space=${encodeURIComponent(space.slug)}`} target="_blank" rel="noreferrer">Open oorspronkelijk bestand</a></figcaption></figure>)}</section>;
     })}
   </main>;
 }

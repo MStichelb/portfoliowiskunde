@@ -116,7 +116,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .document-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
 .exercise-hidden small { display: block; margin-top: 4px; font-size: 12px; }
 .solution-asset { margin: 18px 0; padding: 0; }
-.solution-asset img { display: block; width: 100%; height: auto; border: 1px solid #c9d0cc; border-radius: 4px; background: white; }
+.solution-asset img { display: block; width: auto; max-width: 100%; height: auto; border: 1px solid #c9d0cc; border-radius: 4px; background: white; }
 .solution-asset iframe { width: 100%; min-height: 72vh; border: 1px solid #c9d0cc; border-radius: 4px; background: white; }
 .solution-asset figcaption { margin-top: 8px; font-size: 14px; }
 .report-disclosure { max-width: 680px; margin-top: 42px; padding-top: 24px; border-top: 1px solid #c9d0cc; }
