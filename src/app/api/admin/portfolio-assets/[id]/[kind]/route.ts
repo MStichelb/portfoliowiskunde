@@ -10,7 +10,7 @@ type RouteContext = { params: Promise<{ id: string; kind: string }> };
 async function handleAssetRequest(request: Request, { params }: RouteContext) {
   if (!(await isAdminAuthenticated())) return new Response("Niet aangemeld.", { status: 401 });
   const { id, kind } = await params;
-  if (kind !== "assignment" && kind !== "final-solutions") return new Response("Niet gevonden.", { status: 404 });
+  if (kind !== "assignment" && kind !== "hints" && kind !== "final-solutions") return new Response("Niet gevonden.", { status: 404 });
   const slug = new URL(request.url).searchParams.get("space");
   const space = slug ? await getAdminLearningSpaceBySlug(slug) : null;
   if (!space) return new Response("Niet gevonden.", { status: 404 });

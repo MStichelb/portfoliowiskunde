@@ -90,7 +90,9 @@ describe("source comparison", () => {
     const populatedSection = "Portfolio 5 - Limieten van rijen & reeksen/Uitwerkingen/5 - Convergentie";
     const portfolio: IndexedPortfolio = {
       code: "5", title: "Limieten van rijen & reeksen", relativePath: "Portfolio 5 - Limieten van rijen & reeksen",
-      assignmentPdfPath: null, assignmentPdfSourceId: null, finalSolutionsPdfPath: null, finalSolutionsPdfSourceId: null, warnings: [],
+      assignmentPdfPath: null, assignmentPdfSourceId: null,
+      hintsDocumentPath: "Portfolio 5 - Limieten van rijen & reeksen/Hints portfolio 5.pdf", hintsDocumentSourceId: "hints-5",
+      finalSolutionsPdfPath: null, finalSolutionsPdfSourceId: null, warnings: [],
       sections: [
         { order: 4, title: "Limieten van recursieve rijen", relativePath: emptySection, exercises: [] },
         { order: 5, title: "Convergentie", relativePath: populatedSection, exercises: [{
@@ -103,6 +105,7 @@ describe("source comparison", () => {
       ],
     };
     const manifest = sourceManifestFromIndex([portfolio]);
+    expect(manifest).toContainEqual({ kind: "file", relativePath: portfolio.hintsDocumentPath });
     expect(manifest).not.toContainEqual({ kind: "section", relativePath: emptySection });
     expect(manifest).toContainEqual({ kind: "section", relativePath: populatedSection });
   });

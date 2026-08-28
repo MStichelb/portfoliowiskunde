@@ -3,6 +3,7 @@ import {
   comparePortfolioIds,
   looksLikeSolutionFileName,
   normalizePortfolioCode,
+  parseHintsDocumentCode,
   parsePortfolioDirectory,
   parsePortfolioDocumentCode,
   parseSectionDirectory,
@@ -25,6 +26,10 @@ function isAssignmentPdf(entry: StorageEntry, code: string): boolean {
 function isFinalSolutionsPdf(entry: StorageEntry, code: string): boolean {
   const name = canonicalName(entry.name);
   return isPdf(entry) && name.includes("eindoplossingen") && name.includes(`portfolio ${code.toLowerCase()}`);
+}
+
+function isHintsDocument(entry: StorageEntry, code: string): boolean {
+  return isPdf(entry) && parseHintsDocumentCode(entry.name) === normalizePortfolioCode(code);
 }
 
 export async function indexSource(provider: StorageProvider): Promise<IndexedPortfolio[]> {
@@ -53,6 +58,10 @@ async function indexPortfolio(
     .filter((entry) => isAssignmentPdf(entry, code))
     .sort((left, right) => left.name.localeCompare(right.name, "nl"));
   const assignmentPdf = assignmentCandidates.length === 1 ? assignmentCandidates[0] : undefined;
+  const hintsCandidates = entries
+    .filter((entry) => isHintsDocument(entry, code))
+    .sort((left, right) => left.name.localeCompare(right.name, "nl"));
+  const hintsDocument = hintsCandidates.length === 1 ? hintsCandidates[0] : undefined;
   const finalSolutionsPdf = entries.find((entry) => isFinalSolutionsPdf(entry, code));
   const solutionsDirectory = entries.find(
     (entry) => entry.kind === "directory" && canonicalName(entry.name) === "uitwerkingen",
@@ -65,6 +74,13 @@ async function indexPortfolio(
       severity: "warning",
       path: directory.relativePath,
       message: `Meerdere mogelijke opgaven-PDF's herkend: ${assignmentCandidates.map((entry) => entry.name).join(", ")}. Geen bestand gekozen.`,
+    });
+  }
+  if (hintsCandidates.length > 1) {
+    warnings.push({
+      severity: "warning",
+      path: directory.relativePath,
+      message: `Meerdere mogelijke Hints-PDF's herkend: ${hintsCandidates.map((entry) => entry.name).join(", ")}. Geen bestand gekozen.`,
     });
   }
   if (!finalSolutionsPdf) {
@@ -84,6 +100,8 @@ async function indexPortfolio(
     relativePath: directory.relativePath,
     assignmentPdfPath: assignmentPdf?.relativePath ?? null,
     assignmentPdfSourceId: assignmentPdf?.sourceId ?? null,
+    hintsDocumentPath: hintsDocument?.relativePath ?? null,
+    hintsDocumentSourceId: hintsDocument?.sourceId ?? null,
     finalSolutionsPdfPath: finalSolutionsPdf?.relativePath ?? null,
     finalSolutionsPdfSourceId: finalSolutionsPdf?.sourceId ?? null,
     sections,

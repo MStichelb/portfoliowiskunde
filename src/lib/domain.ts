@@ -55,6 +55,8 @@ export interface IndexedPortfolio {
   relativePath: string;
   assignmentPdfPath: string | null;
   assignmentPdfSourceId: string | null;
+  hintsDocumentPath: string | null;
+  hintsDocumentSourceId: string | null;
   finalSolutionsPdfPath: string | null;
   finalSolutionsPdfSourceId: string | null;
   sections: IndexedSection[];

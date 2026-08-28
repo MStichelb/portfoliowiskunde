@@ -912,7 +912,7 @@ GRAPH_TOKEN_ENCRYPTION_KEY                  (optionele OneDrive-route)
 
 Markeer secrets in Vercel waar mogelijk als **Sensitive** en selecteer **Production**. Een environmentwijziging vereist een nieuwe deployment.
 
-De webapp voert database-migrations bij de eerste databaseaanroep automatisch en onder lock uit. De actuele release verwacht `schema_migrations` tot en met `019_error_report_reporter_name`; controleer deze versie na deployment. Bestaande foutmeldingen blijven bij deze migration geldig en anoniem.
+De webapp voert database-migrations bij de eerste databaseaanroep automatisch en onder lock uit. De actuele release verwacht `schema_migrations` tot en met `020_portfolio_hints_document`; controleer deze versie na deployment. Bestaande foutmeldingen blijven geldig en anoniem; de nieuwe Hints-metadata is optioneel.
 
 ### Bekende regiovalkuil
 

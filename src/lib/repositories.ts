@@ -72,6 +72,7 @@ export interface AdminPortfolio {
   effectivePublished: boolean;
   isIndexed: boolean;
   assignmentPdfPath: string | null;
+  hintsDocumentPath: string | null;
   finalSolutionsPdfPath: string | null;
   learningSpaceId: string;
   themeId: string | null;
@@ -87,6 +88,7 @@ export interface StudentPortfolio {
   themeId: string | null;
   themeName: string | null;
   cardColor: string;
+  hintsDocumentPath: string | null;
   sections: Array<{
     id: string;
     title: string;
@@ -622,14 +624,16 @@ export async function persistIndex(
     const portfolioId = portfolioIds.get(portfolio.code) ?? (legacyDefaultSpaceId === spaceId ? `portfolio-${portfolio.code}` : stableId("portfolio", spaceId, portfolio.code));
     statements.push({
       sql: `INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, assignment_pdf_path, assignment_pdf_source_id,
-        final_solutions_pdf_path, final_solutions_pdf_source_id, is_indexed, indexed_at, last_seen_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+        hints_document_path, hints_document_source_id, final_solutions_pdf_path, final_solutions_pdf_source_id, is_indexed, indexed_at, last_seen_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
         ON CONFLICT(id) DO UPDATE SET code = excluded.code, portfolio_code = excluded.portfolio_code, learning_space_id = excluded.learning_space_id, title = excluded.title, relative_path = excluded.relative_path,
           assignment_pdf_path = excluded.assignment_pdf_path, assignment_pdf_source_id = excluded.assignment_pdf_source_id,
+          hints_document_path = excluded.hints_document_path, hints_document_source_id = excluded.hints_document_source_id,
           final_solutions_pdf_path = excluded.final_solutions_pdf_path, final_solutions_pdf_source_id = excluded.final_solutions_pdf_source_id,
           is_indexed = 1, archived_at = NULL, indexed_at = excluded.indexed_at, last_seen_at = excluded.last_seen_at`,
       args: [portfolioId, `${spaceId}:${portfolio.code}`, portfolio.code, spaceId, portfolio.title, portfolio.relativePath, portfolio.assignmentPdfPath,
-        portfolio.assignmentPdfSourceId, portfolio.finalSolutionsPdfPath, portfolio.finalSolutionsPdfSourceId, startedAt, startedAt],
+        portfolio.assignmentPdfSourceId, portfolio.hintsDocumentPath, portfolio.hintsDocumentSourceId,
+        portfolio.finalSolutionsPdfPath, portfolio.finalSolutionsPdfSourceId, startedAt, startedAt],
     });
 
     for (const section of portfolio.sections) {
@@ -733,7 +737,7 @@ export async function persistIndex(
 export async function getIndexedSourceManifest(learningSpaceId: string): Promise<SourceManifestEntry[]> {
   const database = await getDatabase();
   const [portfolios, sections, assets] = await Promise.all([
-    database.execute({ sql: `SELECT relative_path, assignment_pdf_path, final_solutions_pdf_path FROM portfolios
+    database.execute({ sql: `SELECT relative_path, assignment_pdf_path, hints_document_path, final_solutions_pdf_path FROM portfolios
       WHERE learning_space_id = ? AND is_indexed = 1`, args: [learningSpaceId] }),
     database.execute({ sql: `SELECT sections.relative_path FROM sections JOIN portfolios ON portfolios.id = sections.portfolio_id
       WHERE portfolios.learning_space_id = ? AND sections.is_indexed = 1 AND EXISTS (
@@ -752,8 +756,10 @@ export async function getIndexedSourceManifest(learningSpaceId: string): Promise
   for (const row of portfolios.rows) {
     manifest.push({ kind: "portfolio", relativePath: text(row, "relative_path") });
     const assignment = nullableText(row, "assignment_pdf_path");
+    const hints = nullableText(row, "hints_document_path");
     const finalSolutions = nullableText(row, "final_solutions_pdf_path");
     if (assignment) manifest.push({ kind: "file", relativePath: assignment });
+    if (hints) manifest.push({ kind: "file", relativePath: hints });
     if (finalSolutions) manifest.push({ kind: "file", relativePath: finalSolutions });
   }
   for (const row of sections.rows) manifest.push({ kind: "section", relativePath: text(row, "relative_path") });
@@ -848,6 +854,7 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
       effectivePublished: portfolioStatus.state === "visible",
       isIndexed: bool(portfolio.is_indexed),
       assignmentPdfPath: nullableText(portfolio, "assignment_pdf_path"),
+      hintsDocumentPath: nullableText(portfolio, "hints_document_path"),
       finalSolutionsPdfPath: nullableText(portfolio, "final_solutions_pdf_path"),
       learningSpaceId: text(portfolio, "learning_space_id"), themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
       cardColor: text(portfolio, "card_color"),
@@ -1009,6 +1016,7 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
       title: nullableText(portfolio, "title_override") ?? text(portfolio, "title"),
       themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
       cardColor: text(portfolio, "card_color"),
+      hintsDocumentPath: nullableText(portfolio, "hints_document_path"),
       sections: [],
     };
     for (const section of sections.rows.filter((row) => text(row, "portfolio_id") === portfolioId)) {
@@ -1117,26 +1125,36 @@ export async function getPublicAsset(id: string, learningSpaceId?: string) {
   return { learningSpaceId: text(row, "learning_space_id"), sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension") };
 }
 
-export async function getPublicPortfolioDocument(portfolioId: string, kind: "assignment" | "final-solutions", learningSpaceId?: string) {
+export type PortfolioDocumentKind = "assignment" | "hints" | "final-solutions";
+
+export async function getPublicPortfolioDocument(portfolioId: string, kind: PortfolioDocumentKind, learningSpaceId?: string) {
   const database = await getDatabase();
   const result = await database.execute({ sql: `SELECT * FROM portfolios WHERE id = ? AND is_indexed = 1${learningSpaceId ? " AND learning_space_id = ?" : ""}`, args: learningSpaceId ? [portfolioId, learningSpaceId] : [portfolioId] });
   const portfolio = result.rows[0];
   if (!portfolio || resolvePortfolioPublication({ visible: bool(portfolio.visible), limited: bool(portfolio.publication_limited), publishFrom: nullableText(portfolio, "publish_from"), publishUntil: nullableText(portfolio, "publish_until") }).state !== "visible") return null;
-  const sourceId = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_source_id") : nullableText(portfolio, "final_solutions_pdf_source_id");
-  const relativePath = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_path") : nullableText(portfolio, "final_solutions_pdf_path");
+  const columns = portfolioDocumentColumns(kind);
+  const sourceId = nullableText(portfolio, columns.sourceId);
+  const relativePath = nullableText(portfolio, columns.path);
   if (!sourceId && !relativePath) return null;
   return { learningSpaceId: text(portfolio, "learning_space_id"), sourceId: sourceId ?? relativePath!, fileName: (relativePath ?? "document.pdf").split("/").at(-1) ?? "document.pdf", extension: "pdf" };
 }
 
-export async function getAdminPortfolioDocument(portfolioId: string, kind: "assignment" | "final-solutions", learningSpaceId?: string) {
+export async function getAdminPortfolioDocument(portfolioId: string, kind: PortfolioDocumentKind, learningSpaceId?: string) {
   const database = await getDatabase();
   const result = await database.execute({ sql: `SELECT * FROM portfolios WHERE id = ?${learningSpaceId ? " AND learning_space_id = ?" : ""}`, args: learningSpaceId ? [portfolioId, learningSpaceId] : [portfolioId] });
   const portfolio = result.rows[0];
   if (!portfolio) return null;
-  const sourceId = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_source_id") : nullableText(portfolio, "final_solutions_pdf_source_id");
-  const relativePath = kind === "assignment" ? nullableText(portfolio, "assignment_pdf_path") : nullableText(portfolio, "final_solutions_pdf_path");
+  const columns = portfolioDocumentColumns(kind);
+  const sourceId = nullableText(portfolio, columns.sourceId);
+  const relativePath = nullableText(portfolio, columns.path);
   if (!sourceId && !relativePath) return null;
   return { learningSpaceId: text(portfolio, "learning_space_id"), sourceId: sourceId ?? relativePath!, fileName: (relativePath ?? "document.pdf").split("/").at(-1) ?? "document.pdf", extension: "pdf" };
+}
+
+function portfolioDocumentColumns(kind: PortfolioDocumentKind) {
+  if (kind === "assignment") return { path: "assignment_pdf_path", sourceId: "assignment_pdf_source_id" } as const;
+  if (kind === "hints") return { path: "hints_document_path", sourceId: "hints_document_source_id" } as const;
+  return { path: "final_solutions_pdf_path", sourceId: "final_solutions_pdf_source_id" } as const;
 }
 
 

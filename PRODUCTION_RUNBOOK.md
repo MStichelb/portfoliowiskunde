@@ -179,7 +179,7 @@ De volledig ondersteunde optionele OneDrive/Entra-route gebruikt daarnaast:
 
 Bewaar secrets uitsluitend in de deploymentomgeving, bij voorkeur als Vercel Sensitive Environment Variables, en redeploy na rotatie.
 
-De applicatie voert migrations automatisch en alleen voorwaarts uit onder database-lock. De huidige keten loopt van `001_initial` tot en met `019_error_report_reporter_name`; controleer na een release dat `schema_migrations` deze laatste versie bevat. Migration 019 voegt de optionele naam van de melder toe en vereist geen handmatige dataconversie voor bestaande anonieme meldingen.
+De applicatie voert migrations automatisch en alleen voorwaarts uit onder database-lock. De huidige keten loopt van `001_initial` tot en met `020_portfolio_hints_document`; controleer na een release dat `schema_migrations` deze laatste versie bevat. Migration 019 voegt de optionele naam van de melder toe zonder bestaande anonieme meldingen te wijzigen; migration 020 voegt nullable metadata voor het optionele Hints-document toe.
 
 ## 7. Storage providers
 

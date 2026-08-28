@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   comparePortfolioIds,
+  parseHintsDocumentCode,
   parsePortfolioDirectory,
   parsePortfolioDocumentCode,
   parseSectionDirectory,
@@ -31,6 +32,14 @@ describe("portfolio parser", () => {
     expect(parsePortfolioDocumentCode("Portfolio 10 - Test.pdf")).toBe("10");
     expect(parsePortfolioDocumentCode("Hints portfolio 1.pdf")).toBeNull();
     expect(parsePortfolioDocumentCode("Portfolio 1_test.pdf")).toBeNull();
+  });
+
+  it("herkent een begrensde Hints portfolio-prefix met dezelfde ID-grammar", () => {
+    expect(parseHintsDocumentCode("Hints portfolio 1.pdf")).toBe("1");
+    expect(parseHintsDocumentCode("hints portfolio 2a - Integralen.PDF")).toBe("2A");
+    expect(parseHintsDocumentCode("Hints portfolio X - Extra.pdf")).toBe("X");
+    expect(parseHintsDocumentCode("Voorblad Hints portfolio 1.pdf")).toBeNull();
+    expect(parseHintsDocumentCode("Hints portfolio 1_test.pdf")).toBeNull();
   });
 
   it("herkent onderdeelmappen", () => {

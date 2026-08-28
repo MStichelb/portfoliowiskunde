@@ -32,6 +32,7 @@ export function sourceManifestFromIndex(portfolios: IndexedPortfolio[]): SourceM
   for (const portfolio of portfolios) {
     entries.push({ kind: "portfolio", relativePath: portfolio.relativePath });
     if (portfolio.assignmentPdfPath) entries.push({ kind: "file", relativePath: portfolio.assignmentPdfPath });
+    if (portfolio.hintsDocumentPath) entries.push({ kind: "file", relativePath: portfolio.hintsDocumentPath });
     if (portfolio.finalSolutionsPdfPath) entries.push({ kind: "file", relativePath: portfolio.finalSolutionsPdfPath });
     for (const section of portfolio.sections) {
       const assets = section.exercises.flatMap((exercise) => exercise.assets);

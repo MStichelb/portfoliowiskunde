@@ -2,6 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
+import { PortfolioDocumentLinks } from "@/app/components/portfolio-document-links";
 import { isNextPrefetchRequest, preparePublicIndex } from "@/lib/public-index";
 import { getLearningSpaceBySlug, getStudentPortfolio } from "@/lib/repositories";
 
@@ -14,5 +15,5 @@ export default async function LearningSpacePortfolioPage({ params }: { params: P
   await preparePublicIndex(space.id, { isPrefetch: isNextPrefetchRequest(await headers()) });
   const portfolio = await getStudentPortfolio(id, space.id);
   if (!portfolio) notFound();
-  return <main className="page-shell student-page"><header className="page-header"><p className="eyebrow">{portfolio.themeName ?? "Overige portfolio's"} • Portfolio {portfolio.code}</p><h1>{portfolio.title}</h1><div className="document-actions document-actions-prominent"><a className="document-button" href={`/api/portfolio-assets/${encodeURIComponent(portfolio.id)}/assignment?space=${encodeURIComponent(space.slug)}`} target="_blank" rel="noreferrer">Opgaven</a><a className="document-button" href={`/api/portfolio-assets/${encodeURIComponent(portfolio.id)}/final-solutions?space=${encodeURIComponent(space.slug)}`} target="_blank" rel="noreferrer">Eindoplossingen</a></div></header>{portfolio.sections.map((section) => <section className="section" key={section.id}><h2>{section.order}. {section.title}</h2><ol className="exercise-grid">{section.exercises.map((exercise) => <li key={exercise.id}>{exercise.visible ? <Link href={`/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(exercise.id)}`} className="exercise-link">Oefening {exercise.code}</Link> : <span className="exercise-hidden">Oefening {exercise.code}<small>Niet beschikbaar</small></span>}</li>)}</ol></section>)}</main>;
+  return <main className="page-shell student-page"><header className="page-header"><p className="eyebrow">{portfolio.themeName ?? "Overige portfolio's"} • Portfolio {portfolio.code}</p><h1>{portfolio.title}</h1><PortfolioDocumentLinks portfolioId={portfolio.id} spaceSlug={space.slug} hasHints={Boolean(portfolio.hintsDocumentPath)} /></header>{portfolio.sections.map((section) => <section className="section" key={section.id}><h2>{section.order}. {section.title}</h2><ol className="exercise-grid">{section.exercises.map((exercise) => <li key={exercise.id}>{exercise.visible ? <Link href={`/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(exercise.id)}`} className="exercise-link">Oefening {exercise.code}</Link> : <span className="exercise-hidden">Oefening {exercise.code}<small>Niet beschikbaar</small></span>}</li>)}</ol></section>)}</main>;
 }

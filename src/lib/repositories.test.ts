@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { adminExercisePortfolioHref } from "./admin-routes";
-import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getStudentPortfolios, getThemes, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioCardColor, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getPublicPortfolioDocument, getStudentPortfolios, getThemes, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioCardColor, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -68,6 +68,33 @@ describe("persistIndex", () => {
     expect(updated.rows[0].source_version).toBe("replacement-v2");
     expect(updated.rows[0].source_id).toBe("google-replacement-id");
     expect(Number((await database.execute("SELECT COUNT(*) AS count FROM solution_assets")).rows[0].count)).toBe(5);
+  });
+
+  it("persists an optional Hints-document and serves it from indexed metadata", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-hints-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const base = createPortfolioProvider("1", "PF1-Oef1.png");
+    const portfolioPath = "Portfolio 1 - Test";
+    const hintsPath = `${portfolioPath}/Hints portfolio 1 - Test.pdf`;
+    const hintsProvider: StorageProvider = {
+      ...base,
+      async list(relativePath = "") {
+        const entries = await base.list(relativePath);
+        return relativePath === portfolioPath
+          ? [...entries, { name: "Hints portfolio 1 - Test.pdf", relativePath: hintsPath, sourceId: "hints-source-id", kind: "file" }]
+          : entries;
+      },
+    };
+
+    await persistIndex(await indexSource(hintsProvider), "local");
+    expect((await getAdminPortfolios()).find((portfolio) => portfolio.id === "portfolio-1")?.hintsDocumentPath).toBe(hintsPath);
+    await setPortfolioPublication("portfolio-1", "visible", false, null, null);
+    expect((await getStudentPortfolios()).find((portfolio) => portfolio.id === "portfolio-1")?.hintsDocumentPath).toBe(hintsPath);
+    expect(await getPublicPortfolioDocument("portfolio-1", "hints")).toMatchObject({
+      sourceId: "hints-source-id",
+      fileName: "Hints portfolio 1 - Test.pdf",
+    });
   });
 
   it("uses natural portfolio-ID ordering in admin and public read models", async () => {

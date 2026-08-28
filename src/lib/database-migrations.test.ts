@@ -123,6 +123,9 @@ describe("Google Drive LearningSpace migration", () => {
     const sources = await database.execute("SELECT learning_space_id, role, provider_type, is_active FROM learning_space_sources ORDER BY learning_space_id");
     expect(sources.rows).toHaveLength(2);
     expect(sources.rows.every((row) => row.role === "primary" && row.provider_type === "local" && row.is_active === 1)).toBe(true);
+    const portfolioColumns = (await database.execute("PRAGMA table_info(portfolios)")).rows.map((row) => row.name);
+    expect(portfolioColumns).toEqual(expect.arrayContaining(["hints_document_path", "hints_document_source_id"]));
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '020_portfolio_hints_document'")).rows).toHaveLength(1);
   });
 
   it("keeps existing anonymous reports valid when reporter names are added", async () => {

@@ -341,4 +341,11 @@ export const migrations: DatabaseMigration[] = [
     version: "019_error_report_reporter_name",
     statements: ["ALTER TABLE error_reports ADD COLUMN reporter_name TEXT"],
   },
+  {
+    version: "020_portfolio_hints_document",
+    statements: [
+      "ALTER TABLE portfolios ADD COLUMN hints_document_path TEXT",
+      "ALTER TABLE portfolios ADD COLUMN hints_document_source_id TEXT",
+    ],
+  },
 ];

@@ -112,9 +112,11 @@ describe("asset route streaming", () => {
     mocks.getStorageProvider.mockResolvedValue(provider);
 
     expect((await getPublicPortfolioDocument(request(), portfolioContext())).status).toBe(200);
+    expect((await getPublicPortfolioDocument(request(), portfolioContext("hints"))).status).toBe(200);
+    expect(mocks.getPublicPortfolioDocument).toHaveBeenLastCalledWith("portfolio-id", "hints", space.id);
     expect((await getAdminPortfolioDocument(request(), portfolioContext())).status).toBe(200);
     expect((await headAdminPortfolioDocument(request("google", "HEAD"), portfolioContext())).body).toBeNull();
-    expect(provider.openFile).toHaveBeenCalledTimes(3);
+    expect(provider.openFile).toHaveBeenCalledTimes(4);
   });
 });
 
@@ -126,8 +128,8 @@ function solutionContext(id = "asset-id") {
   return { params: Promise.resolve({ id }) };
 }
 
-function portfolioContext() {
-  return { params: Promise.resolve({ id: "portfolio-id", kind: "assignment" }) };
+function portfolioContext(kind = "assignment") {
+  return { params: Promise.resolve({ id: "portfolio-id", kind }) };
 }
 
 function streamingProvider(id: string) {

@@ -8,7 +8,7 @@ type RouteContext = { params: Promise<{ id: string; kind: string }> };
 
 async function handleAssetRequest(request: Request, { params }: RouteContext) {
   const { id, kind } = await params;
-  if (kind !== "assignment" && kind !== "final-solutions") return new Response("Niet gevonden.", { status: 404 });
+  if (kind !== "assignment" && kind !== "hints" && kind !== "final-solutions") return new Response("Niet gevonden.", { status: 404 });
   const slug = new URL(request.url).searchParams.get("space");
   const space = slug ? await getLearningSpaceBySlug(slug) : null;
   if (!slug || !space) return new Response("Niet gevonden.", { status: 404 });

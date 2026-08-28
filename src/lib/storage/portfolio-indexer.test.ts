@@ -130,6 +130,58 @@ describe("portfolio indexer", () => {
     });
   });
 
+  describe("Hints-documentherkenning", () => {
+    it("laat Hints leeg en waarschuwt niet wanneer geen kandidaat bestaat", async () => {
+      const [portfolio] = await indexSource(assignmentProvider("1", "Test", ["Portfolio 1 - Test.pdf"]));
+
+      expect(portfolio.hintsDocumentPath).toBeNull();
+      expect(portfolio.warnings.some((warning) => warning.message.includes("Hints"))).toBe(false);
+    });
+
+    it("koppelt precies één geldig Hints-bestand zonder bestaande documenten te wijzigen", async () => {
+      const [portfolio] = await indexSource(assignmentProvider("1", "Test", [
+        "Portfolio 1 - Test.pdf",
+        "Hints portfolio 1 - Test.pdf",
+      ]));
+
+      expect(portfolio.hintsDocumentPath).toBe("Portfolio 1 - Test/Hints portfolio 1 - Test.pdf");
+      expect(portfolio.assignmentPdfPath).toBe("Portfolio 1 - Test/Portfolio 1 - Test.pdf");
+      expect(portfolio.finalSolutionsPdfPath).toBe("Portfolio 1 - Test/Eindoplossingen portfolio 1.pdf");
+    });
+
+    it("houdt Hints voor portfolio 1 en 10 uit elkaar", async () => {
+      const candidates = ["Hints portfolio 1.pdf", "Hints portfolio 10.pdf"];
+      const [portfolio1] = await indexSource(assignmentProvider("1", "Test", ["Portfolio 1.pdf", ...candidates]));
+      const [portfolio10] = await indexSource(assignmentProvider("10", "Test", ["Portfolio 10.pdf", ...candidates]));
+
+      expect(portfolio1.hintsDocumentPath).toBe("Portfolio 1 - Test/Hints portfolio 1.pdf");
+      expect(portfolio10.hintsDocumentPath).toBe("Portfolio 10 - Test/Hints portfolio 10.pdf");
+    });
+
+    it("ondersteunt Hints voor alfanumerieke en letter-ID's", async () => {
+      const [portfolio2A] = await indexSource(assignmentProvider("2A", "Test", ["Portfolio 2A.pdf", "Hints portfolio 2A - Integralen.pdf"]));
+      const [portfolioX] = await indexSource(assignmentProvider("X", "Test", ["Portfolio X.pdf", "Hints portfolio X - Extra.pdf"]));
+
+      expect(portfolio2A.hintsDocumentPath).toContain("Hints portfolio 2A - Integralen.pdf");
+      expect(portfolioX.hintsDocumentPath).toContain("Hints portfolio X - Extra.pdf");
+    });
+
+    it("selecteert niets en waarschuwt deterministisch bij meerdere Hints-kandidaten", async () => {
+      const [portfolio] = await indexSource(assignmentProvider("1", "Test", [
+        "Portfolio 1.pdf",
+        "Hints portfolio 1 - B.pdf",
+        "Hints portfolio 1 - A.pdf",
+      ]));
+
+      expect(portfolio.hintsDocumentPath).toBeNull();
+      expect(portfolio.warnings).toContainEqual({
+        severity: "warning",
+        path: "Portfolio 1 - Test",
+        message: "Meerdere mogelijke Hints-PDF's herkend: Hints portfolio 1 - A.pdf, Hints portfolio 1 - B.pdf. Geen bestand gekozen.",
+      });
+    });
+  });
+
   it("indexeert Portfolio X en koppelt PFX-assets zonder speciale infrastructuur", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-x-index-"));
     const portfolioPath = "Portfolio X - Kwadraten";
