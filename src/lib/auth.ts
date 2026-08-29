@@ -3,6 +3,8 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { cookies } from "next/headers";
 
 import { getDatabase } from "@/lib/database";
+import { canAccessAdmin } from "@/lib/authorization";
+import { getUser, LEGACY_SUPERADMIN_USER_ID, type AppUser } from "@/lib/identity";
 import { redirect } from "next/navigation";
 
 const SESSION_COOKIE = "portfolio_admin_session";
@@ -64,28 +66,52 @@ export function isValidSessionToken(token: string | undefined, secret: string | 
 }
 
 export async function isAdminAuthenticated(): Promise<boolean> {
+  const user = await getAuthenticatedUser();
+  return Boolean(user && user.role === "superadmin");
+}
+
+export async function getAuthenticatedUser(): Promise<AppUser | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
-  if (!isValidSessionToken(token, signingSecret())) return false;
+  if (!isValidSessionToken(token, signingSecret())) return null;
   const sessionId = sessionIdFromToken(token);
-  if (!sessionId) return false;
+  if (!sessionId) return null;
   const database = await getDatabase();
-  const session = await database.execute({ sql: "SELECT id FROM admin_sessions WHERE id = ? AND expires_at > ?", args: [sessionId, new Date().toISOString()] });
-  return Boolean(session.rows[0]);
+  const session = await database.execute({ sql: "SELECT user_id FROM admin_sessions WHERE id = ? AND expires_at > ?", args: [sessionId, new Date().toISOString()] });
+  const userId = session.rows[0]?.user_id;
+  if (typeof userId !== "string" || !userId) return null;
+  const user = await getUser(userId);
+  return user?.status === "active" ? user : null;
 }
 
-export async function requireAdmin(): Promise<void> {
-  if (!(await isAdminAuthenticated())) redirect("/admin/login");
+export async function requireAuthenticatedUser(): Promise<AppUser> {
+  const user = await getAuthenticatedUser();
+  if (!user) redirect("/admin/login");
+  return user;
 }
 
-export async function startAdminSession(): Promise<void> {
+export async function requireAdminUser(): Promise<AppUser> {
+  const user = await requireAuthenticatedUser();
+  if (!canAccessAdmin(user)) redirect("/admin/login");
+  return user;
+}
+
+export async function requireAdmin(): Promise<AppUser> {
+  const user = await requireAuthenticatedUser();
+  if (user.role !== "superadmin") redirect("/admin/login");
+  return user;
+}
+
+export async function startAdminSession(userId = LEGACY_SUPERADMIN_USER_ID): Promise<void> {
   const secret = signingSecret();
   if (!secret) throw new Error("De beheerwachtwoordconfiguratie ontbreekt.");
+  const user = await getUser(userId);
+  if (!user || user.status !== "active" || user.role !== "superadmin") throw new Error("De beheeraccount is niet beschikbaar.");
   const now = Date.now();
   const sessionId = randomUUID();
   await (await getDatabase()).batch([
     { sql: "DELETE FROM admin_sessions WHERE expires_at <= ?", args: [new Date(now).toISOString()] },
-    { sql: "INSERT INTO admin_sessions (id, expires_at, created_at) VALUES (?, ?, ?)", args: [sessionId, new Date(now + SESSION_MAX_AGE_SECONDS * 1000).toISOString(), new Date(now).toISOString()] },
+    { sql: "INSERT INTO admin_sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)", args: [sessionId, userId, new Date(now + SESSION_MAX_AGE_SECONDS * 1000).toISOString(), new Date(now).toISOString()] },
   ]);
   const cookieStore = await cookies();
   cookieStore.set(SESSION_COOKIE, createSessionToken(secret, now, sessionId), {

@@ -125,7 +125,43 @@ describe("Google Drive LearningSpace migration", () => {
     expect(sources.rows.every((row) => row.role === "primary" && row.provider_type === "local" && row.is_active === 1)).toBe(true);
     const portfolioColumns = (await database.execute("PRAGMA table_info(portfolios)")).rows.map((row) => row.name);
     expect(portfolioColumns).toEqual(expect.arrayContaining(["hints_document_path", "hints_document_source_id"]));
-    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '020_portfolio_hints_document'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '021_multi_user_foundation'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT id, role, status FROM users WHERE id = 'user-legacy-superadmin'")).rows[0]).toMatchObject({
+      role: "superadmin", status: "active",
+    });
+    expect((await database.execute("SELECT owner_user_id, provider, status FROM storage_connections")).rows).toEqual([
+      expect.objectContaining({ owner_user_id: "user-legacy-superadmin", provider: "onedrive", status: "disconnected" }),
+    ]);
+  });
+
+  it("migreert de bestaande versleutelde OneDrive-token en sessies naar de compatibility-superadmin", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-users-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 20)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-08-28T10:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.batch([
+      { sql: "INSERT INTO app_settings (key, value, updated_at) VALUES ('onedrive_tokens', 'encrypted-existing-token', '2026-08-28T10:00:00.000Z')", args: [] },
+      { sql: "INSERT INTO admin_sessions (id, expires_at, created_at) VALUES ('existing-session', '2099-01-01T00:00:00.000Z', '2026-08-28T10:00:00.000Z')", args: [] },
+      { sql: "UPDATE learning_space_sources SET provider_type = 'onedrive' WHERE id = 'space-6:primary'", args: [] },
+    ], "write");
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT user_id FROM admin_sessions WHERE id = 'existing-session'")).rows[0]?.user_id).toBe("user-legacy-superadmin");
+    expect((await upgraded.execute("SELECT owner_user_id, encrypted_credentials, status FROM storage_connections WHERE id = 'connection-onedrive-user-legacy-superadmin'")).rows[0]).toMatchObject({
+      owner_user_id: "user-legacy-superadmin", encrypted_credentials: "encrypted-existing-token", status: "active",
+    });
+    expect((await upgraded.execute("SELECT storage_connection_id FROM learning_space_sources WHERE id = 'space-6:primary'")).rows[0]?.storage_connection_id)
+      .toBe("connection-onedrive-user-legacy-superadmin");
+    expect((await upgraded.execute("SELECT value FROM app_settings WHERE key = 'onedrive_tokens'")).rows).toHaveLength(0);
   });
 
   it("keeps existing anonymous reports valid when reporter names are added", async () => {

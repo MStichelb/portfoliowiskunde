@@ -94,7 +94,7 @@ function ProviderOptions() {
 
 function legacyPrimarySource(space: LearningSpace): LearningSpaceSource {
   return {
-    id: `${space.id}:primary`, learningSpaceId: space.id, role: "primary", providerType: space.sourceType, isActive: true,
+    id: `${space.id}:primary`, learningSpaceId: space.id, role: "primary", providerType: space.sourceType, storageConnectionId: null, isActive: true,
     localSourcePath: space.localSourcePath, oneDriveDriveId: space.oneDriveDriveId, oneDriveFolderId: space.oneDriveFolderId,
     oneDriveFolderPath: space.oneDriveFolderPath, googleDriveFolderId: space.googleDriveFolderId,
     googleDriveFolderLabel: space.googleDriveFolderLabel, lastValidatedAt: null, lastValidationStatus: null,

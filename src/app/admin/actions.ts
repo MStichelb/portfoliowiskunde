@@ -43,6 +43,7 @@ import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION, DEFAU
 import { compareLearningSpaceSources, switchLearningSpaceSource, type SourceSwitchPreview } from "@/lib/source-switch";
 import { synchronizeSource } from "@/lib/sync";
 import { userFacingSourceError } from "@/lib/source-errors";
+import { ensureStorageConnection } from "@/lib/storage-connections";
 
 const childModeSchema = z.enum(["hidden", "visible"]);
 const portfolioModeSchema = z.enum(["hidden", "visible"]);
@@ -152,13 +153,14 @@ export async function permanentlyDeleteLearningSpaceAction(formData: FormData) {
 }
 
 export async function saveLearningSpaceAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const id = stringValue(formData, "id");
   const existing = await getLearningSpace(id);
   if (!existing) return { error: "Leeromgeving niet gevonden." };
   let input: ReturnType<typeof learningSpaceInput>;
   try {
     input = learningSpaceInput(formData);
+    input = await assignOwnedStorageConnections(input, admin.id, existing);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "De instellingen zijn ongeldig." };
   }
@@ -175,10 +177,11 @@ export async function saveLearningSpaceAction(_previousState: AdminActionState, 
 }
 
 export async function createLearningSpaceAction(formData: FormData) {
-  await requireAdmin();
+  const admin = await requireAdmin();
   let input: ReturnType<typeof learningSpaceInput>;
   try {
     input = learningSpaceInput(formData);
+    input = await assignOwnedStorageConnections(input, admin.id);
   } catch {
     redirect("/admin/instellingen?error=invalid");
   }
@@ -484,6 +487,41 @@ function roleSourceInput(formData: FormData, prefix: "primary" | "mirror", requi
 function parseProviderType(value: string): LearningSpaceInput["sourceType"] {
   if (value === "onedrive" || value === "google_drive") return value;
   return "local";
+}
+
+async function assignOwnedStorageConnections(
+  input: LearningSpaceInput,
+  userId: string,
+  existing?: Awaited<ReturnType<typeof getLearningSpace>> | null,
+): Promise<LearningSpaceInput> {
+  const withConnection = async (
+    source: LearningSpaceSourceInput,
+    current: NonNullable<typeof existing>["primarySource"] | undefined | null,
+  ): Promise<LearningSpaceSourceInput> => {
+    if (source.providerType !== "onedrive" || source.storageConnectionId) return source;
+    if (current?.providerType === "onedrive" && current.storageConnectionId) {
+      return { ...source, storageConnectionId: current.storageConnectionId };
+    }
+    const connection = await ensureStorageConnection(userId, "onedrive");
+    return { ...source, storageConnectionId: connection.id };
+  };
+
+  if (!input.primarySource) {
+    if (input.sourceType !== "onedrive" || input.storageConnectionId) return input;
+    const current = existing?.primarySource;
+    const storageConnectionId = current?.providerType === "onedrive" && current.storageConnectionId
+      ? current.storageConnectionId
+      : (await ensureStorageConnection(userId, "onedrive")).id;
+    return { ...input, storageConnectionId };
+  }
+
+  return {
+    ...input,
+    primarySource: await withConnection(input.primarySource, existing?.primarySource),
+    mirrorSource: input.mirrorSource
+      ? await withConnection(input.mirrorSource, existing?.mirrorSource)
+      : input.mirrorSource,
+  };
 }
 
 function refreshPublicationPaths(portfolioId: string) {

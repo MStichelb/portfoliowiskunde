@@ -24,7 +24,8 @@ function spaceWithSources(): LearningSpace {
 
 function source(role: LearningSpaceSource["role"], providerType: LearningSpaceSource["providerType"]): LearningSpaceSource {
   return {
-    id: `space-6:${role}`, learningSpaceId: "space-6", role, providerType, isActive: role === "primary",
+    id: `space-6:${role}`, learningSpaceId: "space-6", role, providerType,
+    storageConnectionId: providerType === "onedrive" ? "connection-test" : null, isActive: role === "primary",
     localSourcePath: null, oneDriveDriveId: providerType === "onedrive" ? "drive" : null,
     oneDriveFolderId: providerType === "onedrive" ? "folder" : null, oneDriveFolderPath: null,
     googleDriveFolderId: providerType === "google_drive" ? "google-folder" : null,

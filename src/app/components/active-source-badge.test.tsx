@@ -45,7 +45,8 @@ function spaceWithActiveSource(role: LearningSpaceSource["role"], providerType: 
 
 function source(role: LearningSpaceSource["role"], providerType: LearningSpaceSource["providerType"], isActive: boolean): LearningSpaceSource {
   return {
-    id: `space-test:${role}`, learningSpaceId: "space-test", role, providerType, isActive,
+    id: `space-test:${role}`, learningSpaceId: "space-test", role, providerType,
+    storageConnectionId: providerType === "onedrive" ? "connection-test" : null, isActive,
     localSourcePath: providerType === "local" ? "C:\\Portfolio\\Test" : null,
     oneDriveDriveId: providerType === "onedrive" ? "drive" : null,
     oneDriveFolderId: providerType === "onedrive" ? "folder" : null,

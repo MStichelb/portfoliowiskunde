@@ -2,10 +2,18 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
 
 import { deleteSetting, getSetting, setSetting } from "@/lib/repositories";
 import { SourceAccessError, SourceFileNotFoundError, SourceTransientError } from "@/lib/source-errors";
+import { LEGACY_SUPERADMIN_USER_ID } from "@/lib/identity";
+import {
+  disconnectStorageConnection,
+  getDefaultStorageConnection,
+  getStorageConnection,
+  LEGACY_ONEDRIVE_CONNECTION_ID,
+  readStorageCredentials,
+  saveStorageCredentials,
+} from "@/lib/storage-connections";
 
 const GRAPH_BASE_URL = "https://graph.microsoft.com/v1.0";
-const TOKEN_SETTING = "onedrive_tokens";
-let refreshInFlight: Promise<string> | undefined;
+const refreshInFlight = new Map<string, Promise<string>>();
 
 interface OAuthTokens {
   accessToken: string;
@@ -65,7 +73,7 @@ export function createPkceChallenge(codeVerifier: string): string {
   return createHash("sha256").update(codeVerifier).digest("base64url");
 }
 
-export async function exchangeMicrosoftCode(code: string, codeVerifier: string): Promise<void> {
+export async function exchangeMicrosoftCode(code: string, codeVerifier: string, ownerUserId = LEGACY_SUPERADMIN_USER_ID): Promise<void> {
   const config = requiredMicrosoftConfiguration();
   const body = new URLSearchParams({
     client_id: config.clientId,
@@ -86,25 +94,26 @@ export async function exchangeMicrosoftCode(code: string, codeVerifier: string):
   if (!response.ok || !payload || typeof payload.access_token !== "string" || typeof payload.refresh_token !== "string") {
     throw new Error("Microsoft kon geen toegangstoken uitgeven.");
   }
-  await storeTokens({
+  await storeTokens(ownerUserId, {
     accessToken: payload.access_token,
     refreshToken: payload.refresh_token,
     expiresAt: Date.now() + Number(payload.expires_in ?? 3600) * 1000,
   });
 }
 
-export async function getGraphAccessToken(): Promise<string> {
-  const tokens = await readTokens();
+export async function getGraphAccessToken(storageConnectionId = LEGACY_ONEDRIVE_CONNECTION_ID): Promise<string> {
+  const tokens = await readTokens(storageConnectionId);
   if (!tokens) throw new Error("OneDrive is nog niet verbonden.");
   if (tokens.expiresAt > Date.now() + 60_000) return tokens.accessToken;
 
-  if (!refreshInFlight) {
-    refreshInFlight = refreshGraphAccessToken(tokens).finally(() => { refreshInFlight = undefined; });
+  if (!refreshInFlight.has(storageConnectionId)) {
+    const refresh = refreshGraphAccessToken(storageConnectionId, tokens).finally(() => { refreshInFlight.delete(storageConnectionId); });
+    refreshInFlight.set(storageConnectionId, refresh);
   }
-  return refreshInFlight;
+  return refreshInFlight.get(storageConnectionId)!;
 }
 
-async function refreshGraphAccessToken(tokens: OAuthTokens): Promise<string> {
+async function refreshGraphAccessToken(storageConnectionId: string, tokens: OAuthTokens): Promise<string> {
   const config = requiredMicrosoftConfiguration();
   const response = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(config.tenantId)}/oauth2/v2.0/token`, {
     method: "POST",
@@ -127,20 +136,21 @@ async function refreshGraphAccessToken(tokens: OAuthTokens): Promise<string> {
     refreshToken: typeof payload.refresh_token === "string" ? payload.refresh_token : tokens.refreshToken,
     expiresAt: Date.now() + Number(payload.expires_in ?? 3600) * 1000,
   };
-  await storeTokens(refreshed);
+  const connection = await getDefaultStorageConnectionForId(storageConnectionId);
+  await storeTokens(connection.ownerUserId, refreshed, storageConnectionId);
   return refreshed.accessToken;
 }
 
-export async function graphJson<T>(pathOrUrl: string): Promise<T> {
-  const token = await getGraphAccessToken();
+export async function graphJson<T>(pathOrUrl: string, storageConnectionId?: string): Promise<T> {
+  const token = await getGraphAccessToken(storageConnectionId);
   const url = microsoftGraphUrl(pathOrUrl);
   const response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
   if (!response.ok) throw graphResponseError(response.status);
   return response.json() as Promise<T>;
 }
 
-export async function readGraphFile(driveId: string, itemId: string): Promise<Buffer> {
-  const download = await openGraphFile(driveId, itemId);
+export async function readGraphFile(driveId: string, itemId: string, storageConnectionId?: string): Promise<Buffer> {
+  const download = await openGraphFile(driveId, itemId, undefined, undefined, {}, storageConnectionId);
   return Buffer.from(await download.arrayBuffer());
 }
 
@@ -149,9 +159,9 @@ interface OpenGraphFileDependencies {
   getAccessToken?: typeof getGraphAccessToken;
 }
 
-export async function openGraphFile(driveId: string, itemId: string, range?: string, signal?: AbortSignal, dependencies: OpenGraphFileDependencies = {}): Promise<Response> {
+export async function openGraphFile(driveId: string, itemId: string, range?: string, signal?: AbortSignal, dependencies: OpenGraphFileDependencies = {}, storageConnectionId?: string): Promise<Response> {
   const fetchImplementation = dependencies.fetch ?? fetch;
-  const token = await (dependencies.getAccessToken ?? getGraphAccessToken)();
+  const token = await (dependencies.getAccessToken ?? getGraphAccessToken)(storageConnectionId);
   const headers = new Headers({ Authorization: `Bearer ${token}` });
   if (range) headers.set("Range", range);
   const response = await fetchImplementation(`${GRAPH_BASE_URL}/drives/${encodeURIComponent(driveId)}/items/${encodeURIComponent(itemId)}/content`, {
@@ -169,10 +179,10 @@ export async function openGraphFile(driveId: string, itemId: string, range?: str
   return download;
 }
 
-export async function resolveDriveFolder(relativePath: string): Promise<{ driveId: string; folderId: string }> {
+export async function resolveDriveFolder(relativePath: string, storageConnectionId = LEGACY_ONEDRIVE_CONNECTION_ID): Promise<{ driveId: string; folderId: string }> {
   const normalized = normalizeOneDriveFolderPath(relativePath);
   if (!normalized) throw new Error("Vul een OneDrive-bronmap in.");
-  const item = await graphJson<GraphDriveItem>(`/me/drive/root:/${normalized.split("/").map(encodeURIComponent).join("/")}:?$select=id,name,folder,parentReference`);
+  const item = await graphJson<GraphDriveItem>(`/me/drive/root:/${normalized.split("/").map(encodeURIComponent).join("/")}:?$select=id,name,folder,parentReference`, storageConnectionId);
   if (!item.id || !item.folder || !item.parentReference?.driveId) throw new Error("De geconfigureerde OneDrive-bron is geen toegankelijke map.");
   return { driveId: item.parentReference.driveId, folderId: item.id };
 }
@@ -184,11 +194,12 @@ export function normalizeOneDriveFolderPath(value: string): string | null {
 }
 
 export async function hasOneDriveConnection(): Promise<boolean> {
-  return Boolean(await getSetting(TOKEN_SETTING)) && Boolean(await getSetting("onedrive_drive_id")) && Boolean(await getSetting("onedrive_folder_id"));
+  return Boolean(await readTokens(LEGACY_ONEDRIVE_CONNECTION_ID)) && Boolean(await getSetting("onedrive_drive_id")) && Boolean(await getSetting("onedrive_folder_id"));
 }
 
-export async function hasOneDriveAuthorization(): Promise<boolean> {
-  return Boolean(await readTokens());
+export async function hasOneDriveAuthorization(userId = LEGACY_SUPERADMIN_USER_ID): Promise<boolean> {
+  const connection = await getDefaultStorageConnection(userId, "onedrive");
+  return Boolean(connection && await readTokens(connection.id));
 }
 
 export async function saveOneDriveConnection(folderPath: string): Promise<void> {
@@ -204,11 +215,12 @@ export async function saveOneDriveConnection(folderPath: string): Promise<void> 
 }
 
 export async function getOneDriveConnection() {
-  const [driveId, folderId, folderPath, connectedAt] = await Promise.all([
+  const [driveId, folderId, folderPath, connectedAt, storageConnection] = await Promise.all([
     getSetting("onedrive_drive_id"), getSetting("onedrive_folder_id"), getSetting("onedrive_folder_path"), getSetting("onedrive_connected_at"),
+    getDefaultStorageConnection(LEGACY_SUPERADMIN_USER_ID, "onedrive"),
   ]);
-  if (!driveId || !folderId) return null;
-  return { driveId, folderId, folderPath, connectedAt };
+  if (!driveId || !folderId || !storageConnection) return null;
+  return { driveId, folderId, folderPath, connectedAt, storageConnectionId: storageConnection.id };
 }
 
 export async function setOneDriveFolderPath(value: string): Promise<void> {
@@ -221,8 +233,12 @@ export async function getOneDriveFolderPath(): Promise<string> {
   return (await getSetting("onedrive_folder_path")) ?? "";
 }
 
-export async function disconnectOneDrive(): Promise<void> {
-  await Promise.all(["onedrive_tokens", "onedrive_drive_id", "onedrive_folder_id", "onedrive_connected_at"].map(deleteSetting));
+export async function disconnectOneDrive(userId = LEGACY_SUPERADMIN_USER_ID): Promise<void> {
+  const connection = await getDefaultStorageConnection(userId, "onedrive");
+  if (connection) await disconnectStorageConnection(userId, connection.id);
+  if (userId === LEGACY_SUPERADMIN_USER_ID) {
+    await Promise.all(["onedrive_drive_id", "onedrive_folder_id", "onedrive_connected_at"].map(deleteSetting));
+  }
 }
 
 function requiredMicrosoftConfiguration(): MicrosoftConfiguration {
@@ -232,12 +248,18 @@ function requiredMicrosoftConfiguration(): MicrosoftConfiguration {
   return config;
 }
 
-async function storeTokens(tokens: OAuthTokens): Promise<void> {
-  await setSetting(TOKEN_SETTING, encrypt(JSON.stringify(tokens)));
+async function storeTokens(ownerUserId: string, tokens: OAuthTokens, storageConnectionId?: string): Promise<void> {
+  await saveStorageCredentials({
+    ownerUserId,
+    provider: "onedrive",
+    connectionId: storageConnectionId,
+    encryptedCredentials: encrypt(JSON.stringify(tokens)),
+    displayName: "Persoonlijke OneDrive",
+  });
 }
 
-async function readTokens(): Promise<OAuthTokens | null> {
-  const encrypted = await getSetting(TOKEN_SETTING);
+async function readTokens(storageConnectionId: string): Promise<OAuthTokens | null> {
+  const encrypted = await readStorageCredentials(storageConnectionId);
   if (!encrypted) return null;
   try {
     const parsed = JSON.parse(decrypt(encrypted)) as OAuthTokens;
@@ -245,6 +267,12 @@ async function readTokens(): Promise<OAuthTokens | null> {
   } catch {
     return null;
   }
+}
+
+async function getDefaultStorageConnectionForId(storageConnectionId: string) {
+  const connection = await getStorageConnection(storageConnectionId);
+  if (!connection || connection.provider !== "onedrive") throw new Error("De OneDrive-storageverbinding bestaat niet meer.");
+  return connection;
 }
 
 function getTokenEncryptionKey(): Buffer | null {

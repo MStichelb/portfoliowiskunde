@@ -16,7 +16,7 @@ import { getLatestSyncSummary, getOpenErrorReportCount } from "@/lib/repositorie
 import { AdminSpaceHeader } from "./admin-space-header";
 
 const mirror: LearningSpaceSource = {
-  id: "space-6:mirror", learningSpaceId: "space-6", role: "mirror", providerType: "google_drive", isActive: true,
+  id: "space-6:mirror", learningSpaceId: "space-6", role: "mirror", providerType: "google_drive", storageConnectionId: null, isActive: true,
   localSourcePath: null, oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null,
   googleDriveFolderId: "folder", googleDriveFolderLabel: "Mirror 6", lastValidatedAt: null,
   lastValidationStatus: "valid", lastValidationMessage: null, mirrorCompletedAt: "2026-08-20T12:00:00.000Z",

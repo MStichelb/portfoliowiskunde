@@ -2,14 +2,17 @@ import { randomBytes } from "node:crypto";
 
 import { NextResponse } from "next/server";
 
-import { isAdminAuthenticated } from "@/lib/auth";
+import { getAuthenticatedUser } from "@/lib/auth";
+import { canAccessAdmin } from "@/lib/authorization";
 import { createMicrosoftAuthorizationUrl, createPkceChallenge, getMicrosoftConfigurationProblem } from "@/lib/onedrive";
 
 const OAUTH_STATE_COOKIE = "portfolio_onedrive_oauth_state";
 const OAUTH_VERIFIER_COOKIE = "portfolio_onedrive_oauth_verifier";
+const OAUTH_OWNER_COOKIE = "portfolio_onedrive_oauth_owner";
 
 export async function GET(request: Request) {
-  if (!(await isAdminAuthenticated())) return new Response("Niet aangemeld.", { status: 401 });
+  const user = await getAuthenticatedUser();
+  if (!canAccessAdmin(user)) return new Response("Niet aangemeld.", { status: 401 });
   if (getMicrosoftConfigurationProblem()) {
     return NextResponse.redirect(new URL("/admin/instellingen?onedrive=configuration-error", request.url));
   }
@@ -25,5 +28,6 @@ export async function GET(request: Request) {
   } as const;
   response.cookies.set(OAUTH_STATE_COOKIE, state, cookieOptions);
   response.cookies.set(OAUTH_VERIFIER_COOKIE, verifier, cookieOptions);
+  response.cookies.set(OAUTH_OWNER_COOKIE, user!.id, cookieOptions);
   return response;
 }

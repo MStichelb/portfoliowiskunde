@@ -348,4 +348,77 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE portfolios ADD COLUMN hints_document_source_id TEXT",
     ],
   },
+  {
+    version: "021_multi_user_foundation",
+    statements: [
+      `CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        display_name TEXT NOT NULL,
+        email TEXT,
+        role TEXT NOT NULL CHECK(role IN ('superadmin', 'teacher', 'student')),
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `INSERT INTO users (id, display_name, role, status, created_at, updated_at)
+        VALUES ('user-legacy-superadmin', 'Huidige beheerder', 'superadmin', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      `CREATE TABLE external_identities (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        provider_subject TEXT NOT NULL,
+        provider_platform TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(provider, provider_subject)
+      )`,
+      `CREATE TABLE learning_space_members (
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK(role IN ('owner', 'editor')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(learning_space_id, user_id)
+      )`,
+      `CREATE TABLE learning_space_group_mappings (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        external_group_id TEXT NOT NULL,
+        external_group_name TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(learning_space_id, provider, external_group_id)
+      )`,
+      `CREATE TABLE storage_connections (
+        id TEXT PRIMARY KEY,
+        owner_user_id TEXT NOT NULL REFERENCES users(id),
+        provider TEXT NOT NULL CHECK(provider IN ('onedrive', 'google_drive')),
+        display_name TEXT NOT NULL,
+        encrypted_credentials TEXT,
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disconnected')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      "ALTER TABLE learning_space_sources ADD COLUMN storage_connection_id TEXT REFERENCES storage_connections(id)",
+      "ALTER TABLE admin_sessions ADD COLUMN user_id TEXT REFERENCES users(id)",
+      "UPDATE admin_sessions SET user_id = 'user-legacy-superadmin' WHERE user_id IS NULL",
+      `INSERT INTO storage_connections (id, owner_user_id, provider, display_name, encrypted_credentials, status, created_at, updated_at)
+        VALUES ('connection-onedrive-user-legacy-superadmin', 'user-legacy-superadmin', 'onedrive', 'Bestaande OneDrive-verbinding',
+          (SELECT value FROM app_settings WHERE key = 'onedrive_tokens'),
+          CASE WHEN EXISTS (SELECT 1 FROM app_settings WHERE key = 'onedrive_tokens') THEN 'active' ELSE 'disconnected' END,
+          CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+      `UPDATE learning_space_sources SET storage_connection_id = 'connection-onedrive-user-legacy-superadmin'
+        WHERE provider_type = 'onedrive' AND storage_connection_id IS NULL
+          AND EXISTS (SELECT 1 FROM storage_connections WHERE id = 'connection-onedrive-user-legacy-superadmin')`,
+      "DELETE FROM app_settings WHERE key = 'onedrive_tokens'",
+      "CREATE INDEX users_role_status_index ON users(role, status)",
+      "CREATE INDEX external_identities_user_index ON external_identities(user_id)",
+      "CREATE INDEX learning_space_members_user_index ON learning_space_members(user_id, learning_space_id)",
+      "CREATE INDEX learning_space_group_mappings_external_index ON learning_space_group_mappings(provider, external_group_id)",
+      "CREATE INDEX storage_connections_owner_index ON storage_connections(owner_user_id, provider)",
+      "CREATE INDEX learning_space_sources_connection_index ON learning_space_sources(storage_connection_id)",
+      "CREATE INDEX admin_sessions_user_index ON admin_sessions(user_id)",
+    ],
+  },
 ];

@@ -160,7 +160,10 @@ async function setupDatabase() {
 async function configureDualSource() {
   await updateLearningSpace("space-5", {
     name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
-    primarySource: { providerType: "onedrive", oneDriveDriveId: "drive-primary", oneDriveFolderId: "folder-primary", oneDriveFolderPath: "Portfolio/5" },
+    primarySource: {
+      providerType: "onedrive", storageConnectionId: "connection-onedrive-user-legacy-superadmin",
+      oneDriveDriveId: "drive-primary", oneDriveFolderId: "folder-primary", oneDriveFolderPath: "Portfolio/5",
+    },
     mirrorSource: { providerType: "google_drive", googleDriveFolderId: "google-mirror", googleDriveFolderLabel: "Mirror 5" },
   });
   const space = (await getLearningSpace("space-5"))!;

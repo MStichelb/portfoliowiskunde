@@ -15,6 +15,8 @@ De definitieve productiearchitectuur, Windows/rclone-mirror, completion markers,
 
 Nieuwe LearningSpaces kiezen standaard OneDrive als provider. Google Drive blijft beschikbaar als mirror of andere expliciete bronconfiguratie; **Lokale bestanden (test)** is uitsluitend voor lokale ontwikkeling en acceptance-tests.
 
+De database is voorbereid op interne users, externe identiteiten, LearningSpace-memberships, externe groepsmappings en persoonlijke storageconnections. De huidige wachtwoordlogin blijft voorlopig gekoppeld aan een interne compatibility-superadmin; echte Smartschool OAuth en teacher/student-sessies zijn nog niet actief. Zie [docs/SMARTSCHOOL-MULTI-USER.md](./docs/SMARTSCHOOL-MULTI-USER.md).
+
 Portfoliofolders volgen `Portfolio <ID> - <titel>`. Ondersteunde ID's zijn numeriek (`2`, `12`), numeriek met letters (`2A`, `12B`) of uitsluitend letters (`X`); parsing is case-insensitive en normaliseert naar uppercase. Oplossingsbestanden gebruiken dezelfde ID in de `PF<ID>-Oef...`-conventie. Overzichten en bronvergelijkingen sorteren deze codes natuurlijk: `2`, `2A`, `2B`, `10`, `12`, daarna `A`, `B`, `X`.
 
 ## A. Local development
@@ -31,7 +33,7 @@ Zonder `DATABASE_URL` gebruikt development SQLite in `.data/portfolio.db`, of he
 
 ## B. Microsoft Entra / OneDrive setup
 
-De app gebruikt een confidential server-side web-app, een app-brede delegated OAuth-verbinding en per LearningSpace een eigen drive-ID en folder-ID. Access- en refresh-tokens worden uitsluitend server-side, met AES-256-GCM, in de database opgeslagen. De flow gebruikt authorization code + PKCE.
+De app gebruikt een confidential server-side web-app en delegated OAuth. De huidige verbinding behoort intern aan de compatibility-superadmin; het model ondersteunt meerdere persoonlijke storageconnections per user. Per LearningSpace-bron worden de storageconnection, drive-ID en folder-ID afzonderlijk bewaard. Access- en refresh-tokens worden uitsluitend server-side, met AES-256-GCM, in de database opgeslagen. De flow gebruikt authorization code + PKCE.
 
 1. Open het [Microsoft Entra admin center](https://entra.microsoft.com/), kies de juiste schooltenant en ga naar **Entra ID > App registrations > New registration**.
 2. Naam: bijvoorbeeld `Portfolio Wiskunde`.
@@ -43,7 +45,7 @@ De app gebruikt een confidential server-side web-app, een app-brede delegated OA
 8. `Files.Read` vereist volgens Microsoft normaal geen admin consent. Als de schooltenant user consent blokkeert, moet een tenantbeheerder wel **Grant admin consent** uitvoeren.
 9. Ga naar **Certificates & secrets > Client secrets > New client secret**. Kies de kortste praktisch beheerbare geldigheidsduur, kopieer de secret value eenmalig naar `MICROSOFT_CLIENT_SECRET` en plan rotatie voor de vervaldatum. Plaats deze waarde nooit in Git, logs of chat.
 10. Genereer lokaal 32 willekeurige bytes, base64-codeer die en zet het resultaat als `GRAPH_TOKEN_ENCRYPTION_KEY`. Bewaar deze sleutel blijvend: wijzigen maakt de opgeslagen OAuth-token onleesbaar en vereist opnieuw verbinden.
-11. Log na deployment in als admin, open **Leeromgevingen beheren** en kies **OneDrive verbinden**. Dit is eenmalig app-breed; opnieuw verbinden vervangt de versleutelde tokens.
+11. Log na deployment in als admin, open **Leeromgevingen beheren** en kies **OneDrive verbinden**. In de huidige compatibility-UI beheert dit de persoonlijke verbinding van de huidige superadmin; opnieuw verbinden vervangt alleen diens versleutelde tokens.
 
 Voor een map in de standaard-OneDrive kun je de drive- en folder-ID opvragen met Microsoft Graph Explorer:
 
@@ -79,7 +81,7 @@ Productie weigert bewust te starten zonder een `postgres://` of `postgresql://` 
 3. Kopieer de TLS-verbinding als `DATABASE_URL`; gebruik `sslmode=require` wanneer de provider dat voorschrijft.
 4. Maak vóór elke latere schemamigratie een providerbackup of herstelpunt.
 
-Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001_initial` tot en met de huidige `020_portfolio_hints_document` uit. PostgreSQL-starts worden met een advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
+Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001_initial` tot en met de huidige `021_multi_user_foundation` uit. PostgreSQL-starts worden met een advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
 
 Toekomstige rollout:
 
@@ -113,6 +115,9 @@ De app gebruikt Vercel Hobby met de standaard Node.js-runtime, Server Components
 | `MICROSOFT_CLIENT_SECRET` | Verplicht voor OneDrive | Server-side client secret value. |
 | `MICROSOFT_REDIRECT_URI` | Verplicht voor OneDrive | Volledige callback-URL, lokaal of productie. |
 | `GRAPH_TOKEN_ENCRYPTION_KEY` | Verplicht voor OneDrive | Base64 van exact 32 willekeurige bytes. |
+| `SMARTSCHOOL_CLIENT_ID` | Toekomstig, niet actief | Gereserveerd voor de latere Smartschool OAuth-client. |
+| `SMARTSCHOOL_CLIENT_SECRET` | Toekomstig, niet actief | Gereserveerd server-side secret; nu niet instellen. |
+| `SMARTSCHOOL_REDIRECT_URI` | Toekomstig, niet actief | Geplande callback is `/api/auth/smartschool/callback`. |
 | `GOOGLE_SERVICE_ACCOUNT_JSON_B64` | Verplicht voor Google Drive | Base64 van het volledige server-side service-accountkeybestand. |
 | `REPORT_RATE_LIMIT_SECRET` | Aanbevolen | Aparte HMAC-sleutel voor foutmeldings-rate-limits; anders wordt de adminsecret gebruikt. |
 | `PORTFOLIO_AUTO_SYNC_TTL_SECONDS` | Optioneel | Stale TTL, standaard 180 en minimaal 30 seconden. |
@@ -125,7 +130,7 @@ Er is geen `APP_URL` of `BASE_URL` nodig: interne links zijn relatief en OAuth g
 ## F. First production login
 
 1. Open eerst `https://<productiedomein>/`; hiermee wordt de lege database geinitialiseerd.
-2. Open `/admin/login` en log in met `ADMIN_PASSWORD`.
+2. Open `/admin/login` en log in met `ADMIN_PASSWORD`. Deze compatibilitylogin maakt een sessie voor de interne superadmin.
 3. Controleer dat uitloggen de sessie intrekt en opnieuw naar login leidt.
 4. Wijzig secrets uitsluitend in Vercel en redeploy. Rotatie van `ADMIN_SESSION_SECRET` maakt bestaande cookies onmiddellijk ongeldig.
 
@@ -133,7 +138,7 @@ Er is geen `APP_URL` of `BASE_URL` nodig: interne links zijn relatief en OAuth g
 
 Een LearningSpace bewaart maximaal twee onafhankelijke bronconfiguraties: een **primaire bron** en een **mirror**. Exact een daarvan is actief. De normale productieopstelling gebruikt OneDrive als primaire bron en de persoonlijke Google Drive-kopie als mirror, maar de rollen zijn niet aan een providertype gekoppeld. Local filesystem blijft uitsluitend voor development beschikbaar.
 
-1. Open `/admin/instellingen`. Verbind OneDrive app-breed wanneer je OneDrive gebruikt; voor Google Drive controleert deze pagina de app-brede service-accountenvironment.
+1. Open `/admin/instellingen`. Verbind de OneDrive-account van de huidige compatibility-superadmin wanneer je OneDrive gebruikt; voor Google Drive controleert deze pagina de app-brede service-accountenvironment.
 2. Open elke LearningSpace afzonderlijk.
 3. Configureer de primaire bron en schakel desgewenst de mirrorconfiguratie in. Beide rollen kunnen Local filesystem, OneDrive of Google Drive gebruiken.
 4. Vul alleen de providervelden van iedere rol in. Google Drive gebruikt de folder-ID en een optioneel herkenbaar label; credentials verschijnen nooit in de UI.

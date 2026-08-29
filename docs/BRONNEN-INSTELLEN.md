@@ -21,7 +21,7 @@ Bij een nieuwe leeromgeving is OneDrive de normale standaardkeuze. Google Drive 
 3. Meld je aan met het Microsoft-account dat leestoegang heeft tot de bronmap.
 4. Controleer dat de status OneDrive geconnecteerd verschijnt.
 
-De verbinding is app-breed. De drive-ID en map-ID stel je afzonderlijk per leeromgeving in.
+De huidige beheer-UI toont één OneDrive-verbinding, maar die behoort intern aan de compatibility-superadmin. Een LearningSpaceSource verwijst expliciet naar deze storageconnection; drive-ID en map-ID blijven brongebonden. Het datamodel ondersteunt later meerdere persoonlijke verbindingen zonder tokens tussen users te delen.
 
 ## 3. OneDrive drive-ID en map-ID
 

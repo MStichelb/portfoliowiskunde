@@ -12,6 +12,7 @@ import {
 import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 import { SourceConfigurationError } from "@/lib/source-errors";
 import { getGoogleServiceAccountConfigurationProblem } from "@/lib/google-service-account-config";
+import { getStorageConnection } from "@/lib/storage-connections";
 
 export { DEFAULT_LOCAL_SOURCE_PATH };
 
@@ -39,7 +40,14 @@ async function providerForSource(space: LearningSpace, source: LearningSpaceSour
   if (source.providerType === "onedrive") {
     const { OneDriveProvider } = await import("@/lib/storage/onedrive-provider");
     if (!source.oneDriveDriveId || !source.oneDriveFolderId) throw new SourceConfigurationError("OneDrive is nog niet geconfigureerd voor deze bron.");
-    return { provider: OneDriveProvider.fromSpaceConnection({ driveId: source.oneDriveDriveId, folderId: source.oneDriveFolderId }), type: "onedrive" };
+    if (!source.storageConnectionId) throw new SourceConfigurationError("Deze OneDrive-bron heeft nog geen persoonlijke storageverbinding.");
+    const connection = await getStorageConnection(source.storageConnectionId);
+    if (!connection || connection.provider !== "onedrive") throw new SourceConfigurationError("De persoonlijke OneDrive-storageverbinding is ongeldig.");
+    return { provider: OneDriveProvider.fromSpaceConnection({
+      driveId: source.oneDriveDriveId,
+      folderId: source.oneDriveFolderId,
+      storageConnectionId: source.storageConnectionId,
+    }), type: "onedrive" };
   }
   if (source.providerType === "google_drive") {
     const problem = getGoogleServiceAccountConfigurationProblem();

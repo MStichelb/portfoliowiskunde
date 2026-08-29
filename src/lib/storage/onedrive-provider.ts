@@ -21,21 +21,21 @@ export class OneDriveProvider implements StorageProvider {
   private readonly openGraphFileImplementation: typeof openGraphFile;
   private readonly readGraphFileImplementation: typeof readGraphFile;
 
-  private constructor(private readonly driveId: string, rootFolderId: string, dependencies: OneDriveProviderDependencies = {}) {
+  private constructor(private readonly driveId: string, rootFolderId: string, storageConnectionId: string | null, dependencies: OneDriveProviderDependencies = {}) {
     this.directories.set("", rootFolderId);
-    this.graphJsonImplementation = dependencies.graphJson ?? graphJson;
-    this.openGraphFileImplementation = dependencies.openGraphFile ?? openGraphFile;
-    this.readGraphFileImplementation = dependencies.readGraphFile ?? readGraphFile;
+    this.graphJsonImplementation = dependencies.graphJson ?? ((path) => graphJson(path, storageConnectionId ?? undefined));
+    this.openGraphFileImplementation = dependencies.openGraphFile ?? ((driveId, itemId, range, signal) => openGraphFile(driveId, itemId, range, signal, {}, storageConnectionId ?? undefined));
+    this.readGraphFileImplementation = dependencies.readGraphFile ?? ((driveId, itemId) => readGraphFile(driveId, itemId, storageConnectionId ?? undefined));
   }
 
   static async fromStoredConnection(): Promise<OneDriveProvider> {
     const connection = await getOneDriveConnection();
     if (!connection) throw new Error("OneDrive is nog niet verbonden of de bronmap is nog niet geconfigureerd.");
-    return new OneDriveProvider(connection.driveId, connection.folderId);
+    return new OneDriveProvider(connection.driveId, connection.folderId, connection.storageConnectionId);
   }
 
-  static fromSpaceConnection(connection: { driveId: string; folderId: string }, dependencies: OneDriveProviderDependencies = {}): OneDriveProvider {
-    return new OneDriveProvider(connection.driveId, connection.folderId, dependencies);
+  static fromSpaceConnection(connection: { driveId: string; folderId: string; storageConnectionId?: string | null }, dependencies: OneDriveProviderDependencies = {}): OneDriveProvider {
+    return new OneDriveProvider(connection.driveId, connection.folderId, connection.storageConnectionId ?? null, dependencies);
   }
 
   async list(relativePath = ""): Promise<StorageEntry[]> {

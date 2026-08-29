@@ -28,7 +28,11 @@ describe("LearningSpace provider selection", () => {
     await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: temporaryDirectory });
     await expect(getStorageProviderWithType("space-5")).resolves.toMatchObject({ type: "local", provider: { id: "local-filesystem" } });
 
-    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive", oneDriveDriveId: "drive-id", oneDriveFolderId: "folder-id" });
+    await updateLearningSpace("space-5", {
+      name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
+      storageConnectionId: "connection-onedrive-user-legacy-superadmin",
+      oneDriveDriveId: "drive-id", oneDriveFolderId: "folder-id",
+    });
     await expect(getStorageProviderWithType("space-5")).resolves.toMatchObject({ type: "onedrive", provider: { id: "onedrive" } });
 
     await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "google_drive", googleDriveFolderId: "google-root-id" });

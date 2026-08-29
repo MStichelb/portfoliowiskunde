@@ -146,6 +146,7 @@ export interface LearningSpaceSource {
   learningSpaceId: string;
   role: LearningSpaceSourceRole;
   providerType: StorageSourceType;
+  storageConnectionId: string | null;
   isActive: boolean;
   localSourcePath: string | null;
   oneDriveDriveId: string | null;
@@ -161,6 +162,7 @@ export interface LearningSpaceSource {
 
 export interface LearningSpaceSourceInput {
   providerType: StorageSourceType;
+  storageConnectionId?: string | null;
   localSourcePath?: string | null;
   oneDriveDriveId?: string | null;
   oneDriveFolderId?: string | null;
@@ -177,6 +179,7 @@ export interface LearningSpaceInput {
   cardColor?: string;
   sortOrder: number;
   sourceType: StorageSourceType;
+  storageConnectionId?: string | null;
   localSourcePath?: string | null;
   oneDriveDriveId?: string | null;
   oneDriveFolderId?: string | null;
@@ -216,7 +219,7 @@ function learningSpaceSourceFromRow(row: DatabaseRow): LearningSpaceSource {
   return {
     id: text(row, "id"), learningSpaceId: text(row, "learning_space_id"),
     role: text(row, "role") === "mirror" ? "mirror" : "primary",
-    providerType: storageSourceType(text(row, "provider_type")), isActive: bool(row.is_active),
+    providerType: storageSourceType(text(row, "provider_type")), storageConnectionId: nullableText(row, "storage_connection_id"), isActive: bool(row.is_active),
     localSourcePath: nullableText(row, "local_source_path"), oneDriveDriveId: nullableText(row, "onedrive_drive_id"),
     oneDriveFolderId: nullableText(row, "onedrive_folder_id"), oneDriveFolderPath: nullableText(row, "onedrive_folder_path"),
     googleDriveFolderId: nullableText(row, "google_drive_folder_id"), googleDriveFolderLabel: nullableText(row, "google_drive_folder_label"),
@@ -327,8 +330,8 @@ export async function createLearningSpace(input: LearningSpaceInput): Promise<Le
 export async function updateLearningSpace(id: string, input: LearningSpaceInput): Promise<void> {
   const existing = await getLearningSpace(id);
   if (!existing) throw new Error("Leeromgeving niet gevonden.");
-  const primary = input.primarySource ?? sourceFromLegacyInput(input);
-  const mirror = input.mirrorSource === undefined ? sourceToInput(existing.mirrorSource) : input.mirrorSource;
+  const primary = preserveStorageConnection(input.primarySource ?? sourceFromLegacyInput(input), existing.primarySource);
+  const mirror = input.mirrorSource === undefined ? sourceToInput(existing.mirrorSource) : preserveStorageConnection(input.mirrorSource, existing.mirrorSource);
   if (existing.mirrorSource?.isActive && !mirror) throw new Error("Schakel eerst terug naar de primaire bron voordat je de actieve mirror verwijdert.");
   const active = existing.mirrorSource?.isActive ? mirror! : primary;
   const configured = [primary, mirror].filter((source): source is LearningSpaceSourceInput => Boolean(source));
@@ -351,7 +354,7 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
 
 function sourceFromLegacyInput(input: LearningSpaceInput): LearningSpaceSourceInput {
   return {
-    providerType: input.sourceType, localSourcePath: input.localSourcePath,
+    providerType: input.sourceType, storageConnectionId: input.storageConnectionId, localSourcePath: input.localSourcePath,
     oneDriveDriveId: input.oneDriveDriveId, oneDriveFolderId: input.oneDriveFolderId, oneDriveFolderPath: input.oneDriveFolderPath,
     googleDriveFolderId: input.googleDriveFolderId, googleDriveFolderLabel: input.googleDriveFolderLabel,
   };
@@ -360,9 +363,21 @@ function sourceFromLegacyInput(input: LearningSpaceInput): LearningSpaceSourceIn
 function sourceToInput(source: LearningSpaceSource | null): LearningSpaceSourceInput | null {
   if (!source) return null;
   return {
-    providerType: source.providerType, localSourcePath: source.localSourcePath,
+    providerType: source.providerType, storageConnectionId: source.storageConnectionId, localSourcePath: source.localSourcePath,
     oneDriveDriveId: source.oneDriveDriveId, oneDriveFolderId: source.oneDriveFolderId, oneDriveFolderPath: source.oneDriveFolderPath,
     googleDriveFolderId: source.googleDriveFolderId, googleDriveFolderLabel: source.googleDriveFolderLabel,
+  };
+}
+
+function preserveStorageConnection(source: LearningSpaceSourceInput, existing: LearningSpaceSource | null): LearningSpaceSourceInput;
+function preserveStorageConnection(source: LearningSpaceSourceInput | null, existing: LearningSpaceSource | null): LearningSpaceSourceInput | null;
+function preserveStorageConnection(source: LearningSpaceSourceInput | null, existing: LearningSpaceSource | null): LearningSpaceSourceInput | null {
+  if (!source) return null;
+  return {
+    ...source,
+    storageConnectionId: source.storageConnectionId === undefined && source.providerType === existing?.providerType
+      ? existing.storageConnectionId
+      : source.storageConnectionId ?? null,
   };
 }
 
@@ -374,16 +389,17 @@ function sourceUpsertStatement(
   now: string,
 ): InStatement {
   return {
-    sql: `INSERT INTO learning_space_sources (id, learning_space_id, role, provider_type, is_active, local_source_path,
+    sql: `INSERT INTO learning_space_sources (id, learning_space_id, role, provider_type, storage_connection_id, is_active, local_source_path,
       onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, google_drive_folder_id, google_drive_folder_label, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(learning_space_id, role) DO UPDATE SET provider_type = excluded.provider_type,
+        storage_connection_id = excluded.storage_connection_id,
         local_source_path = excluded.local_source_path, onedrive_drive_id = excluded.onedrive_drive_id,
         onedrive_folder_id = excluded.onedrive_folder_id, onedrive_folder_path = excluded.onedrive_folder_path,
         google_drive_folder_id = excluded.google_drive_folder_id, google_drive_folder_label = excluded.google_drive_folder_label,
         last_validated_at = NULL, last_validation_status = NULL, last_validation_message = NULL, mirror_completed_at = NULL,
         updated_at = excluded.updated_at`,
-    args: [`${learningSpaceId}:${role}`, learningSpaceId, role, source.providerType, activeOnInsert ? 1 : 0,
+    args: [`${learningSpaceId}:${role}`, learningSpaceId, role, source.providerType, source.storageConnectionId ?? null, activeOnInsert ? 1 : 0,
       source.localSourcePath ?? null, source.oneDriveDriveId ?? null, source.oneDriveFolderId ?? null, source.oneDriveFolderPath ?? null,
       source.googleDriveFolderId ?? null, source.googleDriveFolderLabel ?? null, now, now],
   };
