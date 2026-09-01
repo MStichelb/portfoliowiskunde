@@ -1,4 +1,5 @@
-import { CheckCircle2, CircleAlert } from "lucide-react";
+import { CheckCircle2, CircleAlert, CircleHelp } from "lucide-react";
+import Link from "next/link";
 
 import { LearningSpaceSourceSummary } from "@/app/components/active-source-badge";
 import { LearningSpaceCreateForm } from "@/app/components/learning-space-create-form";
@@ -25,7 +26,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     <header className="page-header"><p className="eyebrow">Beheer</p><h1>Leeromgevingen</h1><p>Leeromgevingen vormen een slimme laag op een OneDrive-map of een Google Drive-map waarin portfolio&apos;s worden verzameld. Bronbestanden worden enkel gelezen, niet bewerkt.</p></header>
     {error ? <p className="form-message" role="alert">{settingsErrorMessage(error)}</p> : null}
     <section className="admin-card connections-card" aria-labelledby="connections-heading">
-      <div className="card-heading"><div><h2 id="connections-heading">Verbindingen</h2><p>App-brede toegang voor cloudbronnen.</p></div></div>
+      <div className="card-heading"><div><h2 id="connections-heading">Verbindingen</h2><p>App-brede toegang voor cloudbronnen.</p></div><Link className="secondary-button link-button connection-action" href="/admin/help/bronnen"><CircleHelp size={17} aria-hidden />Hulp bij bronnen</Link></div>
       <div className="connection-list">
         <div className="connection-row"><ConnectionStatus ok={oneDriveAuthorized && !microsoftProblem} label={oneDriveAuthorized ? "OneDrive geconnecteerd" : "OneDrive niet geconnecteerd"} detail={microsoftProblem} /><OneDriveConnectLink authorized={oneDriveAuthorized} /></div>
         <div className="connection-row"><ConnectionStatus ok={!googleProblem} label={googleProblem ? "Google Drive service niet geconfigureerd" : "Google Drive service geconfigureerd"} detail={googleProblem} /></div>

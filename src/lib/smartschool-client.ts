@@ -11,12 +11,14 @@ export interface SmartschoolConfig {
   redirectUri: string;
 }
 
+export const SMARTSCHOOL_UNAVAILABLE_MESSAGE = "Aanmelden via Smartschool is momenteel niet beschikbaar. Probeer het later opnieuw.";
+
 export interface SmartschoolCallbackInput {
   code: string;
 }
 
 export class SmartschoolClientError extends Error {
-  constructor(message = "Smartschool-aanmelding is tijdelijk niet beschikbaar.") {
+  constructor(message = SMARTSCHOOL_UNAVAILABLE_MESSAGE) {
     super(message);
     this.name = "SmartschoolClientError";
   }

@@ -3,10 +3,13 @@ import Link from "next/link";
 
 import { LearningSpaceNav, type AdminSpaceSection } from "@/app/components/learning-space-nav";
 import { SyncSpaceForm } from "@/app/components/sync-space-form";
+import { canConfigureLearningSpace } from "@/lib/authorization";
+import type { AppUser } from "@/lib/identity";
 import { getLatestSyncSummary, getOpenErrorReportCount, type LearningSpace } from "@/lib/repositories";
 
-export async function AdminSpaceHeader({ current, section }: { current: LearningSpace; section: AdminSpaceSection }) {
+export async function AdminSpaceHeader({ current, section, user }: { current: LearningSpace; section: AdminSpaceSection; user: AppUser }) {
   const [sync, reportCount] = await Promise.all([getLatestSyncSummary(current.id), getOpenErrorReportCount(current.id)]);
+  const showSettings = await canConfigureLearningSpace(user, current.id);
   const syncedAt = sync?.finishedAt ?? sync?.startedAt;
   return <>
     <header className="admin-header admin-space-header">
@@ -17,7 +20,7 @@ export async function AdminSpaceHeader({ current, section }: { current: Learning
         {current.isActive ? <SyncSpaceForm learningSpaceId={current.id} /> : null}
       </div>
     </header>
-    <LearningSpaceNav current={current} section={section} />
+    <LearningSpaceNav current={current} section={section} showSettings={showSettings} />
   </>;
 }
 

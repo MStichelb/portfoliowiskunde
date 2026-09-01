@@ -1,4 +1,4 @@
-import { Folder, Link2, LogOut } from "lucide-react";
+import { CircleHelp, Folder, Link2, LogOut, Users } from "lucide-react";
 import Link from "next/link";
 
 import { PageBanner } from "@/app/components/page-banner";
@@ -19,7 +19,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     <PageBanner variant="admin" />
     <header className="admin-header">
       <div><p className="eyebrow">Beheer</p><h1>Leeromgevingen</h1><p>Kies een leeromgeving om portfolio&apos;s binnen deze leeromgeving te beheren.</p></div>
-      <div className="admin-actions">{user.role === "superadmin" ? <><Link className="secondary-button link-button" href="/api/auth/smartschool/link"><Link2 size={17} aria-hidden />Smartschool koppelen</Link><Link className="secondary-button link-button" href="/admin/instellingen"><Folder size={17} aria-hidden />Leeromgevingen beheren</Link></> : null}<form action={logoutAction}><button className="secondary-button logout-button" type="submit"><LogOut size={17} aria-hidden />Uitloggen</button></form></div>
+      <div className="admin-actions">{user.role === "superadmin" ? <><Link className="secondary-button link-button" href="/api/auth/smartschool/link"><Link2 size={17} aria-hidden />Smartschool koppelen</Link><Link className="secondary-button link-button" href="/admin/gebruikers"><Users size={17} aria-hidden />Gebruikers en toegang</Link><Link className="secondary-button link-button" href="/admin/instellingen"><Folder size={17} aria-hidden />Leeromgevingen beheren</Link></> : null}<Link className="secondary-button link-button" href="/admin/help/bronnen"><CircleHelp size={17} aria-hidden />Hulp bij bronnen</Link><form action={logoutAction}><button className="secondary-button logout-button" type="submit"><LogOut size={17} aria-hidden />Uitloggen</button></form></div>
     </header>
     {params.smartschool === "linked" ? <p className="success-message" role="status">Smartschool-account gekoppeld.</p> : null}
     {params.smartschool && params.smartschool !== "linked" ? <p className="error-message" role="alert">De Smartschool-koppeling is niet gelukt.</p> : null}

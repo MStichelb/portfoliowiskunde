@@ -7,7 +7,8 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   try {
     return beginSmartschoolAuthorization(request);
-  } catch {
+  } catch (error) {
+    console.error("Smartschool OAuth initiation failed.", { errorType: error instanceof Error ? error.name : typeof error });
     return NextResponse.redirect(new URL("/aanmelden?error=config", request.url));
   }
 }

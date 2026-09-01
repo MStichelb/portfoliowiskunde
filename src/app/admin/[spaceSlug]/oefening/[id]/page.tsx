@@ -20,7 +20,7 @@ export default async function LearningSpaceAdminExercisePage({ params }: { param
   if (!exercise) notFound();
 
   return <main className="page-shell admin-page admin-space-page solution-page">
-    <AdminSpaceHeader current={space} section="portfolios" />
+    <AdminSpaceHeader current={space} section="portfolios" user={user} />
     <AdminExercisePreviewToolbar portfolioHref={adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id)} />
     <h2>Oefening {exercise.code}</h2><p>{exercise.portfolioTitle} - {exercise.sectionTitle}</p>
     {!exercise.isIndexed ? <p className="form-message" role="status">Deze oefening is niet meer aanwezig in de bronmap. De historische metadata blijft behouden tot je de index opschoont.</p> : (["standard", "alternative"] as const).map((kind) => {

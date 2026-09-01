@@ -3,17 +3,17 @@ import path from "node:path";
 import type { ReactNode } from "react";
 import Link from "next/link";
 
-import { requireAdmin } from "@/lib/auth";
+import { requireAdminUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function SourceHelpPage() {
-  await requireAdmin();
+  await requireAdminUser();
   const markdown = await readFile(path.join(process.cwd(), "docs", "BRONNEN-INSTELLEN.md"), "utf8");
   return <main className="page-shell admin-page help-page">
     <header className="page-header"><p className="eyebrow">Beheer</p><h1>Hulp bij bronnen instellen</h1><p>Praktische stappen voor primaire bronnen, mirrors en gecontroleerd omschakelen.</p></header>
     <article className="admin-card help-article">{renderMarkdown(markdown)}</article>
-    <Link className="secondary-button compact-back-button" href="/admin/instellingen">Terug naar leeromgevingen</Link>
+    <Link className="secondary-button compact-back-button" href="/admin">Terug naar beheer</Link>
   </main>;
 }
 

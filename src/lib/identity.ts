@@ -56,6 +56,22 @@ export async function getUser(id: string): Promise<AppUser | null> {
   return row ? userFromRow(row) : null;
 }
 
+export function userFirstName(user: Pick<AppUser, "displayName">): string {
+  return user.displayName.trim().split(/\s+/)[0] || "Gebruiker";
+}
+
+export async function updateUserFromExternalIdentity(userId: string, identity: NormalizedExternalIdentity): Promise<AppUser> {
+  const displayName = identity.displayName.trim();
+  if (!displayName) throw new Error("De externe identiteit bevat geen geldige naam.");
+  await (await getDatabase()).execute({
+    sql: "UPDATE users SET display_name = ?, email = COALESCE(?, email), updated_at = ? WHERE id = ?",
+    args: [displayName, identity.email?.trim() || null, new Date().toISOString(), userId],
+  });
+  const user = await getUser(userId);
+  if (!user) throw new Error("Gebruiker niet gevonden.");
+  return user;
+}
+
 export async function createUser(input: { displayName: string; email?: string | null; role: UserRole; status?: UserStatus }): Promise<AppUser> {
   const id = randomUUID();
   const now = new Date().toISOString();

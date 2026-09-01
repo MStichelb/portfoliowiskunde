@@ -21,7 +21,7 @@ export default async function SpaceReportsPage({ params }: { params: Promise<{ s
   const open = reports.filter((report) => report.status === "TODO");
   const done = reports.filter((report) => report.status === "DONE");
   return <main className="page-shell admin-page admin-space-page reports-page">
-    <AdminSpaceHeader current={space} section="reports" />
+    <AdminSpaceHeader current={space} section="reports" user={user} />
     <ErrorReportOpenGroups reports={open} spaceSlug={space.slug} learningSpaceId={space.id} />
     <details className="report-group done-group"><summary><h2>DONE <span>{done.length}</span></h2></summary>{oldDone > 0 ? <div className="done-group-actions"><ConfirmActionButton action={deleteOldDoneErrorReportsAction} fields={{ learningSpaceId: space.id }} className="danger-button" label={<><Trash2 size={16} aria-hidden />Verwijder DONE ouder dan 2 weken</>} confirmTitle="Afgewerkte meldingen verwijderen" confirmText={`${oldDone} afgewerkte meldingen worden verwijderd.`} /></div> : null}<ErrorReportCards reports={done} spaceSlug={space.slug} learningSpaceId={space.id} /></details>
   </main>;

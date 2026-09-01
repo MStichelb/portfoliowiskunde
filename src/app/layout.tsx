@@ -2,9 +2,11 @@ import type { Metadata } from "next";
 import { Source_Sans_3 } from "next/font/google";
 
 import { SiteNavigation } from "@/app/components/site-navigation";
+import { SessionRefresher } from "@/app/components/session-refresher";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { getAccessibleLearningSpaceIds } from "@/lib/authorization";
 import { getLearningSpaces } from "@/lib/repositories";
+import { userFirstName } from "@/lib/identity";
 
 import "./globals.css";
 
@@ -30,7 +32,11 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang="nl" className={sourceSans3.variable}>
       <body>
-        <SiteNavigation spaces={accessible.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))} />
+        <SiteNavigation
+          spaces={accessible.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
+          user={user ? { firstName: userFirstName(user), role: user.role } : null}
+        />
+        {user ? <SessionRefresher /> : null}
         {children}
       </body>
     </html>

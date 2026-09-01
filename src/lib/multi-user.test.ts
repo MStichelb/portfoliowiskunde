@@ -3,8 +3,8 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { canAccessAdmin, canAccessLearningSpace, canManageLearningSpace, getAccessibleLearningSpaceIds, requireLearningSpaceManagement } from "./authorization";
-import { resetDatabaseForTests } from "./database";
+import { canAccessAdmin, canAccessLearningSpace, canConfigureLearningSpace, canCreateLearningSpace, canManageLearningSpace, getAccessibleLearningSpaceIds, requireLearningSpaceCreation, requireLearningSpaceManagement } from "./authorization";
+import { getDatabase, resetDatabaseForTests } from "./database";
 import type { ExternalAuthProvider } from "./external-auth-provider";
 import {
   createLearningSpaceGroupMapping,
@@ -16,6 +16,7 @@ import {
   resolveLearningSpaceAccess,
   resolveStoredGroupAccess,
   setLearningSpaceMember,
+  updateUserFromExternalIdentity,
   type NormalizedGroupMembership,
 } from "./identity";
 import {
@@ -25,6 +26,7 @@ import {
   readStorageCredentials,
   saveStorageCredentials,
 } from "./storage-connections";
+import { listManagedSourceOwners } from "./user-management";
 
 let temporaryDirectory: string | undefined;
 
@@ -52,7 +54,30 @@ describe("multi-user authorization foundation", () => {
     expect(await canManageLearningSpace(student, "space-5")).toBe(false);
     expect(await canManageLearningSpace(disabledTeacher, "space-5")).toBe(false);
     expect(canAccessAdmin(student)).toBe(false);
+    expect(canCreateLearningSpace(superadmin)).toBe(true);
+    expect(canCreateLearningSpace(teacher)).toBe(false);
+    expect(() => requireLearningSpaceCreation(teacher)).toThrow("hoofdbeheerder");
     await expect(requireLearningSpaceManagement(teacher, "space-6")).rejects.toThrow("geen beheerrechten");
+  });
+
+  it("laat owner en editor dezelfde LearningSpace beheren zonder storage ownership te vermengen", async () => {
+    await useTemporaryDatabase();
+    const owner = await createUser({ displayName: "Mathias", role: "teacher" });
+    const editor = await createUser({ displayName: "Luc", role: "teacher" });
+    const connection = await ensureStorageConnection(owner.id, "onedrive");
+    await setLearningSpaceMember("space-6", owner.id, "owner");
+    await setLearningSpaceMember("space-6", editor.id, "editor");
+    await (await getDatabase()).execute({
+      sql: "UPDATE learning_space_sources SET provider_type = 'onedrive', storage_connection_id = ? WHERE learning_space_id = 'space-6' AND role = 'primary'",
+      args: [connection.id],
+    });
+
+    expect(await canManageLearningSpace(owner, "space-6")).toBe(true);
+    expect(await canManageLearningSpace(editor, "space-6")).toBe(true);
+    expect(await canConfigureLearningSpace(owner, "space-6")).toBe(true);
+    expect(await canConfigureLearningSpace(editor, "space-6")).toBe(false);
+    expect((await listManagedSourceOwners()).find((source) => source.learningSpaceId === "space-6" && source.sourceRole === "primary")).toMatchObject({ ownerName: "Mathias" });
+    expect(await getOwnedStorageConnection(editor.id, connection.id)).toBeNull();
   });
 
   it("dwingt een unieke externe provideridentiteit af zonder providerrollen te vertrouwen", async () => {
@@ -84,6 +109,8 @@ describe("multi-user authorization foundation", () => {
     const existingTeacher = await findOrCreateExternalUser({ ...identity, providerSubject: "teacher-subject", displayName: "Externe naam" });
     expect(existingTeacher.user.id).toBe(teacher.id);
     expect(existingTeacher.user.role).toBe("teacher");
+    const updatedTeacher = await updateUserFromExternalIdentity(teacher.id, { ...identity, providerSubject: "teacher-subject", displayName: "Luc Voorbeeld" });
+    expect(updatedTeacher).toMatchObject({ displayName: "Luc Voorbeeld", role: "teacher" });
   });
 
   it("behandelt dezelfde provider-subject op verschillende platformen als aparte identiteit", async () => {

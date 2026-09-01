@@ -36,7 +36,7 @@ describe("shared LearningSpace admin header", () => {
     });
     vi.mocked(getOpenErrorReportCount).mockResolvedValue(4);
 
-    const markup = renderToStaticMarkup(await AdminSpaceHeader({ current: space, section: "settings" }));
+    const markup = renderToStaticMarkup(await AdminSpaceHeader({ current: space, section: "settings", user: { id: "admin", displayName: "Admin", email: null, role: "superadmin", status: "active" } }));
     expect(markup).toContain("Beheer");
     expect(markup).toContain("Zesde jaar wiskunde");
     expect(markup).toContain("Laatste synchronisatie");

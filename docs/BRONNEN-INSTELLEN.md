@@ -21,7 +21,9 @@ Bij een nieuwe leeromgeving is OneDrive de normale standaardkeuze. Google Drive 
 3. Meld je aan met het Microsoft-account dat leestoegang heeft tot de bronmap.
 4. Controleer dat de status OneDrive geconnecteerd verschijnt.
 
-De huidige beheer-UI toont één OneDrive-verbinding, maar die behoort intern aan de compatibility-superadmin. Een LearningSpaceSource verwijst expliciet naar deze storageconnection; drive-ID en map-ID blijven brongebonden. Het datamodel ondersteunt later meerdere persoonlijke verbindingen zonder tokens tussen users te delen.
+De huidige beheer-UI toont de bestaande OneDrive-verbinding van de compatibility-superadmin. Een LearningSpaceSource verwijst expliciet naar een storageconnection; drive-ID en map-ID blijven brongebonden. Tokens van de ene user worden nooit voor de persoonlijke verbinding van een andere user gebruikt.
+
+Een LearningSpace kan wel door meerdere leraren worden beheerd. Een **Eigenaar** mag ook de broninstellingen wijzigen. Een **Editor** beheert dagelijkse inhoud, publicatie en synchronisatie, maar gebruikt voor een bestaande LearningSpace dezelfde expliciet gekoppelde bron. De editor hoeft daarvoor geen eigen OneDrive-account te verbinden en neemt de bestaande connection niet over.
 
 ## 3. OneDrive drive-ID en map-ID
 
@@ -74,3 +76,12 @@ Bij een providerfout, ongeldige marker of mislukte scan wordt niet omgeschakeld 
 - Parserwaarschuwing: controleer de map- en bestandsnaamconventies van de relevante portfolio-inhoud.
 
 Rclone, Taakplanner en mirrorretentie worden buiten de webapp beheerd.
+
+## 10. Hulp voor collega's
+
+- Controleer eerst met welk account OneDrive is verbonden en of dat account leesrechten op de gekozen map heeft.
+- Vul drive-ID en map-ID van de bedoelde LearningSpace in; gebruik geen browserdeel-URL als technische ID.
+- Sla de bron op en voer daarna een synchronisatie uit.
+- Configureer een mirror afzonderlijk. Vergelijk beide bronnen voordat je omschakelt.
+- Bij Google Drive moet de map als Viewer met het service account gedeeld zijn. Een mirror vereist bovendien een geldige `_mirror-complete.json`.
+- Een owner kan broninstellingen aanpassen. Een editor kan dezelfde LearningSpace beheren zonder eigenaar van de storageconnection te zijn.

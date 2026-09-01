@@ -6,6 +6,7 @@ import {
   findOrCreateExternalUser,
   linkExternalIdentityToUser,
   replaceExternalIdentityGroups,
+  updateUserFromExternalIdentity,
   type AppUser,
 } from "@/lib/identity";
 import { getLearningSpaces } from "@/lib/repositories";
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
       user = mapped.user;
       identityId = mapped.identity.id;
     }
+    user = await updateUserFromExternalIdentity(user.id, authentication.identity);
     if (user.status !== "active") return callbackRedirect(request, "/aanmelden?error=disabled");
 
     await replaceExternalIdentityGroups(identityId, authentication.groups);
@@ -57,7 +59,11 @@ export async function GET(request: NextRequest) {
     const response = callbackRedirect(request, destination);
     response.cookies.set(SESSION_COOKIE, session.token, sessionCookieOptions());
     return response;
-  } catch {
+  } catch (error) {
+    console.error("Smartschool OAuth callback failed.", {
+      intent: state.intent,
+      errorType: error instanceof Error ? error.name : typeof error,
+    });
     return callbackRedirect(request, state.intent === "link" ? "/admin?smartschool=link-failed" : "/aanmelden?error=auth");
   }
 }

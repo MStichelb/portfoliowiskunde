@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { endAdminSession, requireAdmin, requireAdminUser } from "@/lib/auth";
 import { bulkSelectionError } from "@/lib/admin-validation";
-import { requireLearningSpaceManagement } from "@/lib/authorization";
+import { requireLearningSpaceConfiguration, requireLearningSpaceCreation, requireLearningSpaceManagement } from "@/lib/authorization";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { parseBrusselsDateTime, type ChildVisibilityMode, type PortfolioVisibilityMode } from "@/lib/publication";
 import {
@@ -81,7 +81,7 @@ export async function syncSpaceAction(_previousState: AdminActionState, formData
 
 export async function compareSourcesAction(_previousState: SourceSwitchActionState, formData: FormData): Promise<SourceSwitchActionState> {
   const learningSpaceId = stringValue(formData, "learningSpaceId");
-  await requireSpaceManagement(learningSpaceId);
+  await requireSpaceConfiguration(learningSpaceId);
   const targetSourceId = stringValue(formData, "targetSourceId");
   if (!learningSpaceId || !targetSourceId) return { error: "Switchdoel ontbreekt." };
   try {
@@ -94,7 +94,7 @@ export async function compareSourcesAction(_previousState: SourceSwitchActionSta
 
 export async function switchSourceAction(_previousState: SourceSwitchActionState, formData: FormData): Promise<SourceSwitchActionState> {
   const learningSpaceId = stringValue(formData, "learningSpaceId");
-  await requireSpaceManagement(learningSpaceId);
+  await requireSpaceConfiguration(learningSpaceId);
   const targetSourceId = stringValue(formData, "targetSourceId");
   if (!learningSpaceId || !targetSourceId) return { error: "Switchdoel ontbreekt." };
   try {
@@ -156,7 +156,7 @@ export async function permanentlyDeleteLearningSpaceAction(formData: FormData) {
 
 export async function saveLearningSpaceAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState> {
   const id = stringValue(formData, "id");
-  const admin = await requireSpaceManagement(id);
+  const admin = await requireSpaceConfiguration(id);
   const existing = await getLearningSpace(id);
   if (!existing) return { error: "Leeromgeving niet gevonden." };
   let input: ReturnType<typeof learningSpaceInput>;
@@ -179,7 +179,8 @@ export async function saveLearningSpaceAction(_previousState: AdminActionState, 
 }
 
 export async function createLearningSpaceAction(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireAdminUser();
+  requireLearningSpaceCreation(admin);
   let input: ReturnType<typeof learningSpaceInput>;
   try {
     input = learningSpaceInput(formData);
@@ -430,6 +431,13 @@ async function requireSpaceManagement(learningSpaceId: string) {
   const user = await requireAdminUser();
   if (!learningSpaceId) throw new Error("Leeromgeving niet gevonden.");
   await requireLearningSpaceManagement(user, learningSpaceId);
+  return user;
+}
+
+async function requireSpaceConfiguration(learningSpaceId: string) {
+  const user = await requireAdminUser();
+  if (!learningSpaceId) throw new Error("Leeromgeving niet gevonden.");
+  await requireLearningSpaceConfiguration(user, learningSpaceId);
   return user;
 }
 

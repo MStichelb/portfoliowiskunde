@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   findOrCreateExternalUser: vi.fn(),
   linkExternalIdentityToUser: vi.fn(),
   replaceExternalIdentityGroups: vi.fn(),
+  updateUserFromExternalIdentity: vi.fn(),
   getAccessibleLearningSpaceIds: vi.fn(),
   getLearningSpaces: vi.fn(),
 }));
@@ -28,6 +29,7 @@ vi.mock("@/lib/identity", () => ({
   findOrCreateExternalUser: mocks.findOrCreateExternalUser,
   linkExternalIdentityToUser: mocks.linkExternalIdentityToUser,
   replaceExternalIdentityGroups: mocks.replaceExternalIdentityGroups,
+  updateUserFromExternalIdentity: mocks.updateUserFromExternalIdentity,
 }));
 vi.mock("@/lib/authorization", () => ({ getAccessibleLearningSpaceIds: mocks.getAccessibleLearningSpaceIds }));
 vi.mock("@/lib/repositories", () => ({ getLearningSpaces: mocks.getLearningSpaces }));
@@ -44,6 +46,7 @@ beforeEach(() => {
   mocks.authenticate.mockResolvedValue({ identity, groups });
   mocks.findOrCreateExternalUser.mockResolvedValue({ user: student, identity: { id: "identity-1" }, created: true });
   mocks.replaceExternalIdentityGroups.mockResolvedValue(undefined);
+  mocks.updateUserFromExternalIdentity.mockResolvedValue(student);
   mocks.getAccessibleLearningSpaceIds.mockResolvedValue(["space-5"]);
   mocks.getLearningSpaces.mockResolvedValue([{ id: "space-5", slug: "5" }]);
   mocks.createUserSession.mockResolvedValue({ token: "signed-session", maxAge: 100 });
@@ -68,6 +71,7 @@ describe("GET /api/auth/smartschool/callback", () => {
     const response = await GET(callbackRequest());
     expect(mocks.authenticate).toHaveBeenCalledWith({ code: "auth-code" });
     expect(mocks.findOrCreateExternalUser).toHaveBeenCalledWith(identity);
+    expect(mocks.updateUserFromExternalIdentity).toHaveBeenCalledWith(student.id, identity);
     expect(mocks.replaceExternalIdentityGroups).toHaveBeenCalledWith("identity-1", groups);
     expect(response.headers.get("location")).toBe("http://localhost/5");
     expect(response.headers.get("set-cookie")).toContain("portfolio_admin_session=signed-session");
@@ -75,6 +79,7 @@ describe("GET /api/auth/smartschool/callback", () => {
 
   it("blokkeert een disabled bestaande user", async () => {
     mocks.findOrCreateExternalUser.mockResolvedValue({ user: { ...student, status: "disabled" }, identity: { id: "identity-1" }, created: false });
+    mocks.updateUserFromExternalIdentity.mockResolvedValue({ ...student, status: "disabled" });
     const response = await GET(callbackRequest());
     expect(response.headers.get("location")).toContain("/aanmelden?error=disabled");
     expect(mocks.createUserSession).not.toHaveBeenCalled();
@@ -84,6 +89,7 @@ describe("GET /api/auth/smartschool/callback", () => {
     const superadmin = { ...student, id: "user-legacy-superadmin", role: "superadmin" as const };
     mocks.getAuthenticatedUser.mockResolvedValue(superadmin);
     mocks.linkExternalIdentityToUser.mockResolvedValue({ id: "identity-superadmin", userId: superadmin.id });
+    mocks.updateUserFromExternalIdentity.mockResolvedValue(superadmin);
     mocks.getAccessibleLearningSpaceIds.mockResolvedValue(["space-5"]);
     const response = await GET(callbackRequest({ intent: "link", userId: superadmin.id }));
     expect(mocks.linkExternalIdentityToUser).toHaveBeenCalledWith(superadmin.id, identity);

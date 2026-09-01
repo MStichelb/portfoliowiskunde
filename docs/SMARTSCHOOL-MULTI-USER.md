@@ -4,7 +4,7 @@
 
 Smartschool OAuth is actief als identity provider boven op het interne user- en autorisatiemodel. De implementatie volgt de [officiële Smartschool OAuth-documentatie](https://www.smartschool.be/oauth/) en gebruikt rechtstreeks het ingestelde schoolplatform, nooit `oauth.smartschool.be`.
 
-De bestaande password-login op `/admin/login` blijft voorlopig beschikbaar voor de compatibility-superadmin. Smartschool bepaalt uitsluitend de geverifieerde externe identiteit en groepen. Lokale rollen en beheerrechten worden nooit uit namen, usernames of groepsnamen afgeleid.
+De bestaande password-login op `/admin/login` blijft als streng beveiligde **Break-glass admin access** beschikbaar voor de compatibility-superadmin. Smartschool bepaalt uitsluitend de geverifieerde externe identiteit en groepen. Lokale rollen en beheerrechten worden nooit uit namen, usernames of groepsnamen afgeleid.
 
 ## Routes en officiële endpoints
 
@@ -72,11 +72,15 @@ Studentrouting:
 
 Publieke pagina's, oplossingsbestanden, portfoliodocumenten en foutmeldingsinzendingen controleren de LearningSpace-toegang opnieuw op de server. Een student kan een andere LearningSpace niet openen door een URL of asset-ID te raden.
 
-Een actieve superadmin beheert alle LearningSpaces. Een actieve teacher beheert alleen LearningSpaces met een lokaal `owner`- of `editor`-membership. Globale lifecycleacties blijven superadmin-only. Disabled users krijgen geen geldige sessie en bestaande sessies stoppen bij de eerstvolgende servercontrole.
+Een actieve superadmin beheert alle LearningSpaces. Een actieve teacher beheert alleen LearningSpaces met een lokaal `owner`- of `editor`-membership. Een `owner` kan ook de bronconfiguratie beheren. Een `editor` kan de dagelijkse inhoud, publicatie, foutmeldingen en synchronisatie beheren, maar kan niet impliciet een bron aan de eigen storageconnection koppelen. Meerdere teachers kunnen zo dezelfde LearningSpace beheren terwijl de bron naar de persoonlijke storageconnection van een andere user blijft verwijzen.
+
+Alleen een superadmin kan momenteel een LearningSpace creëren of lifecycleacties uitvoeren. Deze regel staat centraal in `canCreateLearningSpace` en wordt ook in de server action afgedwongen.
 
 ## Sessies en tokens
 
-Na de callback krijgt de interne user een revocable databasesessie. De cookie is HMAC-ondertekend, HttpOnly, `SameSite=Lax`, `Secure` in productie en bevat alleen een willekeurige session-ID plus vervaltijd. De database koppelt die sessie aan de interne user.
+Na de callback krijgt de interne user een revocable databasesessie van 30 dagen. De cookie is HMAC-ondertekend, HttpOnly, `SameSite=Lax`, `Secure` in productie en bevat alleen een willekeurige session-ID plus vervaltijd. De database koppelt die sessie aan de interne user. Bij actief gebruik vernieuwt de app de vervaltijd rolling zodra minder dan 15 dagen resten.
+
+Rol, status en LearningSpace-toegang staan niet in de cookie. Iedere server-side autorisatiecheck leest de actuele user en rechten uit de database. Daardoor gelden een rolwijziging of het uitschakelen van een user meteen, ook wanneer de browser nog een geldige cookie heeft. Uitloggen trekt de databasesessie in en wist de cookie.
 
 `userinfo` en `groupinfo` worden onmiddellijk in de callback opgehaald. Daarna is het Smartschool access token niet meer nodig en wordt het niet persistent opgeslagen. Er wordt ook geen Smartschool refresh token bewaard. OneDrive- en Google Drive-credentials en storageproviders worden door deze flow niet gewijzigd.
 
@@ -90,6 +94,28 @@ Na de callback krijgt de interne user een revocable databasesessie. De cookie is
 
 De linkflow vereist tijdens start en callback dezelfde actieve superadminsessie. Het interne user-ID en de linkintentie zijn in de getekende OAuth-state vastgelegd. Een Smartschoolidentiteit die al aan een andere interne user gekoppeld is, wordt geweigerd; er wordt geen tweede superadmin aangemaakt.
 
-## Beheer en volgende stap
+## Break-glass admin access
 
-Groep-naar-LearningSpace-mappings, lokale rollen en teacher-memberships blijven beheerdata in de database. De huidige foundation en autorisatiehelpers ondersteunen ze volledig; een aparte gebruikers- en groepsbeheerinterface is nog niet toegevoegd. De volgende gerichte uitbreiding is zo'n superadmin-UI, zonder wijziging aan de OAuth-flow of automatische roltoekenning.
+De wachtwoordroute kan uitsluitend een sessie voor `user-legacy-superadmin` maken. Queryparameters, Smartschoolprofielen en gewone users kunnen via deze route geen superadmin worden. De bestaande rate limiting blijft actief. Geslaagde, ongeldige en rate-limited pogingen worden als veilige technische events gelogd zonder wachtwoord, token, authorization code of persoonsgegeven.
+
+Gebruik de wachtwoordroute alleen wanneer Smartschool tijdelijk niet beschikbaar is. Een Smartschoolstoring verwijdert of wijzigt de lokale superadminrol nooit.
+
+## Veilige foutafhandeling
+
+Wanneer authorization, tokenexchange of de profielcall faalt, ziet de gebruiker alleen: **Aanmelden via Smartschool is momenteel niet beschikbaar. Probeer het later opnieuw.** De server logt uitsluitend het fouttype en de flowintentie, nooit tokens, codes, secrets of profieldata. Reeds geldige interne sessies blijven bruikbaar.
+
+## Beheerinterface
+
+Superadmins openen via `/admin/gebruikers` het overzicht **Gebruikers en toegang**. Daar kunnen zij:
+
+- studenten en leraren lokaal van rol laten wisselen;
+- users activeren of uitschakelen;
+- `owner`- en `editor`-memberships per LearningSpace beheren;
+- zien aan welke user een persoonlijke storageconnection behoort;
+- bekende Smartschoolgroepen met hun stabiele `groupID` expliciet aan een LearningSpace koppelen.
+
+De UI kent nooit de superadminrol toe en voorkomt dat de laatste actieve superadmin wordt uitgeschakeld. Een groepsnaam is alleen een leesbaar label; toegang gebruikt steeds provider plus exact `groupID`. Dubbele mappings worden door database en servicegrens geweigerd.
+
+## Bronnenhulp
+
+De actie **Hulp bij bronnen** is voor teachers en superadmins beschikbaar in beheer en bij de broninstellingen. De inhoud komt uit `docs/BRONNEN-INSTELLEN.md`, zodat de in-app uitleg en de technische documentatie dezelfde werkwijze beschrijven.

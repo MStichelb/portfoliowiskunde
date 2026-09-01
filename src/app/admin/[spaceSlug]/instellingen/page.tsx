@@ -5,7 +5,7 @@ import { LearningSpaceLifecycleActions } from "@/app/components/learning-space-l
 import { LearningSpaceSettingsForm } from "@/app/components/learning-space-settings-form";
 import { SourceSwitchPanel } from "@/app/components/source-switch-panel";
 import { requireAdminUser } from "@/lib/auth";
-import { canManageLearningSpace } from "@/lib/authorization";
+import { canConfigureLearningSpace } from "@/lib/authorization";
 import { getAdminLearningSpaceBySlug } from "@/lib/repositories";
 
 import { saveLearningSpaceAction } from "../../actions";
@@ -16,9 +16,9 @@ export default async function LearningSpaceSettingsPage({ params, searchParams }
   const user = await requireAdminUser();
   const { spaceSlug } = await params;
   const [{ saved }, space] = await Promise.all([searchParams, getAdminLearningSpaceBySlug(spaceSlug)]);
-  if (!space || !await canManageLearningSpace(user, space.id)) notFound();
+  if (!space || !await canConfigureLearningSpace(user, space.id)) notFound();
   return <main className="page-shell admin-page admin-space-page learning-space-settings-page">
-    <AdminSpaceHeader current={space} section="settings" />
+    <AdminSpaceHeader current={space} section="settings" user={user} />
     {!space.isActive ? <p className="archived-message" role="status">Gearchiveerd. Deze leeromgeving is niet publiek zichtbaar en wordt niet gesynchroniseerd.</p> : null}
     {saved === "1" ? <p className="success-message save-feedback" role="status">Instellingen opgeslagen.</p> : null}
     <LearningSpaceSettingsForm space={space} action={saveLearningSpaceAction} />

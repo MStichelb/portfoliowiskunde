@@ -27,7 +27,7 @@ export default async function LearningSpaceAdminPage({ params }: { params: Promi
   ].filter((group) => group.portfolios.length > 0);
 
   return <main className="page-shell admin-page admin-space-page">
-    <AdminSpaceHeader current={space} section="portfolios" />
+    <AdminSpaceHeader current={space} section="portfolios" user={user} />
     {!space.isActive ? <p className="archived-message" role="status">Gearchiveerd. De laatst opgeslagen metadata blijft beschikbaar; synchronisatie is uitgeschakeld.</p> : null}
     {missing.exercises > 0 || missing.assets > 0 ? <div className="missing-index-action"><span>{missing.exercises} verdwenen oefeningen en {missing.assets} verdwenen bestanden wachten op opschoning.</span><ConfirmActionButton action={archiveMissingIndexAction} fields={{ learningSpaceId: space.id }} className="danger-button" label="Index opschonen" confirmTitle="Verdwenen items uit overzicht verwijderen" confirmText={`${missing.exercises} oefeningen en ${missing.assets} bestanden verdwijnen uit het actieve overzicht. Meldingen en notities blijven behouden; bronbestanden worden nooit gewijzigd.`} /></div> : null}
     {groups.length === 0 ? <p className="empty-state">Nog geen portfolio&apos;s in deze leeromgeving. Configureer een bronmap en synchroniseer.</p> : groups.map((group) => <section className="theme-admin-group" key={group.id}>
