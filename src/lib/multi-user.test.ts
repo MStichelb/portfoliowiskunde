@@ -3,13 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { canAccessAdmin, canManageLearningSpace, requireLearningSpaceManagement } from "./authorization";
+import { canAccessAdmin, canAccessLearningSpace, canManageLearningSpace, getAccessibleLearningSpaceIds, requireLearningSpaceManagement } from "./authorization";
 import { resetDatabaseForTests } from "./database";
 import type { ExternalAuthProvider } from "./external-auth-provider";
 import {
   createLearningSpaceGroupMapping,
   createUser,
+  findOrCreateExternalUser,
+  findExternalIdentity,
   linkExternalIdentity,
+  replaceExternalIdentityGroups,
   resolveLearningSpaceAccess,
   resolveStoredGroupAccess,
   setLearningSpaceMember,
@@ -66,6 +69,31 @@ describe("multi-user authorization foundation", () => {
     expect(first.role).toBe("student");
   });
 
+  it("maakt nieuwe Smartschoolgebruikers student en hergebruikt bestaande lokale rollen", async () => {
+    await useTemporaryDatabase();
+    const identity = { provider: "smartschool", providerSubject: "new-student", providerPlatform: "https://school.smartschool.be", displayName: "Nieuwe leerling" };
+    const created = await findOrCreateExternalUser(identity);
+    expect(created.created).toBe(true);
+    expect(created.user.role).toBe("student");
+    const reused = await findOrCreateExternalUser(identity);
+    expect(reused.user.id).toBe(created.user.id);
+    expect(reused.user.role).toBe("student");
+
+    const teacher = await createUser({ displayName: "Lokale leraar", role: "teacher" });
+    await linkExternalIdentity(teacher.id, { ...identity, providerSubject: "teacher-subject" });
+    const existingTeacher = await findOrCreateExternalUser({ ...identity, providerSubject: "teacher-subject", displayName: "Externe naam" });
+    expect(existingTeacher.user.id).toBe(teacher.id);
+    expect(existingTeacher.user.role).toBe("teacher");
+  });
+
+  it("behandelt dezelfde provider-subject op verschillende platformen als aparte identiteit", async () => {
+    await useTemporaryDatabase();
+    const first = await findOrCreateExternalUser({ provider: "smartschool", providerSubject: "shared-subject", providerPlatform: "https://first.smartschool.be", displayName: "Eerste" });
+    const second = await findOrCreateExternalUser({ provider: "smartschool", providerSubject: "shared-subject", providerPlatform: "https://second.smartschool.be", displayName: "Tweede" });
+    expect(second.user.id).not.toBe(first.user.id);
+    expect((await findExternalIdentity({ provider: "smartschool", providerSubject: "shared-subject", providerPlatform: "https://first.smartschool.be" }))?.userId).toBe(first.user.id);
+  });
+
   it("resolveert nul, één en meerdere LearningSpaces uit genormaliseerde groepen", async () => {
     await useTemporaryDatabase();
     const groups: NormalizedGroupMembership[] = [
@@ -85,6 +113,27 @@ describe("multi-user authorization foundation", () => {
     expect(await resolveStoredGroupAccess(groups)).toEqual({
       learningSpaceIds: ["space-5", "space-6"], destination: "selection", automaticLearningSpaceId: null,
     });
+  });
+
+  it("vervangt groepssnapshots en ontsluit uitsluitend exact gemapte groupIDs", async () => {
+    await useTemporaryDatabase();
+    const mapped = await findOrCreateExternalUser({ provider: "smartschool", providerSubject: "student-groups", providerPlatform: "https://school.smartschool.be", displayName: "Leerling" });
+    await createLearningSpaceGroupMapping({ learningSpaceId: "space-5", provider: "smartschool", externalGroupId: "direct-5", externalGroupName: "6WIS" });
+    await replaceExternalIdentityGroups(mapped.identity.id, [
+      { provider: "smartschool", externalGroupId: "parent-other", externalGroupName: "6WIS", membershipType: "parent" },
+    ]);
+    expect(await getAccessibleLearningSpaceIds(mapped.user)).toEqual([]);
+    expect(await canAccessLearningSpace(mapped.user, "space-5")).toBe(false);
+
+    await replaceExternalIdentityGroups(mapped.identity.id, [
+      { provider: "smartschool", externalGroupId: "direct-5", externalGroupName: "6WIS", membershipType: "direct" },
+    ]);
+    expect(await getAccessibleLearningSpaceIds(mapped.user)).toEqual(["space-5"]);
+    expect(await canAccessLearningSpace(mapped.user, "space-5")).toBe(true);
+    expect(await canAccessLearningSpace(mapped.user, "space-6")).toBe(false);
+
+    await replaceExternalIdentityGroups(mapped.identity.id, []);
+    expect(await getAccessibleLearningSpaceIds(mapped.user)).toEqual([]);
   });
 
   it("isoleert persoonlijke storagecredentials per eigenaar en ondersteunt meerdere connecties per user", async () => {

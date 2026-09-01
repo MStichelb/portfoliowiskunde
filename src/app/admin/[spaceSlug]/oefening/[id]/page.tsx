@@ -4,17 +4,18 @@ import { AdminExercisePreviewToolbar } from "@/app/components/admin-exercise-pre
 import { AdminSpaceHeader } from "@/app/components/admin-space-header";
 import { SolutionImage } from "@/app/components/solution-image";
 import { SolutionVariantHeading } from "@/app/components/solution-variant-heading";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdminUser } from "@/lib/auth";
+import { canManageLearningSpace } from "@/lib/authorization";
 import { adminExercisePortfolioHref } from "@/lib/admin-routes";
 import { getAdminExercise, getAdminLearningSpaceBySlug } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
 export default async function LearningSpaceAdminExercisePage({ params }: { params: Promise<{ spaceSlug: string; id: string }> }) {
-  await requireAdmin();
+  const user = await requireAdminUser();
   const { spaceSlug, id } = await params;
   const space = await getAdminLearningSpaceBySlug(spaceSlug);
-  if (!space) notFound();
+  if (!space || !await canManageLearningSpace(user, space.id)) notFound();
   const exercise = await getAdminExercise(id, space.id);
   if (!exercise) notFound();
 

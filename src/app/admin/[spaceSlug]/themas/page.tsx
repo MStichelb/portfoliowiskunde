@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 
 import { AdminSpaceHeader } from "@/app/components/admin-space-header";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdminUser } from "@/lib/auth";
+import { canManageLearningSpace } from "@/lib/authorization";
 import { getAdminLearningSpaceBySlug, getThemes } from "@/lib/repositories";
 
 import { createThemeAction, deleteThemeAction, saveThemeAction } from "../../actions";
@@ -11,10 +12,10 @@ import { createThemeAction, deleteThemeAction, saveThemeAction } from "../../act
 export const dynamic = "force-dynamic";
 
 export default async function ThemesPage({ params }: { params: Promise<{ spaceSlug: string }> }) {
-  await requireAdmin();
+  const user = await requireAdminUser();
   const { spaceSlug } = await params;
   const space = await getAdminLearningSpaceBySlug(spaceSlug);
-  if (!space) notFound();
+  if (!space || !await canManageLearningSpace(user, space.id)) notFound();
   const themes = await getThemes(space.id);
   return <main className="page-shell admin-page admin-space-page themes-page">
     <AdminSpaceHeader current={space} section="themes" />

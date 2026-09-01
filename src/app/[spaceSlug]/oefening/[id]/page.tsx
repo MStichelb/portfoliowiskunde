@@ -7,6 +7,7 @@ import { ErrorReportForm } from "@/app/components/error-report-form";
 import { SolutionImage } from "@/app/components/solution-image";
 import { SolutionVariantHeading } from "@/app/components/solution-variant-heading";
 import { isNextPrefetchRequest, preparePublicIndex } from "@/lib/public-index";
+import { requirePublicLearningSpaceAccess } from "@/lib/learning-space-access";
 import { getLearningSpaceBySlug, getVisibleExercise } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ export default async function LearningSpaceExercisePage({ params }: { params: Pr
   const { spaceSlug, id } = await params;
   const space = await getLearningSpaceBySlug(spaceSlug);
   if (!space || !space.isActive) notFound();
+  await requirePublicLearningSpaceAccess(space.id, `/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(id)}`);
   await preparePublicIndex(space.id, { isPrefetch: isNextPrefetchRequest(await headers()) });
   const exercise = await getVisibleExercise(id, space.id);
   if (!exercise) notFound();

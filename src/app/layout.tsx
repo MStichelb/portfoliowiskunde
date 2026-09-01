@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Source_Sans_3 } from "next/font/google";
 
 import { SiteNavigation } from "@/app/components/site-navigation";
+import { getAuthenticatedUser } from "@/lib/auth";
+import { getAccessibleLearningSpaceIds } from "@/lib/authorization";
 import { getLearningSpaces } from "@/lib/repositories";
 
 import "./globals.css";
@@ -22,11 +24,13 @@ export const metadata: Metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const spaces = await getLearningSpaces(true);
+  const user = await getAuthenticatedUser();
+  const [spaces, accessibleIds] = await Promise.all([getLearningSpaces(true), getAccessibleLearningSpaceIds(user)]);
+  const accessible = spaces.filter((space) => accessibleIds.includes(space.id));
   return (
     <html lang="nl" className={sourceSans3.variable}>
       <body>
-        <SiteNavigation spaces={spaces.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))} />
+        <SiteNavigation spaces={accessible.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))} />
         {children}
       </body>
     </html>

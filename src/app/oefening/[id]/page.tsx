@@ -1,32 +1,15 @@
-import { ArrowLeft } from "lucide-react";
-import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
-import { ErrorReportForm } from "@/app/components/error-report-form";
-import { SolutionImage } from "@/app/components/solution-image";
-import { SolutionVariantHeading } from "@/app/components/solution-variant-heading";
-import { maybeAutoSynchronize } from "@/lib/auto-sync";
-import { getVisibleExercise } from "@/lib/repositories";
+import { requirePublicLearningSpaceAccess } from "@/lib/learning-space-access";
+import { getLearningSpace, getVisibleExercise } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
-export default async function ExercisePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function LegacyExercisePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  await maybeAutoSynchronize();
   const exercise = await getVisibleExercise(id);
-  if (!exercise) notFound();
-  const standard = exercise.assets.filter((asset) => asset.kind === "standard");
-  const alternative = exercise.assets.filter((asset) => asset.kind === "alternative");
-  return <main className="page-shell solution-page">
-    <Link href={`/portfolio/${encodeURIComponent(`portfolio-${exercise.portfolioCode}`)}`} className="secondary-button compact-back-button"><ArrowLeft size={17} aria-hidden />Terug naar portfolio</Link>
-    <header className="exercise-page-heading"><p className="eyebrow">Portfolio {exercise.portfolioCode} • {exercise.portfolioTitle}</p><h1>Oefening {exercise.code}</h1><p>{exercise.sectionTitle}</p></header>
-    <SolutionVariant title="Uitwerking" assets={standard} />
-    {alternative.length > 0 ? <SolutionVariant title="Alternatieve uitwerking" assets={alternative} /> : null}
-    <ErrorReportForm exerciseId={exercise.id} variants={alternative.length > 0 ? ["standard", "alternative"] : ["standard"]} />
-  </main>;
-}
-
-function SolutionVariant({ title, assets }: { title: string; assets: Array<{ id: string; fileName: string; extension: string; step: number }> }) {
-  if (assets.length === 0) return null;
-  return <section className="solution-variant"><SolutionVariantHeading kind={title === "Uitwerking" ? "standard" : "alternative"} />{assets.map((asset) => <figure className="solution-asset" key={asset.id}>{asset.extension === "pdf" ? <iframe title={`${title} ${asset.fileName}`} src={`/api/solution-assets/${encodeURIComponent(asset.id)}`} /> : <SolutionImage src={`/api/solution-assets/${encodeURIComponent(asset.id)}`} alt={`${title}, ${assets.length > 1 ? `stap ${asset.step}` : "uitwerking"}`} />}<figcaption>{assets.length > 1 ? `Stap ${asset.step}: ` : ""}<a href={`/api/solution-assets/${encodeURIComponent(asset.id)}`} target="_blank" rel="noreferrer">Open het oorspronkelijke bestand</a></figcaption></figure>)}</section>;
+  const space = exercise ? await getLearningSpace(exercise.learningSpaceId) : null;
+  if (!exercise || !space?.isActive) notFound();
+  await requirePublicLearningSpaceAccess(space.id, `/oefening/${encodeURIComponent(id)}`);
+  redirect(`/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(id)}`);
 }

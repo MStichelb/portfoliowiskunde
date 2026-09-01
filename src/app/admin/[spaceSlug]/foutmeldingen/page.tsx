@@ -4,7 +4,8 @@ import { notFound } from "next/navigation";
 import { AdminSpaceHeader } from "@/app/components/admin-space-header";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import { ErrorReportCards, ErrorReportOpenGroups } from "@/app/components/error-report-groups";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdminUser } from "@/lib/auth";
+import { canManageLearningSpace } from "@/lib/authorization";
 import { getAdminErrorReports, getAdminLearningSpaceBySlug, getOldDoneErrorReportCount } from "@/lib/repositories";
 
 import { deleteOldDoneErrorReportsAction } from "../../actions";
@@ -12,10 +13,10 @@ import { deleteOldDoneErrorReportsAction } from "../../actions";
 export const dynamic = "force-dynamic";
 
 export default async function SpaceReportsPage({ params }: { params: Promise<{ spaceSlug: string }> }) {
-  await requireAdmin();
+  const user = await requireAdminUser();
   const { spaceSlug } = await params;
   const space = await getAdminLearningSpaceBySlug(spaceSlug);
-  if (!space) notFound();
+  if (!space || !await canManageLearningSpace(user, space.id)) notFound();
   const [reports, oldDone] = await Promise.all([getAdminErrorReports(space.id), getOldDoneErrorReportCount(undefined, space.id)]);
   const open = reports.filter((report) => report.status === "TODO");
   const done = reports.filter((report) => report.status === "DONE");

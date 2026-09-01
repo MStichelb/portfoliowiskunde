@@ -7,8 +7,8 @@ import { canAccessAdmin } from "@/lib/authorization";
 import { getUser, LEGACY_SUPERADMIN_USER_ID, type AppUser } from "@/lib/identity";
 import { redirect } from "next/navigation";
 
-const SESSION_COOKIE = "portfolio_admin_session";
-const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
+export const SESSION_COOKIE = "portfolio_admin_session";
+export const SESSION_MAX_AGE_SECONDS = 60 * 60 * 12;
 
 interface SessionPayload {
   exp: number;
@@ -70,6 +70,10 @@ export async function isAdminAuthenticated(): Promise<boolean> {
   return Boolean(user && user.role === "superadmin");
 }
 
+export async function isAdminUserAuthenticated(): Promise<boolean> {
+  return canAccessAdmin(await getAuthenticatedUser());
+}
+
 export async function getAuthenticatedUser(): Promise<AppUser | null> {
   const cookieStore = await cookies();
   const token = cookieStore.get(SESSION_COOKIE)?.value;
@@ -86,41 +90,58 @@ export async function getAuthenticatedUser(): Promise<AppUser | null> {
 
 export async function requireAuthenticatedUser(): Promise<AppUser> {
   const user = await getAuthenticatedUser();
-  if (!user) redirect("/admin/login");
+  if (!user) redirect("/aanmelden");
   return user;
 }
 
 export async function requireAdminUser(): Promise<AppUser> {
-  const user = await requireAuthenticatedUser();
+  const user = await getAuthenticatedUser();
+  if (!user) redirect("/admin/login");
   if (!canAccessAdmin(user)) redirect("/admin/login");
   return user;
 }
 
 export async function requireAdmin(): Promise<AppUser> {
-  const user = await requireAuthenticatedUser();
+  const user = await getAuthenticatedUser();
+  if (!user) redirect("/admin/login");
   if (user.role !== "superadmin") redirect("/admin/login");
   return user;
 }
 
 export async function startAdminSession(userId = LEGACY_SUPERADMIN_USER_ID): Promise<void> {
-  const secret = signingSecret();
-  if (!secret) throw new Error("De beheerwachtwoordconfiguratie ontbreekt.");
   const user = await getUser(userId);
   if (!user || user.status !== "active" || user.role !== "superadmin") throw new Error("De beheeraccount is niet beschikbaar.");
+  await startUserSession(userId);
+}
+
+export async function startUserSession(userId: string): Promise<void> {
+  const session = await createUserSession(userId);
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE, session.token, sessionCookieOptions());
+}
+
+export async function createUserSession(userId: string): Promise<{ token: string; maxAge: number }> {
+  const secret = signingSecret();
+  if (!secret) throw new Error("De sessieconfiguratie ontbreekt.");
+  const user = await getUser(userId);
+  if (!user || user.status !== "active") throw new Error("Deze gebruiker kan niet worden aangemeld.");
   const now = Date.now();
   const sessionId = randomUUID();
   await (await getDatabase()).batch([
     { sql: "DELETE FROM admin_sessions WHERE expires_at <= ?", args: [new Date(now).toISOString()] },
     { sql: "INSERT INTO admin_sessions (id, user_id, expires_at, created_at) VALUES (?, ?, ?, ?)", args: [sessionId, userId, new Date(now + SESSION_MAX_AGE_SECONDS * 1000).toISOString(), new Date(now).toISOString()] },
   ]);
-  const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE, createSessionToken(secret, now, sessionId), {
+  return { token: createSessionToken(secret, now, sessionId), maxAge: SESSION_MAX_AGE_SECONDS };
+}
+
+export function sessionCookieOptions() {
+  return {
     httpOnly: true,
     maxAge: SESSION_MAX_AGE_SECONDS,
     path: "/",
-    sameSite: "lax",
+    sameSite: "lax" as const,
     secure: process.env.NODE_ENV === "production",
-  });
+  };
 }
 
 export async function endAdminSession(): Promise<void> {
@@ -129,6 +150,8 @@ export async function endAdminSession(): Promise<void> {
   if (sessionId) await (await getDatabase()).execute({ sql: "DELETE FROM admin_sessions WHERE id = ?", args: [sessionId] });
   cookieStore.set(SESSION_COOKIE, "", { httpOnly: true, maxAge: 0, path: "/", sameSite: "lax", secure: process.env.NODE_ENV === "production" });
 }
+
+export const endUserSession = endAdminSession;
 
 function sessionIdFromToken(token: string | undefined): string | null {
   if (!token) return null;

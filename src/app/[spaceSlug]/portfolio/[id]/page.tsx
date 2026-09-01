@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { PortfolioDocumentLinks } from "@/app/components/portfolio-document-links";
 import { isNextPrefetchRequest, preparePublicIndex } from "@/lib/public-index";
+import { requirePublicLearningSpaceAccess } from "@/lib/learning-space-access";
 import { getLearningSpaceBySlug, getStudentPortfolio } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
@@ -12,6 +13,7 @@ export default async function LearningSpacePortfolioPage({ params }: { params: P
   const { spaceSlug, id } = await params;
   const space = await getLearningSpaceBySlug(spaceSlug);
   if (!space || !space.isActive) notFound();
+  await requirePublicLearningSpaceAccess(space.id, `/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(id)}`);
   await preparePublicIndex(space.id, { isPrefetch: isNextPrefetchRequest(await headers()) });
   const portfolio = await getStudentPortfolio(id, space.id);
   if (!portfolio) notFound();

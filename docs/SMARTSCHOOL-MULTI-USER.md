@@ -1,71 +1,95 @@
-# Voorbereiding Smartschool en multi-user
+# Smartschool OAuth en multi-user
 
 ## Huidige status
 
-De applicatie heeft een intern user- en autorisatiemodel, maar communiceert nog niet met Smartschool. Smartschool wordt later uitsluitend een identity provider. Rollen en beheerrechten blijven lokale applicatiedata en worden nooit rechtstreeks uit externe claims overgenomen.
+Smartschool OAuth is actief als identity provider boven op het interne user- en autorisatiemodel. De implementatie volgt de [officiële Smartschool OAuth-documentatie](https://www.smartschool.be/oauth/) en gebruikt rechtstreeks het ingestelde schoolplatform, nooit `oauth.smartschool.be`.
 
-De route `/api/auth/smartschool/callback` bestaat als fail-closed placeholder en antwoordt met HTTP 503 en een duidelijke melding. Er vindt geen authorization request, token exchange of API-call plaats.
+De bestaande password-login op `/admin/login` blijft voorlopig beschikbaar voor de compatibility-superadmin. Smartschool bepaalt uitsluitend de geverifieerde externe identiteit en groepen. Lokale rollen en beheerrechten worden nooit uit namen, usernames of groepsnamen afgeleid.
 
-## Datamodel
+## Routes en officiële endpoints
 
-Migration `021_multi_user_foundation` voegt toe:
+- `GET /api/auth/smartschool/login` start de Authorization Code-flow;
+- `GET /api/auth/smartschool/callback` valideert state, wisselt de code in en maakt de interne sessie;
+- `GET /api/auth/smartschool/link` start dezelfde flow als expliciete koppeling voor een reeds aangemelde superadmin.
 
-- `users`: interne gebruiker met `superadmin`, `teacher` of `student` en status `active` of `disabled`;
-- `external_identities`: generieke koppeling van provider-subject aan exact één interne user;
-- `learning_space_members`: `owner`- of `editor`-rechten voor teachers per LearningSpace;
-- `learning_space_group_mappings`: externe groep naar LearningSpace, zonder hardgecodeerde klasnamen;
-- `storage_connections`: persoonlijke, door een interne user bezeten storageverbinding;
-- `learning_space_sources.storage_connection_id`: expliciete verwijzing van een bron naar de juiste verbinding;
-- `admin_sessions.user_id`: sessies zijn aan een interne user gekoppeld.
+Voor `SMARTSCHOOL_PLATFORM_URL=https://school.smartschool.be` gebruikt de server:
 
-Een superadmin hoeft geen membership per LearningSpace te hebben. Een actieve superadmin mag alles beheren; een actieve teacher alleen LearningSpaces met een `owner`- of `editor`-membership. Studenten en disabled users hebben geen adminrechten.
+```text
+https://school.smartschool.be/OAuth
+https://school.smartschool.be/OAuth/index/token
+https://school.smartschool.be/Api/V1/userinfo
+https://school.smartschool.be/Api/V1/groupinfo
+```
 
-## Tijdelijke compatibilitylaag
+De gevraagde scopes zijn exact `userinfo groupinfo`. Authorization gebruikt `response_type=code`, de exacte redirect URI en een cryptografisch willekeurige state. De state, intentie en eventuele lokale terugkeerbestemming zitten in een getekende, kortlevende HttpOnly-cookie met `SameSite=Lax` en `Secure` in productie.
 
-De bestaande wachtwoordlogin blijft actief. Migration 021 maakt de interne user `user-legacy-superadmin` en koppelt bestaande adminsessies daaraan. `ADMIN_PASSWORD` en `ADMIN_SESSION_SECRET` blijven dus voorlopig vereist.
+De tokenexchange en profielcalls gebeuren server-side met het officieel ondersteunde `application/x-www-form-urlencoded` POST-formaat. Daardoor staat het access token niet in browserdata of API-querylogs.
 
-De bestaande versleutelde OneDrive-token wordt uit de generieke settings naar een persoonlijke `storage_connections`-record van deze compatibility-superadmin gemigreerd. Bestaande OneDrive-bronnen krijgen de bijbehorende `storage_connection_id`. Tokens blijven AES-256-GCM-versleuteld en server-side.
-
-De bestaande adminroutes blijven voorlopig bewust superadmin-only. De centrale helpers voor authenticated users, adminrollen en LearningSpace-management bestaan al, maar teacher-scoped route-integratie wordt pas geactiveerd wanneer er een echte externe teachersessie en beheer-UI zijn. Hierdoor ontstaan nu geen gedeeltelijk beveiligde teacherflows.
-
-## Groepstoegang voor leerlingen
-
-De pure resolver ontvangt genormaliseerde externe groepslidmaatschappen en lokale mappings:
-
-- nul gekoppelde LearningSpaces: geen bestemming;
-- één LearningSpace: automatische bestemming;
-- meerdere LearningSpaces: keuzelijst.
-
-Providernaam en externe group-ID vormen samen de vergelijking. Parser- of storagegegevens spelen hierin geen rol.
-
-## Toekomstige configuratie
-
-De volgende environment variables zijn gereserveerd maar worden nog niet door runtimecode gelezen:
+## Configuratie
 
 ```text
 SMARTSCHOOL_CLIENT_ID
 SMARTSCHOOL_CLIENT_SECRET
+SMARTSCHOOL_PLATFORM_URL
 SMARTSCHOOL_REDIRECT_URI
 ```
 
-Geplande productiecallback:
+Lokale callback:
+
+```text
+http://localhost:3000/api/auth/smartschool/callback
+```
+
+Exacte productiecallback:
 
 ```text
 https://portfoliowiskunde.vercel.app/api/auth/smartschool/callback
 ```
 
-Registreer of activeer deze pas nadat de officiële Smartschool OAuth-documentatie voor de concrete omgeving beschikbaar is.
+`SMARTSCHOOL_PLATFORM_URL` is alleen de HTTPS-origin van het eigen Smartschoolplatform, zonder pad, query of fragment. Client secret en sessiesleutel blijven uitsluitend in de server-environment.
 
-## Volgende activeringsstap
+## Identiteit, groepen en rollen
 
-1. Verkrijg van Smartschool de officiële authorization- en tokengegevens, scopes en stabiele identifiers. Leg niets vast op basis van aannames.
-2. Implementeer een provider achter `ExternalAuthProvider` die uitsluitend genormaliseerde identity- en groepsdata teruggeeft.
-3. Bouw een server-side authorization start en callback met state, PKCE indien officieel ondersteund, veilige cookies en tokenverwerking.
-4. Zoek of maak transactioneel de `external_identities`- en `users`-koppeling. Bepaal lokale rollen uitsluitend uit de database.
-5. Voeg algemene gebruikerssessies toe voor teacher en student; blokkeer disabled users bij iedere sessieresolutie.
-6. Migreer adminpagina's, server actions en admin-assetroutes per LearningSpace van de huidige superadmin-check naar `requireLearningSpaceManagement`. Houd globale user- en LearningSpace-administratie superadmin-only.
-7. Voeg een beperkte superadmin-UI toe voor users, memberships en group mappings.
-8. Breid de OneDrive-connect-UI uit met het maken/kiezen van een specifieke storageconnection. Bind naast `user_id` ook de bedoelde `storage_connection_id` cryptografisch aan de OAuth-state. Een LearningSpaceSource moet daarna expliciet die connection kiezen.
-9. Koppel de huidige superadmin aan een geverifieerde Smartschool-identity. Schakel de wachtwoordcompatibility pas uit nadat login, recovery en beheerrechten in productie zijn gecontroleerd.
+Migration `021_multi_user_foundation` bevat users, externe identiteiten, teacher-memberships, groepsmappings en persoonlijke storageconnections. Migration `022_smartschool_oauth` maakt externe identiteit platformgebonden en voegt vervangbare groepssnapshots toe.
 
-Tot die activering zijn er geen Smartschool-secrets nodig en worden geen Smartschoolgegevens opgeslagen.
+De identity key bestaat uit:
+
+```text
+provider = smartschool
+provider_subject = userinfo.userID
+provider_platform = genormaliseerde userinfo.platform
+```
+
+Een bestaande key hergebruikt altijd dezelfde interne user. Een onbekende key maakt een actieve interne user met rol `student`. Smartschool kan nooit automatisch `teacher` of `superadmin` toekennen en wijzigt een bestaande lokale rol niet.
+
+`groups` en `parentGroups` worden defensief genormaliseerd met hun echte `groupID`. Beide soorten worden bewaard, maar toegang ontstaat alleen door een expliciete lokale mapping met exact hetzelfde provider/group-ID. Gelijke groepsnamen, hiërarchie of klassenamen geven nooit impliciet toegang. De snapshot wordt bij iedere Smartschool-login volledig vervangen.
+
+Studentrouting:
+
+- nul gemapte LearningSpaces: `/geen-leeromgeving`;
+- één gemapte LearningSpace: automatische redirect;
+- meerdere gemapte LearningSpaces: keuzelijst op `/`.
+
+Publieke pagina's, oplossingsbestanden, portfoliodocumenten en foutmeldingsinzendingen controleren de LearningSpace-toegang opnieuw op de server. Een student kan een andere LearningSpace niet openen door een URL of asset-ID te raden.
+
+Een actieve superadmin beheert alle LearningSpaces. Een actieve teacher beheert alleen LearningSpaces met een lokaal `owner`- of `editor`-membership. Globale lifecycleacties blijven superadmin-only. Disabled users krijgen geen geldige sessie en bestaande sessies stoppen bij de eerstvolgende servercontrole.
+
+## Sessies en tokens
+
+Na de callback krijgt de interne user een revocable databasesessie. De cookie is HMAC-ondertekend, HttpOnly, `SameSite=Lax`, `Secure` in productie en bevat alleen een willekeurige session-ID plus vervaltijd. De database koppelt die sessie aan de interne user.
+
+`userinfo` en `groupinfo` worden onmiddellijk in de callback opgehaald. Daarna is het Smartschool access token niet meer nodig en wordt het niet persistent opgeslagen. Er wordt ook geen Smartschool refresh token bewaard. OneDrive- en Google Drive-credentials en storageproviders worden door deze flow niet gewijzigd.
+
+## Compatibility-superadmin koppelen
+
+1. Meld aan via `/admin/login` met het bestaande beheerwachtwoord.
+2. Kies op `/admin` **Smartschool koppelen**.
+3. Meld bij Smartschool aan met de identiteit die bij de bestaande compatibility-superadmin hoort.
+4. Controleer de bevestiging **Smartschool-account gekoppeld**.
+5. Test Smartschool-login in een nieuwe privésessie voordat de password-fallback ooit wordt uitgezet.
+
+De linkflow vereist tijdens start en callback dezelfde actieve superadminsessie. Het interne user-ID en de linkintentie zijn in de getekende OAuth-state vastgelegd. Een Smartschoolidentiteit die al aan een andere interne user gekoppeld is, wordt geweigerd; er wordt geen tweede superadmin aangemaakt.
+
+## Beheer en volgende stap
+
+Groep-naar-LearningSpace-mappings, lokale rollen en teacher-memberships blijven beheerdata in de database. De huidige foundation en autorisatiehelpers ondersteunen ze volledig; een aparte gebruikers- en groepsbeheerinterface is nog niet toegevoegd. De volgende gerichte uitbreiding is zo'n superadmin-UI, zonder wijziging aan de OAuth-flow of automatische roltoekenning.

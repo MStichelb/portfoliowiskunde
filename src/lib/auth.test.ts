@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { clearFailedLogins, createSessionToken, getAuthenticationProblem, isLoginRateLimited, isValidSessionToken, recordFailedLogin } from "./auth";
+import { clearFailedLogins, createSessionToken, getAuthenticationProblem, isLoginRateLimited, isValidPassword, isValidSessionToken, recordFailedLogin } from "./auth";
 import { resetDatabaseForTests } from "./database";
 
 let temporaryDirectory: string | undefined;
@@ -23,6 +23,12 @@ afterEach(async () => {
 });
 
 describe("admin session tokens", () => {
+  it("behoudt de bestaande password-fallback", () => {
+    vi.stubEnv("ADMIN_PASSWORD", "compatibility-password");
+    expect(isValidPassword("compatibility-password")).toBe(true);
+    expect(isValidPassword("wrong-password")).toBe(false);
+  });
+
   it("fails closed for weak production secrets", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("ADMIN_PASSWORD", "");

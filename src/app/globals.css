@@ -52,6 +52,10 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .narrow-page { max-width: 660px; }
 .login-form, .settings-form { display: grid; gap: 10px; max-width: 540px; }
 .login-form input, .settings-form input, .settings-form select { min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; color: #17222b; font: inherit; }
+.smartschool-login-button { display: inline-flex; width: fit-content; margin-top: 14px; }
+.login-fallback { margin-top: 20px; color: #52616a; }
+.external-login-option { display: flex; max-width: 540px; align-items: center; gap: 12px; margin-top: 20px; }
+.external-login-option span { color: #52616a; }
 .settings-heading { margin-bottom: 20px; }
 .learning-space-settings-page { max-width: none; }
 .learning-space-settings-form { display: grid; gap: 18px; }

@@ -1,13 +1,13 @@
 import { redirect } from "next/navigation";
 
-import { getAuthenticationProblem, isAdminAuthenticated } from "@/lib/auth";
+import { getAuthenticationProblem, isAdminUserAuthenticated } from "@/lib/auth";
 
 import { loginAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
-  if (await isAdminAuthenticated()) redirect("/admin");
+  if (await isAdminUserAuthenticated()) redirect("/admin");
   const { error } = await searchParams;
   const configurationProblem = getAuthenticationProblem();
 
@@ -25,6 +25,11 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
           <button className="primary-button" type="submit">Inloggen</button>
         </form>
       ) : null}
+      <div className="external-login-option">
+        <span>of</span>
+        {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+        <a className="secondary-button link-button" href="/api/auth/smartschool/login?returnTo=%2Fadmin">Aanmelden met Smartschool</a>
+      </div>
     </main>
   );
 }

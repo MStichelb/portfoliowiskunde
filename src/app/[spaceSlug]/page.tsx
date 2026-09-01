@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { PageBanner } from "@/app/components/page-banner";
 import { isNextPrefetchRequest, preparePublicIndex } from "@/lib/public-index";
+import { requirePublicLearningSpaceAccess } from "@/lib/learning-space-access";
 import { getLearningSpaceBySlug, getStudentPortfolios, getThemes } from "@/lib/repositories";
 import { cardColorStyle, DEFAULT_PORTFOLIO_COLOR } from "@/lib/ui-colors";
 
@@ -13,6 +14,7 @@ export default async function LearningSpacePage({ params }: { params: Promise<{ 
   const { spaceSlug } = await params;
   const space = await getLearningSpaceBySlug(spaceSlug);
   if (!space || !space.isActive) notFound();
+  await requirePublicLearningSpaceAccess(space.id, `/${encodeURIComponent(space.slug)}`);
   await preparePublicIndex(space.id, { isPrefetch: isNextPrefetchRequest(await headers()) });
   const [portfolios, themes] = await Promise.all([getStudentPortfolios(space.id), getThemes(space.id)]);
   const groups = [...themes.map((theme) => ({ id: theme.id, name: theme.name, portfolios: portfolios.filter((portfolio) => portfolio.themeId === theme.id) })), { id: "other", name: "Overige portfolio's", portfolios: portfolios.filter((portfolio) => !portfolio.themeId) }].filter((group) => group.portfolios.length > 0);

@@ -5,7 +5,8 @@ import { notFound } from "next/navigation";
 import { AdminSpaceHeader } from "@/app/components/admin-space-header";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import { PublicationStatus } from "@/app/components/publication-status";
-import { requireAdmin } from "@/lib/auth";
+import { requireAdminUser } from "@/lib/auth";
+import { canManageLearningSpace } from "@/lib/authorization";
 import { getActiveWarningCounts, getAdminLearningSpaceBySlug, getAdminPortfolios, getMissingIndexCounts, getThemes } from "@/lib/repositories";
 
 import { archiveMissingIndexAction } from "../actions";
@@ -13,10 +14,10 @@ import { archiveMissingIndexAction } from "../actions";
 export const dynamic = "force-dynamic";
 
 export default async function LearningSpaceAdminPage({ params }: { params: Promise<{ spaceSlug: string }> }) {
-  await requireAdmin();
+  const user = await requireAdminUser();
   const { spaceSlug } = await params;
   const space = await getAdminLearningSpaceBySlug(spaceSlug);
-  if (!space) notFound();
+  if (!space || !await canManageLearningSpace(user, space.id)) notFound();
   const [portfolios, themes, warnings, missing] = await Promise.all([
     getAdminPortfolios(space.id), getThemes(space.id), getActiveWarningCounts(space.id), getMissingIndexCounts(space.id),
   ]);

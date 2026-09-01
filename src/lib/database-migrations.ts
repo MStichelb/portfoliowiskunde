@@ -421,4 +421,34 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX admin_sessions_user_index ON admin_sessions(user_id)",
     ],
   },
+  {
+    version: "022_smartschool_oauth",
+    statements: [
+      `CREATE TABLE external_identities_v2 (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        provider TEXT NOT NULL,
+        provider_subject TEXT NOT NULL,
+        provider_platform TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(provider, provider_subject, provider_platform)
+      )`,
+      `INSERT INTO external_identities_v2 (id, user_id, provider, provider_subject, provider_platform, created_at, updated_at)
+        SELECT id, user_id, provider, provider_subject, COALESCE(provider_platform, ''), created_at, updated_at FROM external_identities`,
+      "DROP TABLE external_identities",
+      "ALTER TABLE external_identities_v2 RENAME TO external_identities",
+      `CREATE TABLE external_identity_groups (
+        identity_id TEXT NOT NULL REFERENCES external_identities(id) ON DELETE CASCADE,
+        external_group_id TEXT NOT NULL,
+        external_group_name TEXT,
+        membership_type TEXT NOT NULL CHECK(membership_type IN ('direct', 'parent')),
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(identity_id, external_group_id, membership_type)
+      )`,
+      "CREATE INDEX external_identities_user_index ON external_identities(user_id)",
+      "CREATE INDEX external_identity_groups_identity_index ON external_identity_groups(identity_id)",
+      "CREATE INDEX external_identity_groups_external_index ON external_identity_groups(external_group_id)",
+    ],
+  },
 ];

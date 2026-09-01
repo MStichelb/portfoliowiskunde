@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   maybeAutoSynchronize: vi.fn(),
-  isAdminAuthenticated: vi.fn(),
+  getAuthenticatedUser: vi.fn(),
+  canAccessLearningSpace: vi.fn(),
+  canManageLearningSpace: vi.fn(),
   getLearningSpaceBySlug: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
   getPublicAsset: vi.fn(),
@@ -13,7 +15,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auto-sync", () => ({ maybeAutoSynchronize: mocks.maybeAutoSynchronize }));
-vi.mock("@/lib/auth", () => ({ isAdminAuthenticated: mocks.isAdminAuthenticated }));
+vi.mock("@/lib/auth", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
+vi.mock("@/lib/authorization", () => ({ canAccessLearningSpace: mocks.canAccessLearningSpace, canManageLearningSpace: mocks.canManageLearningSpace }));
 vi.mock("@/lib/repositories", () => ({
   getLearningSpaceBySlug: mocks.getLearningSpaceBySlug,
   getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug,
@@ -36,7 +39,9 @@ const document = { learningSpaceId: space.id, sourceId: "document-id", fileName:
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.maybeAutoSynchronize.mockResolvedValue(undefined);
-  mocks.isAdminAuthenticated.mockResolvedValue(true);
+  mocks.getAuthenticatedUser.mockResolvedValue({ id: "user", role: "superadmin", status: "active" });
+  mocks.canAccessLearningSpace.mockResolvedValue(true);
+  mocks.canManageLearningSpace.mockResolvedValue(true);
   mocks.getLearningSpaceBySlug.mockResolvedValue(space);
   mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
 });
@@ -67,10 +72,18 @@ describe("asset route authorization before provider access", () => {
   });
 
   it("denies an unauthenticated admin before any asset or provider lookup", async () => {
-    mocks.isAdminAuthenticated.mockResolvedValue(false);
+    mocks.getAuthenticatedUser.mockResolvedValue(null);
     const response = await getAdminSolution(request(), solutionContext());
     expect(response.status).toBe(401);
     expect(mocks.getAdminAsset).not.toHaveBeenCalled();
+    expect(mocks.getStorageProvider).not.toHaveBeenCalled();
+  });
+
+  it("denies a student asset outside the mapped LearningSpace before provider access", async () => {
+    mocks.canAccessLearningSpace.mockResolvedValue(false);
+    const response = await getPublicSolution(request(), solutionContext());
+    expect(response.status).toBe(404);
+    expect(mocks.getPublicAsset).not.toHaveBeenCalled();
     expect(mocks.getStorageProvider).not.toHaveBeenCalled();
   });
 

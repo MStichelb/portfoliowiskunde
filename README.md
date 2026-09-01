@@ -8,14 +8,14 @@ De definitieve productiearchitectuur, Windows/rclone-mirror, completion markers,
 
 ## Applicatiestructuur
 
-- `/` toont de actieve leeromgevingen. `/<spaceSlug>` toont de zichtbare portfolio's per thema; portfolio- en oefeningroutes blijven binnen die LearningSpace.
+- `/aanmelden` start de Smartschool-login. `/` toont daarna uitsluitend toegankelijke leeromgevingen. `/<spaceSlug>` toont de zichtbare portfolio's per thema; pagina-, document- en oefeningroutes controleren dezelfde LearningSpace-toegang server-side.
 - `/admin` is het overzicht van leeromgevingen. **Leeromgevingen beheren** opent `/admin/instellingen`; binnen een LearningSpace zijn **Portfolio's**, **Thema's** en **Instellingen** beschikbaar en opent **Foutmeldingen** het meldingenbeheer.
 - De globale Home-knop verwijst altijd naar `/`; de beheerknop altijd naar `/admin`. De adminnavigatie toont de korte labels van actieve LearningSpaces.
 - Compacte overzichten noemen de actieve primaire configuratie **Bron**. In configuratie en bronvergelijking heten de rollen **Primaire bron** en **Mirror**.
 
 Nieuwe LearningSpaces kiezen standaard OneDrive als provider. Google Drive blijft beschikbaar als mirror of andere expliciete bronconfiguratie; **Lokale bestanden (test)** is uitsluitend voor lokale ontwikkeling en acceptance-tests.
 
-De database is voorbereid op interne users, externe identiteiten, LearningSpace-memberships, externe groepsmappings en persoonlijke storageconnections. De huidige wachtwoordlogin blijft voorlopig gekoppeld aan een interne compatibility-superadmin; echte Smartschool OAuth en teacher/student-sessies zijn nog niet actief. Zie [docs/SMARTSCHOOL-MULTI-USER.md](./docs/SMARTSCHOOL-MULTI-USER.md).
+Smartschool OAuth is actief als identity provider. Nieuwe Smartschoolidentiteiten worden lokaal altijd als student aangemaakt; rollen, teacher-memberships en groep-naar-LearningSpace-mappings blijven lokale applicatierechten. De huidige wachtwoordlogin blijft voorlopig gekoppeld aan een interne compatibility-superadmin. Zie [docs/SMARTSCHOOL-MULTI-USER.md](./docs/SMARTSCHOOL-MULTI-USER.md).
 
 Portfoliofolders volgen `Portfolio <ID> - <titel>`. Ondersteunde ID's zijn numeriek (`2`, `12`), numeriek met letters (`2A`, `12B`) of uitsluitend letters (`X`); parsing is case-insensitive en normaliseert naar uppercase. Oplossingsbestanden gebruiken dezelfde ID in de `PF<ID>-Oef...`-conventie. Overzichten en bronvergelijkingen sorteren deze codes natuurlijk: `2`, `2A`, `2B`, `10`, `12`, daarna `A`, `B`, `X`.
 
@@ -115,9 +115,10 @@ De app gebruikt Vercel Hobby met de standaard Node.js-runtime, Server Components
 | `MICROSOFT_CLIENT_SECRET` | Verplicht voor OneDrive | Server-side client secret value. |
 | `MICROSOFT_REDIRECT_URI` | Verplicht voor OneDrive | Volledige callback-URL, lokaal of productie. |
 | `GRAPH_TOKEN_ENCRYPTION_KEY` | Verplicht voor OneDrive | Base64 van exact 32 willekeurige bytes. |
-| `SMARTSCHOOL_CLIENT_ID` | Toekomstig, niet actief | Gereserveerd voor de latere Smartschool OAuth-client. |
-| `SMARTSCHOOL_CLIENT_SECRET` | Toekomstig, niet actief | Gereserveerd server-side secret; nu niet instellen. |
-| `SMARTSCHOOL_REDIRECT_URI` | Toekomstig, niet actief | Geplande callback is `/api/auth/smartschool/callback`. |
+| `SMARTSCHOOL_CLIENT_ID` | Verplicht voor Smartschool | OAuth client-ID van de platformgebonden Smartschool-client. |
+| `SMARTSCHOOL_CLIENT_SECRET` | Verplicht voor Smartschool | Server-only OAuth client secret; nooit client-side gebruiken. |
+| `SMARTSCHOOL_PLATFORM_URL` | Verplicht voor Smartschool | HTTPS-origin van het specifieke schoolplatform. |
+| `SMARTSCHOOL_REDIRECT_URI` | Verplicht voor Smartschool | Exact geregistreerde callback; productie gebruikt `https://portfoliowiskunde.vercel.app/api/auth/smartschool/callback`. |
 | `GOOGLE_SERVICE_ACCOUNT_JSON_B64` | Verplicht voor Google Drive | Base64 van het volledige server-side service-accountkeybestand. |
 | `REPORT_RATE_LIMIT_SECRET` | Aanbevolen | Aparte HMAC-sleutel voor foutmeldings-rate-limits; anders wordt de adminsecret gebruikt. |
 | `PORTFOLIO_AUTO_SYNC_TTL_SECONDS` | Optioneel | Stale TTL, standaard 180 en minimaal 30 seconden. |
@@ -125,7 +126,7 @@ De app gebruikt Vercel Hobby met de standaard Node.js-runtime, Server Components
 | `PORTFOLIO_SOURCE_PATH` | Alleen development | Configureerbare lokale bronmap. |
 | `PORTFOLIO_DATABASE_PATH` | Alleen development | Optioneel SQLite-bestandspad. |
 
-Er is geen `APP_URL` of `BASE_URL` nodig: interne links zijn relatief en OAuth gebruikt de expliciete `MICROSOFT_REDIRECT_URI`. `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` en `DATABASE_AUTH_TOKEN` blijven alleen beschikbaar voor optionele libSQL-development; Vercel-productie accepteert uitsluitend PostgreSQL.
+Er is geen `APP_URL` of `BASE_URL` nodig: interne links zijn relatief en OAuth gebruikt de expliciete Microsoft- en Smartschool-redirect-URI's. `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN` en `DATABASE_AUTH_TOKEN` blijven alleen beschikbaar voor optionele libSQL-development; Vercel-productie accepteert uitsluitend PostgreSQL.
 
 ## F. First production login
 

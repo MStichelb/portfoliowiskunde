@@ -1246,6 +1246,15 @@ export async function getAdminErrorReports(learningSpaceId?: string): Promise<Ad
   });
 }
 
+export async function getErrorReportLearningSpaceId(id: string): Promise<string | null> {
+  const row = (await (await getDatabase()).execute({
+    sql: `SELECT portfolios.learning_space_id FROM error_reports
+      JOIN portfolios ON portfolios.id = error_reports.portfolio_id WHERE error_reports.id = ?`,
+    args: [id],
+  })).rows[0];
+  return row ? text(row, "learning_space_id") : null;
+}
+
 export async function setErrorReportStatus(id: string, status: "TODO" | "DONE"): Promise<void> {
   const database = await getDatabase();
   const now = new Date().toISOString();
