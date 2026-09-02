@@ -8,6 +8,7 @@ import { createLearningSpaceGroupMapping, createUser, findOrCreateExternalUser, 
 import {
   deleteManagedGroupMapping,
   listKnownExternalGroups,
+  listManagedGroupUsers,
   listManagedGroupMappings,
   listManagedMemberships,
   listManagedUsers,
@@ -69,6 +70,25 @@ describe("superadmin user and access management", () => {
     await expect(createLearningSpaceGroupMapping({ learningSpaceId: "space-6", provider: "smartschool", externalGroupId: "group-6wis" })).rejects.toThrow();
     await deleteManagedGroupMapping(id);
     expect(await listManagedGroupMappings()).toEqual([]);
+  });
+
+  it("toont per groupID uitsluitend gebruikers met een opgeslagen Smartschoolsnapshot", async () => {
+    await useTemporaryDatabase();
+    await createUser({ displayName: "Nog niet aangemeld", role: "student" });
+    const first = await findOrCreateExternalUser({ provider: "smartschool", providerSubject: "first", providerPlatform: "https://school.smartschool.be", displayName: "Eerste leerling" });
+    const second = await findOrCreateExternalUser({ provider: "smartschool", providerSubject: "second", providerPlatform: "https://school.smartschool.be", displayName: "Tweede leerling" });
+    await replaceExternalIdentityGroups(first.identity.id, [{ provider: "smartschool", externalGroupId: "group-5", externalGroupName: "5EWI", membershipType: "direct" }]);
+    await replaceExternalIdentityGroups(second.identity.id, [
+      { provider: "smartschool", externalGroupId: "group-5", externalGroupName: "5EWI", membershipType: "direct" },
+      { provider: "smartschool", externalGroupId: "group-6", externalGroupName: "6EWI", membershipType: "direct" },
+    ]);
+    const groupUsers = await listManagedGroupUsers();
+    expect(groupUsers.filter((entry) => entry.externalGroupId === "group-5")).toEqual([
+      expect.objectContaining({ userId: first.user.id, displayName: "Eerste leerling" }),
+      expect.objectContaining({ userId: second.user.id, displayName: "Tweede leerling" }),
+    ]);
+    expect((await listKnownExternalGroups()).filter((entry) => entry.externalGroupId === "group-5")).toHaveLength(1);
+    expect(groupUsers.some((entry) => entry.displayName === "Nog niet aangemeld")).toBe(false);
   });
 
   it("markeert gekoppelde Smartschoolidentiteiten zonder providerrollen te vertrouwen", async () => {

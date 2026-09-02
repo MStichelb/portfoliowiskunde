@@ -5,6 +5,7 @@ export interface ManagedUser extends AppUser { hasSmartschoolIdentity: boolean; 
 export interface ManagedMembership { learningSpaceId: string; userId: string; displayName: string; role: LearningSpaceMemberRole; }
 export interface ManagedGroupMapping { id: string; learningSpaceId: string; provider: string; externalGroupId: string; externalGroupName: string | null; }
 export interface KnownExternalGroup { provider: string; externalGroupId: string; externalGroupName: string | null; }
+export interface ManagedGroupUser { provider: string; externalGroupId: string; userId: string; displayName: string; role: UserRole; status: UserStatus; }
 export interface ManagedSourceOwner { learningSpaceId: string; sourceRole: "primary" | "mirror"; isActive: boolean; provider: string; connectionName: string | null; ownerName: string | null; }
 
 export async function listManagedUsers(): Promise<ManagedUser[]> {
@@ -72,6 +73,19 @@ export async function listKnownExternalGroups(): Promise<KnownExternalGroup[]> {
     GROUP BY external_identities.provider, external_identity_groups.external_group_id
     ORDER BY external_group_name, external_group_id`)).rows;
   return rows.map((row) => ({ provider: String(row.provider), externalGroupId: String(row.external_group_id), externalGroupName: typeof row.external_group_name === "string" && row.external_group_name ? row.external_group_name : null }));
+}
+
+export async function listManagedGroupUsers(): Promise<ManagedGroupUser[]> {
+  const rows = (await (await getDatabase()).execute(`SELECT DISTINCT external_identities.provider, external_identity_groups.external_group_id,
+      users.id AS user_id, users.display_name, users.role, users.status
+    FROM external_identity_groups
+    JOIN external_identities ON external_identities.id = external_identity_groups.identity_id
+    JOIN users ON users.id = external_identities.user_id
+    ORDER BY external_identities.provider, external_identity_groups.external_group_id, users.display_name`)).rows;
+  return rows.map((row) => ({
+    provider: String(row.provider), externalGroupId: String(row.external_group_id), userId: String(row.user_id),
+    displayName: String(row.display_name), role: roleFromValue(row.role), status: row.status === "disabled" ? "disabled" : "active",
+  }));
 }
 
 export async function deleteManagedGroupMapping(id: string): Promise<void> {

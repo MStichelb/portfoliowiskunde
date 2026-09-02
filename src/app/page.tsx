@@ -2,18 +2,19 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { PageBanner } from "@/app/components/page-banner";
-import { requireAuthenticatedUser } from "@/lib/auth";
-import { getAccessibleLearningSpaceIds } from "@/lib/authorization";
+import { getAuthenticatedUser } from "@/lib/auth";
+import { getPubliclyAccessibleLearningSpaceIds } from "@/lib/public-access";
 import { getLearningSpaces } from "@/lib/repositories";
 import { cardColorStyle, DEFAULT_LEARNING_SPACE_COLOR } from "@/lib/ui-colors";
 
 export const dynamic = "force-dynamic";
 
 export default async function StudentPage() {
-  const user = await requireAuthenticatedUser();
-  const [allSpaces, accessibleIds] = await Promise.all([getLearningSpaces(true), getAccessibleLearningSpaceIds(user)]);
+  const user = await getAuthenticatedUser();
+  const [allSpaces, accessibleIds] = await Promise.all([getLearningSpaces(true), getPubliclyAccessibleLearningSpaceIds(user)]);
   const spaces = allSpaces.filter((space) => accessibleIds.includes(space.id));
-  if (user.role === "student" && spaces.length === 0) redirect("/geen-leeromgeving");
-  if (user.role === "student" && spaces.length === 1) redirect(`/${encodeURIComponent(spaces[0].slug)}`);
+  if (!user && spaces.length === 0) redirect("/aanmelden");
+  if (user?.role === "student" && spaces.length === 0) redirect("/geen-leeromgeving");
+  if (user?.role === "student" && spaces.length === 1) redirect(`/${encodeURIComponent(spaces[0].slug)}`);
   return <main className="page-shell student-page"><PageBanner variant="main" /><header className="page-header public-home-heading"><h1>Kies je leeromgeving</h1></header><div className="portfolio-cards learning-space-cards">{spaces.map((space) => <Link className="portfolio-card color-card" style={cardColorStyle(space.cardColor, DEFAULT_LEARNING_SPACE_COLOR)} key={space.id} href={`/${encodeURIComponent(space.slug)}`}><strong>{space.name}</strong><small>{space.description}</small></Link>)}</div></main>;
 }

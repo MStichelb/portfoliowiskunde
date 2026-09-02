@@ -67,6 +67,16 @@ describe("GET /api/auth/smartschool/callback", () => {
     expect(mocks.authenticate).not.toHaveBeenCalled();
   });
 
+  it("stuurt token- of profielproblemen naar een nette foutpagina zonder technische details", async () => {
+    const logging = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    mocks.authenticate.mockRejectedValue(new Error("secret token exchange detail"));
+    const response = await GET(callbackRequest());
+    expect(response.headers.get("location")).toContain("/aanmelden?error=auth");
+    expect(response.headers.get("location")).not.toContain("secret");
+    expect(logging).toHaveBeenCalledWith("Smartschool OAuth callback failed.", expect.objectContaining({ intent: "login", errorType: "Error" }));
+    logging.mockRestore();
+  });
+
   it("maakt een interne sessie en routeert één LearningSpace automatisch", async () => {
     const response = await GET(callbackRequest());
     expect(mocks.authenticate).toHaveBeenCalledWith({ code: "auth-code" });

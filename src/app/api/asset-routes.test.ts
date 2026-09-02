@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   maybeAutoSynchronize: vi.fn(),
   getAuthenticatedUser: vi.fn(),
-  canAccessLearningSpace: vi.fn(),
+  canAccessPublicLearningSpace: vi.fn(),
   canManageLearningSpace: vi.fn(),
   getLearningSpaceBySlug: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
@@ -16,7 +16,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auto-sync", () => ({ maybeAutoSynchronize: mocks.maybeAutoSynchronize }));
 vi.mock("@/lib/auth", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
-vi.mock("@/lib/authorization", () => ({ canAccessLearningSpace: mocks.canAccessLearningSpace, canManageLearningSpace: mocks.canManageLearningSpace }));
+vi.mock("@/lib/authorization", () => ({ canManageLearningSpace: mocks.canManageLearningSpace }));
+vi.mock("@/lib/public-access", () => ({ canAccessPublicLearningSpace: mocks.canAccessPublicLearningSpace }));
 vi.mock("@/lib/repositories", () => ({
   getLearningSpaceBySlug: mocks.getLearningSpaceBySlug,
   getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug,
@@ -40,7 +41,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.maybeAutoSynchronize.mockResolvedValue(undefined);
   mocks.getAuthenticatedUser.mockResolvedValue({ id: "user", role: "superadmin", status: "active" });
-  mocks.canAccessLearningSpace.mockResolvedValue(true);
+  mocks.canAccessPublicLearningSpace.mockResolvedValue(true);
   mocks.canManageLearningSpace.mockResolvedValue(true);
   mocks.getLearningSpaceBySlug.mockResolvedValue(space);
   mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
@@ -80,7 +81,7 @@ describe("asset route authorization before provider access", () => {
   });
 
   it("denies a student asset outside the mapped LearningSpace before provider access", async () => {
-    mocks.canAccessLearningSpace.mockResolvedValue(false);
+    mocks.canAccessPublicLearningSpace.mockResolvedValue(false);
     const response = await getPublicSolution(request(), solutionContext());
     expect(response.status).toBe(404);
     expect(mocks.getPublicAsset).not.toHaveBeenCalled();
@@ -93,6 +94,17 @@ describe("asset route authorization before provider access", () => {
     expect(response.status).toBe(404);
     expect(mocks.getPublicAsset).toHaveBeenCalledWith("asset-id", space.id);
     expect(mocks.getStorageProvider).not.toHaveBeenCalled();
+  });
+
+  it("allows an unauthenticated public asset only when the central emergency-access check permits it", async () => {
+    mocks.getAuthenticatedUser.mockResolvedValue(null);
+    mocks.canAccessPublicLearningSpace.mockResolvedValue(true);
+    mocks.getPublicAsset.mockResolvedValue(solution);
+    mocks.getStorageProvider.mockResolvedValue(streamingProvider("google-drive"));
+    expect((await getPublicSolution(request(), solutionContext())).status).toBe(200);
+
+    mocks.canAccessPublicLearningSpace.mockResolvedValue(false);
+    expect((await getPublicSolution(request(), solutionContext())).status).toBe(401);
   });
 });
 

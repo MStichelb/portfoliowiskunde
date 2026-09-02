@@ -4,7 +4,7 @@
 
 Smartschool OAuth is actief als identity provider boven op het interne user- en autorisatiemodel. De implementatie volgt de [officiële Smartschool OAuth-documentatie](https://www.smartschool.be/oauth/) en gebruikt rechtstreeks het ingestelde schoolplatform, nooit `oauth.smartschool.be`.
 
-De bestaande password-login op `/admin/login` blijft als streng beveiligde **Break-glass admin access** beschikbaar voor de compatibility-superadmin. Smartschool bepaalt uitsluitend de geverifieerde externe identiteit en groepen. Lokale rollen en beheerrechten worden nooit uit namen, usernames of groepsnamen afgeleid.
+De bestaande password-login staat afzonderlijk op `/breakglass` en blijft als streng beveiligde noodtoegang beschikbaar voor de compatibility-superadmin. De gewone loginpagina's tonen uitsluitend **Aanmelden met Smartschool** en verwijzen nergens naar deze recoveryroute. Smartschool bepaalt uitsluitend de geverifieerde externe identiteit en groepen. Lokale rollen en beheerrechten worden nooit uit namen, usernames of groepsnamen afgeleid.
 
 ## Routes en officiële endpoints
 
@@ -70,6 +70,8 @@ Studentrouting:
 - één gemapte LearningSpace: automatische redirect;
 - meerdere gemapte LearningSpaces: keuzelijst op `/`.
 
+De navigatie volgt dezelfde actuele toegang. Bij exact één LearningSpace ziet een leerling geen overbodige selector en gaat Home rechtstreeks naar die leeromgeving. Bij meerdere LearningSpaces gaat Home naar de keuzepagina; op smalle schermen gebruikt de navigatie één compacte dropdown. Alleen teachers en superadmins zien de beheerknop.
+
 Publieke pagina's, oplossingsbestanden, portfoliodocumenten en foutmeldingsinzendingen controleren de LearningSpace-toegang opnieuw op de server. Een student kan een andere LearningSpace niet openen door een URL of asset-ID te raden.
 
 Een actieve superadmin beheert alle LearningSpaces. Een actieve teacher beheert alleen LearningSpaces met een lokaal `owner`- of `editor`-membership. Een `owner` kan ook de bronconfiguratie beheren. Een `editor` kan de dagelijkse inhoud, publicatie, foutmeldingen en synchronisatie beheren, maar kan niet impliciet een bron aan de eigen storageconnection koppelen. Meerdere teachers kunnen zo dezelfde LearningSpace beheren terwijl de bron naar de persoonlijke storageconnection van een andere user blijft verwijzen.
@@ -86,7 +88,7 @@ Rol, status en LearningSpace-toegang staan niet in de cookie. Iedere server-side
 
 ## Compatibility-superadmin koppelen
 
-1. Meld aan via `/admin/login` met het bestaande beheerwachtwoord.
+1. Meld alleen voor herstel rechtstreeks aan via `/breakglass` met het bestaande beheerwachtwoord.
 2. Kies op `/admin` **Smartschool koppelen**.
 3. Meld bij Smartschool aan met de identiteit die bij de bestaande compatibility-superadmin hoort.
 4. Controleer de bevestiging **Smartschool-account gekoppeld**.
@@ -98,7 +100,13 @@ De linkflow vereist tijdens start en callback dezelfde actieve superadminsessie.
 
 De wachtwoordroute kan uitsluitend een sessie voor `user-legacy-superadmin` maken. Queryparameters, Smartschoolprofielen en gewone users kunnen via deze route geen superadmin worden. De bestaande rate limiting blijft actief. Geslaagde, ongeldige en rate-limited pogingen worden als veilige technische events gelogd zonder wachtwoord, token, authorization code of persoonsgegeven.
 
-Gebruik de wachtwoordroute alleen wanneer Smartschool tijdelijk niet beschikbaar is. Een Smartschoolstoring verwijdert of wijzigt de lokale superadminrol nooit.
+Gebruik `/breakglass` alleen wanneer Smartschool tijdelijk niet beschikbaar is. De afwezigheid van een zichtbare link en de afzonderlijke URL bieden alleen extra obscurity; het sterke environment-wachtwoord, de server-side compatibility-usercontrole, rate limiting en veilige sessie zijn de werkelijke bescherming. Een Smartschoolstoring verwijdert of wijzigt de lokale superadminrol nooit.
+
+## Publieke noodtoegang
+
+Een superadmin kan op `/admin/instellingen` **Publieke noodtoegang** tijdelijk inschakelen. Deze DB-persistente instelling staat standaard uit en registreert wanneer ze werd geactiveerd. Inschakelen vereist een expliciete bevestiging en actieve noodtoegang blijft zichtbaar in de adminomgeving.
+
+Wanneer de instelling actief is, mogen niet-aangemelde bezoekers alle actieve LearningSpaces openen. Zonder Smartschoolidentiteit is groepsfiltering onmogelijk. De bestaande repositoryqueries blijven uitsluitend effectief zichtbare portfolio's, oefeningen, documenten en alternatieve uitwerkingen teruggeven. Adminroutes, teacherbeheer, bronconfiguratie en break-glass krijgen nooit een uitzondering. Uitschakelen herstelt onmiddellijk de normale Smartschooltoegangscontrole. Er is bewust geen automatische vervaltijd; de hoofdbeheerder moet de tijdelijke uitzondering weer uitschakelen.
 
 ## Veilige foutafhandeling
 
@@ -114,7 +122,11 @@ Superadmins openen via `/admin/gebruikers` het overzicht **Gebruikers en toegang
 - zien aan welke user een persoonlijke storageconnection behoort;
 - bekende Smartschoolgroepen met hun stabiele `groupID` expliciet aan een LearningSpace koppelen.
 
+De groep-naar-LearningSpace-koppeling is de normale bulktoewijzing. Eén mapping geeft iedere bekende leerling met hetzelfde opgeslagen groupID automatisch toegang, zodat individuele klasassignments niet nodig zijn. Het overzicht **Gebruikers per Smartschoolgroep** toont alleen users die minstens één keer via Smartschool hebben aangemeld; de app haalt geen volledige officiële klaslijst op.
+
 De UI kent nooit de superadminrol toe en voorkomt dat de laatste actieve superadmin wordt uitgeschakeld. Een groepsnaam is alleen een leesbaar label; toegang gebruikt steeds provider plus exact `groupID`. Dubbele mappings worden door database en servicegrens geweigerd.
+
+Een `owner` en `editor` kunnen dezelfde LearningSpace beheren. De editor kan inhoud, publicatie, meldingen en synchronisatie beheren zonder een eigen OneDriveverbinding te koppelen. De expliciete storageconnection blijft eigendom van haar user; alleen de owner of superadmin kan de bronconfiguratie vervangen. Nieuwe LearningSpaces kunnen momenteel alleen door een superadmin worden aangemaakt.
 
 ## Bronnenhulp
 

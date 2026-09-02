@@ -8,14 +8,14 @@ De definitieve productiearchitectuur, Windows/rclone-mirror, completion markers,
 
 ## Applicatiestructuur
 
-- `/aanmelden` start de Smartschool-login. `/` toont daarna uitsluitend toegankelijke leeromgevingen. `/<spaceSlug>` toont de zichtbare portfolio's per thema; pagina-, document- en oefeningroutes controleren dezelfde LearningSpace-toegang server-side.
+- `/aanmelden` is de eenvoudige Smartschool-login. `/` toont daarna uitsluitend toegankelijke leeromgevingen. `/<spaceSlug>` toont de zichtbare portfolio's per thema; pagina-, document- en oefeningroutes controleren dezelfde LearningSpace-toegang server-side.
 - `/admin` is het overzicht van leeromgevingen. **Leeromgevingen beheren** opent `/admin/instellingen`; binnen een LearningSpace zijn **Portfolio's**, **Thema's** en **Instellingen** beschikbaar en opent **Foutmeldingen** het meldingenbeheer.
-- De globale Home-knop verwijst altijd naar `/`; de beheerknop altijd naar `/admin`. De adminnavigatie toont de korte labels van actieve LearningSpaces.
+- Voor een leerling met één LearningSpace verwijst Home rechtstreeks naar die leeromgeving; met meerdere LearningSpaces naar de keuzepagina op `/`. Op smalle schermen vervangt één compacte selector de losse LearningSpace-labels. De beheerknop is uitsluitend zichtbaar voor leraren en hoofdbeheerders.
 - Compacte overzichten noemen de actieve primaire configuratie **Bron**. In configuratie en bronvergelijking heten de rollen **Primaire bron** en **Mirror**.
 
 Nieuwe LearningSpaces kiezen standaard OneDrive als provider. Google Drive blijft beschikbaar als mirror of andere expliciete bronconfiguratie; **Lokale bestanden (test)** is uitsluitend voor lokale ontwikkeling en acceptance-tests.
 
-Smartschool OAuth is actief als identity provider. Nieuwe Smartschoolidentiteiten worden lokaal altijd als student aangemaakt; rollen, teacher-memberships en groep-naar-LearningSpace-mappings blijven lokale applicatierechten. De wachtwoordlogin blijft als break-glass recovery uitsluitend gekoppeld aan de compatibility-superadmin. Interne sessies zijn 30 dagen geldig en worden bij actief gebruik rolling vernieuwd; actuele rol en status worden steeds uit de database gelezen. Zie [docs/SMARTSCHOOL-MULTI-USER.md](./docs/SMARTSCHOOL-MULTI-USER.md).
+Smartschool OAuth is actief als identity provider. Nieuwe Smartschoolidentiteiten worden lokaal altijd als student aangemaakt; rollen, teacher-memberships en groep-naar-LearningSpace-mappings blijven lokale applicatierechten. De afzonderlijke `/breakglass`-route blijft uitsluitend voor recovery van de compatibility-superadmin. Interne sessies zijn 30 dagen geldig en worden bij actief gebruik rolling vernieuwd; actuele rol en status worden steeds uit de database gelezen. Zie [docs/SMARTSCHOOL-MULTI-USER.md](./docs/SMARTSCHOOL-MULTI-USER.md).
 
 Portfoliofolders volgen `Portfolio <ID> - <titel>`. Ondersteunde ID's zijn numeriek (`2`, `12`), numeriek met letters (`2A`, `12B`) of uitsluitend letters (`X`); parsing is case-insensitive en normaliseert naar uppercase. Oplossingsbestanden gebruiken dezelfde ID in de `PF<ID>-Oef...`-conventie. Overzichten en bronvergelijkingen sorteren deze codes natuurlijk: `2`, `2A`, `2B`, `10`, `12`, daarna `A`, `B`, `X`.
 
@@ -131,7 +131,7 @@ Er is geen `APP_URL` of `BASE_URL` nodig: interne links zijn relatief en OAuth g
 ## F. First production login
 
 1. Open eerst `https://<productiedomein>/`; hiermee wordt de lege database geinitialiseerd.
-2. Gebruik normaal Smartschool. Open alleen voor recovery `/admin/login` en kies **Break-glass admin access** met `ADMIN_PASSWORD`. Deze route kan uitsluitend een sessie voor de compatibility-superadmin maken.
+2. Gebruik normaal Smartschool. Open alleen voor recovery rechtstreeks `/breakglass` en gebruik `ADMIN_PASSWORD`. Deze route staat nergens in de gewone navigatie en kan uitsluitend een sessie voor de compatibility-superadmin maken.
 3. Controleer dat uitloggen de sessie intrekt en opnieuw naar login leidt.
 4. Wijzig secrets uitsluitend in Vercel en redeploy. Rotatie van `ADMIN_SESSION_SECRET` maakt bestaande cookies onmiddellijk ongeldig.
 
@@ -157,7 +157,9 @@ Kies per LearningSpace **Nu synchroniseren**. Deze actie gebruikt uitsluitend de
 
 Leerlingen kunnen bij een uitwerking een melding indienen met een optionele, vrij ingevulde naam van maximaal 100 tekens. Admin groepeert open meldingen als **PINNED** en **TO DO**; afgewerkte meldingen staan onder **DONE**. PINNED en TO DO kunnen lokaal op datum of natuurlijke portfolio-ID worden gesorteerd en op een portfolio worden gefilterd. De resetknop wist alleen het portfoliofilter. DONE behoudt zijn eigen volgorde en bulkcleanup gebruikt `completedAt < now - 14 dagen`.
 
-Superadmins beheren lokale rollen, userstatus, teacher-memberships en Smartschoolgroep-mappings op `/admin/gebruikers`. Een LearningSpace kan meerdere `owner`/`editor`-members hebben terwijl de bron aan één expliciete storageconnection gekoppeld blijft. Alleen superadmins kunnen momenteel nieuwe LearningSpaces maken; alleen een owner of superadmin wijzigt bronconfiguratie.
+Superadmins beheren lokale rollen, userstatus, teacher-memberships en Smartschoolgroep-mappings op `/admin/gebruikers`. Een groupID-koppeling is een bulktoewijzing: iedere reeds aangemelde leerling met die Smartschoolgroep krijgt automatisch toegang tot de gekoppelde LearningSpace. Het groepsoverzicht kan alleen gebruikers tonen die minstens één keer via Smartschool zijn aangemeld. Een LearningSpace kan meerdere `owner`/`editor`-members hebben terwijl de bron aan één expliciete storageconnection gekoppeld blijft. Alleen superadmins kunnen momenteel nieuwe LearningSpaces maken; alleen een owner of superadmin wijzigt bronconfiguratie.
+
+Bij een uitzonderlijke Smartschoolstoring kan een superadmin in `/admin/instellingen` **Publieke noodtoegang** tijdelijk inschakelen. Alleen publiek zichtbare LearningSpaces en inhoud worden dan zonder sessie bereikbaar; groepsfiltering is zonder identiteit niet mogelijk. Adminroutes, bronbeheer en alle publicatie-/visibilityregels blijven server-side beveiligd. De DB-instelling staat standaard uit en toont in beheer duidelijk wanneer ze actief is.
 
 Automatische sync is request-gestuurd:
 

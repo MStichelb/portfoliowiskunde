@@ -1,12 +1,14 @@
 import { notFound, redirect } from "next/navigation";
 
 import { getAuthenticatedUser } from "@/lib/auth";
-import { canAccessLearningSpace } from "@/lib/authorization";
 import type { AppUser } from "@/lib/identity";
+import { canAccessPublicLearningSpace } from "@/lib/public-access";
 
-export async function requirePublicLearningSpaceAccess(learningSpaceId: string, returnTo: string): Promise<AppUser> {
+export async function requirePublicLearningSpaceAccess(learningSpaceId: string, returnTo: string): Promise<AppUser | null> {
   const user = await getAuthenticatedUser();
-  if (!user) redirect(`/aanmelden?returnTo=${encodeURIComponent(returnTo)}`);
-  if (!await canAccessLearningSpace(user, learningSpaceId)) notFound();
+  if (!await canAccessPublicLearningSpace(user, learningSpaceId)) {
+    if (!user) redirect(`/aanmelden?returnTo=${encodeURIComponent(returnTo)}`);
+    notFound();
+  }
   return user;
 }

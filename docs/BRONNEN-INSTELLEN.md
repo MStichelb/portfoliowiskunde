@@ -85,3 +85,5 @@ Rclone, Taakplanner en mirrorretentie worden buiten de webapp beheerd.
 - Configureer een mirror afzonderlijk. Vergelijk beide bronnen voordat je omschakelt.
 - Bij Google Drive moet de map als Viewer met het service account gedeeld zijn. Een mirror vereist bovendien een geldige `_mirror-complete.json`.
 - Een owner kan broninstellingen aanpassen. Een editor kan dezelfde LearningSpace beheren zonder eigenaar van de storageconnection te zijn.
+
+De in-app actie **Hulp bij bronnen** is beschikbaar voor zowel leraren als hoofdbeheerders. Editors kunnen inhoud beheren en de bestaande bron synchroniseren, maar alleen een owner of hoofdbeheerder kan de provider, map-ID of gekoppelde persoonlijke storageconnection wijzigen.

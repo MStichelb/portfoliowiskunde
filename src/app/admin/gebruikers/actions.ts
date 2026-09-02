@@ -8,6 +8,7 @@ import { createLearningSpaceGroupMapping } from "@/lib/identity";
 import {
   deleteManagedGroupMapping,
   listKnownExternalGroups,
+  listManagedGroupMappings,
   removeManagedMembership,
   updateManagedUserRole,
   updateManagedUserStatus,
@@ -46,6 +47,8 @@ export async function createGroupMappingAction(formData: FormData) {
   const externalGroupId = value(formData, "externalGroupId");
   const known = (await listKnownExternalGroups()).find((group) => group.provider === provider && group.externalGroupId === externalGroupId);
   if (!known) return fail("Deze Smartschoolgroep is niet bekend. Laat een groepslid eerst opnieuw aanmelden.");
+  const duplicate = (await listManagedGroupMappings()).some((mapping) => mapping.learningSpaceId === value(formData, "learningSpaceId") && mapping.provider === provider && mapping.externalGroupId === externalGroupId);
+  if (duplicate) return fail("Deze Smartschoolgroep is al aan deze leeromgeving gekoppeld.");
   await run(() => createLearningSpaceGroupMapping({
     learningSpaceId: value(formData, "learningSpaceId"), provider,
     externalGroupId, externalGroupName: known.externalGroupName,

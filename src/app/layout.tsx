@@ -4,7 +4,7 @@ import { Source_Sans_3 } from "next/font/google";
 import { SiteNavigation } from "@/app/components/site-navigation";
 import { SessionRefresher } from "@/app/components/session-refresher";
 import { getAuthenticatedUser } from "@/lib/auth";
-import { getAccessibleLearningSpaceIds } from "@/lib/authorization";
+import { getPublicEmergencyAccess, getPubliclyAccessibleLearningSpaceIds } from "@/lib/public-access";
 import { getLearningSpaces } from "@/lib/repositories";
 import { userFirstName } from "@/lib/identity";
 
@@ -27,7 +27,7 @@ export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const user = await getAuthenticatedUser();
-  const [spaces, accessibleIds] = await Promise.all([getLearningSpaces(true), getAccessibleLearningSpaceIds(user)]);
+  const [spaces, accessibleIds, emergencyAccess] = await Promise.all([getLearningSpaces(true), getPubliclyAccessibleLearningSpaceIds(user), getPublicEmergencyAccess()]);
   const accessible = spaces.filter((space) => accessibleIds.includes(space.id));
   return (
     <html lang="nl" className={sourceSans3.variable}>
@@ -35,6 +35,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <SiteNavigation
           spaces={accessible.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
           user={user ? { firstName: userFirstName(user), role: user.role } : null}
+          emergencyAccess={emergencyAccess.enabled}
         />
         {user ? <SessionRefresher /> : null}
         {children}

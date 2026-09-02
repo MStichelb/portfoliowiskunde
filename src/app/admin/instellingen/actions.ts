@@ -4,7 +4,17 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdmin } from "@/lib/auth";
+import { setPublicEmergencyAccess } from "@/lib/public-access";
 import { resetLocalSourcePath, setLocalSourcePath } from "@/lib/repositories";
+
+export async function setPublicEmergencyAccessAction(formData: FormData) {
+  await requireAdmin();
+  const enabled = String(formData.get("enabled") ?? "") === "true";
+  await setPublicEmergencyAccess(enabled);
+  revalidatePath("/");
+  revalidatePath("/admin", "layout");
+  redirect(`/admin/instellingen?emergency=${enabled ? "enabled" : "disabled"}`);
+}
 
 export async function saveSourcePathAction(formData: FormData) {
   await requireAdmin();
