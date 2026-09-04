@@ -17,6 +17,7 @@ import {
   updateManagedUserStatus,
   upsertManagedMembership,
 } from "@/lib/user-management";
+import { resetAllStudents, resetManagedUser, resetStudentsByClass } from "@/lib/user-reset";
 
 export async function updateUserRoleAction(formData: FormData) {
   await requireAdmin();
@@ -30,6 +31,23 @@ export async function updateUserStatusAction(formData: FormData) {
   const status = value(formData, "status");
   if (status !== "active" && status !== "disabled") return fail("Ongeldige gebruikersstatus.");
   await run(() => updateManagedUserStatus(value(formData, "userId"), status));
+}
+
+export async function resetUserAction(formData: FormData) {
+  await requireAdmin();
+  await run(() => resetManagedUser(value(formData, "userId")));
+}
+
+export async function resetClassStudentsAction(formData: FormData) {
+  await requireAdmin();
+  const classGroupId = value(formData, "classGroupId");
+  if (!classGroupId || !(await listKnownClassGroups()).some((group) => group.externalGroupId === classGroupId)) return fail("Selecteer een bekende klas.");
+  await run(() => resetStudentsByClass(classGroupId));
+}
+
+export async function resetAllStudentsAction() {
+  await requireAdmin();
+  await run(() => resetAllStudents());
 }
 
 export async function updateUserClassAction(formData: FormData) {

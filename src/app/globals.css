@@ -417,6 +417,14 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .account-status-toggle { border: 0; cursor: pointer; }
 .account-status-toggle > span { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .user-filter-bar, .student-filter-panel { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: 14px 0 18px; }
+.user-row-actions { display: inline-flex; align-items: center; gap: 6px; }
+.student-reset-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: -2px 0 18px; padding: 12px; border: 1px solid #dccfd1; border-radius: 5px; background: #fbf8f8; }
+.student-reset-toolbar > div { flex: 1 1 260px; display: grid; gap: 2px; }
+.student-reset-toolbar small { color: #68757b; }
+.student-reset-toolbar label { display: grid; min-width: 190px; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
+.student-reset-toolbar select { min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
+.danger-outline-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-color: #a84350 !important; color: #8a3340 !important; }
+.danger-outline-button:disabled { cursor: not-allowed; opacity: .5; }
 .user-filter-bar label, .student-filter-panel > label { display: grid; min-width: 150px; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
 .user-filter-bar select, .student-filter-panel select, .student-filter-panel input { min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
 .user-search-field { position: relative; flex: 1 1 260px; }

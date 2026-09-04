@@ -1,7 +1,10 @@
-import { Check, Crown, GraduationCap, KeyRound, Pencil, Search, Star, UserRoundKey, X } from "lucide-react";
+import { Check, Crown, GraduationCap, KeyRound, Pencil, Search, Star, Trash2, UserRoundKey, X } from "lucide-react";
 import Link from "next/link";
 
 import {
+  resetAllStudentsAction,
+  resetClassStudentsAction,
+  resetUserAction,
   updateIndividualAccessAction,
   updateUserClassAction,
   updateUserRoleAction,
@@ -18,6 +21,7 @@ import type {
 
 import { AutoSubmitSelect } from "./auto-submit-select";
 import { ConfirmActionButton } from "./confirm-action-button";
+import { StudentResetControls } from "./student-reset-controls";
 import { UserAccessMenu } from "./user-access-menu";
 
 export interface UserListSearchParams {
@@ -59,6 +63,7 @@ export function UserManagementView({
   const page = Math.min(Math.max(Number(params.page) || 1, 1), totalPages);
   const shownStudents = size === Infinity ? studentFiltered : studentFiltered.slice((page - 1) * size, page * size);
   const selectedClasses = stringValues(params.class);
+  const resettableClasses = classGroups.map((group) => ({ id: group.externalGroupId, label: group.externalGroupName ?? group.externalGroupId, studentCount: students.filter((student) => student.effectiveClassGroupId === group.externalGroupId).length })).filter((group) => group.studentCount > 0);
 
   return <div className="user-role-sections">
     <section className="admin-card user-role-card" aria-labelledby="administrators-heading">
@@ -73,7 +78,7 @@ export function UserManagementView({
         <label>Individuele toegang<select name="teacherAccess" defaultValue={params.teacherAccess ?? "all"}><option value="all">Alle</option><option value="with">Met individuele toegang</option><option value="without">Zonder individuele extra toegang</option></select></label>
         <button className="secondary-button" type="submit">Filteren</button>
       </form>
-      <UserTableRegion label="Leraren"><table className="managed-user-table"><thead><tr><th>Naam</th><th>Voornaam</th><th>Beheerrechten</th><th>Verbinding</th><th>Publieke toegang</th><th>Status</th><th><span className="sr-only">Rol wijzigen</span></th></tr></thead><tbody>{teacherFiltered.map((user) => <tr key={user.id}><NameCells user={user} showAccessIcon /><td><ManagementBadges memberships={memberships.filter((item) => item.userId === user.id)} spaces={spaces} /></td><td><StorageBadges connections={storageConnections.filter((item) => item.userId === user.id)} /></td><td><AccessMenu user={user} spaces={spaces} access={access} /></td><td><StatusToggle user={user} /></td><td><ConfirmActionButton action={updateUserRoleAction} fields={{ userId: user.id, role: "student" }} label={<GraduationCap size={17} aria-hidden />} confirmTitle="Maak deze leraar leerling?" confirmText="De rol wordt alleen gewijzigd als deze leraar geen beheerrechten of gekoppelde bronverbindingen meer heeft." confirmLabel="Rol wijzigen" confirmClassName="primary-button" /></td></tr>)}</tbody></table></UserTableRegion>
+      <UserTableRegion label="Leraren"><table className="managed-user-table"><thead><tr><th>Naam</th><th>Voornaam</th><th>Beheerrechten</th><th>Verbinding</th><th>Publieke toegang</th><th>Status</th><th><span className="sr-only">Acties</span></th></tr></thead><tbody>{teacherFiltered.map((user) => <tr key={user.id}><NameCells user={user} showAccessIcon /><td><ManagementBadges memberships={memberships.filter((item) => item.userId === user.id)} spaces={spaces} /></td><td><StorageBadges connections={storageConnections.filter((item) => item.userId === user.id)} /></td><td><AccessMenu user={user} spaces={spaces} access={access} /></td><td><StatusToggle user={user} /></td><td><div className="user-row-actions"><ConfirmActionButton action={updateUserRoleAction} fields={{ userId: user.id, role: "student" }} label={<GraduationCap size={17} aria-hidden />} confirmTitle="Maak deze leraar leerling?" confirmText="De rol wordt alleen gewijzigd als deze leraar geen beheerrechten of gekoppelde bronverbindingen meer heeft." confirmLabel="Rol wijzigen" confirmClassName="primary-button" /><ConfirmActionButton action={resetUserAction} fields={{ userId: user.id }} label={<Trash2 size={17} aria-hidden />} confirmTitle={`Verwijder ${user.displayName}?`} confirmText="Deze leraar wordt intern verwijderd en bij een volgende Smartschool-login opnieuw geregistreerd. Eigenaars en leraren met een gebruikte bronverbinding worden geweigerd." /></div></td></tr>)}</tbody></table></UserTableRegion>
     </section>
 
     <section className="admin-card user-role-card" aria-labelledby="students-heading">
@@ -87,7 +92,8 @@ export function UserManagementView({
         <label>Per pagina<select name="size" defaultValue={params.size ?? "25"}><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="all">Alle</option></select></label>
         <button className="primary-button" type="submit">Toepassen</button>
       </form>
-      <UserTableRegion label="Leerlingen"><table className="managed-user-table student-user-table"><thead><tr><th>Naam</th><th>Voornaam</th><th>Klas</th><th>Publieke toegang</th><th>Status</th><th><span className="sr-only">Rol wijzigen</span></th></tr></thead><tbody>{shownStudents.map((user) => <tr key={user.id}><NameCells user={user} showAccessIcon /><td><AutoSubmitSelect action={updateUserClassAction} fields={{ userId: user.id }} name="classGroupId" value={user.classGroupOverrideId ?? ""} ariaLabel={`Klas van ${user.displayName}`} options={[{ value: "", label: user.automaticClassName ? `Automatisch (${user.automaticClassName})` : "Automatisch (Smartschool)" }, ...classGroups.map((group) => ({ value: group.externalGroupId, label: group.externalGroupName ?? group.externalGroupId }))]} /></td><td><AccessMenu user={user} spaces={spaces} access={access} /></td><td><StatusToggle user={user} /></td><td><ConfirmActionButton action={updateUserRoleAction} fields={{ userId: user.id, role: "teacher" }} label={<Star size={17} aria-hidden />} confirmTitle="Maak deze leerling leraar?" confirmText="De lokale rol wordt leraar. Beheerrechten worden niet automatisch toegekend." confirmLabel="Rol wijzigen" confirmClassName="primary-button" /></td></tr>)}</tbody></table></UserTableRegion>
+      <StudentResetControls classes={resettableClasses} totalStudents={students.length} resetClassAction={resetClassStudentsAction} resetAllAction={resetAllStudentsAction} />
+      <UserTableRegion label="Leerlingen"><table className="managed-user-table student-user-table"><thead><tr><th>Naam</th><th>Voornaam</th><th>Klas</th><th>Publieke toegang</th><th>Status</th><th><span className="sr-only">Acties</span></th></tr></thead><tbody>{shownStudents.map((user) => <tr key={user.id}><NameCells user={user} showAccessIcon /><td><AutoSubmitSelect action={updateUserClassAction} fields={{ userId: user.id }} name="classGroupId" value={user.classGroupOverrideId ?? ""} ariaLabel={`Klas van ${user.displayName}`} options={[{ value: "", label: user.automaticClassName ? `Automatisch (${user.automaticClassName})` : "Automatisch (Smartschool)" }, ...classGroups.map((group) => ({ value: group.externalGroupId, label: group.externalGroupName ?? group.externalGroupId }))]} /></td><td><AccessMenu user={user} spaces={spaces} access={access} /></td><td><StatusToggle user={user} /></td><td><div className="user-row-actions"><ConfirmActionButton action={updateUserRoleAction} fields={{ userId: user.id, role: "teacher" }} label={<Star size={17} aria-hidden />} confirmTitle="Maak deze leerling leraar?" confirmText="De lokale rol wordt leraar. Beheerrechten worden niet automatisch toegekend." confirmLabel="Rol wijzigen" confirmClassName="primary-button" /><ConfirmActionButton action={resetUserAction} fields={{ userId: user.id }} label={<Trash2 size={17} aria-hidden />} confirmTitle={`Verwijder ${user.displayName}?`} confirmText="Deze leerling en de lokale Smartschool-, klas- en toegangsgegevens worden intern verwijderd. Bij een volgende Smartschool-login wordt de leerling opnieuw geregistreerd." /></div></td></tr>)}</tbody></table></UserTableRegion>
       {studentFiltered.length === 0 ? <p className="empty-state compact-empty">Geen leerlingen gevonden met deze filters.</p> : null}
       <Pagination page={page} totalPages={totalPages} params={params} />
     </section>
