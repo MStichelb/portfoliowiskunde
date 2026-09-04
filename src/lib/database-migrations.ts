@@ -451,4 +451,21 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX external_identity_groups_external_index ON external_identity_groups(external_group_id)",
     ],
   },
+  {
+    version: "023_multi_user_access_management",
+    statements: [
+      "ALTER TABLE users ADD COLUMN first_name TEXT",
+      "ALTER TABLE users ADD COLUMN last_name TEXT",
+      "ALTER TABLE users ADD COLUMN class_group_override_id TEXT",
+      `CREATE TABLE individual_learning_space_access (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(user_id, learning_space_id)
+      )`,
+      "CREATE INDEX individual_learning_space_access_space_index ON individual_learning_space_access(learning_space_id, user_id)",
+      "CREATE INDEX users_class_override_index ON users(class_group_override_id)",
+    ],
+  },
 ];

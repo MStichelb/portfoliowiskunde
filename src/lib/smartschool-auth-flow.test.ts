@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { AppUser, LearningSpaceAccessResolution } from "./identity";
 import { smartschoolPostLoginDestination } from "./smartschool-auth-flow";
 
-const student: AppUser = { id: "student", displayName: "Leerling", email: null, role: "student", status: "active" };
+const student: AppUser = { id: "student", displayName: "Leerling", firstName: null, lastName: null, email: null, role: "student", status: "active", classGroupOverrideId: null };
 const spaces = [{ id: "space-5", slug: "5" }, { id: "space-6", slug: "6" }];
 
 describe("Smartschool post-login routing", () => {

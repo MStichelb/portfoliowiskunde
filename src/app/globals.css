@@ -394,6 +394,60 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .help-article h2 { margin-top: 30px; padding-top: 22px; border-top: 1px solid #d9dfdb; }
 .help-article h2:first-of-type { margin-top: 0; padding-top: 0; border-top: 0; }
 .help-article li { margin: 7px 0; }
+.identity-welcome { white-space: pre; }
+.user-role-sections { display: grid; gap: 20px; }
+.user-role-card { min-width: 0; }
+.list-count { color: #56646a; font-size: 14px; white-space: nowrap; }
+.managed-user-table-region { overflow-x: auto; }
+.managed-user-table { width: 100%; min-width: 760px; border-collapse: collapse; }
+.managed-user-table th, .managed-user-table td { padding: 11px 10px; text-align: left; vertical-align: middle; }
+.managed-user-table th { color: #3b4950; font-size: 14px; }
+.managed-user-table td { border-top: 1px solid #e3e7e5; }
+.managed-user-table form { margin: 0; }
+.managed-user-table small { display: block; margin-top: 2px; color: #68757b; }
+.user-name-cell, .heading-with-icon, .management-badges > span, .connection-badge { display: inline-flex; align-items: center; gap: 6px; }
+.management-badges, .connection-badges { display: flex; flex-wrap: wrap; gap: 6px; }
+.management-badges > span, .connection-badge { min-height: 28px; padding: 4px 8px; border-radius: 999px; background: #edf1ef; font-size: 13px; font-weight: 700; }
+.connection-onedrive { color: #075c75; }
+.connection-google_drive { color: #46683a; }
+.connection-none, .muted-value { color: #68757b; }
+.account-status-label, .account-status-toggle { display: inline-flex; min-height: 32px; align-items: center; gap: 7px; border-radius: 999px; padding: 5px 10px; font-weight: 700; }
+.account-status-label.active, .account-status-toggle.active { background: #e4f2e9; color: #1d6644; }
+.account-status-label.disabled, .account-status-toggle.disabled { background: #f7e7e9; color: #8a3340; }
+.account-status-toggle { border: 0; cursor: pointer; }
+.account-status-toggle > span { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.user-filter-bar, .student-filter-panel { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: 14px 0 18px; }
+.user-filter-bar label, .student-filter-panel > label { display: grid; min-width: 150px; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
+.user-filter-bar select, .student-filter-panel select, .student-filter-panel input { min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
+.user-search-field { position: relative; flex: 1 1 260px; }
+.user-search-field svg { position: absolute; z-index: 1; bottom: 11px; left: 10px; color: #68757b; }
+.user-search-field input { width: 100%; padding-left: 34px; }
+.class-filter { position: relative; min-width: 150px; }
+.class-filter summary { min-height: 40px; padding: 9px 12px; border: 1px solid #9ab0ad; border-radius: 4px; background: #fff; cursor: pointer; font-weight: 700; }
+.class-filter > div { position: absolute; z-index: 20; display: grid; width: max-content; min-width: 220px; max-height: 260px; overflow-y: auto; gap: 7px; margin-top: 5px; padding: 12px; border: 1px solid #c9d0cc; border-radius: 4px; background: #fff; box-shadow: 0 8px 20px rgba(0,0,0,.14); }
+.class-filter label { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 18px; }
+.pagination a { padding: 7px 10px; border: 1px solid #9ab0ad; border-radius: 4px; }
+.pagination a.disabled { pointer-events: none; opacity: .45; }
+.user-access-menu { position: relative; }
+.user-access-menu summary { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #9ab0ad; border-radius: 4px; cursor: pointer; font-weight: 700; }
+.user-access-menu summary > span { min-width: 20px; border-radius: 999px; background: #e7efec; text-align: center; }
+.user-access-popover { position: relative; display: grid; width: min(360px, calc(100vw - 36px)); gap: 8px; margin-top: 5px; padding: 12px; border: 1px solid #c9d0cc; border-radius: 5px; background: #fff; }
+.user-access-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.user-access-row small { margin: 0; }
+.user-access-row form, .inherited-access-control { display: inline-flex; align-items: center; gap: 5px; }
+.user-access-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #075c75; }
+.user-access-row button { flex: 0 0 auto; }
+.teacher-group-setting select { width: min(100%, 440px); min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
+.learning-space-managers { display: grid; gap: 16px; }
+.manager-role-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.manager-role-groups > div { padding: 14px; border: 1px solid #e3e7e5; border-radius: 5px; }
+.manager-role-groups h3 { margin-top: 0; }
+.manager-role-groups ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.manager-role-groups li { display: flex; min-height: 36px; align-items: center; justify-content: space-between; gap: 8px; }
+.manager-role-groups li > svg { margin-right: 6px; }
+.source-context-help { grid-column: 1 / -1; margin: 0; color: #68757b; }
+.source-context-help a { font-weight: 700; }
 .user-management-page { max-width: 1180px; }
 .admin-summary-table td small, .management-list small { display: block; margin-top: 2px; color: #68757b; }
 .inline-management-form { display: flex; align-items: center; gap: 7px; }
@@ -454,6 +508,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
   .source-settings-heading { display: grid; grid-template-columns: 1fr auto; }
   .source-settings-heading .mirror-active-badge { grid-column: 1 / -1; justify-self: start; }
   .inline-management-form { align-items: stretch; flex-direction: column; }
+  .identity-welcome { display: none; }
+  .manager-role-groups { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 420px) {

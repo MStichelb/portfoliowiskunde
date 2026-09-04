@@ -119,6 +119,8 @@ export function normalizeSmartschoolResponses(userinfo: unknown, groupinfo: unkn
     providerSubject: userinfo.userID.trim(),
     providerPlatform: platform,
     displayName: smartschoolDisplayName(userinfo),
+    firstName: smartschoolFirstName(userinfo),
+    lastName: smartschoolLastName(userinfo),
   };
   const groups = isRecord(groupinfo) ? [
     ...normalizeGroups(groupinfo.groups, "direct", platform),
@@ -161,10 +163,17 @@ function normalizeGroups(value: unknown, membershipType: "direct" | "parent", pl
 function smartschoolDisplayName(profile: Record<string, unknown>): string {
   return firstString(
     profile.fullname,
-    [firstString(profile.actualUserName), firstString(profile.actualUserSurname)].filter(Boolean).join(" "),
-    [firstString(profile.name), firstString(profile.surname)].filter(Boolean).join(" "),
+    [smartschoolFirstName(profile), smartschoolLastName(profile)].filter(Boolean).join(" "),
     profile.username,
   ) ?? "Smartschoolgebruiker";
+}
+
+function smartschoolFirstName(profile: Record<string, unknown>): string | null {
+  return firstString(profile.actualUserName, profile.firstname, profile.firstName, profile.name);
+}
+
+function smartschoolLastName(profile: Record<string, unknown>): string | null {
+  return firstString(profile.actualUserSurname, profile.lastname, profile.lastName, profile.surname);
 }
 
 function firstString(...values: unknown[]): string | null {

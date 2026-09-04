@@ -11,9 +11,12 @@ export type LearningSpaceMemberRole = "owner" | "editor";
 export interface AppUser {
   id: string;
   displayName: string;
+  firstName: string | null;
+  lastName: string | null;
   email: string | null;
   role: UserRole;
   status: UserStatus;
+  classGroupOverrideId: string | null;
 }
 
 export interface NormalizedExternalIdentity {
@@ -21,6 +24,8 @@ export interface NormalizedExternalIdentity {
   providerSubject: string;
   providerPlatform?: string | null;
   displayName: string;
+  firstName?: string | null;
+  lastName?: string | null;
   email?: string | null;
 }
 
@@ -56,28 +61,30 @@ export async function getUser(id: string): Promise<AppUser | null> {
   return row ? userFromRow(row) : null;
 }
 
-export function userFirstName(user: Pick<AppUser, "displayName">): string {
-  return user.displayName.trim().split(/\s+/)[0] || "Gebruiker";
+export function userFirstName(user: Pick<AppUser, "firstName">): string {
+  return user.firstName?.trim() || "Gebruiker";
 }
 
 export async function updateUserFromExternalIdentity(userId: string, identity: NormalizedExternalIdentity): Promise<AppUser> {
   const displayName = identity.displayName.trim();
   if (!displayName) throw new Error("De externe identiteit bevat geen geldige naam.");
   await (await getDatabase()).execute({
-    sql: "UPDATE users SET display_name = ?, email = COALESCE(?, email), updated_at = ? WHERE id = ?",
-    args: [displayName, identity.email?.trim() || null, new Date().toISOString(), userId],
+    sql: `UPDATE users SET display_name = ?, first_name = COALESCE(?, first_name), last_name = COALESCE(?, last_name),
+      email = COALESCE(?, email), updated_at = ? WHERE id = ?`,
+    args: [displayName, normalizedNamePart(identity.firstName), normalizedNamePart(identity.lastName), identity.email?.trim() || null, new Date().toISOString(), userId],
   });
   const user = await getUser(userId);
   if (!user) throw new Error("Gebruiker niet gevonden.");
   return user;
 }
 
-export async function createUser(input: { displayName: string; email?: string | null; role: UserRole; status?: UserStatus }): Promise<AppUser> {
+export async function createUser(input: { displayName: string; firstName?: string | null; lastName?: string | null; email?: string | null; role: UserRole; status?: UserStatus }): Promise<AppUser> {
   const id = randomUUID();
   const now = new Date().toISOString();
   await (await getDatabase()).execute({
-    sql: "INSERT INTO users (id, display_name, email, role, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    args: [id, input.displayName.trim(), input.email?.trim() || null, input.role, input.status ?? "active", now, now],
+    sql: `INSERT INTO users (id, display_name, first_name, last_name, email, role, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    args: [id, input.displayName.trim(), normalizedNamePart(input.firstName), normalizedNamePart(input.lastName), input.email?.trim() || null, input.role, input.status ?? "active", now, now],
   });
   return (await getUser(id))!;
 }
@@ -101,18 +108,27 @@ export async function findExternalIdentity(identity: Pick<NormalizedExternalIden
   return row ? externalIdentityFromRow(row) : null;
 }
 
-export async function findOrCreateExternalUser(identity: NormalizedExternalIdentity): Promise<{ user: AppUser; identity: ExternalIdentityRecord; created: boolean }> {
+export async function findOrCreateExternalUser(
+  identity: NormalizedExternalIdentity,
+  groups: NormalizedGroupMembership[] = [],
+): Promise<{ user: AppUser; identity: ExternalIdentityRecord; created: boolean }> {
   const existing = await findExternalIdentity(identity);
   if (existing) return { user: (await getUser(existing.userId))!, identity: existing, created: false };
 
   const userId = randomUUID();
   const identityId = randomUUID();
   const now = new Date().toISOString();
+  const configuredTeacherGroupId = normalizeProvider(identity.provider) === "smartschool" ? await getConfiguredTeacherGroupId() : null;
+  const initialRole: UserRole = configuredTeacherGroupId && groups.some((group) =>
+    normalizeProvider(group.provider) === "smartschool" && group.externalGroupId === configuredTeacherGroupId)
+    ? "teacher"
+    : "student";
   try {
     await (await getDatabase()).batch([
       {
-        sql: "INSERT INTO users (id, display_name, email, role, status, created_at, updated_at) VALUES (?, ?, ?, 'student', 'active', ?, ?)",
-        args: [userId, identity.displayName.trim() || "Smartschoolgebruiker", identity.email?.trim() || null, now, now],
+        sql: `INSERT INTO users (id, display_name, first_name, last_name, email, role, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+        args: [userId, identity.displayName.trim() || "Smartschoolgebruiker", normalizedNamePart(identity.firstName), normalizedNamePart(identity.lastName), identity.email?.trim() || null, initialRole, now, now],
       },
       {
         sql: `INSERT INTO external_identities (id, user_id, provider, provider_subject, provider_platform, created_at, updated_at)
@@ -176,6 +192,30 @@ export async function resolveStoredUserGroupAccess(userId: string): Promise<Lear
   })));
 }
 
+const TEACHER_GROUP_SETTING_KEY = "smartschool_teacher_group_id";
+
+export async function getConfiguredTeacherGroupId(): Promise<string | null> {
+  const row = (await (await getDatabase()).execute({
+    sql: "SELECT value FROM app_settings WHERE key = ?",
+    args: [TEACHER_GROUP_SETTING_KEY],
+  })).rows[0];
+  return typeof row?.value === "string" && row.value.trim() ? row.value.trim() : null;
+}
+
+export async function setConfiguredTeacherGroupId(groupId: string | null): Promise<void> {
+  const database = await getDatabase();
+  if (!groupId) {
+    await database.execute({ sql: "DELETE FROM app_settings WHERE key = ?", args: [TEACHER_GROUP_SETTING_KEY] });
+    return;
+  }
+  const now = new Date().toISOString();
+  await database.execute({
+    sql: `INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+    args: [TEACHER_GROUP_SETTING_KEY, groupId.trim(), now],
+  });
+}
+
 export async function setLearningSpaceMember(learningSpaceId: string, userId: string, role: LearningSpaceMemberRole): Promise<void> {
   const now = new Date().toISOString();
   await (await getDatabase()).execute({
@@ -230,9 +270,12 @@ function userFromRow(row: Record<string, unknown>): AppUser {
   return {
     id: String(row.id),
     displayName: String(row.display_name),
+    firstName: normalizedNamePart(row.first_name),
+    lastName: normalizedNamePart(row.last_name),
     email: typeof row.email === "string" && row.email ? row.email : null,
     role: userRole(String(row.role)),
     status: row.status === "disabled" ? "disabled" : "active",
+    classGroupOverrideId: normalizedNamePart(row.class_group_override_id),
   };
 }
 
@@ -247,6 +290,10 @@ function normalizeProvider(value: string): string {
 
 function normalizePlatform(value: string | null | undefined): string {
   return value?.trim().toLowerCase() ?? "";
+}
+
+function normalizedNamePart(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
 function externalIdentityFromRow(row: Record<string, unknown>): ExternalIdentityRecord {

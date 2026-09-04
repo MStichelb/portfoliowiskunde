@@ -125,7 +125,12 @@ describe("Google Drive LearningSpace migration", () => {
     expect(sources.rows.every((row) => row.role === "primary" && row.provider_type === "local" && row.is_active === 1)).toBe(true);
     const portfolioColumns = (await database.execute("PRAGMA table_info(portfolios)")).rows.map((row) => row.name);
     expect(portfolioColumns).toEqual(expect.arrayContaining(["hints_document_path", "hints_document_source_id"]));
+    const userColumns = (await database.execute("PRAGMA table_info(users)")).rows.map((row) => row.name);
+    expect(userColumns).toEqual(expect.arrayContaining(["first_name", "last_name", "class_group_override_id"]));
+    expect((await database.execute("PRAGMA table_info(individual_learning_space_access)")).rows.map((row) => row.name))
+      .toEqual(expect.arrayContaining(["user_id", "learning_space_id", "created_at", "updated_at"]));
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '021_multi_user_foundation'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '023_multi_user_access_management'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT id, role, status FROM users WHERE id = 'user-legacy-superadmin'")).rows[0]).toMatchObject({
       role: "superadmin", status: "active",
     });

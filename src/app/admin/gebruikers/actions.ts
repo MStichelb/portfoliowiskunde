@@ -4,12 +4,15 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdmin } from "@/lib/auth";
-import { createLearningSpaceGroupMapping } from "@/lib/identity";
+import { createLearningSpaceGroupMapping, setConfiguredTeacherGroupId } from "@/lib/identity";
 import {
   deleteManagedGroupMapping,
+  listKnownClassGroups,
   listKnownExternalGroups,
   listManagedGroupMappings,
   removeManagedMembership,
+  setIndividualLearningSpaceAccess,
+  updateManagedUserClassOverride,
   updateManagedUserRole,
   updateManagedUserStatus,
   upsertManagedMembership,
@@ -29,16 +32,41 @@ export async function updateUserStatusAction(formData: FormData) {
   await run(() => updateManagedUserStatus(value(formData, "userId"), status));
 }
 
+export async function updateUserClassAction(formData: FormData) {
+  await requireAdmin();
+  const groupId = value(formData, "classGroupId");
+  if (groupId && !(await listKnownClassGroups()).some((group) => group.externalGroupId === groupId)) return fail("Onbekende klasgroep.");
+  await run(() => updateManagedUserClassOverride(value(formData, "userId"), groupId || null));
+}
+
+export async function updateIndividualAccessAction(formData: FormData) {
+  await requireAdmin();
+  await run(() => setIndividualLearningSpaceAccess(
+    value(formData, "userId"),
+    value(formData, "learningSpaceId"),
+    value(formData, "enabled") === "true",
+  ));
+}
+
+export async function updateTeacherGroupAction(formData: FormData) {
+  await requireAdmin();
+  const groupId = value(formData, "groupId");
+  if (groupId && !(await listKnownExternalGroups()).some((group) => group.provider === "smartschool" && group.externalGroupId === groupId)) {
+    return fail("Deze Smartschoolgroep is niet bekend.", "/admin/toegang");
+  }
+  await run(() => setConfiguredTeacherGroupId(groupId || null), "/admin/toegang");
+}
+
 export async function saveMembershipAction(formData: FormData) {
   await requireAdmin();
   const role = value(formData, "role");
-  if (role !== "owner" && role !== "editor") return fail("Ongeldige beheerrol.");
-  await run(() => upsertManagedMembership(value(formData, "learningSpaceId"), value(formData, "userId"), role));
+  if (role !== "owner" && role !== "editor") return fail("Ongeldige beheerrol.", "/admin/toegang");
+  await run(() => upsertManagedMembership(value(formData, "learningSpaceId"), value(formData, "userId"), role), "/admin/toegang");
 }
 
 export async function removeMembershipAction(formData: FormData) {
   await requireAdmin();
-  await run(() => removeManagedMembership(value(formData, "learningSpaceId"), value(formData, "userId")));
+  await run(() => removeManagedMembership(value(formData, "learningSpaceId"), value(formData, "userId")), "/admin/toegang");
 }
 
 export async function createGroupMappingAction(formData: FormData) {
@@ -46,32 +74,34 @@ export async function createGroupMappingAction(formData: FormData) {
   const provider = value(formData, "provider");
   const externalGroupId = value(formData, "externalGroupId");
   const known = (await listKnownExternalGroups()).find((group) => group.provider === provider && group.externalGroupId === externalGroupId);
-  if (!known) return fail("Deze Smartschoolgroep is niet bekend. Laat een groepslid eerst opnieuw aanmelden.");
+  if (!known) return fail("Deze Smartschoolgroep is niet bekend. Laat een groepslid eerst opnieuw aanmelden.", "/admin/toegang");
   const duplicate = (await listManagedGroupMappings()).some((mapping) => mapping.learningSpaceId === value(formData, "learningSpaceId") && mapping.provider === provider && mapping.externalGroupId === externalGroupId);
-  if (duplicate) return fail("Deze Smartschoolgroep is al aan deze leeromgeving gekoppeld.");
+  if (duplicate) return fail("Deze Smartschoolgroep is al aan deze leeromgeving gekoppeld.", "/admin/toegang");
   await run(() => createLearningSpaceGroupMapping({
     learningSpaceId: value(formData, "learningSpaceId"), provider,
     externalGroupId, externalGroupName: known.externalGroupName,
-  }));
+  }), "/admin/toegang");
 }
 
 export async function removeGroupMappingAction(formData: FormData) {
   await requireAdmin();
-  await run(() => deleteManagedGroupMapping(value(formData, "id")));
+  await run(() => deleteManagedGroupMapping(value(formData, "id")), "/admin/toegang");
 }
 
-async function run(operation: () => Promise<unknown>) {
+async function run(operation: () => Promise<unknown>, target = "/admin/gebruikers") {
   try {
     await operation();
   } catch (error) {
-    fail(error instanceof Error ? error.message : "De wijziging kon niet worden opgeslagen.");
+    fail(error instanceof Error ? error.message : "De wijziging kon niet worden opgeslagen.", target);
   }
+  revalidatePath("/admin", "layout");
   revalidatePath("/admin/gebruikers");
-  redirect("/admin/gebruikers?saved=1");
+  revalidatePath("/admin/toegang");
+  redirect(`${target}?saved=1`);
 }
 
-function fail(message: string): never {
-  redirect(`/admin/gebruikers?error=${encodeURIComponent(message)}`);
+function fail(message: string, target = "/admin/gebruikers"): never {
+  redirect(`${target}?error=${encodeURIComponent(message)}`);
 }
 
 function value(formData: FormData, key: string): string {

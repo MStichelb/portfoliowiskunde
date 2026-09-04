@@ -1,12 +1,20 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 
 import type { LearningSpace, LearningSpaceSource } from "@/lib/repositories";
 
-import { sourceSummary } from "./page";
+import { SmartschoolConnectLink, sourceSummary } from "./page";
 
 describe("admin LearningSpace source summary", () => {
   it("uses Bron on the compact card while distinguishing an optional mirror", () => {
     expect(sourceSummary(spaceWithSources())).toBe("Bron • OneDrive · Mirror • Google Drive");
+  });
+
+  it("start de Smartschool-koppeling via een gewone browserlink zonder RSC-parameters", () => {
+    const markup = renderToStaticMarkup(createElement(SmartschoolConnectLink));
+    expect(markup).toContain('href="/api/auth/smartschool/link"');
+    expect(markup).not.toContain("_rsc");
   });
 });
 

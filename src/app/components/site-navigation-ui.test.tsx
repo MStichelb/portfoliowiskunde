@@ -58,6 +58,22 @@ describe("SiteNavigation admin context", () => {
     expect(markup).toContain('aria-label="Beheer"');
   });
 
+  it("houdt publieke kijktoegang en beheercontext voor een leraar gescheiden", () => {
+    navigation.pathname = "/admin/6";
+    const markup = renderToStaticMarkup(<SiteNavigation
+      spaces={[
+        { slug: "5", name: "Vijfde jaar", shortLabel: "5WIS" },
+        { slug: "6", name: "Zesde jaar", shortLabel: "6WIS" },
+      ]}
+      adminSpaces={[{ slug: "6", name: "Zesde jaar", shortLabel: "6WIS" }]}
+      user={{ firstName: "Leraar", role: "teacher" }}
+    />);
+    expect(markup).toContain('href="/admin/6"');
+    expect(markup).not.toContain('href="/admin/5"');
+    expect(markup).toContain("Welkom, ");
+    expect(markup).toContain("lucide-star");
+  });
+
   it("hides the LearningSpace selector for a student with one space and routes Home there", () => {
     navigation.pathname = "/5";
     const markup = renderToStaticMarkup(<SiteNavigation spaces={[{ slug: "5", name: "Vijfde jaar", shortLabel: "5WIS" }]} user={{ firstName: "Leerling", role: "student" }} />);

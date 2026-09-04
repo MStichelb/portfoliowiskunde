@@ -44,7 +44,7 @@ describe("public emergency access", () => {
     await useTemporaryDatabase();
     await setPublicEmergencyAccess(true);
     expect(canAccessAdmin(null)).toBe(false);
-    expect(canAccessAdmin({ id: "student", displayName: "Leerling", email: null, role: "student", status: "active" })).toBe(false);
+    expect(canAccessAdmin({ id: "student", displayName: "Leerling", firstName: null, lastName: null, email: null, role: "student", status: "active", classGroupOverrideId: null })).toBe(false);
   });
 });
 

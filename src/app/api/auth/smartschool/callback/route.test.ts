@@ -80,7 +80,7 @@ describe("GET /api/auth/smartschool/callback", () => {
   it("maakt een interne sessie en routeert één LearningSpace automatisch", async () => {
     const response = await GET(callbackRequest());
     expect(mocks.authenticate).toHaveBeenCalledWith({ code: "auth-code" });
-    expect(mocks.findOrCreateExternalUser).toHaveBeenCalledWith(identity);
+    expect(mocks.findOrCreateExternalUser).toHaveBeenCalledWith(identity, groups);
     expect(mocks.updateUserFromExternalIdentity).toHaveBeenCalledWith(student.id, identity);
     expect(mocks.replaceExternalIdentityGroups).toHaveBeenCalledWith("identity-1", groups);
     expect(response.headers.get("location")).toBe("http://localhost/5");

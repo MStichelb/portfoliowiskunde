@@ -64,7 +64,13 @@ describe("Smartschool OAuth client", () => {
     expect(fetchMock.mock.calls[1][0]).toBe("https://school.smartschool.be/Api/V1/userinfo");
     expect(fetchMock.mock.calls[2][0]).toBe("https://school.smartschool.be/Api/V1/groupinfo");
     expect(String(fetchMock.mock.calls[1][1].body)).toBe("access_token=short-lived-token");
-    expect(result.identity).toMatchObject({ provider: "smartschool", providerSubject: "external-user", providerPlatform: config.platformUrl });
+    expect(result.identity).toMatchObject({
+      provider: "smartschool",
+      providerSubject: "external-user",
+      providerPlatform: config.platformUrl,
+      firstName: "Voorbeeld",
+      lastName: "Leerling",
+    });
     expect(result.groups).toEqual([
       { provider: "smartschool", externalGroupId: "class-6", externalGroupName: "6WIS", membershipType: "direct" },
       { provider: "smartschool", externalGroupId: "students", externalGroupName: "Leerlingen", membershipType: "parent" },
@@ -74,6 +80,20 @@ describe("Smartschool OAuth client", () => {
   it("normaliseert uitsluitend aanwezige officiële velden en weigert een ander platform", () => {
     expect(normalizeSmartschoolResponses(userinfoFixture(), { groups: [{ groupID: "group", name: "Naam" }] }, config.platformUrl).identity.displayName).toBe("Voorbeeld Leerling");
     expect(() => normalizeSmartschoolResponses({ ...userinfoFixture(), platform: "https://other.smartschool.be" }, {}, config.platformUrl)).toThrow();
+  });
+
+  it("houdt voornaam en samengestelde achternaam als afzonderlijke Smartschoolvelden", () => {
+    const result = normalizeSmartschoolResponses({
+      ...userinfoFixture(),
+      name: "Marie",
+      surname: "De Smet Van Damme",
+      fullname: "Marie De Smet Van Damme",
+    }, {}, config.platformUrl);
+    expect(result.identity).toMatchObject({
+      displayName: "Marie De Smet Van Damme",
+      firstName: "Marie",
+      lastName: "De Smet Van Damme",
+    });
   });
 });
 

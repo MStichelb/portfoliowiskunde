@@ -13,8 +13,9 @@ const OAUTH_OWNER_COOKIE = "portfolio_onedrive_oauth_owner";
 export async function GET(request: Request) {
   const user = await getAuthenticatedUser();
   if (!canAccessAdmin(user)) return new Response("Niet aangemeld.", { status: 401 });
+  const settingsPath = user!.role === "superadmin" ? "/admin/instellingen" : "/admin/verbindingen";
   if (getMicrosoftConfigurationProblem()) {
-    return NextResponse.redirect(new URL("/admin/instellingen?onedrive=configuration-error", request.url));
+    return NextResponse.redirect(new URL(`${settingsPath}?onedrive=configuration-error`, request.url));
   }
   const state = randomBytes(32).toString("base64url");
   const verifier = randomBytes(48).toString("base64url");

@@ -74,6 +74,7 @@ function SourceFields({ prefix, provider, source }: { prefix: "primary" | "mirro
     <label>OneDrive drive-ID<input name={`${prefix}OneDriveDriveId`} defaultValue={source?.oneDriveDriveId ?? ""} required /></label>
     <label>OneDrive map-ID<input name={`${prefix}OneDriveFolderId`} defaultValue={source?.oneDriveFolderId ?? ""} required /></label>
     <label className="field-full">OneDrive mapnaam of pad<input name={`${prefix}OneDriveFolderPath`} defaultValue={source?.oneDriveFolderPath ?? ""} /></label>
+    <p className="source-context-help">Een nieuwe OneDrive-bron gebruikt jouw persoonlijke verbinding. Controleer die eerst bij <Link href="/admin/verbindingen">Mijn verbindingen</Link>.</p>
   </div>;
   return <div className="settings-grid google-drive-fields">
     <label>Google Drive folder-ID<input name={`${prefix}GoogleDriveFolderId`} defaultValue={source?.googleDriveFolderId ?? ""} required pattern="[A-Za-z0-9_-]+" /></label>

@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       user = currentUser;
       identityId = identity.id;
     } else {
-      const mapped = await findOrCreateExternalUser(authentication.identity);
+      const mapped = await findOrCreateExternalUser(authentication.identity, authentication.groups);
       user = mapped.user;
       identityId = mapped.identity.id;
     }
