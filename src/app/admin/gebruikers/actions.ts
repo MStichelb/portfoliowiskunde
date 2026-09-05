@@ -69,10 +69,11 @@ export async function updateIndividualAccessAction(formData: FormData) {
 export async function updateTeacherGroupAction(formData: FormData) {
   await requireAdmin();
   const groupId = value(formData, "groupId");
+  const target = value(formData, "returnTo") === "/admin/gebruikers" ? "/admin/gebruikers" : "/admin/toegang";
   if (groupId && !(await listKnownExternalGroups()).some((group) => group.provider === "smartschool" && group.externalGroupId === groupId)) {
-    return fail("Deze Smartschoolgroep is niet bekend.", "/admin/toegang");
+    return fail("Deze Smartschoolgroep is niet bekend.", target);
   }
-  await run(() => setConfiguredTeacherGroupId(groupId || null), "/admin/toegang");
+  await run(() => setConfiguredTeacherGroupId(groupId || null), target);
 }
 
 export async function saveMembershipAction(formData: FormData) {

@@ -1,10 +1,17 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { ManagedUser } from "@/lib/user-management";
 
 import { filterStudents, UserManagementView } from "./user-management-view";
 import { UserAccessMenu } from "./user-access-menu";
+import { updateUserFilterParams } from "./user-list-filters";
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/admin/gebruikers",
+  useRouter: () => ({ replace: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}));
 
 describe("UserManagementView", () => {
   it("zoekt op voor- en achternaam en combineert klas-, status- en toegangsfilters", () => {
@@ -15,8 +22,8 @@ describe("UserManagementView", () => {
     ];
     expect(filterStudents(users, { q: "marie" }).map((user) => user.id)).toEqual(["marie"]);
     expect(filterStudents(users, { q: "smet" }).map((user) => user.id)).toEqual(["marie"]);
-    expect(filterStudents(users, { class: ["class-5", "class-6"], status: "active", access: "without", sort: "first-desc" }).map((user) => user.id))
-      .toEqual(["anna"]);
+    expect(filterStudents(users, { class: "class-5", status: "disabled", sort: "first-desc" }).map((user) => user.id)).toEqual(["jonas"]);
+    expect(filterStudents(users, { class: ["class-5", "class-6"], access: "with" }).map((user) => user.id)).toEqual(["marie"]);
     expect(filterStudents(users, { sort: "last-asc" }).map((user) => user.id)).toEqual(["anna", "marie", "jonas"]);
   });
 
@@ -33,6 +40,8 @@ describe("UserManagementView", () => {
       access={[]}
       storageConnections={[]}
       classGroups={[]}
+      teacherGroups={[]}
+      teacherGroupId={null}
       params={{ size: "25", page: "1" }}
     />);
     expect(markup).toContain("Pagina 1 van 2");
@@ -40,6 +49,21 @@ describe("UserManagementView", () => {
     expect(markup).toContain("Individuele toegang");
     expect(markup).toContain('role="switch"');
     expect(markup).not.toContain("Naam 26");
+    expect(markup).not.toContain(">Toepassen<");
+    expect(markup).not.toContain(">Filteren<");
+    expect(markup.indexOf("Sortering")).toBeLessThan(markup.indexOf("Zoek op naam of voornaam"));
+    expect(markup.indexOf("Zoek op naam of voornaam")).toBeLessThan(markup.indexOf("Klassen"));
+    expect(markup).toContain('type="checkbox"');
+  });
+
+  it("behoudt andere filters en reset paginering bij directe wijzigingen", () => {
+    const current = new URLSearchParams("q=anna&page=4&teacherStatus=disabled&class=6EWI");
+    const next = updateUserFilterParams(current, { access: "with", class: ["6EWI", "6LWI"] });
+    expect(next.get("q")).toBe("anna");
+    expect(next.get("teacherStatus")).toBe("disabled");
+    expect(next.getAll("class")).toEqual(["6EWI", "6LWI"]);
+    expect(next.get("access")).toBe("with");
+    expect(next.has("page")).toBe(false);
   });
 
   it("maakt afgeleide toegang niet wijzigbaar en houdt individuele toegang apart", () => {

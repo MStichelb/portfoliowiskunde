@@ -3,9 +3,11 @@ import Link from "next/link";
 
 import { UserManagementView, type UserListSearchParams } from "@/app/components/user-management-view";
 import { requireAdmin } from "@/lib/auth";
+import { getConfiguredTeacherGroupId } from "@/lib/identity";
 import { getLearningSpaces } from "@/lib/repositories";
 import {
   listKnownClassGroups,
+  listKnownExternalGroups,
   listManagedMemberships,
   listManagedStorageConnections,
   listManagedUserAccess,
@@ -16,7 +18,7 @@ export const dynamic = "force-dynamic";
 
 export default async function UserManagementPage({ searchParams }: { searchParams: Promise<UserListSearchParams & { error?: string; saved?: string }> }) {
   await requireAdmin();
-  const [params, users, spaces, memberships, access, storageConnections, classGroups] = await Promise.all([
+  const [params, users, spaces, memberships, access, storageConnections, classGroups, externalGroups, teacherGroupId] = await Promise.all([
     searchParams,
     listManagedUsers(),
     getLearningSpaces(),
@@ -24,12 +26,15 @@ export default async function UserManagementPage({ searchParams }: { searchParam
     listManagedUserAccess(),
     listManagedStorageConnections(),
     listKnownClassGroups(),
+    listKnownExternalGroups(),
+    getConfiguredTeacherGroupId(),
   ]);
+  const teacherGroups = externalGroups.filter((group) => group.provider === "smartschool");
   return <main className="page-shell admin-page user-management-page">
     <Link className="secondary-button compact-back-button" href="/admin"><ArrowLeft size={16} aria-hidden />Terug naar beheer</Link>
     <header className="page-header"><p className="eyebrow">Globaal beheer</p><h1>Gebruikers</h1><p>Beheer lokale rollen, klas, publieke toegang en accountstatus. Smartschool kent nooit zelf applicatierollen toe.</p></header>
     {params.saved ? <p className="success-message" role="status">Wijziging opgeslagen.</p> : null}
     {params.error ? <p className="form-message" role="alert">{params.error}</p> : null}
-    <UserManagementView users={users} spaces={spaces} memberships={memberships} access={access} storageConnections={storageConnections} classGroups={classGroups} params={params} />
+    <UserManagementView users={users} spaces={spaces} memberships={memberships} access={access} storageConnections={storageConnections} classGroups={classGroups} teacherGroups={teacherGroups} teacherGroupId={teacherGroupId} params={params} />
   </main>;
 }

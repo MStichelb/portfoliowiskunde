@@ -423,21 +423,32 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .account-status-label.disabled, .account-status-toggle.disabled { background: #f7e7e9; color: #8a3340; }
 .account-status-toggle { border: 0; cursor: pointer; }
 .account-status-toggle > span { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-.user-filter-bar, .student-filter-panel { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: 14px 0 18px; }
+.user-filter-bar, .student-filter-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 12px 0 16px; }
 .user-row-actions { display: inline-flex; align-items: center; gap: 6px; }
 .student-reset-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: -2px 0 18px; padding: 12px; border: 1px solid #dccfd1; border-radius: 5px; background: #fbf8f8; }
 .student-reset-toolbar > div { flex: 1 1 260px; display: grid; gap: 2px; }
 .student-reset-toolbar small { color: #68757b; }
-.student-reset-toolbar label { display: grid; min-width: 190px; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
+.student-reset-toolbar label { display: grid; min-width: 170px; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
 .student-reset-toolbar select { min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
 .danger-outline-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-color: #a84350 !important; color: #8a3340 !important; }
 .danger-outline-button:disabled { cursor: not-allowed; opacity: .5; }
-.user-filter-bar label, .student-filter-panel > label { display: grid; min-width: 150px; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
-.user-filter-bar select, .student-filter-panel select, .student-filter-panel input { min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
-.user-search-field { position: relative; flex: 1 1 260px; }
+.filter-control { display: grid; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
+.filter-control select, .student-filter-panel input { min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
+.filter-sort { flex: 0 1 150px; }
+.filter-page-size { flex: 0 0 92px; }
+.user-filter-checkbox { display: inline-flex; min-height: 40px; align-items: center; gap: 7px; color: #314149; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.user-filter-checkbox input { width: 18px; height: 18px; accent-color: #075c75; }
+.teacher-filter-bar { margin-top: 10px; }
+.teacher-detection-setting { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 12px; padding: 10px 12px; border: 1px solid #e3e7e5; border-radius: 5px; background: #fbf8f8; }
+.teacher-detection-setting > div { display: grid; flex: 1 1 300px; gap: 2px; }
+.teacher-detection-setting strong { display: inline-flex; align-items: center; gap: 6px; }
+.teacher-detection-setting small { color: #68757b; }
+.teacher-detection-setting .teacher-group-setting { flex: 0 1 360px; }
+.teacher-detection-setting .teacher-group-setting select { width: 100%; }
+.user-search-field { position: relative; flex: 1 1 240px; max-width: 340px; }
 .user-search-field svg { position: absolute; z-index: 1; bottom: 11px; left: 10px; color: #68757b; }
 .user-search-field input { width: 100%; padding-left: 34px; }
-.class-filter { position: relative; min-width: 150px; }
+.class-filter { position: relative; flex: 0 1 150px; min-width: 140px; }
 .class-filter summary { min-height: 40px; padding: 9px 12px; border: 1px solid #9ab0ad; border-radius: 4px; background: #fff; cursor: pointer; font-weight: 700; }
 .class-filter > div { position: absolute; z-index: 20; display: grid; width: max-content; min-width: 220px; max-height: 260px; overflow-y: auto; gap: 7px; margin-top: 5px; padding: 12px; border: 1px solid #c9d0cc; border-radius: 4px; background: #fff; box-shadow: 0 8px 20px rgba(0,0,0,.14); }
 .class-filter label { display: flex; align-items: center; gap: 8px; font-weight: 600; }
@@ -464,6 +475,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-context-help { grid-column: 1 / -1; margin: 0; color: #68757b; }
 .source-context-help a { font-weight: 700; }
 .user-management-page { max-width: 1180px; }
+.managed-user-table select { max-width: 220px; }
 .admin-summary-table td small, .management-list small { display: block; margin-top: 2px; color: #68757b; }
 .inline-management-form { display: flex; align-items: center; gap: 7px; }
 .inline-management-form select { min-height: 38px; }
@@ -526,6 +538,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
   .inline-management-form { align-items: stretch; flex-direction: column; }
   .identity-welcome { display: none; }
   .manager-role-groups { grid-template-columns: 1fr; }
+  .student-filter-panel { align-items: end; }
+  .user-search-field { max-width: none; }
 }
 
 @media (max-width: 420px) {
@@ -558,6 +572,10 @@ h3 { font-size: 17px; margin-bottom: 12px; }
   .group-mapping-list li > span:nth-child(2) { display: none; }
   .group-mapping-list li > strong { grid-column: 1; }
   .group-mapping-list li > form { grid-column: 2; grid-row: 1 / span 2; }
+  .teacher-detection-setting { align-items: stretch; }
+  .teacher-detection-setting .teacher-group-setting, .teacher-detection-setting .teacher-group-setting select { width: 100%; }
+  .student-filter-panel > .filter-control, .student-filter-panel > .user-search-field, .student-filter-panel > .class-filter { flex: 1 1 100%; max-width: none; }
+  .student-reset-toolbar > div, .student-reset-toolbar label, .student-reset-toolbar > button { flex: 1 1 100%; width: 100%; }
 }
 
 @media (max-width: 640px) {
