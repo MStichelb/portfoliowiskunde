@@ -15,7 +15,7 @@ import {
   getErrorReportLearningSpaceId,
   getAdminLearningSpaceBySlug,
   archiveLearningSpace,
-  createLearningSpace,
+  createLearningSpaceForOwner,
   createTheme,
   deleteTheme,
   getLearningSpace,
@@ -191,7 +191,7 @@ export async function createLearningSpaceAction(formData: FormData) {
   if (await getAdminLearningSpaceBySlug(input.slug)) redirect("/admin/instellingen?error=duplicate");
   let space;
   try {
-    space = await createLearningSpace(input);
+    space = await createLearningSpaceForOwner(input, admin.id);
   } catch (error) {
     if (isUniqueConstraintError(error)) redirect("/admin/instellingen?error=duplicate");
     throw error;

@@ -13,7 +13,7 @@ export function canAccessAdmin(user: AppUser | null): boolean {
 }
 
 export function canCreateLearningSpace(user: AppUser | null): boolean {
-  return Boolean(user && user.status === "active" && user.role === "superadmin");
+  return canAccessAdmin(user);
 }
 
 export async function getAccessibleLearningSpaceIds(user: AppUser | null): Promise<string[]> {
@@ -99,7 +99,7 @@ export async function requireLearningSpaceManagement(user: AppUser | null, learn
 }
 
 export function requireLearningSpaceCreation(user: AppUser | null): void {
-  if (!canCreateLearningSpace(user)) throw new AuthorizationError("Nieuwe leeromgevingen kunnen momenteel alleen door de hoofdbeheerder worden aangemaakt.");
+  if (!canCreateLearningSpace(user)) throw new AuthorizationError("Alleen actieve leraren en hoofdbeheerders kunnen een leeromgeving aanmaken.");
 }
 
 export async function requireLearningSpaceConfiguration(user: AppUser | null, learningSpaceId: string): Promise<void> {

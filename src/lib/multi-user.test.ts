@@ -55,8 +55,11 @@ describe("multi-user authorization foundation", () => {
     expect(await canManageLearningSpace(disabledTeacher, "space-5")).toBe(false);
     expect(canAccessAdmin(student)).toBe(false);
     expect(canCreateLearningSpace(superadmin)).toBe(true);
-    expect(canCreateLearningSpace(teacher)).toBe(false);
-    expect(() => requireLearningSpaceCreation(teacher)).toThrow("hoofdbeheerder");
+    expect(canCreateLearningSpace(teacher)).toBe(true);
+    expect(canCreateLearningSpace(student)).toBe(false);
+    expect(canCreateLearningSpace(disabledTeacher)).toBe(false);
+    expect(() => requireLearningSpaceCreation(teacher)).not.toThrow();
+    expect(() => requireLearningSpaceCreation(student)).toThrow("actieve leraren en hoofdbeheerders");
     await expect(requireLearningSpaceManagement(teacher, "space-6")).rejects.toThrow("geen beheerrechten");
   });
 

@@ -312,6 +312,14 @@ async function defaultLearningSpaceId(): Promise<string> {
 }
 
 export async function createLearningSpace(input: LearningSpaceInput): Promise<LearningSpace> {
+  return createLearningSpaceWithOwner(input, null);
+}
+
+export async function createLearningSpaceForOwner(input: LearningSpaceInput, ownerUserId: string): Promise<LearningSpace> {
+  return createLearningSpaceWithOwner(input, ownerUserId);
+}
+
+async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUserId: string | null): Promise<LearningSpace> {
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
@@ -323,6 +331,12 @@ export async function createLearningSpace(input: LearningSpaceInput): Promise<Le
       primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now] }];
   statements.push(sourceUpsertStatement(id, "primary", primary, true, now));
   if (mirror) statements.push(sourceUpsertStatement(id, "mirror", mirror, false, now));
+  if (ownerUserId) {
+    statements.push({
+      sql: "INSERT INTO learning_space_members (learning_space_id, user_id, role, created_at, updated_at) VALUES (?, ?, 'owner', ?, ?)",
+      args: [id, ownerUserId, now, now],
+    });
+  }
   await executeBatch(statements);
   return (await getLearningSpace(id))!;
 }
