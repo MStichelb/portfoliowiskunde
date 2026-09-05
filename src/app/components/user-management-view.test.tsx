@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ManagedUser } from "@/lib/user-management";
 
 import { filterStudents, UserManagementView } from "./user-management-view";
-import { UserAccessMenu } from "./user-access-menu";
+import { UserAccessDialogContent } from "./user-access-menu";
 import { updateUserFilterParams } from "./user-list-filters";
 
 vi.mock("next/navigation", () => ({
@@ -67,9 +67,11 @@ describe("UserManagementView", () => {
   });
 
   it("maakt afgeleide toegang niet wijzigbaar en houdt individuele toegang apart", () => {
-    const markup = renderToStaticMarkup(<UserAccessMenu
+    const markup = renderToStaticMarkup(<UserAccessDialogContent
       userId="user-1"
       userName="Voorbeeld"
+      userRole="teacher"
+      titleId="access-title"
       action={async () => undefined}
       spaces={[
         { id: "space-group", name: "Via groep", shortLabel: "GROEP", groupDerived: true, individual: false, managementRole: null },
@@ -79,6 +81,10 @@ describe("UserManagementView", () => {
     />);
     expect(markup).toContain("Automatisch via Smartschoolgroep");
     expect(markup).toContain("Via beheerrecht als editor");
+    expect(markup).toContain("Kijkrechten instellen voor Voorbeeld");
+    expect(markup).toContain('class="lucide lucide-star');
+    expect(markup).toContain('role="dialog"');
+    expect(markup).toContain('aria-modal="true"');
     const derivedControl = markup.match(/<input[^>]*aria-label="Via groep: Automatisch via Smartschoolgroep"[^>]*>/)?.[0];
     expect(derivedControl).toContain('checked=""');
     expect(derivedControl).toContain('disabled=""');

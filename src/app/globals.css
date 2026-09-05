@@ -456,11 +456,15 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .pagination { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 18px; }
 .pagination a { padding: 7px 10px; border: 1px solid #9ab0ad; border-radius: 4px; }
 .pagination a.disabled { pointer-events: none; opacity: .45; }
-.user-access-menu { position: relative; }
-.user-access-menu summary { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #9ab0ad; border-radius: 4px; cursor: pointer; font-weight: 700; }
-.user-access-menu summary > span { min-width: 20px; border-radius: 999px; background: #e7efec; text-align: center; }
-.user-access-popover { position: relative; display: grid; width: min(360px, calc(100vw - 36px)); gap: 8px; margin-top: 5px; padding: 12px; border: 1px solid #c9d0cc; border-radius: 5px; background: #fff; }
-.user-access-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.user-access-trigger { display: inline-flex; min-height: 34px; align-items: center; gap: 6px; padding: 6px 9px; border: 1px solid #9ab0ad; border-radius: 4px; background: #fff; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+.user-access-trigger > span { min-width: 20px; border-radius: 999px; background: #e7efec; text-align: center; }
+.user-access-dialog { display: grid; width: min(480px, 100%); max-height: min(680px, calc(100vh - 40px)); grid-template-rows: auto minmax(0, 1fr); padding: 22px; border: 1px solid #c9d0cc; border-radius: 6px; background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.22); }
+.user-access-dialog-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.user-access-dialog-heading h2 { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 20px; }
+.user-access-dialog-heading h2 svg { flex: 0 0 auto; }
+.user-access-list { display: grid; overflow-y: auto; gap: 0; margin-top: 16px; padding-right: 4px; }
+.user-access-row { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 16px; padding: 9px 2px; border-top: 1px solid #e3e7e5; }
+.user-access-row:first-child { border-top: 0; }
 .user-access-row small { margin: 0; }
 .user-access-row form, .inherited-access-control { display: inline-flex; align-items: center; gap: 5px; }
 .user-access-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #075c75; }
@@ -509,7 +513,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .connection-action, .sync-submit-button { display: inline-flex; align-items: center; gap: 7px; }
 .admin-preview-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 20px; margin: 22px 0 20px; }
 .admin-preview-toolbar .compact-back-button, .admin-preview-toolbar .admin-preview-banner { margin: 0; }
-.admin-route .admin-card, .admin-route .settings-card, .admin-route .report-card, .admin-route .space-list-item, .admin-route .theme-editor, .admin-route .theme-editor-card, .admin-route .document-item, .admin-route .section-settings-card, .admin-route .source-role-card, .admin-route .active-source-summary, .admin-route .source-comparison, .admin-route .admin-summary-table, .admin-route .connection-list, .admin-route .confirm-dialog { border-color: var(--admin-border); background: var(--admin-surface); }
+.admin-route .admin-card, .admin-route .settings-card, .admin-route .report-card, .admin-route .space-list-item, .admin-route .theme-editor, .admin-route .theme-editor-card, .admin-route .document-item, .admin-route .section-settings-card, .admin-route .source-role-card, .admin-route .active-source-summary, .admin-route .source-comparison, .admin-route .admin-summary-table, .admin-route .connection-list, .admin-route .confirm-dialog, .admin-route .user-access-dialog { border-color: var(--admin-border); background: var(--admin-surface); }
 .admin-route .source-role-card.active-source-card { border-color: #5d9280; }
 .admin-route .admin-summary-table th, .admin-route .admin-summary-table td { border-bottom-color: #e7dcde; }
 .admin-route .admin-summary-table thead th, .admin-route .section-table-row th, .admin-route .section-table-row td { background: #f8f1f2; }
