@@ -311,7 +311,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .admin-route { min-height: calc(100vh - 54px); background: #f8f3f4; --admin-surface: #fdfafa; --admin-border: #dccfd1; }
 .admin-site-nav { background: #6d1e29; }
 .site-nav-space-context { display: inline-grid; flex: 0 0 auto; place-items: center; color: #fff; }
-.site-nav-space-zone { display: flex; flex: 1; min-width: 0; align-items: center; }
+.site-nav-space-zone { display: flex; flex: 1; min-width: 0; align-items: center; gap: 10px; }
 .site-nav-desktop-spaces { display: flex; flex: 1; min-width: 0; align-items: center; gap: 8px; }
 .site-nav-direct-spaces { display: flex; min-width: 0; align-items: center; gap: 8px; overflow-x: auto; padding: 2px 0; scrollbar-width: thin; }
 .site-nav-desktop-spaces a { display: inline-flex; flex: 0 0 auto; min-height: 32px; align-items: center; padding: 6px 9px; border: 1px solid rgba(255,255,255,.38); border-radius: 4px; color: #fff; font-size: 13px; font-weight: 700; text-transform: uppercase; }
