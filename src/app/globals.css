@@ -424,6 +424,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .account-status-toggle { border: 0; cursor: pointer; }
 .account-status-toggle > span { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
 .user-filter-bar, .student-filter-panel { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 12px 0 16px; }
+.student-filter-panel { align-items: flex-end; }
 .user-row-actions { display: inline-flex; align-items: center; gap: 6px; }
 .student-reset-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin: -2px 0 18px; padding: 12px; border: 1px solid #dccfd1; border-radius: 5px; background: #fbf8f8; }
 .student-reset-toolbar > div { flex: 1 1 260px; display: grid; gap: 2px; }
