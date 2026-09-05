@@ -11,7 +11,7 @@ vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/authorization", () => ({ getManageableLearningSpaceIds: mocks.getManageableLearningSpaceIds }));
 vi.mock("@/lib/repositories", () => ({ getLearningSpaces: mocks.getLearningSpaces }));
 vi.mock("@/app/components/page-banner", () => ({ PageBanner: () => null }));
-vi.mock("./actions", () => ({ createLearningSpaceAction: vi.fn(), logoutAction: vi.fn() }));
+vi.mock("./actions", () => ({ createLearningSpaceAction: vi.fn() }));
 
 import AdminPage from "./page";
 
@@ -29,6 +29,38 @@ describe("admin LearningSpace creation entry point", () => {
 
     expect(markup).toContain("Leeromgeving toevoegen");
     expect(markup).toContain("lucide-folder-plus");
+  });
+
+  it("shows only connections and creation actions to a teacher", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher"));
+
+    const markup = renderToStaticMarkup(await AdminPage({ searchParams: Promise.resolve({}) }));
+
+    expect(markup).toContain('href="/admin/verbindingen"');
+    expect(markup).toContain("Verbindingen");
+    expect(markup).toContain("Leeromgeving toevoegen");
+    expect(markup).not.toContain('href="/admin/gebruikers"');
+  });
+
+  it("shows connections, users and creation actions to a superadmin", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
+
+    const markup = renderToStaticMarkup(await AdminPage({ searchParams: Promise.resolve({}) }));
+
+    expect(markup).toContain('href="/admin/verbindingen"');
+    expect(markup).toContain('href="/admin/gebruikers"');
+    expect(markup).toContain("Leeromgeving toevoegen");
+  });
+
+  it("does not show the retired global actions", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
+
+    const markup = renderToStaticMarkup(await AdminPage({ searchParams: Promise.resolve({}) }));
+
+    expect(markup).not.toContain("Smartschool koppelen");
+    expect(markup).not.toContain('href="/admin/toegang"');
+    expect(markup).not.toContain("Leeromgevingen beheren");
+    expect(markup).not.toContain("Uitloggen");
   });
 
   it("does not expose the admin creation flow to a student", async () => {
