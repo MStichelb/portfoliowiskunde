@@ -8,6 +8,7 @@ import { getManageableLearningSpaceIds } from "@/lib/authorization";
 import { getPublicEmergencyAccess, getPubliclyAccessibleLearningSpaceIds } from "@/lib/public-access";
 import { getLearningSpaces } from "@/lib/repositories";
 import { userFirstName } from "@/lib/identity";
+import { listManagedMemberships } from "@/lib/user-management";
 
 import "./globals.css";
 
@@ -28,20 +29,25 @@ export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const user = await getAuthenticatedUser();
-  const [spaces, accessibleIds, manageableIds, emergencyAccess] = await Promise.all([
+  const [spaces, accessibleIds, manageableIds, emergencyAccess, memberships] = await Promise.all([
     getLearningSpaces(true),
     getPubliclyAccessibleLearningSpaceIds(user),
     getManageableLearningSpaceIds(user),
     getPublicEmergencyAccess(),
+    user ? listManagedMemberships() : Promise.resolve([]),
   ]);
   const accessible = spaces.filter((space) => accessibleIds.includes(space.id));
   const manageable = spaces.filter((space) => manageableIds.includes(space.id));
+  const directIds = new Set(memberships.filter((membership) => membership.userId === user?.id
+    && (user?.role === "teacher" || membership.role === "owner")).map((membership) => membership.learningSpaceId));
+  const direct = spaces.filter((space) => directIds.has(space.id));
   return (
     <html lang="nl" className={sourceSans3.variable}>
       <body>
         <SiteNavigation
           spaces={accessible.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
           adminSpaces={manageable.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
+          directSpaces={direct.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
           user={user ? { firstName: userFirstName(user), role: user.role } : null}
           emergencyAccess={emergencyAccess.enabled}
         />

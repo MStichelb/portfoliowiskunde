@@ -468,4 +468,16 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX users_class_override_index ON users(class_group_override_id)",
     ],
   },
+  {
+    version: "024_legacy_learning_space_ownership",
+    statements: [
+      `INSERT INTO learning_space_members (learning_space_id, user_id, role, created_at, updated_at)
+        SELECT DISTINCT source.learning_space_id, connection.owner_user_id, 'owner', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        FROM learning_space_sources source
+        INNER JOIN storage_connections connection ON connection.id = source.storage_connection_id
+        WHERE connection.owner_user_id = 'user-legacy-superadmin'
+          AND connection.provider = 'onedrive'
+        ON CONFLICT(learning_space_id, user_id) DO NOTHING`,
+    ],
+  },
 ];

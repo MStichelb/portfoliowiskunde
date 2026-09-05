@@ -131,6 +131,7 @@ describe("Google Drive LearningSpace migration", () => {
       .toEqual(expect.arrayContaining(["user_id", "learning_space_id", "created_at", "updated_at"]));
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '021_multi_user_foundation'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '023_multi_user_access_management'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '024_legacy_learning_space_ownership'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT id, role, status FROM users WHERE id = 'user-legacy-superadmin'")).rows[0]).toMatchObject({
       role: "superadmin", status: "active",
     });
@@ -167,6 +168,45 @@ describe("Google Drive LearningSpace migration", () => {
     expect((await upgraded.execute("SELECT storage_connection_id FROM learning_space_sources WHERE id = 'space-6:primary'")).rows[0]?.storage_connection_id)
       .toBe("connection-onedrive-user-legacy-superadmin");
     expect((await upgraded.execute("SELECT value FROM app_settings WHERE key = 'onedrive_tokens'")).rows).toHaveLength(0);
+  });
+
+  it("koppelt alleen historische OneDrive-LearningSpaces duplicaatvrij aan de compatibility-superadmin", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-ownership-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 23)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-05T10:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.batch([
+      {
+        sql: `UPDATE learning_space_sources
+          SET provider_type = 'onedrive', storage_connection_id = 'connection-onedrive-user-legacy-superadmin'
+          WHERE id IN ('space-5:primary', 'space-6:primary')`,
+        args: [],
+      },
+      {
+        sql: `INSERT INTO learning_space_members (learning_space_id, user_id, role, created_at, updated_at)
+          VALUES ('space-6', 'user-legacy-superadmin', 'owner', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        args: [],
+      },
+    ], "write");
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    const memberships = await upgraded.execute(
+      "SELECT learning_space_id, user_id, role FROM learning_space_members ORDER BY learning_space_id",
+    );
+    expect(memberships.rows).toEqual([
+      expect.objectContaining({ learning_space_id: "space-5", user_id: "user-legacy-superadmin", role: "owner" }),
+      expect.objectContaining({ learning_space_id: "space-6", user_id: "user-legacy-superadmin", role: "owner" }),
+    ]);
+    expect((await upgraded.execute("SELECT version FROM schema_migrations WHERE version = '024_legacy_learning_space_ownership'")).rows).toHaveLength(1);
   });
 
   it("keeps existing anonymous reports valid when reporter names are added", async () => {

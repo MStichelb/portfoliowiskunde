@@ -29,6 +29,8 @@ describe("SiteNavigation admin context", () => {
     expect(markup).toContain("lucide-folder-cog");
     expect(markup).toMatch(/<a[^>]*aria-label="Startpagina"[^>]*href="\/"/);
     expect(markup).toMatch(/<a[^>]*aria-label="Beheer"[^>]*href="\/admin"/);
+    expect(markup.indexOf('aria-label="Startpagina"')).toBeLessThan(markup.indexOf('aria-label="Beheer"'));
+    expect(markup.indexOf('aria-label="Beheer"')).toBeLessThan(markup.indexOf("site-nav-space-divider"));
     expect(markup).not.toContain("Beheerhome");
     expect(markup).not.toContain("Globale beheerinstellingen");
   });
@@ -70,8 +72,56 @@ describe("SiteNavigation admin context", () => {
     />);
     expect(markup).toContain('href="/admin/6"');
     expect(markup).not.toContain('href="/admin/5"');
-    expect(markup).toContain("Welkom, ");
     expect(markup).toContain("lucide-star");
+  });
+
+  it("toont voor een hoofdbeheerder alleen eigenaarschappen direct en overige ruimtes achter plus", () => {
+    const markup = renderToStaticMarkup(<SiteNavigation
+      spaces={[
+        { slug: "5", name: "Volledige naam vijf", shortLabel: "5WIS" },
+        { slug: "6", name: "Volledige naam zes", shortLabel: "6WIS" },
+      ]}
+      adminSpaces={[
+        { slug: "5", name: "Volledige naam vijf", shortLabel: "5WIS" },
+        { slug: "6", name: "Volledige naam zes", shortLabel: "6WIS" },
+      ]}
+      directSpaces={[{ slug: "5", name: "Volledige naam vijf", shortLabel: "5WIS" }]}
+      user={{ firstName: "Beheer", role: "superadmin" }}
+    />);
+
+    expect(markup).toContain("site-nav-direct-spaces");
+    expect(markup).toContain("lucide-plus");
+    expect(markup).toContain('aria-label="Overige leeromgevingen"');
+    expect(markup).toContain(">5WIS</a>");
+    expect(markup).toContain(">6WIS</a>");
+    expect(markup).not.toContain("Volledige naam");
+  });
+
+  it("toont publieke kijktoegang van een leraar achter Eye met publieke routes", () => {
+    navigation.pathname = "/5";
+    const markup = renderToStaticMarkup(<SiteNavigation
+      spaces={[
+        { slug: "5", name: "Eigen ruimte", shortLabel: "5WIS" },
+        { slug: "6", name: "Kijkruimte", shortLabel: "6WIS" },
+      ]}
+      adminSpaces={[{ slug: "5", name: "Eigen ruimte", shortLabel: "5WIS" }]}
+      directSpaces={[{ slug: "5", name: "Eigen ruimte", shortLabel: "5WIS" }]}
+      user={{ firstName: "Leraar", role: "teacher" }}
+    />);
+
+    expect(markup).toContain("lucide-eye");
+    expect(markup).toContain('aria-label="Leeromgevingen met kijktoegang"');
+    expect(markup).toContain('href="/6"');
+    expect(markup).not.toContain('href="/admin/6"');
+    expect(markup).not.toContain("Eigen ruimte");
+    expect(markup).not.toContain("Kijkruimte");
+  });
+
+  it("verbergt Plus en Eye wanneer er geen overige ruimtes zijn", () => {
+    const space = { slug: "5", name: "Vijfde jaar", shortLabel: "5WIS" };
+    const markup = renderToStaticMarkup(<SiteNavigation spaces={[space]} adminSpaces={[space]} directSpaces={[space]} user={{ firstName: "Leraar", role: "teacher" }} />);
+    expect(markup).not.toContain("lucide-plus");
+    expect(markup).not.toContain("lucide-eye");
   });
 
   it("hides the LearningSpace selector for a student with one space and routes Home there", () => {
@@ -87,6 +137,10 @@ describe("SiteNavigation admin context", () => {
     const markup = renderToStaticMarkup(<SiteNavigation spaces={[{ slug: "5", name: "Vijfde jaar", shortLabel: "5WIS" }, { slug: "6", name: "Zesde jaar", shortLabel: "6WIS" }]} user={{ firstName: "Leerling", role: "student" }} />);
     expect(markup).toContain("site-nav-desktop-spaces");
     expect(markup).toContain("site-nav-mobile-spaces");
+    expect(markup).toContain(">5WIS</a>");
+    expect(markup).toContain(">6WIS</a>");
+    expect(markup).not.toContain("Vijfde jaar");
+    expect(markup).not.toContain("Zesde jaar");
     expect(markup).toMatch(/<a[^>]*aria-label="Startpagina"[^>]*href="\/"/);
   });
 
