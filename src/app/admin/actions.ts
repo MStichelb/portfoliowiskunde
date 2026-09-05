@@ -181,23 +181,24 @@ export async function saveLearningSpaceAction(_previousState: AdminActionState, 
 export async function createLearningSpaceAction(formData: FormData) {
   const admin = await requireAdminUser();
   requireLearningSpaceCreation(admin);
+  const returnToAdmin = stringValue(formData, "returnTo") === "admin";
   let input: ReturnType<typeof learningSpaceInput>;
   try {
     input = learningSpaceInput(formData);
     input = await assignOwnedStorageConnections(input, admin.id);
   } catch {
-    redirect("/admin/instellingen?error=invalid");
+    redirect(returnToAdmin ? "/admin?create=1&createError=invalid" : "/admin/instellingen?error=invalid");
   }
-  if (await getAdminLearningSpaceBySlug(input.slug)) redirect("/admin/instellingen?error=duplicate");
+  if (await getAdminLearningSpaceBySlug(input.slug)) redirect(returnToAdmin ? "/admin?create=1&createError=duplicate" : "/admin/instellingen?error=duplicate");
   let space;
   try {
     space = await createLearningSpaceForOwner(input, admin.id);
   } catch (error) {
-    if (isUniqueConstraintError(error)) redirect("/admin/instellingen?error=duplicate");
+    if (isUniqueConstraintError(error)) redirect(returnToAdmin ? "/admin?create=1&createError=duplicate" : "/admin/instellingen?error=duplicate");
     throw error;
   }
   revalidatePath("/admin");
-  redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
+  redirect(returnToAdmin ? "/admin?created=1" : `/admin/${encodeURIComponent(space.slug)}/instellingen`);
 }
 
 export async function createThemeAction(formData: FormData) {

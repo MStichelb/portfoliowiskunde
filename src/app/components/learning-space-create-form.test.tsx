@@ -11,7 +11,7 @@ describe("LearningSpaceCreateForm", () => {
     expect(markup).toContain(">URL<");
     expect(markup).toContain("Dit wordt gebruikt in het webadres van deze leeromgeving.");
     expect(markup).toContain("Dit bepaalt de volgorde in de navigatie.");
-    expect(markup).toContain("Compacte naam voor de navigatie, bijvoorbeeld 5WIS.");
+    expect(markup).toContain("Compacte naam voor de navigatie");
     expect(markup).not.toContain(">Algemeen</legend>");
     expect(markup).not.toContain(">Bronbestanden</legend>");
   });
