@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
+import { SmartschoolConnectLink } from "@/app/components/smartschool-connect-link";
 import type { LearningSpace, LearningSpaceSource } from "@/lib/repositories";
 
-import { SmartschoolConnectLink, sourceSummary } from "./page";
+import { sourceSummary } from "./page";
 
 describe("admin LearningSpace source summary", () => {
   it("uses Bron on the compact card while distinguishing an optional mirror", () => {

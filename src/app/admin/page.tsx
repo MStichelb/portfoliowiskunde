@@ -1,7 +1,8 @@
-import { Folder, KeyRound, Link2, LogOut, Users } from "lucide-react";
+import { Folder, KeyRound, LogOut, Users } from "lucide-react";
 import Link from "next/link";
 
 import { PageBanner } from "@/app/components/page-banner";
+import { SmartschoolConnectLink } from "@/app/components/smartschool-connect-link";
 import { requireAdminUser } from "@/lib/auth";
 import { getManageableLearningSpaceIds } from "@/lib/authorization";
 import { getLearningSpaces, type LearningSpace } from "@/lib/repositories";
@@ -37,10 +38,4 @@ function providerLabel(provider: LearningSpace["sourceType"]): string {
   if (provider === "onedrive") return "OneDrive";
   if (provider === "google_drive") return "Google Drive";
   return "Lokale bestanden (test)";
-}
-
-export function SmartschoolConnectLink() {
-  // OAuth initiation must remain a full browser navigation to the external provider.
-  // eslint-disable-next-line @next/next/no-html-link-for-pages
-  return <a className="secondary-button link-button" href="/api/auth/smartschool/link"><Link2 size={17} aria-hidden />Smartschool koppelen</a>;
 }

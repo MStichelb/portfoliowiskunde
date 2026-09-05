@@ -13,7 +13,7 @@ export async function setPublicEmergencyAccessAction(formData: FormData) {
   await setPublicEmergencyAccess(enabled);
   revalidatePath("/");
   revalidatePath("/admin", "layout");
-  redirect(`/admin/instellingen?emergency=${enabled ? "enabled" : "disabled"}`);
+  redirect(`/admin/verbindingen?emergency=${enabled ? "enabled" : "disabled"}`);
 }
 
 export async function saveSourcePathAction(formData: FormData) {

@@ -393,6 +393,9 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .connection-status small { color: #52616a; }
 .connection-ok > svg { color: #24734f; }
 .connection-problem > svg { color: #9b4d3f; }
+.connection-subsection { display: grid; gap: 14px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e0e5e2; }
+.connection-subsection h3 { margin: 0 0 5px; }
+.connection-subsection > div > p { margin: 0; color: #52616a; }
 .learning-spaces-page { max-width: none; }
 .space-list-info > span strong { color: #314149; }
 .space-list-info .source-role-badge, .space-list-info .mirror-active-badge { max-width: 100%; overflow-wrap: anywhere; }
