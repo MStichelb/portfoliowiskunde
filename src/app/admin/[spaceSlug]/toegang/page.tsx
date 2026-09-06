@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { AdminSpaceHeader } from "@/app/components/admin-space-header";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
+import { LearningSpaceGroupMappingForm } from "@/app/components/learning-space-group-mapping-form";
 import { LearningSpaceStudentAccessModal } from "@/app/components/learning-space-student-access-modal";
 import { requireAdminUser } from "@/lib/auth";
 import { canConfigureLearningSpace, canManageLearningSpace } from "@/lib/authorization";
@@ -15,7 +16,6 @@ import {
   listLearningSpaceIndividualStudentCandidates,
   listLearningSpaceTeacherCandidates,
   listLearningSpaceTeachers,
-  type KnownExternalGroup,
   type LearningSpaceIndividualStudent,
   type LearningSpaceTeacher,
   type LearningSpaceTeacherCandidate,
@@ -77,20 +77,24 @@ export default async function LearningSpaceAccessPage({
         : <p className="empty-state compact-empty">Nog geen leraren met toegang.</p>}
     </section>
     <section className="admin-card" aria-labelledby="groups-users-heading">
-      <div className="card-heading"><div><h2 id="groups-users-heading">Groepen koppelen</h2><p>Koppel Smartschoolgroepen aan deze leeromgeving om leerlingen automatisch kijktoegang te geven.</p></div></div>
-      {query.groupSaved === "1" ? <p className="success-message save-feedback" role="status">Groepskoppeling bijgewerkt.</p> : null}
-      {query.groupError ? <p className="form-message" role="alert">{query.groupError}</p> : null}
-      {canConfigureAccess ? <div className="learning-space-group-forms">
-        <GroupMappingForm learningSpaceId={space.id} label="Klasgroep" groups={classGroups} />
-        <GroupMappingForm learningSpaceId={space.id} label="Andere groep" groups={otherGroups} />
-      </div> : null}
-      <GroupMappingList learningSpaceId={space.id} mappings={groupMappings} canChange={canConfigureAccess} />
+      <div className="card-heading"><div><h2 id="groups-users-heading">Leerlingen koppelen</h2><p>Koppel leerlingen aan deze leeromgeving via Smartschoolgroepen of individueel.</p></div></div>
+      <div className="student-linking-group">
+        <h3>Groepen</h3>
+        <p>Koppel Smartschoolgroepen aan deze leeromgeving om leerlingen automatisch kijktoegang te geven.</p>
+        {query.groupSaved === "1" ? <p className="success-message save-feedback" role="status">Groepskoppeling bijgewerkt.</p> : null}
+        {query.groupError ? <p className="form-message" role="alert">{query.groupError}</p> : null}
+        {canConfigureAccess ? <div className="learning-space-group-forms">
+          <LearningSpaceGroupMappingForm learningSpaceId={space.id} label="Klasgroep" groups={classGroups} action={saveLearningSpaceGroupMappingAction} />
+          <LearningSpaceGroupMappingForm learningSpaceId={space.id} label="Andere groep" groups={otherGroups} action={saveLearningSpaceGroupMappingAction} />
+        </div> : null}
+        <GroupMappingList learningSpaceId={space.id} mappings={groupMappings} canChange={canConfigureAccess} />
+      </div>
       <div className="individual-student-access">
         <div className="card-heading">
           <div><h3>Individuele leerlingen</h3><p>Geef een leerling rechtstreeks kijktoegang tot deze leeromgeving.</p></div>
           {canConfigureAccess ? <LearningSpaceStudentAccessModal learningSpaceId={space.id} candidates={studentCandidates} action={saveLearningSpaceIndividualStudentAccessAction} /> : null}
         </div>
-        {query.studentSaved === "1" ? <p className="success-message save-feedback" role="status">Individuele toegang bijgewerkt.</p> : null}
+        {query.studentSaved === "1" ? <p className="success-message save-feedback compact-save-feedback" role="status">Individuele toegang bijgewerkt.</p> : null}
         {query.studentError ? <p className="form-message" role="alert">{query.studentError}</p> : null}
         <IndividualStudentAccessList learningSpaceId={space.id} students={individualStudents} canChange={canConfigureAccess} />
       </div>
@@ -99,20 +103,12 @@ export default async function LearningSpaceAccessPage({
   </main>;
 }
 
-function GroupMappingForm({ learningSpaceId, label, groups }: { learningSpaceId: string; label: string; groups: KnownExternalGroup[] }) {
-  return <form action={saveLearningSpaceGroupMappingAction} className="management-add-form learning-space-group-form">
-    <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
-    <label>{label}<select name="externalGroupId" required defaultValue="" disabled={groups.length === 0}><option value="" disabled>{groups.length ? `Kies ${label.toLowerCase()}` : `Geen beschikbare ${label.toLowerCase()}en`}</option>{groups.map((group) => <option key={group.externalGroupId} value={group.externalGroupId}>{group.externalGroupName ?? group.externalGroupId}</option>)}</select></label>
-    <button className="secondary-button" type="submit" disabled={groups.length === 0}>Koppelen</button>
-  </form>;
-}
-
 function GroupMappingList({ learningSpaceId, mappings, canChange }: { learningSpaceId: string; mappings: ManagedGroupMapping[]; canChange: boolean }) {
   if (mappings.length === 0) return <p className="empty-state compact-empty">Nog geen Smartschoolgroepen gekoppeld.</p>;
   return <ul className="management-list learning-space-group-list">{mappings.map((mapping) => {
     const isClassGroup = Boolean(mapping.externalGroupName && isClassGroupName(mapping.externalGroupName));
     return <li key={mapping.id}>
-      <span><strong>{mapping.externalGroupName ?? mapping.externalGroupId}</strong><small>{mapping.externalGroupId}</small></span>
+      <span><strong>{mapping.externalGroupName ?? mapping.externalGroupId}</strong></span>
       <span className="group-type-badge">{isClassGroup ? "Klasgroep" : "Andere groep"}</span>
       {canChange ? <ConfirmActionButton
         action={removeLearningSpaceGroupMappingAction}

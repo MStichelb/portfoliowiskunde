@@ -1,6 +1,6 @@
 "use client";
 
-import { Plus, Search, UserPlus, X } from "lucide-react";
+import { Ban, Plus, Search, UserPlus, X } from "lucide-react";
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 
 import type { LearningSpaceIndividualStudent } from "@/lib/user-management";
@@ -39,8 +39,9 @@ export function LearningSpaceStudentAccessModal({
   }, [close, open]);
 
   return <>
-    <button ref={triggerRef} className="secondary-button" type="button" onClick={() => setOpen(true)}>
-      <UserPlus size={17} aria-hidden />Leerling toevoegen
+    <button ref={triggerRef} className="secondary-button student-access-trigger" type="button" onClick={() => setOpen(true)}>
+      <UserPlus size={17} aria-hidden />
+      <span>Leerling toevoegen</span>
     </button>
     {open ? <div className="confirm-backdrop" role="presentation">
       <div className="student-access-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
@@ -54,14 +55,20 @@ export function LearningSpaceStudentAccessModal({
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Zoek op naam, voornaam of klas" autoComplete="off" />
         </label>
         <div className="student-access-candidates">
+          <div className="student-access-candidate student-access-candidate-header" aria-hidden="true">
+            <span></span><span>Naam</span><span>Voornaam</span><span>Klas</span>
+          </div>
           {matchingCandidates.length ? matchingCandidates.map((student) => <div className="student-access-candidate" key={student.userId}>
             <form action={action}>
               <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
               <input type="hidden" name="userId" value={student.userId} />
-              <button className="mini-icon-button" type="submit" disabled={student.status !== "active"} aria-label={`${student.displayName} toevoegen`} title={student.status === "active" ? "Leerling toevoegen" : "Uitgeschakelde leerling"}><Plus size={16} aria-hidden /></button>
+              <button className="icon-button student-access-candidate-action" type="submit" disabled={student.status !== "active"} aria-label={student.status === "active" ? `${student.displayName} toevoegen` : `${student.displayName}: gebruiker uitgeschakeld`} title={student.status === "active" ? "Leerling toevoegen" : "Gebruiker uitgeschakeld"}>
+                {student.status === "active" ? <Plus size={17} aria-hidden /> : <Ban size={17} aria-hidden />}
+              </button>
             </form>
-            <span><strong>{student.lastName ?? student.displayName}</strong><small>{student.firstName ?? "-"}</small></span>
-            <span><strong>{student.className ?? "Geen klas"}</strong><small>{student.status === "active" ? "Actief" : "Uitgeschakeld"}</small></span>
+            <span>{student.lastName ?? student.displayName}</span>
+            <span>{student.firstName ?? "-"}</span>
+            <span>{student.className ?? "-"}</span>
           </div>) : <p className="empty-state compact-empty">Geen leerlingen gevonden.</p>}
         </div>
       </div>

@@ -19,16 +19,17 @@ describe("LearningSpace student access modal", () => {
     expect(markup).not.toContain('role="dialog"');
   });
 
-  it("renders name, class and status while disabling inactive candidates", () => {
+  it("renders four columns and a Ban action for inactive candidates", () => {
     const markup = renderToStaticMarkup(<LearningSpaceStudentAccessModal learningSpaceId="space-5" candidates={candidates} action={vi.fn()} initialOpen />);
 
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain("Zoek op naam, voornaam of klas");
     expect(markup).toContain("De Smet");
     expect(markup).toContain("5WEWI");
-    expect(markup).toContain("Uitgeschakeld");
-    expect(markup).toContain('disabled="" aria-label="Bram Janssens toevoegen"');
-    expect(markup).toContain('title="Uitgeschakelde leerling"');
+    expect(markup).toContain("Naam</span><span>Voornaam</span><span>Klas");
+    expect(markup).toContain('disabled="" aria-label="Bram Janssens: gebruiker uitgeschakeld"');
+    expect(markup).toContain('title="Gebruiker uitgeschakeld"');
+    expect(markup).toContain('lucide-ban');
   });
 
   it("filters case-insensitively on name, first name and class", () => {

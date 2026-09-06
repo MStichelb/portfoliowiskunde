@@ -226,7 +226,8 @@ describe("LearningSpace access", () => {
     const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
 
     expect(markup).toContain('<h2 id="teachers-heading">Leraren</h2>');
-    expect(markup).toContain('<h2 id="groups-users-heading">Groepen koppelen</h2>');
+    expect(markup).toContain('<h2 id="groups-users-heading">Leerlingen koppelen</h2>');
+    expect(markup).toContain("<h3>Groepen</h3>");
     expect(markup).toContain('<h2 id="users-heading">Gebruikers</h2>');
     expect(markup).toContain("Nog geen leraren met toegang.");
     expect(markup).not.toContain("<table");
