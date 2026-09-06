@@ -7,13 +7,23 @@ import { requireAdminUser } from "@/lib/auth";
 import { canConfigureLearningSpace, canManageLearningSpace } from "@/lib/authorization";
 import { getAdminLearningSpaceBySlug } from "@/lib/repositories";
 import {
+  isClassGroupName,
+  listKnownExternalGroups,
+  listLearningSpaceGroupMappings,
   listLearningSpaceTeacherCandidates,
   listLearningSpaceTeachers,
+  type KnownExternalGroup,
   type LearningSpaceTeacher,
   type LearningSpaceTeacherCandidate,
+  type ManagedGroupMapping,
 } from "@/lib/user-management";
 
-import { removeLearningSpaceTeacherAccessAction, saveLearningSpaceTeacherAccessAction } from "./actions";
+import {
+  removeLearningSpaceGroupMappingAction,
+  removeLearningSpaceTeacherAccessAction,
+  saveLearningSpaceGroupMappingAction,
+  saveLearningSpaceTeacherAccessAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -22,19 +32,30 @@ export default async function LearningSpaceAccessPage({
   searchParams,
 }: {
   params: Promise<{ spaceSlug: string }>;
-  searchParams?: Promise<{ accessSaved?: string; accessError?: string }>;
+  searchParams?: Promise<{ accessSaved?: string; accessError?: string; groupSaved?: string; groupError?: string }>;
 }) {
   const user = await requireAdminUser();
   const { spaceSlug } = await params;
   const space = await getAdminLearningSpaceBySlug(spaceSlug);
   if (!space || !await canManageLearningSpace(user, space.id)) notFound();
-  const canChangeTeacherAccess = await canConfigureLearningSpace(user, space.id);
-  const emptyQuery: { accessSaved?: string; accessError?: string } = {};
-  const [teachers, candidates, query] = await Promise.all([
+  const canConfigureAccess = await canConfigureLearningSpace(user, space.id);
+  const emptyQuery: { accessSaved?: string; accessError?: string; groupSaved?: string; groupError?: string } = {};
+  const [teachers, candidates, groupMappings, knownGroups, query] = await Promise.all([
     listLearningSpaceTeachers(space.id),
-    canChangeTeacherAccess ? listLearningSpaceTeacherCandidates(space.id) : Promise.resolve([]),
+    canConfigureAccess ? listLearningSpaceTeacherCandidates(space.id) : Promise.resolve([]),
+    listLearningSpaceGroupMappings(space.id),
+    canConfigureAccess ? listKnownExternalGroups() : Promise.resolve([]),
     searchParams ?? Promise.resolve(emptyQuery),
   ]);
+  const mappedGroupIds = new Set(groupMappings
+    .filter((mapping) => mapping.provider === "smartschool")
+    .map((mapping) => mapping.externalGroupId));
+  const availableGroups = knownGroups.filter((group) =>
+    group.provider === "smartschool" && !mappedGroupIds.has(group.externalGroupId));
+  const classGroups = availableGroups.filter((group) =>
+    Boolean(group.externalGroupName && isClassGroupName(group.externalGroupName)));
+  const otherGroups = availableGroups.filter((group) =>
+    !group.externalGroupName || !isClassGroupName(group.externalGroupName));
 
   return <main className="page-shell admin-page admin-space-page learning-space-access-page">
     <AdminSpaceHeader current={space} section="access" user={user} />
@@ -42,14 +63,49 @@ export default async function LearningSpaceAccessPage({
     {query.accessError ? <p className="form-message" role="alert">{query.accessError}</p> : null}
     <section className="admin-card" aria-labelledby="teachers-heading">
       <div className="card-heading"><div><h2 id="teachers-heading">Leraren</h2><p>Beheer de leraren die deze leeromgeving kunnen bekijken of bewerken.</p></div></div>
-      {canChangeTeacherAccess ? <TeacherAccessForm learningSpaceId={space.id} candidates={candidates} /> : null}
+      {canConfigureAccess ? <TeacherAccessForm learningSpaceId={space.id} candidates={candidates} /> : null}
       {teachers.length
-        ? <TeacherAccessTable learningSpaceId={space.id} teachers={teachers} canChange={canChangeTeacherAccess} />
+        ? <TeacherAccessTable learningSpaceId={space.id} teachers={teachers} canChange={canConfigureAccess} />
         : <p className="empty-state compact-empty">Nog geen leraren met toegang.</p>}
     </section>
-    <section className="admin-card" aria-labelledby="groups-users-heading"><h2 id="groups-users-heading">Groepen en gebruikers koppelen</h2><p>Koppel Smartschoolgroepen of individuele leerlingen aan deze leeromgeving.</p></section>
+    <section className="admin-card" aria-labelledby="groups-users-heading">
+      <div className="card-heading"><div><h2 id="groups-users-heading">Groepen en gebruikers koppelen</h2><p>Koppel Smartschoolgroepen aan deze leeromgeving. Leerlingen en leraren in deze groepen krijgen kijktoegang.</p></div></div>
+      {query.groupSaved === "1" ? <p className="success-message save-feedback" role="status">Groepskoppeling bijgewerkt.</p> : null}
+      {query.groupError ? <p className="form-message" role="alert">{query.groupError}</p> : null}
+      {canConfigureAccess ? <div className="learning-space-group-forms">
+        <GroupMappingForm learningSpaceId={space.id} label="Klasgroep" groups={classGroups} />
+        <GroupMappingForm learningSpaceId={space.id} label="Andere groep" groups={otherGroups} />
+      </div> : null}
+      <GroupMappingList learningSpaceId={space.id} mappings={groupMappings} canChange={canConfigureAccess} />
+    </section>
     <section className="admin-card" aria-labelledby="users-heading"><h2 id="users-heading">Gebruikers</h2><p>Bekijk de leerlingen die toegang hebben tot deze leeromgeving.</p></section>
   </main>;
+}
+
+function GroupMappingForm({ learningSpaceId, label, groups }: { learningSpaceId: string; label: string; groups: KnownExternalGroup[] }) {
+  return <form action={saveLearningSpaceGroupMappingAction} className="management-add-form learning-space-group-form">
+    <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
+    <label>{label}<select name="externalGroupId" required defaultValue="" disabled={groups.length === 0}><option value="" disabled>{groups.length ? `Kies ${label.toLowerCase()}` : `Geen beschikbare ${label.toLowerCase()}en`}</option>{groups.map((group) => <option key={group.externalGroupId} value={group.externalGroupId}>{group.externalGroupName ?? group.externalGroupId}</option>)}</select></label>
+    <button className="secondary-button" type="submit" disabled={groups.length === 0}>Koppelen</button>
+  </form>;
+}
+
+function GroupMappingList({ learningSpaceId, mappings, canChange }: { learningSpaceId: string; mappings: ManagedGroupMapping[]; canChange: boolean }) {
+  if (mappings.length === 0) return <p className="empty-state compact-empty">Nog geen Smartschoolgroepen gekoppeld.</p>;
+  return <ul className="management-list learning-space-group-list">{mappings.map((mapping) => {
+    const isClassGroup = Boolean(mapping.externalGroupName && isClassGroupName(mapping.externalGroupName));
+    return <li key={mapping.id}>
+      <span><strong>{mapping.externalGroupName ?? mapping.externalGroupId}</strong><small>{mapping.externalGroupId}</small></span>
+      <span className="group-type-badge">{isClassGroup ? "Klasgroep" : "Andere groep"}</span>
+      {canChange ? <ConfirmActionButton
+        action={removeLearningSpaceGroupMappingAction}
+        fields={{ learningSpaceId, mappingId: mapping.id }}
+        label={<Trash2 size={16} aria-hidden />}
+        confirmTitle="Groepskoppeling verwijderen?"
+        confirmText="De automatische kijktoegang via deze Smartschoolgroep valt weg. Individuele en beheerrechten blijven behouden."
+      /> : null}
+    </li>;
+  })}</ul>;
 }
 
 function TeacherAccessForm({ learningSpaceId, candidates }: { learningSpaceId: string; candidates: LearningSpaceTeacherCandidate[] }) {

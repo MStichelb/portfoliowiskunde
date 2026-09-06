@@ -11,8 +11,12 @@ const mocks = vi.hoisted(() => ({
   getAdminLearningSpaceBySlug: vi.fn(),
   listLearningSpaceTeachers: vi.fn(),
   listLearningSpaceTeacherCandidates: vi.fn(),
+  listLearningSpaceGroupMappings: vi.fn(),
+  listKnownExternalGroups: vi.fn(),
   saveTeacherAccess: vi.fn(),
   removeTeacherAccess: vi.fn(),
+  saveGroupMapping: vi.fn(),
+  removeGroupMapping: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NEXT_NOT_FOUND"); }),
 }));
 
@@ -23,12 +27,17 @@ vi.mock("@/lib/authorization", () => ({
 }));
 vi.mock("@/lib/repositories", () => ({ getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug }));
 vi.mock("@/lib/user-management", () => ({
+  isClassGroupName: (name: string) => /^[3-6]/.test(name.trim()),
   listLearningSpaceTeachers: mocks.listLearningSpaceTeachers,
   listLearningSpaceTeacherCandidates: mocks.listLearningSpaceTeacherCandidates,
+  listLearningSpaceGroupMappings: mocks.listLearningSpaceGroupMappings,
+  listKnownExternalGroups: mocks.listKnownExternalGroups,
 }));
 vi.mock("./actions", () => ({
   saveLearningSpaceTeacherAccessAction: mocks.saveTeacherAccess,
   removeLearningSpaceTeacherAccessAction: mocks.removeTeacherAccess,
+  saveLearningSpaceGroupMappingAction: mocks.saveGroupMapping,
+  removeLearningSpaceGroupMappingAction: mocks.removeGroupMapping,
 }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("@/app/components/admin-space-header", () => ({
@@ -45,6 +54,8 @@ describe("LearningSpace access", () => {
     mocks.canConfigureLearningSpace.mockResolvedValue(false);
     mocks.listLearningSpaceTeachers.mockResolvedValue([]);
     mocks.listLearningSpaceTeacherCandidates.mockResolvedValue([]);
+    mocks.listLearningSpaceGroupMappings.mockResolvedValue([]);
+    mocks.listKnownExternalGroups.mockResolvedValue([]);
   });
 
   it.each([
@@ -117,12 +128,54 @@ describe("LearningSpace access", () => {
     expect(markup).toContain('<option value="viewer" selected="">Kijker</option>');
     expect(markup).toContain('<option value="editor">Bewerker</option>');
     expect((markup.match(/class="secondary-button teacher-role-action"/g) ?? [])).toHaveLength(2);
-    expect((markup.match(/<select/g) ?? [])).toHaveLength(2);
+    expect((markup.match(/<select/g) ?? [])).toHaveLength(4);
     expect(mocks.listLearningSpaceTeacherCandidates).toHaveBeenCalledWith(space.id);
     expect((markup.match(/aria-label="Lerarentoegang verwijderen\?"/g) ?? [])).toHaveLength(2);
   });
 
-  it("renders all placeholders and the teacher empty state", async () => {
+  it("splits class and other Smartschool groups and excludes existing mappings", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("owner", "teacher"));
+    mocks.canConfigureLearningSpace.mockResolvedValue(true);
+    mocks.listKnownExternalGroups.mockResolvedValue([
+      { provider: "smartschool", externalGroupId: "class-5", externalGroupName: "5WEWI" },
+      { provider: "smartschool", externalGroupId: "class-6", externalGroupName: "6WEWI" },
+      { provider: "smartschool", externalGroupId: "club", externalGroupName: "Wiskundeclub" },
+      { provider: "other", externalGroupId: "ignored", externalGroupName: "5Anders" },
+    ]);
+    mocks.listLearningSpaceGroupMappings.mockResolvedValue([
+      { id: "mapping-6", learningSpaceId: space.id, provider: "smartschool", externalGroupId: "class-6", externalGroupName: "6WEWI" },
+    ]);
+
+    const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+
+    expect(markup).toContain("<label>Klasgroep<select");
+    expect(markup).toContain("<label>Andere groep<select");
+    expect(markup).toContain('<option value="class-5">5WEWI</option>');
+    expect(markup).toContain('<option value="club">Wiskundeclub</option>');
+    expect(markup).not.toContain('<option value="class-6">');
+    expect(markup).not.toContain("5Anders");
+    expect(markup).toContain("6WEWI");
+    expect(markup).toContain("Klasgroep");
+    expect((markup.match(/>Koppelen<\/button>/g) ?? [])).toHaveLength(2);
+  });
+
+  it("shows scoped mappings read-only to an editor", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("editor", "teacher"));
+    mocks.listLearningSpaceGroupMappings.mockResolvedValue([
+      { id: "mapping-5", learningSpaceId: space.id, provider: "smartschool", externalGroupId: "class-5", externalGroupName: "5WEWI" },
+    ]);
+
+    const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+
+    expect(mocks.listLearningSpaceGroupMappings).toHaveBeenCalledWith(space.id);
+    expect(mocks.listKnownExternalGroups).not.toHaveBeenCalled();
+    expect(markup).toContain("5WEWI");
+    expect(markup).toContain("Klasgroep");
+    expect(markup).not.toContain("Koppelen");
+    expect(markup).not.toContain("Groepskoppeling verwijderen?");
+  });
+
+  it("renders the group card and remaining users placeholder", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("editor", "teacher"));
 
     const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));

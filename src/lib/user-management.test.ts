@@ -8,10 +8,12 @@ import { createLearningSpaceGroupMapping, createUser, findOrCreateExternalUser, 
 import { getAccessibleLearningSpaceIds } from "./authorization";
 import { ensureStorageConnection, saveStorageCredentials } from "./storage-connections";
 import {
+  deleteLearningSpaceGroupMapping,
   deleteManagedGroupMapping,
   isClassGroupName,
   listKnownClassGroups,
   listKnownExternalGroups,
+  listLearningSpaceGroupMappings,
   listManagedGroupUsers,
   listManagedGroupMappings,
   listManagedMemberships,
@@ -79,9 +81,16 @@ describe("superadmin user and access management", () => {
     await replaceExternalIdentityGroups(login.identity.id, [{ provider: "smartschool", externalGroupId: "group-6wis", externalGroupName: "6WIS", membershipType: "direct" }]);
     expect(await listKnownExternalGroups()).toEqual([expect.objectContaining({ provider: "smartschool", externalGroupId: "group-6wis", externalGroupName: "6WIS" })]);
     const id = await createLearningSpaceGroupMapping({ learningSpaceId: "space-6", provider: "smartschool", externalGroupId: "group-6wis", externalGroupName: "6WIS" });
-    expect(await listManagedGroupMappings()).toEqual([expect.objectContaining({ id, learningSpaceId: "space-6", externalGroupId: "group-6wis" })]);
+    const otherId = await createLearningSpaceGroupMapping({ learningSpaceId: "space-5", provider: "smartschool", externalGroupId: "group-6wis", externalGroupName: "6WIS" });
+    expect(await listLearningSpaceGroupMappings("space-6")).toEqual([
+      expect.objectContaining({ id, learningSpaceId: "space-6", externalGroupId: "group-6wis" }),
+    ]);
     await expect(createLearningSpaceGroupMapping({ learningSpaceId: "space-6", provider: "smartschool", externalGroupId: "group-6wis" })).rejects.toThrow();
-    await deleteManagedGroupMapping(id);
+    await deleteLearningSpaceGroupMapping(id, "space-5");
+    expect(await listLearningSpaceGroupMappings("space-6")).toHaveLength(1);
+    await deleteLearningSpaceGroupMapping(id, "space-6");
+    expect(await listLearningSpaceGroupMappings("space-6")).toEqual([]);
+    await deleteManagedGroupMapping(otherId);
     expect(await listManagedGroupMappings()).toEqual([]);
   });
 

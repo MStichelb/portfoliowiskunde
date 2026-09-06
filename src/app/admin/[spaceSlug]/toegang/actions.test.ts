@@ -16,10 +16,15 @@ vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 
 import { getDatabase, resetDatabaseForTests } from "@/lib/database";
-import { createUser } from "@/lib/identity";
-import { setIndividualLearningSpaceAccess, upsertManagedMembership } from "@/lib/user-management";
+import { createLearningSpaceGroupMapping, createUser, findOrCreateExternalUser, replaceExternalIdentityGroups } from "@/lib/identity";
+import { listLearningSpaceGroupMappings, setIndividualLearningSpaceAccess, upsertManagedMembership } from "@/lib/user-management";
 
-import { removeLearningSpaceTeacherAccessAction, saveLearningSpaceTeacherAccessAction } from "./actions";
+import {
+  removeLearningSpaceGroupMappingAction,
+  removeLearningSpaceTeacherAccessAction,
+  saveLearningSpaceGroupMappingAction,
+  saveLearningSpaceTeacherAccessAction,
+} from "./actions";
 
 let temporaryDirectory: string | undefined;
 let actors: Record<"owner" | "editor" | "viewer" | "student" | "superadmin" | "targetViewer" | "targetEditor", AppUser>;
@@ -41,6 +46,16 @@ beforeEach(async () => {
   await upsertManagedMembership("space-5", actors.owner.id, "owner");
   await upsertManagedMembership("space-5", actors.editor.id, "editor");
   await setIndividualLearningSpaceAccess(actors.viewer.id, "space-5", true);
+  const smartschoolUser = await findOrCreateExternalUser({
+    provider: "smartschool",
+    providerSubject: "known-group-user",
+    providerPlatform: "https://school.smartschool.be",
+    displayName: "Groepslid",
+  });
+  await replaceExternalIdentityGroups(smartschoolUser.identity.id, [
+    { provider: "smartschool", externalGroupId: "class-5", externalGroupName: "5WEWI" },
+    { provider: "smartschool", externalGroupId: "club", externalGroupName: "Wiskundeclub" },
+  ]);
 });
 
 afterEach(async () => {
@@ -108,6 +123,88 @@ describe("LearningSpace teacher access actions", () => {
     await expect(accessState("space-5", actors.student.id)).resolves.toEqual({ membership: null, individual: false });
   });
 });
+
+describe("LearningSpace group mapping actions", () => {
+  it.each([
+    ["owner", "class-5"],
+    ["superadmin", "club"],
+  ] as const)("allows a %s to add a known Smartschool group", async (actorRole, externalGroupId) => {
+    mocks.requireAdminUser.mockResolvedValue(actors[actorRole]);
+
+    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-5", externalGroupId))).rejects.toThrow("groupSaved=1");
+
+    await expect(listLearningSpaceGroupMappings("space-5")).resolves.toEqual([
+      expect.objectContaining({ learningSpaceId: "space-5", provider: "smartschool", externalGroupId }),
+    ]);
+  });
+
+  it("blocks an editor mutation server-side", async () => {
+    mocks.requireAdminUser.mockResolvedValue(actors.editor);
+
+    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-5", "class-5"))).rejects.toThrow("Alleen een eigenaar of hoofdbeheerder");
+    await expect(listLearningSpaceGroupMappings("space-5")).resolves.toEqual([]);
+  });
+
+  it("scopes owner mutations to the exact LearningSpace", async () => {
+    mocks.requireAdminUser.mockResolvedValue(actors.owner);
+
+    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-6", "class-5"))).rejects.toThrow("Alleen een eigenaar of hoofdbeheerder");
+    await expect(listLearningSpaceGroupMappings("space-6")).resolves.toEqual([]);
+  });
+
+  it.each(["owner", "superadmin"] as const)("allows a %s to remove a mapping", async (actorRole) => {
+    mocks.requireAdminUser.mockResolvedValue(actors[actorRole]);
+    const id = await createLearningSpaceGroupMapping({
+      learningSpaceId: "space-5",
+      provider: "smartschool",
+      externalGroupId: "class-5",
+      externalGroupName: "5WEWI",
+    });
+
+    await expect(removeLearningSpaceGroupMappingAction(removeGroupForm("space-5", id))).rejects.toThrow("groupSaved=1");
+
+    await expect(listLearningSpaceGroupMappings("space-5")).resolves.toEqual([]);
+  });
+
+  it("does not remove a mapping from another LearningSpace", async () => {
+    mocks.requireAdminUser.mockResolvedValue(actors.owner);
+    const id = await createLearningSpaceGroupMapping({
+      learningSpaceId: "space-6",
+      provider: "smartschool",
+      externalGroupId: "class-5",
+      externalGroupName: "5WEWI",
+    });
+
+    await expect(removeLearningSpaceGroupMappingAction(removeGroupForm("space-5", id))).rejects.toThrow("groupError=");
+
+    await expect(listLearningSpaceGroupMappings("space-6")).resolves.toEqual([
+      expect.objectContaining({ id, learningSpaceId: "space-6" }),
+    ]);
+  });
+
+  it("prevents duplicate mappings in the same LearningSpace", async () => {
+    mocks.requireAdminUser.mockResolvedValue(actors.owner);
+
+    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-5", "class-5"))).rejects.toThrow("groupSaved=1");
+    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-5", "class-5"))).rejects.toThrow("groupError=");
+
+    await expect(listLearningSpaceGroupMappings("space-5")).resolves.toHaveLength(1);
+  });
+});
+
+function groupForm(learningSpaceId: string, externalGroupId: string): FormData {
+  const formData = new FormData();
+  formData.set("learningSpaceId", learningSpaceId);
+  formData.set("externalGroupId", externalGroupId);
+  return formData;
+}
+
+function removeGroupForm(learningSpaceId: string, mappingId: string): FormData {
+  const formData = new FormData();
+  formData.set("learningSpaceId", learningSpaceId);
+  formData.set("mappingId", mappingId);
+  return formData;
+}
 
 function accessForm(learningSpaceId: string, userId: string, role?: "viewer" | "editor"): FormData {
   const formData = new FormData();

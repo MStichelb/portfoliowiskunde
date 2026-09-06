@@ -5,8 +5,12 @@ import { redirect } from "next/navigation";
 
 import { requireAdminUser } from "@/lib/auth";
 import { requireLearningSpaceConfiguration } from "@/lib/authorization";
+import { createLearningSpaceGroupMapping } from "@/lib/identity";
 import { getLearningSpace } from "@/lib/repositories";
 import {
+  deleteLearningSpaceGroupMapping,
+  listKnownExternalGroups,
+  listLearningSpaceGroupMappings,
   removeLearningSpaceTeacherAccess,
   setLearningSpaceTeacherAccess,
   type LearningSpaceTeacherAccessRole,
@@ -22,6 +26,53 @@ export async function saveLearningSpaceTeacherAccessAction(formData: FormData) {
 
 export async function removeLearningSpaceTeacherAccessAction(formData: FormData) {
   await mutateTeacherAccess(value(formData, "learningSpaceId"), value(formData, "userId"), null);
+}
+
+export async function saveLearningSpaceGroupMappingAction(formData: FormData) {
+  const learningSpaceId = value(formData, "learningSpaceId");
+  const actor = await requireAdminUser();
+  await requireLearningSpaceConfiguration(actor, learningSpaceId);
+  const space = await getLearningSpace(learningSpaceId);
+  if (!space) redirect("/admin");
+
+  try {
+    const externalGroupId = value(formData, "externalGroupId");
+    const known = (await listKnownExternalGroups()).find((group) =>
+      group.provider === "smartschool" && group.externalGroupId === externalGroupId);
+    if (!known) throw new Error("Deze Smartschoolgroep is niet bekend. Laat een groepslid eerst opnieuw aanmelden.");
+    const duplicate = (await listLearningSpaceGroupMappings(learningSpaceId)).some((mapping) =>
+      mapping.provider === "smartschool" && mapping.externalGroupId === externalGroupId);
+    if (duplicate) throw new Error("Deze Smartschoolgroep is al aan deze leeromgeving gekoppeld.");
+    await createLearningSpaceGroupMapping({
+      learningSpaceId,
+      provider: "smartschool",
+      externalGroupId,
+      externalGroupName: known.externalGroupName,
+    });
+  } catch (error) {
+    redirectToGroupResult(space.slug, error instanceof Error ? error.message : "De groep kon niet worden gekoppeld.");
+  }
+
+  finishGroupMutation(space.slug);
+}
+
+export async function removeLearningSpaceGroupMappingAction(formData: FormData) {
+  const learningSpaceId = value(formData, "learningSpaceId");
+  const actor = await requireAdminUser();
+  await requireLearningSpaceConfiguration(actor, learningSpaceId);
+  const space = await getLearningSpace(learningSpaceId);
+  if (!space) redirect("/admin");
+
+  try {
+    const mappingId = value(formData, "mappingId");
+    const mapping = (await listLearningSpaceGroupMappings(learningSpaceId)).find((candidate) => candidate.id === mappingId);
+    if (!mapping) throw new Error("Deze groepskoppeling bestaat niet in deze leeromgeving.");
+    await deleteLearningSpaceGroupMapping(mappingId, learningSpaceId);
+  } catch (error) {
+    redirectToGroupResult(space.slug, error instanceof Error ? error.message : "De koppeling kon niet worden verwijderd.");
+  }
+
+  finishGroupMutation(space.slug);
 }
 
 async function mutateTeacherAccess(
@@ -49,6 +100,17 @@ async function mutateTeacherAccess(
   revalidatePath(`/admin/${encodeURIComponent(space.slug)}/toegang`);
   revalidatePath("/admin/gebruikers");
   redirect(`/admin/${encodeURIComponent(space.slug)}/toegang?accessSaved=1`);
+}
+
+function finishGroupMutation(spaceSlug: string): never {
+  const path = `/admin/${encodeURIComponent(spaceSlug)}/toegang`;
+  revalidatePath(path);
+  revalidatePath("/admin/gebruikers");
+  redirect(`${path}?groupSaved=1`);
+}
+
+function redirectToGroupResult(spaceSlug: string, message: string): never {
+  redirect(`/admin/${encodeURIComponent(spaceSlug)}/toegang?groupError=${encodeURIComponent(message)}`);
 }
 
 function value(formData: FormData, key: string): string {

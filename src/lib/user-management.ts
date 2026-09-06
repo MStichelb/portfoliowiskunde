@@ -278,6 +278,16 @@ export async function listManagedGroupMappings(): Promise<ManagedGroupMapping[]>
   return rows.map((row) => ({ id: String(row.id), learningSpaceId: String(row.learning_space_id), provider: String(row.provider), externalGroupId: String(row.external_group_id), externalGroupName: typeof row.external_group_name === "string" && row.external_group_name ? row.external_group_name : null }));
 }
 
+export async function listLearningSpaceGroupMappings(learningSpaceId: string): Promise<ManagedGroupMapping[]> {
+  const rows = (await (await getDatabase()).execute({
+    sql: `SELECT * FROM learning_space_group_mappings
+      WHERE learning_space_id = ?
+      ORDER BY external_group_name, external_group_id`,
+    args: [learningSpaceId],
+  })).rows;
+  return rows.map((row) => ({ id: String(row.id), learningSpaceId: String(row.learning_space_id), provider: String(row.provider), externalGroupId: String(row.external_group_id), externalGroupName: typeof row.external_group_name === "string" && row.external_group_name ? row.external_group_name : null }));
+}
+
 export async function listKnownExternalGroups(): Promise<KnownExternalGroup[]> {
   const rows = (await (await getDatabase()).execute(`SELECT external_identities.provider, external_identity_groups.external_group_id,
       MAX(external_identity_groups.external_group_name) AS external_group_name
@@ -311,6 +321,13 @@ export async function listManagedGroupUsers(): Promise<ManagedGroupUser[]> {
 
 export async function deleteManagedGroupMapping(id: string): Promise<void> {
   await (await getDatabase()).execute({ sql: "DELETE FROM learning_space_group_mappings WHERE id = ?", args: [id] });
+}
+
+export async function deleteLearningSpaceGroupMapping(id: string, learningSpaceId: string): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "DELETE FROM learning_space_group_mappings WHERE id = ? AND learning_space_id = ?",
+    args: [id, learningSpaceId],
+  });
 }
 
 export async function listManagedSourceOwners(): Promise<ManagedSourceOwner[]> {
