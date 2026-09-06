@@ -492,6 +492,14 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .user-access-row form, .inherited-access-control { display: inline-flex; align-items: center; gap: 5px; }
 .user-access-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #075c75; }
 .user-access-row button { flex: 0 0 auto; }
+.profile-column { width: 48px; text-align: center !important; }
+.user-profile-dialog { display: grid; width: min(520px, 100%); max-height: min(720px, calc(100vh - 40px)); grid-template-rows: auto minmax(0, 1fr); padding: 22px; border: 1px solid #c9d0cc; border-radius: 6px; background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.22); }
+.user-profile-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.user-profile-dialog-heading h2 { margin: 0; font-size: 20px; }
+.user-profile-content { display: grid; overflow-y: auto; gap: 0; margin-top: 16px; padding-right: 4px; }
+.user-profile-field { display: grid; gap: 7px; padding: 11px 2px; border-top: 1px solid #e3e7e5; }
+.user-profile-field:first-child { border-top: 0; }
+.user-profile-field > strong { color: #3b4950; font-size: 14px; }
 .teacher-group-setting select { width: min(100%, 440px); min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
 .learning-space-managers { display: grid; gap: 16px; }
 .manager-role-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
@@ -540,7 +548,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .connection-action, .sync-submit-button { display: inline-flex; align-items: center; gap: 7px; }
 .admin-preview-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 20px; margin: 22px 0 20px; }
 .admin-preview-toolbar .compact-back-button, .admin-preview-toolbar .admin-preview-banner { margin: 0; }
-.admin-route .admin-card, .admin-route .settings-card, .admin-route .report-card, .admin-route .space-list-item, .admin-route .theme-editor, .admin-route .theme-editor-card, .admin-route .document-item, .admin-route .section-settings-card, .admin-route .source-role-card, .admin-route .active-source-summary, .admin-route .source-comparison, .admin-route .admin-summary-table, .admin-route .connection-list, .admin-route .confirm-dialog, .admin-route .user-access-dialog { border-color: var(--admin-border); background: var(--admin-surface); }
+.admin-route .admin-card, .admin-route .settings-card, .admin-route .report-card, .admin-route .space-list-item, .admin-route .theme-editor, .admin-route .theme-editor-card, .admin-route .document-item, .admin-route .section-settings-card, .admin-route .source-role-card, .admin-route .active-source-summary, .admin-route .source-comparison, .admin-route .admin-summary-table, .admin-route .connection-list, .admin-route .confirm-dialog, .admin-route .user-access-dialog, .admin-route .user-profile-dialog { border-color: var(--admin-border); background: var(--admin-surface); }
 .admin-route .source-role-card.active-source-card { border-color: #5d9280; }
 .admin-route .admin-summary-table th, .admin-route .admin-summary-table td { border-bottom-color: #e7dcde; }
 .admin-route .admin-summary-table thead th, .admin-route .section-table-row th, .admin-route .section-table-row td { background: #f8f1f2; }

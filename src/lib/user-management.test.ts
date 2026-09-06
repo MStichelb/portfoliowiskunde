@@ -97,8 +97,8 @@ describe("superadmin user and access management", () => {
     ]);
     const groupUsers = await listManagedGroupUsers();
     expect(groupUsers.filter((entry) => entry.externalGroupId === "group-5")).toEqual([
-      expect.objectContaining({ userId: first.user.id, displayName: "Eerste leerling" }),
-      expect.objectContaining({ userId: second.user.id, displayName: "Tweede leerling" }),
+      expect.objectContaining({ userId: first.user.id, displayName: "Eerste leerling", externalGroupName: "5EWI" }),
+      expect.objectContaining({ userId: second.user.id, displayName: "Tweede leerling", externalGroupName: "5EWI" }),
     ]);
     expect((await listKnownExternalGroups()).filter((entry) => entry.externalGroupId === "group-5")).toHaveLength(1);
     expect(groupUsers.some((entry) => entry.displayName === "Nog niet aangemeld")).toBe(false);

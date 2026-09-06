@@ -2,9 +2,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
 import type { LearningSpace } from "@/lib/repositories";
-import type { ManagedMembership, ManagedStorageConnection, ManagedUser, ManagedUserAccess } from "@/lib/user-management";
+import type { ManagedGroupUser, ManagedMembership, ManagedStorageConnection, ManagedUser, ManagedUserAccess } from "@/lib/user-management";
 
-import { filterStudents, filterTeachers, UserManagementView } from "./user-management-view";
+import { buildUserProfile, filterStudents, filterTeachers, UserManagementView } from "./user-management-view";
 import { UserAccessDialogContent } from "./user-access-menu";
 import { TeacherListFilters, updateUserFilterParams } from "./user-list-filters";
 
@@ -180,6 +180,66 @@ describe("UserManagementView", () => {
     expect(markup).toContain("5WIS");
     expect(markup).toContain("Verbinding eerst");
     expect(markup).not.toContain("Individuele toegang");
+  });
+  it("bouwt rolbewuste profielen uit bestaande read-data", () => {
+    const spaces = [learningSpace("space-5", "5WIS", 5), learningSpace("space-6", "6WIS", 6), learningSpace("space-extra", "EXTRA", 7)];
+    const teacher = managedUser({ id: "teacher", role: "teacher", firstName: "Tess", lastName: "Teacher" });
+    const student = managedUser({ id: "student", firstName: "Sara", lastName: "Student", effectiveClassName: "6EWI" });
+    const groups: ManagedGroupUser[] = [
+      { provider: "smartschool", externalGroupId: "teachers", externalGroupName: "Leerkrachten", userId: "teacher", displayName: "Tess Teacher", role: "teacher", status: "active" },
+      { provider: "smartschool", externalGroupId: "class-6", externalGroupName: "6EWI", userId: "student", displayName: "Sara Student", role: "student", status: "active" },
+    ];
+    const teacherProfile = buildUserProfile(
+      teacher,
+      spaces,
+      [membership("teacher", "space-5", "owner"), membership("teacher", "space-6", "editor")],
+      [userAccess("teacher", "space-5", true), userAccess("teacher", "space-extra", true)],
+      [{ userId: "teacher", provider: "onedrive", status: "active" }],
+      groups,
+    );
+    expect(teacherProfile).toMatchObject({
+      groups: ["Leerkrachten"],
+      connections: [{ userId: "teacher", provider: "onedrive", status: "active" }],
+      ownerSpaces: [{ id: "space-5" }],
+      editorSpaces: [{ id: "space-6" }],
+      viewerSpaces: [{ id: "space-extra" }],
+    });
+
+    const studentProfile = buildUserProfile(
+      student,
+      spaces,
+      [],
+      [
+        { ...userAccess("student", "space-5", true), groupDerived: true },
+        userAccess("student", "space-5", true),
+        { ...userAccess("student", "space-6", false), groupDerived: true },
+      ],
+      [],
+      groups,
+    );
+    expect(studentProfile).toMatchObject({ className: "6EWI", groups: ["6EWI"] });
+    expect(studentProfile.viewerSpaces.map((space) => space.id)).toEqual(["space-5", "space-6"]);
+  });
+
+  it("toont een profielknop voor leraren en leerlingen", () => {
+    const markup = renderToStaticMarkup(<UserManagementView
+      users={[
+        managedUser({ id: "teacher", role: "teacher", firstName: "Tess", lastName: "Teacher" }),
+        managedUser({ id: "student", firstName: "Sara", lastName: "Student" }),
+      ]}
+      spaces={[]}
+      memberships={[]}
+      access={[]}
+      storageConnections={[]}
+      groupUsers={[]}
+      classGroups={[]}
+      teacherGroups={[]}
+      teacherGroupId={null}
+      params={{}}
+    />);
+    expect((markup.match(/lucide-circle-user-round/g) ?? [])).toHaveLength(2);
+    expect(markup).toContain('aria-label="Profiel van Tess Teacher"');
+    expect(markup).toContain('aria-label="Profiel van Sara Student"');
   });
 });
 
