@@ -500,11 +500,10 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .user-profile-identity { display: grid; gap: 2px; padding-bottom: 2px; }
 .user-profile-identity strong { font-size: 18px; }
 .user-profile-identity span { color: #68757b; font-size: 14px; }
-.user-profile-grid { display: grid; gap: 10px; }
-.user-profile-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; align-items: start; min-height: 28px; }
-.user-profile-row > strong { padding-top: 4px; color: #3b4950; font-size: 14px; }
-.user-profile-row > div { min-width: 0; }
-.user-profile-row .muted-value { display: inline-block; padding-top: 4px; font-size: 14px; }
+.user-profile-grid { display: grid; grid-template-columns: 112px minmax(0, 1fr); column-gap: 18px; row-gap: 10px; margin: 0; }
+.user-profile-grid dt { min-height: 28px; padding-top: 4px; color: #3b4950; font-size: 14px; font-weight: 600; }
+.user-profile-grid dd { min-width: 0; min-height: 28px; margin: 0; }
+.user-profile-grid .muted-value { display: inline-block; padding-top: 4px; font-size: 14px; }
 .teacher-group-setting select { width: min(100%, 440px); min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
 .learning-space-managers { display: grid; gap: 16px; }
 .manager-role-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }

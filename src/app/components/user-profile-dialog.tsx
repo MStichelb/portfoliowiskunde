@@ -62,19 +62,19 @@ export function UserProfileDialogContent({ profile, titleId, closeButtonRef, onC
         <strong>{fullName}</strong>
         <span>{identityDetail}</span>
       </div>
-      <div className="user-profile-grid">
+      <dl className="user-profile-grid">
         <ProfileRow label="Groepen" empty={profile.groups.length === 0} emptyLabel="Geen opgeslagen Smartschoolgroepen"><NeutralBadges values={profile.groups} /></ProfileRow>
         {profile.role === "teacher" ? <ProfileRow label="Verbindingen" empty={profile.connections.length === 0} emptyLabel="Geen persoonlijke verbindingen"><ConnectionBadges connections={profile.connections} /></ProfileRow> : null}
         {profile.role === "teacher" ? <ProfileRow label="Eigenaar van" empty={profile.ownerSpaces.length === 0} emptyLabel="Geen leeromgevingen"><SpaceBadges spaces={profile.ownerSpaces} role="owner" /></ProfileRow> : null}
         {profile.role === "teacher" ? <ProfileRow label="Bewerker van" empty={profile.editorSpaces.length === 0} emptyLabel="Geen leeromgevingen"><SpaceBadges spaces={profile.editorSpaces} role="editor" /></ProfileRow> : null}
         <ProfileRow label={profile.role === "teacher" ? "Kijker van" : "Kijkrechten"} empty={profile.viewerSpaces.length === 0} emptyLabel="Geen leeromgevingen"><SpaceBadges spaces={profile.viewerSpaces} role="viewer" /></ProfileRow>
-      </div>
+      </dl>
     </div>
   </div>;
 }
 
 function ProfileRow({ label, empty, emptyLabel, children }: { label: string; empty: boolean; emptyLabel: string; children: React.ReactNode }) {
-  return <div className="user-profile-row"><strong>{label}</strong><div>{empty ? <span className="muted-value">{emptyLabel}</span> : children}</div></div>;
+  return <><dt>{label}</dt><dd>{empty ? <span className="muted-value">{emptyLabel}</span> : children}</dd></>;
 }
 
 function NeutralBadges({ values }: { values: string[] }) {
