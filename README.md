@@ -30,6 +30,13 @@ Vereisten: Node.js 20 of nieuwer en pnpm via Corepack.
 5. Open `http://localhost:3000/admin` en synchroniseer de gewenste leeromgeving.
 
 Zonder `DATABASE_URL` gebruikt development SQLite in `.data/portfolio.db`, of het pad uit `PORTFOLIO_DATABASE_PATH`. De bron wordt uitsluitend gelezen. `.env*`, `.data` en lokale databases zijn door `.gitignore` uitgesloten; de niet-geheime productieconfiguratie in `vercel.json` wordt bewust wel gevolgd.
+### Lokale dummygebruikers
+
+1. Voer `pnpm seed:dev-users` uit tegen de lokale SQLite-database.
+2. Start de app met `pnpm dev` en open `http://localhost:3000/dev-login`.
+3. Kies een dummyaccount en klik op **Inloggen**; er is geen wachtwoord nodig.
+
+De seed en loginroute zijn uitsluitend voor lokale development. Ze weigeren productie en remote databaseconfiguraties.
 
 ## B. Microsoft Entra / OneDrive setup
 

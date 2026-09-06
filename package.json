@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "seed:dev-users": "node --experimental-strip-types --loader ./scripts/typescript-path-loader.mjs ./scripts/seed-local-dev-users.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
