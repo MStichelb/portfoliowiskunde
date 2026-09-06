@@ -423,6 +423,20 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .user-name-cell, .heading-with-icon, .management-badges > span, .connection-badge { display: inline-flex; align-items: center; gap: 6px; }
 .management-badges, .connection-badges { display: flex; flex-wrap: wrap; gap: 6px; }
 .management-badges > span, .connection-badge { min-height: 28px; padding: 4px 8px; border-radius: 999px; background: #edf1ef; font-size: 13px; font-weight: 700; }
+.management-badges > .teacher-role-badge-owner {
+  background: #dff3e4;
+  color: #245c32;
+}
+
+.management-badges > .teacher-role-badge-editor {
+  background: #e7f1fb;
+  color: #2d5f8b;
+}
+
+.management-badges > .teacher-role-badge-viewer {
+  background: #fff4c7;
+  color: #6f5a00;
+}
 .connection-onedrive { color: #075c75; }
 .connection-google_drive { color: #46683a; }
 .connection-none, .muted-value { color: #68757b; }
@@ -448,6 +462,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .user-filter-checkbox { display: inline-flex; min-height: 40px; align-items: center; gap: 7px; color: #314149; font-size: 14px; font-weight: 700; white-space: nowrap; }
 .user-filter-checkbox input { width: 18px; height: 18px; accent-color: #075c75; }
 .teacher-filter-bar { margin-top: 10px; }
+.teacher-space-filter { flex: 0 1 220px; }
 .teacher-detection-setting { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin-top: 12px; padding: 10px 12px; border: 1px solid #e3e7e5; border-radius: 5px; background: #fbf8f8; }
 .teacher-detection-setting > div { display: grid; flex: 1 1 300px; gap: 2px; }
 .teacher-detection-setting strong { display: inline-flex; align-items: center; gap: 6px; }

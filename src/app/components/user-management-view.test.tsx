@@ -1,11 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ManagedUser } from "@/lib/user-management";
+import type { LearningSpace } from "@/lib/repositories";
+import type { ManagedMembership, ManagedStorageConnection, ManagedUser, ManagedUserAccess } from "@/lib/user-management";
 
-import { filterStudents, UserManagementView } from "./user-management-view";
+import { filterStudents, filterTeachers, UserManagementView } from "./user-management-view";
 import { UserAccessDialogContent } from "./user-access-menu";
-import { updateUserFilterParams } from "./user-list-filters";
+import { TeacherListFilters, updateUserFilterParams } from "./user-list-filters";
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/admin/gebruikers",
@@ -90,6 +91,77 @@ describe("UserManagementView", () => {
     expect(derivedControl).toContain('disabled=""');
     expect(markup).toContain('aria-label="Individuele toegang tot Individueel"');
   });
+  it("ordent en begrenst beheer- en individuele kijkrechten zonder duplicatie", () => {
+    const teacher = managedUser({ id: "teacher", role: "teacher", firstName: "Tess", lastName: "Teacher" });
+    const spaces = [1, 2, 3, 4, 5].map((number) => learningSpace(`space-${number}`, `S${number}`, number));
+    const memberships: ManagedMembership[] = [
+      membership("teacher", "space-1", "editor"),
+      membership("teacher", "space-2", "owner"),
+      membership("teacher", "space-3", "owner"),
+      membership("teacher", "space-4", "editor"),
+      membership("teacher", "space-5", "editor"),
+    ];
+    const access: ManagedUserAccess[] = [
+      userAccess("teacher", "space-1", true),
+      userAccess("teacher", "space-2", true),
+      userAccess("teacher", "space-3", true),
+      userAccess("teacher", "space-4", true),
+      userAccess("teacher", "space-5", true),
+    ];
+
+    const managementMarkup = renderToStaticMarkup(<UserManagementView users={[teacher]} spaces={spaces} memberships={memberships} access={[]} storageConnections={[]} classGroups={[]} teacherGroups={[]} teacherGroupId={null} params={{}} />);
+    expect(managementMarkup.indexOf('title="Eigenaar van Space 2"')).toBeLessThan(managementMarkup.indexOf('title="Eigenaar van Space 3"'));
+    expect(managementMarkup.indexOf('title="Eigenaar van Space 3"')).toBeLessThan(managementMarkup.indexOf('title="Bewerker van Space 1"'));
+    expect(managementMarkup).toContain('title="2 extra leeromgevingen">+ 2</span>');
+
+    const viewerMarkup = renderToStaticMarkup(<UserManagementView users={[teacher]} spaces={spaces} memberships={[membership("teacher", "space-1", "editor")]} access={access} storageConnections={[]} classGroups={[]} teacherGroups={[]} teacherGroupId={null} params={{}} />);
+    expect(viewerMarkup).not.toContain('title="Kijker van Space 1"');
+    expect(viewerMarkup).toContain('title="Kijker van Space 2"');
+    expect(viewerMarkup).toContain('title="Kijker van Space 4"');
+    expect(viewerMarkup).not.toContain('title="Kijker van Space 5"');
+    expect(viewerMarkup).toContain('title="1 extra leeromgevingen">+ 1</span>');
+  });
+
+  it("filtert leraren op owner, editor of individuele kijktoegang", () => {
+    const teachers = [
+      managedUser({ id: "owner", role: "teacher", lastName: "Owner" }),
+      managedUser({ id: "editor", role: "teacher", lastName: "Editor" }),
+      managedUser({ id: "viewer", role: "teacher", lastName: "Viewer" }),
+      managedUser({ id: "group-only", role: "teacher", lastName: "Group" }),
+    ];
+    const memberships = [membership("owner", "space-5", "owner"), membership("editor", "space-5", "editor")];
+    const access = [userAccess("viewer", "space-5", true), { ...userAccess("group-only", "space-5", false), groupDerived: true }];
+
+    expect(filterTeachers(teachers, { teacherSpace: "space-5" }, memberships, access, []).map((teacher) => teacher.id))
+      .toEqual(["editor", "owner", "viewer"]);
+  });
+
+  it("zet verbonden leraren eerst en behoudt de bestaande naamsortering binnen beide groepen", () => {
+    const teachers = [
+      managedUser({ id: "connected-z", role: "teacher", lastName: "Zwaan" }),
+      managedUser({ id: "disconnected-b", role: "teacher", lastName: "Boon" }),
+      managedUser({ id: "connected-a", role: "teacher", lastName: "Aerts" }),
+      managedUser({ id: "disconnected-a", role: "teacher", lastName: "Anders" }),
+    ];
+    const connections: ManagedStorageConnection[] = [
+      { userId: "connected-z", provider: "onedrive", status: "active" },
+      { userId: "connected-a", provider: "google_drive", status: "disconnected" },
+    ];
+
+    expect(filterTeachers(teachers, {}, [], [], connections).map((teacher) => teacher.id))
+      .toEqual(["connected-a", "disconnected-a", "disconnected-b", "connected-z"]);
+    expect(filterTeachers(teachers, { teacherConnectionFirst: "1" }, [], [], connections).map((teacher) => teacher.id))
+      .toEqual(["connected-a", "connected-z", "disconnected-a", "disconnected-b"]);
+  });
+
+  it("toont het leeromgevingfilter en verbinding-sortering zonder individuele-toegangfilter", () => {
+    const markup = renderToStaticMarkup(<TeacherListFilters params={{ teacherSpace: "space-5", teacherConnectionFirst: "1" }} spaces={[{ id: "space-5", label: "5WIS" }]} />);
+    expect(markup).toContain("Leeromgeving");
+    expect(markup).toContain("Alle leeromgevingen");
+    expect(markup).toContain("5WIS");
+    expect(markup).toContain("Verbinding eerst");
+    expect(markup).not.toContain("Individuele toegang");
+  });
 });
 
 function managedUser(overrides: Partial<ManagedUser>): ManagedUser {
@@ -109,5 +181,38 @@ function managedUser(overrides: Partial<ManagedUser>): ManagedUser {
     effectiveClassName: null,
     hasIndividualAccess: false,
     ...overrides,
+  };
+}
+
+function membership(userId: string, learningSpaceId: string, role: "owner" | "editor"): ManagedMembership {
+  return { userId, learningSpaceId, displayName: userId, role };
+}
+
+function userAccess(userId: string, learningSpaceId: string, individual: boolean): ManagedUserAccess {
+  return { userId, learningSpaceId, individual, groupDerived: false, managementRole: null };
+}
+
+function learningSpace(id: string, shortLabel: string, sortOrder: number): LearningSpace {
+  return {
+    id,
+    name: `Space ${sortOrder}`,
+    slug: id,
+    shortLabel,
+    description: "",
+    cardColor: "#FFFFFF",
+    sortOrder,
+    isActive: true,
+    archivedAt: null,
+    sourceType: "local",
+    localSourcePath: null,
+    oneDriveDriveId: null,
+    oneDriveFolderId: null,
+    oneDriveFolderPath: null,
+    googleDriveFolderId: null,
+    googleDriveFolderLabel: null,
+    sources: [],
+    activeSourceId: null,
+    primarySource: null,
+    mirrorSource: null,
   };
 }
