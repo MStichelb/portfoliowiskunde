@@ -39,7 +39,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   const accessible = spaces.filter((space) => accessibleIds.includes(space.id));
   const manageable = spaces.filter((space) => manageableIds.includes(space.id));
   const directIds = new Set(memberships.filter((membership) => membership.userId === user?.id
-    && (user?.role === "teacher" || membership.role === "owner")).map((membership) => membership.learningSpaceId));
+    && (membership.role === "owner" || membership.role === "editor")).map((membership) => membership.learningSpaceId));
   const direct = spaces.filter((space) => directIds.has(space.id));
   return (
     <html lang="nl" className={sourceSans3.variable}>

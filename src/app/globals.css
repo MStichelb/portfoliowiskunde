@@ -309,7 +309,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 
 /* Shared visual language for the public and admin shells. */
 .site-nav { gap: 18px; }
-.site-nav-primary { display: flex; flex: 1; align-items: center; min-width: 0; gap: 12px; overflow: hidden; }
+.site-nav-primary { display: flex; flex: 1; align-items: center; min-width: 0; gap: 12px; overflow: visible; }
 .site-nav-icon { display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 4px; }
 .site-nav-icon:hover, .site-nav-icon:focus-visible { background: rgba(255,255,255,.13); }
 .site-nav-divider { width: 1px; height: 26px; background: rgba(255,255,255,.55); }

@@ -24,10 +24,14 @@ export function SiteNavigation({ spaces, adminSpaces = spaces, directSpaces = ad
   const homeHref = homeHrefForUser(user.role, spaces);
   const canOpenAdmin = user.role === "teacher" || user.role === "superadmin";
   const hideStudentSingleSpace = user.role === "student" && spaces.length === 1;
-  const showSpaceNavigation = contextSpaces.length > 0 && !hideStudentSingleSpace && (canOpenAdmin || contextSpaces.length > 1 || Boolean(current));
   const directSlugs = new Set(directSpaces.map((space) => space.slug));
   const directContextSpaces = canOpenAdmin ? contextSpaces.filter((space) => directSlugs.has(space.slug)) : contextSpaces;
-  const extraContextSpaces = canOpenAdmin ? contextSpaces.filter((space) => !directSlugs.has(space.slug)) : [];
+  const extraContextSpaces = user.role === "teacher"
+    ? spaces.filter((space) => !directSlugs.has(space.slug))
+    : user.role === "superadmin"
+      ? adminSpaces.filter((space) => !directSlugs.has(space.slug))
+      : [];
+  const showSpaceNavigation = !hideStudentSingleSpace && (directContextSpaces.length > 0 || extraContextSpaces.length > 0 || (!canOpenAdmin && (contextSpaces.length > 1 || Boolean(current))));
   const firstName = user.firstName.trim() || "Gebruiker";
   return <><nav className={`site-nav${adminRoute ? " admin-site-nav" : ""}`} aria-label="Hoofdnavigatie">
     <div className="site-nav-primary">
@@ -43,12 +47,13 @@ export function SiteNavigation({ spaces, adminSpaces = spaces, directSpaces = ad
 }
 
 function SpaceNavigation({ spaces, directSpaces, extraSpaces, current, adminRoute, role }: { spaces: SiteNavigationSpace[]; directSpaces: SiteNavigationSpace[]; extraSpaces: SiteNavigationSpace[]; current: SiteNavigationSpace | null; adminRoute: boolean; role: SiteNavigationUser["role"] }) {
-  const href = (space: SiteNavigationSpace) => `${adminRoute ? "/admin" : ""}/${encodeURIComponent(space.slug)}`;
+  const directHref = (space: SiteNavigationSpace) => `${adminRoute ? "/admin" : ""}/${encodeURIComponent(space.slug)}`;
+  const extraHref = (space: SiteNavigationSpace) => `${role === "superadmin" ? "/admin" : ""}/${encodeURIComponent(space.slug)}`;
   const label = current?.shortLabel ?? "Leeromg.";
   return <>
     <span className="site-nav-space-context" title={adminRoute ? "Leeromgevingen beheren" : "Leeromgeving kiezen"}>{adminRoute ? <FolderCog size={19} aria-hidden /> : <Folder size={18} aria-hidden />}<span className="sr-only">{adminRoute ? "Leeromgevingen beheren" : "Leeromgeving kiezen"}</span></span>
-    <div className="site-nav-desktop-spaces" aria-label="Leeromgeving kiezen"><div className="site-nav-direct-spaces">{directSpaces.map((space) => <Link key={space.slug} className={space.slug === current?.slug ? "site-nav-space-current" : ""} href={href(space)}>{space.shortLabel}</Link>)}</div>{extraSpaces.length ? <details className="site-nav-extra-spaces"><summary aria-label={role === "superadmin" ? "Overige leeromgevingen" : "Leeromgevingen met kijktoegang"} title={role === "superadmin" ? "Overige leeromgevingen" : "Leeromgevingen met kijktoegang"}>{role === "superadmin" ? <Plus size={17} aria-hidden /> : <Eye size={17} aria-hidden />}</summary><div>{extraSpaces.map((space) => <Link key={space.slug} className={space.slug === current?.slug ? "site-nav-space-current" : ""} href={href(space)}>{space.shortLabel}</Link>)}</div></details> : null}</div>
-    <details className="site-nav-mobile-spaces"><summary aria-label={`Leeromgeving kiezen, huidig: ${label}`}>{label}</summary><div>{spaces.map((space) => <Link key={space.slug} className={space.slug === current?.slug ? "site-nav-space-current" : ""} href={href(space)}>{space.shortLabel}</Link>)}</div></details>
+    <div className="site-nav-desktop-spaces" aria-label="Leeromgeving kiezen"><div className="site-nav-direct-spaces">{directSpaces.map((space) => <Link key={space.slug} className={space.slug === current?.slug ? "site-nav-space-current" : ""} href={directHref(space)}>{space.shortLabel}</Link>)}</div>{extraSpaces.length ? <details className="site-nav-extra-spaces"><summary aria-label={role === "superadmin" ? "Overige leeromgevingen" : "Leeromgevingen met kijktoegang"} title={role === "superadmin" ? "Overige leeromgevingen" : "Leeromgevingen met kijktoegang"}>{role === "superadmin" ? <Plus size={17} aria-hidden /> : <Eye size={17} aria-hidden />}</summary><div>{extraSpaces.map((space) => <Link key={space.slug} className={space.slug === current?.slug ? "site-nav-space-current" : ""} href={extraHref(space)}>{space.shortLabel}</Link>)}</div></details> : null}</div>
+    <details className="site-nav-mobile-spaces"><summary aria-label={`Leeromgeving kiezen, huidig: ${label}`}>{label}</summary><div>{spaces.map((space) => <Link key={space.slug} className={space.slug === current?.slug ? "site-nav-space-current" : ""} href={directHref(space)}>{space.shortLabel}</Link>)}</div></details>
   </>;
 }
 
