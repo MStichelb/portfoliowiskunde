@@ -493,21 +493,18 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .user-access-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #075c75; }
 .user-access-row button { flex: 0 0 auto; }
 .profile-column { width: 48px; text-align: center !important; }
-.user-profile-dialog { display: grid; width: min(560px, 100%); max-height: min(660px, calc(100vh - 40px)); grid-template-rows: auto minmax(0, 1fr); padding: 20px; border: 1px solid #c9d0cc; border-radius: 6px; background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.22); }
+.user-profile-dialog { display: grid; width: min(520px, 100%); max-height: min(620px, calc(100vh - 40px)); grid-template-rows: auto minmax(0, 1fr); padding: 20px; border: 1px solid #c9d0cc; border-radius: 6px; background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.22); }
 .user-profile-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .user-profile-dialog-heading h2 { margin: 0; font-size: 20px; }
-.user-profile-content { display: grid; overflow-y: auto; gap: 16px; margin-top: 14px; padding-right: 4px; }
+.user-profile-content { display: grid; overflow-y: auto; gap: 14px; margin-top: 14px; padding-right: 4px; }
 .user-profile-identity { display: grid; gap: 2px; padding-bottom: 2px; }
 .user-profile-identity strong { font-size: 18px; }
 .user-profile-identity span { color: #68757b; font-size: 14px; }
-.user-profile-basics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px 24px; padding: 12px 14px; border-radius: 5px; background: #f5f7f6; }
-.user-profile-field { display: grid; grid-template-columns: minmax(70px, auto) 1fr; gap: 12px; align-items: baseline; }
-.user-profile-field > strong, .user-profile-list > strong { color: #3b4950; font-size: 14px; }
-.user-profile-section { display: grid; gap: 8px; }
-.user-profile-section h3 { margin: 0; color: #3b4950; font-size: 14px; }
-.user-profile-list { display: grid; gap: 6px; min-height: 0; }
-.user-profile-list .muted-value { font-size: 14px; }
-.user-profile-rights { display: grid; gap: 10px; }
+.user-profile-grid { display: grid; gap: 10px; }
+.user-profile-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 14px; align-items: start; min-height: 28px; }
+.user-profile-row > strong { padding-top: 4px; color: #3b4950; font-size: 14px; }
+.user-profile-row > div { min-width: 0; }
+.user-profile-row .muted-value { display: inline-block; padding-top: 4px; font-size: 14px; }
 .teacher-group-setting select { width: min(100%, 440px); min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
 .learning-space-managers { display: grid; gap: 16px; }
 .manager-role-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
