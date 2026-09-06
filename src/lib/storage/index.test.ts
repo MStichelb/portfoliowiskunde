@@ -5,8 +5,8 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { resetDatabaseForTests } from "../database";
-import { getLearningSpace, persistIndex, updateLearningSpace } from "../repositories";
-import { getStorageProviderWithType } from ".";
+import { createLearningSpace, getLearningSpace, persistIndex, updateLearningSpace } from "../repositories";
+import { getStorageProviderWithType, hasConfiguredActiveSource } from ".";
 
 const originalEnvironment = { ...process.env };
 let temporaryDirectory: string | undefined;
@@ -19,6 +19,23 @@ afterEach(async () => {
 });
 
 describe("LearningSpace provider selection", () => {
+  it("distinguishes an unconfigured active source from a configured local source", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-source-configuration-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const space = await createLearningSpace({
+      name: "Nieuwe leeromgeving", slug: "nieuw", shortLabel: "Nieuw", sortOrder: 99,
+      sourceType: "local", localSourcePath: null,
+    });
+
+    await expect(hasConfiguredActiveSource(space.id)).resolves.toBe(false);
+    await updateLearningSpace(space.id, {
+      name: space.name, slug: space.slug, shortLabel: space.shortLabel, sortOrder: space.sortOrder,
+      sourceType: "local", localSourcePath: temporaryDirectory,
+    });
+    await expect(hasConfiguredActiveSource(space.id)).resolves.toBe(true);
+  });
+
   it("selects Local filesystem, OneDrive and Google Drive without combining their configuration", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-provider-selection-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");

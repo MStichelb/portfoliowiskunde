@@ -2,12 +2,14 @@ import { after } from "next/server";
 
 import { isSyncStale, maybeAutoSynchronize } from "@/lib/auto-sync";
 import { getLatestSyncSummary, hasValidLearningSpaceIndex } from "@/lib/repositories";
+import { hasConfiguredActiveSource } from "@/lib/storage";
 
-export type PublicIndexPreparation = "fresh" | "deferred" | "blocking" | "prefetch-skipped";
+export type PublicIndexPreparation = "fresh" | "deferred" | "blocking" | "unconfigured" | "prefetch-skipped";
 
 interface PublicIndexDependencies {
   getLatestSyncSummary?: typeof getLatestSyncSummary;
   hasValidIndex?: typeof hasValidLearningSpaceIndex;
+  hasConfiguredSource?: typeof hasConfiguredActiveSource;
   autoSynchronize?: (learningSpaceId: string) => Promise<void>;
   defer?: (task: () => Promise<void>) => void;
   isPrefetch?: boolean;
@@ -18,6 +20,9 @@ export async function preparePublicIndex(
   dependencies: PublicIndexDependencies = {},
 ): Promise<PublicIndexPreparation> {
   if (dependencies.isPrefetch) return "prefetch-skipped";
+
+  const hasConfiguredSource = dependencies.hasConfiguredSource ?? hasConfiguredActiveSource;
+  if (!await hasConfiguredSource(learningSpaceId)) return "unconfigured";
 
   const [summary, hasValidIndex] = await Promise.all([
     (dependencies.getLatestSyncSummary ?? getLatestSyncSummary)(learningSpaceId),
