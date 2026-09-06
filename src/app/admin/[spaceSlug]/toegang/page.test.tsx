@@ -110,10 +110,14 @@ describe("LearningSpace access", () => {
 
     expect(markup).toContain("Nieuwe Leraar");
     expect(markup).toContain("Toevoegen");
-    expect(markup).toContain("Wijzigen");
+    expect(markup).toContain("Maak kijker");
+    expect(markup).toContain("Maak bewerker");
+    expect(markup).not.toContain("Wijzigen");
     expect(markup).toContain("Lerarentoegang verwijderen?");
     expect(markup).toContain('<option value="viewer" selected="">Kijker</option>');
     expect(markup).toContain('<option value="editor">Bewerker</option>');
+    expect((markup.match(/class="secondary-button teacher-role-action"/g) ?? [])).toHaveLength(2);
+    expect((markup.match(/<select/g) ?? [])).toHaveLength(2);
     expect(mocks.listLearningSpaceTeacherCandidates).toHaveBeenCalledWith(space.id);
     expect((markup.match(/aria-label="Lerarentoegang verwijderen\?"/g) ?? [])).toHaveLength(2);
   });

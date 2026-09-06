@@ -67,13 +67,17 @@ function TeacherAccessTable({ learningSpaceId, teachers, canChange }: { learning
 
 function TeacherAccessActions({ learningSpaceId, teacher }: { learningSpaceId: string; teacher: LearningSpaceTeacher }) {
   const name = [teacher.firstName, teacher.lastName].filter(Boolean).join(" ") || "Deze leraar";
+  const targetRole = teacher.role === "editor" ? "viewer" : "editor";
+  const actionLabel = targetRole === "viewer" ? "Maak kijker" : "Maak bewerker";
   return <div className="teacher-access-row-actions">
-    <form action={saveLearningSpaceTeacherAccessAction} className="inline-management-form">
+    <form action={saveLearningSpaceTeacherAccessAction}>
       <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
       <input type="hidden" name="userId" value={teacher.userId} />
-      <label className="sr-only" htmlFor={`teacher-role-${teacher.userId}`}>Rol van {name}</label>
-      <select id={`teacher-role-${teacher.userId}`} name="role" defaultValue={teacher.role}><option value="viewer">Kijker</option><option value="editor">Bewerker</option></select>
-      <button className="secondary-button" type="submit">Wijzigen</button>
+      <input type="hidden" name="role" value={targetRole} />
+      <button className="secondary-button teacher-role-action" type="submit">
+        {targetRole === "viewer" ? <Eye size={16} aria-hidden /> : <Pencil size={16} aria-hidden />}
+        {actionLabel}
+      </button>
     </form>
     <ConfirmActionButton
       action={removeLearningSpaceTeacherAccessAction}
