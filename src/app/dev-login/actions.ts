@@ -11,7 +11,8 @@ export async function devLoginAction(formData: FormData): Promise<never> {
   const userId = String(formData.get("userId") ?? "");
   if (!isDevDummyUserId(userId)) notFound();
   const user = await getUser(userId);
-  if (!user || user.status !== "active" || (user.role !== "teacher" && user.role !== "student")) notFound();
+  if (!user || (user.role !== "teacher" && user.role !== "student")) notFound();
+  if (user.status !== "active") redirect("/dev-login?error=disabled");
   await startUserSession(user.id);
   redirect(user.role === "teacher" ? "/admin" : "/");
 }

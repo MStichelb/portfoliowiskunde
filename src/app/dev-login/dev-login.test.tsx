@@ -86,13 +86,17 @@ describe("development-only login", () => {
     expect(mocks.redirect).toHaveBeenCalledWith(destination);
   });
 
-  it("rejects an inactive dummy account", async () => {
+  it("redirects a disabled dummy account to a friendly error state without starting a session", async () => {
     mocks.getUser.mockResolvedValue({ ...user("dev-dummy-disabled", "Disabled", "student"), status: "disabled" });
     const formData = new FormData();
     formData.set("userId", "dev-dummy-disabled");
 
-    await expect(devLoginAction(formData)).rejects.toThrow("NEXT_NOT_FOUND");
+    await expect(devLoginAction(formData)).rejects.toThrow("NEXT_REDIRECT:/dev-login?error=disabled");
     expect(mocks.startUserSession).not.toHaveBeenCalled();
+
+    const markup = renderToStaticMarkup(await DevLoginPage({ searchParams: Promise.resolve({ error: "disabled" }) }));
+    expect(markup).toContain("Deze gebruiker is uitgeschakeld. Neem contact op met de beheerder.");
+    expect(markup).toContain('role="alert"');
   });
 });
 
