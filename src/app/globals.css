@@ -501,8 +501,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .user-profile-identity strong { font-size: 18px; }
 .user-profile-identity span { color: #68757b; font-size: 14px; }
 .user-profile-grid { display: grid; grid-template-columns: 112px minmax(0, 1fr); column-gap: 18px; row-gap: 10px; margin: 0; }
-.user-profile-grid dt { min-height: 28px; padding-top: 4px; color: #3b4950; font-size: 14px; font-weight: 600; }
-.user-profile-grid dd { min-width: 0; min-height: 28px; margin: 0; }
+.user-profile-grid dt { min-height: 28px; text-align: right; padding-top: 4px; color: #3b4950; font-size: 14px; font-weight: 600; }
+.user-profile-grid dd { min-width: 0; text-align: left; min-height: 28px; margin: 0; }
 .user-profile-grid .muted-value { display: inline-block; padding-top: 4px; font-size: 14px; }
 .teacher-group-setting select { width: min(100%, 440px); min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
 .learning-space-managers { display: grid; gap: 16px; }
@@ -532,7 +532,32 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .teacher-access-add-form { grid-template-columns: minmax(220px, 1fr) minmax(130px, .45fr) auto; margin-bottom: 18px; }
 .teacher-access-add-form button { grid-column: auto; }
 .teacher-access-row-actions { display: flex; align-items: center; gap: 7px; }
-.teacher-role-action { display: inline-flex; width: 150px; align-items: center; justify-content: center; gap: 7px; }
+.teacher-role-action { display: inline-flex; width: 160px; height: 34px; padding: 0 10px; align-items: center; justify-content: left; gap: 7px; white-space: nowrap; }
+
+.teacher-role-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+.teacher-role-badge-owner {
+  background: #dff3e4;
+  color: #245c32;
+}
+
+.teacher-role-badge-editor {
+  background: #e7f1fb;
+  color: #2d5f8b;
+}
+
+.teacher-role-badge-viewer {
+  background: #fff4c7;
+  color: #6f5a00;
+} 
+
 .group-user-filter { display: flex; max-width: 620px; align-items: end; gap: 10px; margin-bottom: 18px; }
 .group-user-filter label, .group-mapping-form label { display: grid; min-width: 0; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
 .group-user-filter label { flex: 1; }
