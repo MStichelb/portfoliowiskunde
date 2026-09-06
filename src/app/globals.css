@@ -564,6 +564,20 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .learning-space-group-list { margin-bottom: 0; }
 .learning-space-group-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; }
 .group-type-badge { padding: 4px 8px; border-radius: 999px; background: #f1f3f2; color: #46565d; font-size: 14px; font-weight: 700; }
+.individual-student-access { margin-top: 24px; padding-top: 20px; border-top: 1px solid #e3e7e5; }
+.individual-student-access .card-heading h3 { margin: 0 0 4px; }
+.student-access-dialog { display: grid; width: min(620px, 100%); max-height: min(720px, calc(100vh - 40px)); grid-template-rows: auto auto minmax(0, 1fr); gap: 16px; padding: 22px; border: 1px solid #c9d0cc; border-radius: 6px; background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.22); }
+.student-access-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.student-access-dialog-heading h2 { margin: 0; font-size: 20px; }
+.student-access-search { position: relative; }
+.student-access-search svg { position: absolute; top: 12px; left: 11px; color: #68757b; }
+.student-access-search input { width: 100%; min-height: 42px; padding: 8px 10px 8px 36px; border: 1px solid #9ab0ad; border-radius: 4px; background: #fff; font: inherit; }
+.student-access-candidates { min-height: 90px; overflow-y: auto; padding-right: 4px; }
+.student-access-candidate { display: grid; grid-template-columns: 34px minmax(0, 1fr) minmax(110px, .6fr); align-items: center; gap: 10px; padding: 10px 2px; border-top: 1px solid #e3e7e5; }
+.student-access-candidate:first-child { border-top: 0; }
+.student-access-candidate form { margin: 0; }
+.student-access-candidate span { min-width: 0; }
+.student-access-candidate small { display: block; color: #68757b; }
 
 .group-user-filter { display: flex; max-width: 620px; align-items: end; gap: 10px; margin-bottom: 18px; }
 .group-user-filter label, .group-mapping-form label { display: grid; min-width: 0; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
@@ -584,7 +598,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .connection-action, .sync-submit-button { display: inline-flex; align-items: center; gap: 7px; }
 .admin-preview-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 20px; margin: 22px 0 20px; }
 .admin-preview-toolbar .compact-back-button, .admin-preview-toolbar .admin-preview-banner { margin: 0; }
-.admin-route .admin-card, .admin-route .settings-card, .admin-route .report-card, .admin-route .space-list-item, .admin-route .theme-editor, .admin-route .theme-editor-card, .admin-route .document-item, .admin-route .section-settings-card, .admin-route .source-role-card, .admin-route .active-source-summary, .admin-route .source-comparison, .admin-route .admin-summary-table, .admin-route .connection-list, .admin-route .confirm-dialog, .admin-route .user-access-dialog, .admin-route .user-profile-dialog { border-color: var(--admin-border); background: var(--admin-surface); }
+.admin-route .admin-card, .admin-route .settings-card, .admin-route .report-card, .admin-route .space-list-item, .admin-route .theme-editor, .admin-route .theme-editor-card, .admin-route .document-item, .admin-route .section-settings-card, .admin-route .source-role-card, .admin-route .active-source-summary, .admin-route .source-comparison, .admin-route .admin-summary-table, .admin-route .connection-list, .admin-route .confirm-dialog, .admin-route .user-access-dialog, .admin-route .user-profile-dialog, .admin-route .student-access-dialog { border-color: var(--admin-border); background: var(--admin-surface); }
 .admin-route .source-role-card.active-source-card { border-color: #5d9280; }
 .admin-route .admin-summary-table th, .admin-route .admin-summary-table td { border-bottom-color: #e7dcde; }
 .admin-route .admin-summary-table thead th, .admin-route .section-table-row th, .admin-route .section-table-row td { background: #f8f1f2; }
@@ -644,6 +658,10 @@ h3 { font-size: 17px; margin-bottom: 12px; }
   .learning-space-group-list li { grid-template-columns: minmax(0, 1fr) auto; }
   .learning-space-group-list li > .group-type-badge { grid-column: 1; }
   .learning-space-group-list li > form { grid-column: 2; grid-row: 1 / span 2; }
+  .individual-student-access .card-heading { align-items: stretch; flex-direction: column; }
+  .individual-student-access .card-heading > button { width: fit-content; }
+  .student-access-candidate { grid-template-columns: 34px minmax(0, 1fr); }
+  .student-access-candidate > span:last-child { grid-column: 2; }
   .emergency-access-control, .group-user-filter { align-items: stretch; flex-direction: column; }
   .emergency-access-control form, .emergency-switch, .group-user-filter button { width: 100%; }
   .group-mapping-form { grid-template-columns: 1fr; }

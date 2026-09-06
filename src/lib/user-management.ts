@@ -19,6 +19,7 @@ export interface ManagedStorageConnection { userId: string; provider: "onedrive"
 export interface LearningSpaceTeacher { userId: string; firstName: string | null; lastName: string | null; role: LearningSpaceMemberRole | "viewer"; }
 export type LearningSpaceTeacherAccessRole = "viewer" | "editor";
 export interface LearningSpaceTeacherCandidate { userId: string; displayName: string; firstName: string | null; lastName: string | null; }
+export interface LearningSpaceIndividualStudent { userId: string; displayName: string; firstName: string | null; lastName: string | null; className: string | null; status: UserStatus; }
 
 export async function listLearningSpaceTeachers(learningSpaceId: string): Promise<LearningSpaceTeacher[]> {
   const rows = (await (await getDatabase()).execute({
@@ -214,6 +215,96 @@ export async function setIndividualLearningSpaceAccess(userId: string, learningS
     sql: `INSERT INTO individual_learning_space_access (user_id, learning_space_id, created_at, updated_at) VALUES (?, ?, ?, ?)
       ON CONFLICT(user_id, learning_space_id) DO UPDATE SET updated_at = excluded.updated_at`,
     args: [userId, learningSpaceId, now, now],
+  });
+}
+
+export async function listLearningSpaceIndividualStudentAccess(learningSpaceId: string): Promise<LearningSpaceIndividualStudent[]> {
+  return listLearningSpaceIndividualStudents(learningSpaceId, true);
+}
+
+export async function listLearningSpaceIndividualStudentCandidates(learningSpaceId: string): Promise<LearningSpaceIndividualStudent[]> {
+  return listLearningSpaceIndividualStudents(learningSpaceId, false);
+}
+
+export async function addLearningSpaceIndividualStudentAccess(userId: string, learningSpaceId: string): Promise<void> {
+  const database = await getDatabase();
+  const [user, existing] = await Promise.all([
+    database.execute({ sql: "SELECT role, status FROM users WHERE id = ?", args: [userId] }),
+    database.execute({ sql: "SELECT 1 FROM individual_learning_space_access WHERE user_id = ? AND learning_space_id = ?", args: [userId, learningSpaceId] }),
+  ]);
+  if (!user.rows[0] || user.rows[0].role !== "student") throw new Error("Alleen een leerling kan individueel worden toegevoegd.");
+  if (user.rows[0].status !== "active") throw new Error("Deze leerling is uitgeschakeld en kan niet worden toegevoegd.");
+  if (existing.rows[0]) throw new Error("Deze leerling heeft al individuele toegang tot deze leeromgeving.");
+  await setIndividualLearningSpaceAccess(userId, learningSpaceId, true);
+}
+
+export async function removeLearningSpaceIndividualStudentAccess(userId: string, learningSpaceId: string): Promise<void> {
+  const existing = await (await getDatabase()).execute({
+    sql: `SELECT 1 FROM individual_learning_space_access
+      JOIN users ON users.id = individual_learning_space_access.user_id
+      WHERE individual_learning_space_access.user_id = ?
+        AND individual_learning_space_access.learning_space_id = ?
+        AND users.role = 'student'`,
+    args: [userId, learningSpaceId],
+  });
+  if (!existing.rows[0]) throw new Error("Deze leerling heeft geen individuele toegang tot deze leeromgeving.");
+  await setIndividualLearningSpaceAccess(userId, learningSpaceId, false);
+}
+
+async function listLearningSpaceIndividualStudents(
+  learningSpaceId: string,
+  linked: boolean,
+): Promise<LearningSpaceIndividualStudent[]> {
+  const database = await getDatabase();
+  const accessCondition = linked ? "EXISTS" : "NOT EXISTS";
+  const accessQuery = `${accessCondition} (
+    SELECT 1 FROM individual_learning_space_access
+    WHERE individual_learning_space_access.user_id = users.id
+      AND individual_learning_space_access.learning_space_id = ?
+  )`;
+  const [userRows, groupRows, knownGroupRows] = await Promise.all([
+    database.execute({
+      sql: `SELECT users.id, users.display_name, users.first_name, users.last_name, users.status, users.class_group_override_id
+        FROM users WHERE users.role = 'student' AND ${accessQuery}
+        ORDER BY users.last_name, users.first_name, users.display_name`,
+      args: [learningSpaceId],
+    }),
+    database.execute({
+      sql: `SELECT external_identities.user_id, external_identity_groups.external_group_id, external_identity_groups.external_group_name
+        FROM external_identity_groups
+        JOIN external_identities ON external_identities.id = external_identity_groups.identity_id
+        JOIN users ON users.id = external_identities.user_id
+        WHERE external_identities.provider = 'smartschool' AND users.role = 'student' AND ${accessQuery}`,
+      args: [learningSpaceId],
+    }),
+    database.execute(`SELECT external_group_id, MAX(external_group_name) AS external_group_name
+      FROM external_identity_groups GROUP BY external_group_id`),
+  ]);
+  const classGroupsByUser = new Map<string, KnownExternalGroup[]>();
+  for (const row of groupRows.rows) {
+    const name = textOrNull(row.external_group_name);
+    if (!name || !isClassGroupName(name)) continue;
+    const userId = String(row.user_id);
+    const groups = classGroupsByUser.get(userId) ?? [];
+    if (!groups.some((group) => group.externalGroupId === String(row.external_group_id))) {
+      groups.push({ provider: "smartschool", externalGroupId: String(row.external_group_id), externalGroupName: name });
+      classGroupsByUser.set(userId, groups);
+    }
+  }
+  const knownNames = new Map(knownGroupRows.rows.map((row) => [String(row.external_group_id), textOrNull(row.external_group_name)]));
+  return userRows.rows.map((row) => {
+    const userId = String(row.id);
+    const classGroupOverrideId = textOrNull(row.class_group_override_id);
+    const classGroups = classGroupsByUser.get(userId) ?? [];
+    const automaticClass = classGroups.length === 1 ? classGroups[0]?.externalGroupName ?? null : null;
+    return {
+      userId,
+      displayName: String(row.display_name),
+      firstName: textOrNull(row.first_name),
+      lastName: textOrNull(row.last_name),
+      className: classGroupOverrideId ? knownNames.get(classGroupOverrideId) ?? classGroupOverrideId : automaticClass,
+      status: row.status === "disabled" ? "disabled" : "active",
+    };
   });
 }
 

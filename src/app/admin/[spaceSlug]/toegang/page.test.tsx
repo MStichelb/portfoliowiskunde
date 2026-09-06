@@ -13,10 +13,14 @@ const mocks = vi.hoisted(() => ({
   listLearningSpaceTeacherCandidates: vi.fn(),
   listLearningSpaceGroupMappings: vi.fn(),
   listKnownExternalGroups: vi.fn(),
+  listLearningSpaceIndividualStudentAccess: vi.fn(),
+  listLearningSpaceIndividualStudentCandidates: vi.fn(),
   saveTeacherAccess: vi.fn(),
   removeTeacherAccess: vi.fn(),
   saveGroupMapping: vi.fn(),
   removeGroupMapping: vi.fn(),
+  saveStudentAccess: vi.fn(),
+  removeStudentAccess: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NEXT_NOT_FOUND"); }),
 }));
 
@@ -32,12 +36,16 @@ vi.mock("@/lib/user-management", () => ({
   listLearningSpaceTeacherCandidates: mocks.listLearningSpaceTeacherCandidates,
   listLearningSpaceGroupMappings: mocks.listLearningSpaceGroupMappings,
   listKnownExternalGroups: mocks.listKnownExternalGroups,
+  listLearningSpaceIndividualStudentAccess: mocks.listLearningSpaceIndividualStudentAccess,
+  listLearningSpaceIndividualStudentCandidates: mocks.listLearningSpaceIndividualStudentCandidates,
 }));
 vi.mock("./actions", () => ({
   saveLearningSpaceTeacherAccessAction: mocks.saveTeacherAccess,
   removeLearningSpaceTeacherAccessAction: mocks.removeTeacherAccess,
   saveLearningSpaceGroupMappingAction: mocks.saveGroupMapping,
   removeLearningSpaceGroupMappingAction: mocks.removeGroupMapping,
+  saveLearningSpaceIndividualStudentAccessAction: mocks.saveStudentAccess,
+  removeLearningSpaceIndividualStudentAccessAction: mocks.removeStudentAccess,
 }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("@/app/components/admin-space-header", () => ({
@@ -56,6 +64,8 @@ describe("LearningSpace access", () => {
     mocks.listLearningSpaceTeacherCandidates.mockResolvedValue([]);
     mocks.listLearningSpaceGroupMappings.mockResolvedValue([]);
     mocks.listKnownExternalGroups.mockResolvedValue([]);
+    mocks.listLearningSpaceIndividualStudentAccess.mockResolvedValue([]);
+    mocks.listLearningSpaceIndividualStudentCandidates.mockResolvedValue([]);
   });
 
   it.each([
@@ -175,13 +185,48 @@ describe("LearningSpace access", () => {
     expect(markup).not.toContain("Groepskoppeling verwijderen?");
   });
 
+  it("shows individual students and add/remove controls to an owner", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("owner", "teacher"));
+    mocks.canConfigureLearningSpace.mockResolvedValue(true);
+    mocks.listLearningSpaceIndividualStudentAccess.mockResolvedValue([
+      { userId: "student-1", displayName: "Anna De Smet", firstName: "Anna", lastName: "De Smet", className: "5WEWI", status: "active" },
+    ]);
+    mocks.listLearningSpaceIndividualStudentCandidates.mockResolvedValue([
+      { userId: "student-2", displayName: "Bram Janssens", firstName: "Bram", lastName: "Janssens", className: "6WIS", status: "active" },
+    ]);
+
+    const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+
+    expect(markup).toContain("Individuele leerlingen");
+    expect(markup).toContain("Leerling toevoegen");
+    expect(markup).toContain("De Smet");
+    expect(markup).toContain("5WEWI");
+    expect(markup).toContain("Individuele leerlingtoegang verwijderen?");
+    expect(mocks.listLearningSpaceIndividualStudentAccess).toHaveBeenCalledWith(space.id);
+    expect(mocks.listLearningSpaceIndividualStudentCandidates).toHaveBeenCalledWith(space.id);
+  });
+
+  it("shows only the individual list read-only to an editor", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("editor", "teacher"));
+    mocks.listLearningSpaceIndividualStudentAccess.mockResolvedValue([
+      { userId: "student-1", displayName: "Anna De Smet", firstName: "Anna", lastName: "De Smet", className: "5WEWI", status: "active" },
+    ]);
+
+    const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+
+    expect(markup).toContain("De Smet");
+    expect(markup).not.toContain("Leerling toevoegen");
+    expect(markup).not.toContain("Individuele leerlingtoegang verwijderen?");
+    expect(mocks.listLearningSpaceIndividualStudentCandidates).not.toHaveBeenCalled();
+  });
+
   it("renders the group card and remaining users placeholder", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("editor", "teacher"));
 
     const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
 
     expect(markup).toContain('<h2 id="teachers-heading">Leraren</h2>');
-    expect(markup).toContain('<h2 id="groups-users-heading">Groepen en gebruikers koppelen</h2>');
+    expect(markup).toContain('<h2 id="groups-users-heading">Groepen koppelen</h2>');
     expect(markup).toContain('<h2 id="users-heading">Gebruikers</h2>');
     expect(markup).toContain("Nog geen leraren met toegang.");
     expect(markup).not.toContain("<table");

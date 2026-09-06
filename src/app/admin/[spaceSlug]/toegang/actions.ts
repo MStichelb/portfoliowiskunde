@@ -8,9 +8,11 @@ import { requireLearningSpaceConfiguration } from "@/lib/authorization";
 import { createLearningSpaceGroupMapping } from "@/lib/identity";
 import { getLearningSpace } from "@/lib/repositories";
 import {
+  addLearningSpaceIndividualStudentAccess,
   deleteLearningSpaceGroupMapping,
   listKnownExternalGroups,
   listLearningSpaceGroupMappings,
+  removeLearningSpaceIndividualStudentAccess,
   removeLearningSpaceTeacherAccess,
   setLearningSpaceTeacherAccess,
   type LearningSpaceTeacherAccessRole,
@@ -73,6 +75,47 @@ export async function removeLearningSpaceGroupMappingAction(formData: FormData) 
   }
 
   finishGroupMutation(space.slug);
+}
+
+export async function saveLearningSpaceIndividualStudentAccessAction(formData: FormData) {
+  await mutateIndividualStudentAccess(
+    value(formData, "learningSpaceId"),
+    value(formData, "userId"),
+    true,
+  );
+}
+
+export async function removeLearningSpaceIndividualStudentAccessAction(formData: FormData) {
+  await mutateIndividualStudentAccess(
+    value(formData, "learningSpaceId"),
+    value(formData, "userId"),
+    false,
+  );
+}
+
+async function mutateIndividualStudentAccess(
+  learningSpaceId: string,
+  userId: string,
+  enabled: boolean,
+): Promise<never> {
+  const actor = await requireAdminUser();
+  await requireLearningSpaceConfiguration(actor, learningSpaceId);
+  const space = await getLearningSpace(learningSpaceId);
+  if (!space) redirect("/admin");
+
+  try {
+    if (enabled) await addLearningSpaceIndividualStudentAccess(userId, learningSpaceId);
+    else await removeLearningSpaceIndividualStudentAccess(userId, learningSpaceId);
+  } catch (error) {
+    redirect(`/admin/${encodeURIComponent(space.slug)}/toegang?studentError=${encodeURIComponent(
+      error instanceof Error ? error.message : "De individuele toegang kon niet worden gewijzigd.",
+    )}`);
+  }
+
+  const path = `/admin/${encodeURIComponent(space.slug)}/toegang`;
+  revalidatePath(path);
+  revalidatePath("/admin/gebruikers");
+  redirect(`${path}?studentSaved=1`);
 }
 
 async function mutateTeacherAccess(
