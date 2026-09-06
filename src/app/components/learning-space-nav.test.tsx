@@ -21,7 +21,24 @@ describe("LearningSpace admin navigation", () => {
     expect(markup).toContain("Portfolio");
     expect(markup).toContain("Thema");
     expect(markup).toContain("Instellingen");
+    expect(markup).toContain("Toegang");
     expect(markup).toContain("Publieke pagina");
     expect(markup).not.toContain(">Foutmeldingen<");
+  });
+
+  it("shows the access tab in the agreed order and accepts access as current section", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceNav current={base} section="access" />);
+    const portfolios = markup.indexOf("Portfolio");
+    const themes = markup.indexOf("Thema");
+    const settings = markup.indexOf("Instellingen");
+    const access = markup.indexOf("Toegang");
+    const publicPage = markup.indexOf("Publieke pagina");
+
+    expect(portfolios).toBeLessThan(themes);
+    expect(themes).toBeLessThan(settings);
+    expect(settings).toBeLessThan(access);
+    expect(access).toBeLessThan(publicPage);
+    expect(markup).toContain('href="/admin/5/toegang"');
+    expect(markup).toContain('class="space-link-current" href="/admin/5/toegang"');
   });
 });
