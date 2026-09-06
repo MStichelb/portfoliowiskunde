@@ -27,10 +27,10 @@ export function LearningSpaceSettingsForm({
     <section className="settings-card" aria-labelledby="general-settings-heading">
       <h2 id="general-settings-heading">Algemeen</h2>
       <div className="settings-grid">
-        <label>Naam<input name="name" defaultValue={space.name} required maxLength={100} /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
-        <label>Publieke slug<input name="slug" defaultValue={space.slug} required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" /><small>Dit wordt gebruikt in de URL.</small></label>
-        <label>Kort label<input name="shortLabel" defaultValue={space.shortLabel} required maxLength={20} /><small>Compacte naam voor de navigatie in de adminomgeving.</small></label>
-        <label>Sortering<input name="sortOrder" type="number" defaultValue={space.sortOrder} required /><small>Bepaalt de volgorde van leeromgevingen in de navigatie.</small></label>
+        <label>Weergavenaam<input name="name" defaultValue={space.name} required maxLength={100} /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
+        <label>URL<input name="slug" defaultValue={space.slug} required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" /><small>Dit wordt gebruikt in het webadres van deze leeromgeving.</small></label>
+        <label>Kort label<input name="shortLabel" defaultValue={space.shortLabel} required maxLength={6} /><small>Compacte naam voor de navigatie, maximaal 6 tekens.</small></label>
+        <label>Sortering<input name="sortOrder" type="number" defaultValue={space.sortOrder} required /><small>Dit bepaalt de volgorde van leeromgevingen in de navigatie.</small></label>
         <label className="field-full">Beschrijving<textarea name="description" defaultValue={space.description} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
         <label className="color-field">Kleur<span><input name="cardColor" type="color" value={cardColor} onChange={(event) => setCardColor(event.target.value.toUpperCase())} /><code>{cardColor.toUpperCase()}</code></span><small>Accentkleur van het kaartje.</small></label>
       </div>

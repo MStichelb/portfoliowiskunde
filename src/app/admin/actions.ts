@@ -167,11 +167,11 @@ export async function saveLearningSpaceAction(_previousState: AdminActionState, 
     return { error: error instanceof Error ? error.message : "De instellingen zijn ongeldig." };
   }
   const matchingSlug = await getAdminLearningSpaceBySlug(input.slug);
-  if (matchingSlug && matchingSlug.id !== id) return { error: "Deze publieke slug bestaat al. Kies een andere slug." };
+  if (matchingSlug && matchingSlug.id !== id) return { error: "Deze URL is al in gebruik. Kies een andere URL." };
   try {
     await updateLearningSpace(id, input);
   } catch (error) {
-    if (isUniqueConstraintError(error)) return { error: "Deze publieke slug bestaat al. Kies een andere slug." };
+    if (isUniqueConstraintError(error)) return { error: "Deze URL is al in gebruik. Kies een andere URL." };
     throw error;
   }
   revalidatePath("/admin");

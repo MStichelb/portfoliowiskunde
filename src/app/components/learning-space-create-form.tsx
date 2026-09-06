@@ -21,10 +21,10 @@ export function LearningSpaceCreateForm({ action, error = null, generalOnly = fa
     <fieldset>
       <legend className="sr-only">Gegevens leeromgeving</legend>
       <div className="settings-grid create-general-grid">
-        <label>Weergavenaam<input name="name" required maxLength={100} placeholder="4de jaar" /></label>
-        <label>URL<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="4" /><small>Dit wordt gebruikt in het webadres van deze leeromgeving.</small></label>
-        <label>Kort label<input name="shortLabel" required maxLength={20} placeholder="4" /><small>Compacte naam voor de navigatie, bijvoorbeeld 5WIS.</small></label>
-        <label>Sortering<input name="sortOrder" type="number" defaultValue={40} /><small>Dit bepaalt de volgorde in de navigatie.</small></label>
+        <label>Weergavenaam<input name="name" required maxLength={100} placeholder="5MTWE 5LWE" /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
+        <label>URL<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="5we" /><small>Dit wordt gebruikt in het webadres van deze leeromgeving.</small></label>
+        <label>Kort label<input name="shortLabel" required maxLength={6} placeholder="5WET" /><small>Compacte naam voor de navigatie, maximaal 6 karakters.</small></label>
+        <label>Sortering<input name="sortOrder" type="number" defaultValue={50} /><small>Dit bepaalt de volgorde in de navigatie.</small></label>
         <label className="field-full">{generalOnly ? "Omschrijving" : "Beschrijving"}<textarea name="description" defaultValue={DEFAULT_LEARNING_SPACE_DESCRIPTION} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
         <label className="color-field">Kleur<span><input name="cardColor" type="color" defaultValue={DEFAULT_LEARNING_SPACE_COLOR} /><code>{DEFAULT_LEARNING_SPACE_COLOR}</code></span></label>
       </div>

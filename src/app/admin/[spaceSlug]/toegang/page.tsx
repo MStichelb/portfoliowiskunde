@@ -77,7 +77,7 @@ export default async function LearningSpaceAccessPage({
         : <p className="empty-state compact-empty">Nog geen leraren met toegang.</p>}
     </section>
     <section className="admin-card" aria-labelledby="groups-users-heading">
-      <div className="card-heading"><div><h2 id="groups-users-heading">Leerlingen koppelen</h2><p>Koppel leerlingen aan deze leeromgeving via Smartschoolgroepen of individueel.</p></div></div>
+      <div className="card-heading"><div><h2 id="groups-users-heading">Leerlingen koppelen</h2></div></div>
       <div className="student-linking-group">
         <h3>Groepen</h3>
         <p>Koppel Smartschoolgroepen aan deze leeromgeving om leerlingen automatisch kijktoegang te geven.</p>
@@ -171,5 +171,17 @@ function TeacherAccessActions({ learningSpaceId, teacher }: { learningSpaceId: s
 
 function TeacherRoleBadge({ role }: { role: LearningSpaceTeacher["role"] }) {
   const label = role === "owner" ? "Eigenaar" : role === "editor" ? "Bewerker" : "Kijker";
-  return <div className="management-badges"><span>{role === "owner" ? <Crown size={14} aria-hidden /> : role === "editor" ? <Pencil size={14} aria-hidden /> : <Eye size={14} aria-hidden />}{label}</span></div>;
+
+  return (
+    <div className="management-badges">
+      <span className={`teacher-role-badge teacher-role-badge-${role}`}>
+        {role === "owner"
+          ? <Crown size={14} aria-hidden />
+          : role === "editor"
+            ? <Pencil size={14} aria-hidden />
+            : <Eye size={14} aria-hidden />}
+        {label}
+      </span>
+    </div>
+  );
 }

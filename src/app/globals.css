@@ -523,8 +523,22 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .management-space-card { min-width: 0; padding: 18px; border: 1px solid #dccfd1; border-radius: 6px; background: #fff; }
 .source-owner-summary { margin-bottom: 16px; padding: 10px 12px; background: #f4f6f5; color: #405058; }
 .source-owner-summary p { margin: 3px 0; }
-.management-list { display: grid; gap: 7px; margin: 0 0 16px; padding: 0; list-style: none; }
-.management-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 7px; border-bottom: 1px solid #e3e7e5; }
+.management-list {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.management-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #e3e7e5;
+}
 .management-add-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(110px, .6fr); align-items: end; gap: 9px; }
 .management-add-form label { display: grid; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
 .management-add-form input, .management-add-form select { width: 100%; min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
@@ -561,8 +575,24 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .learning-space-group-forms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
 .learning-space-group-form { grid-template-columns: minmax(0, 1fr) auto; }
 .learning-space-group-form button { grid-column: auto; }
-.learning-space-group-list { margin-bottom: 0; }
-.learning-space-group-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; }
+.learning-space-group-list {
+  margin-top: 16px;
+  margin-bottom: 0;
+  border: 1px solid #d8dfe1;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.learning-space-group-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  border-bottom: none;
+  padding: 10px 12px;
+}
+
+.learning-space-group-list li + li {
+  border-top: 1px solid #d8dfe1;
+}
 .group-type-badge { padding: 4px 8px; border-radius: 999px; background: #f1f3f2; color: #46565d; font-size: 14px; font-weight: 700; }
 .student-linking-group > h3 { margin: 0 0 4px; }
 .student-linking-group > p { margin: 0 0 18px; color: #52616a; }

@@ -19,7 +19,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     {error ? <p className="form-message" role="alert">{settingsErrorMessage(error)}</p> : null}
     <section className="admin-card learning-spaces-section" aria-labelledby="active-spaces-heading"><h2 id="active-spaces-heading">Actieve leeromgevingen</h2>{activeSpaces.length > 0 ? <SpaceList spaces={activeSpaces} /> : <p className="empty-state">Geen actieve leeromgevingen.</p>}</section>
     {archivedSpaces.length > 0 ? <section className="admin-card learning-spaces-section" aria-labelledby="archived-spaces-heading"><h2 id="archived-spaces-heading">Gearchiveerde leeromgevingen</h2><p>Instellingen en metadata blijven bewaard. Gearchiveerde leeromgevingen worden niet publiek getoond of gesynchroniseerd.</p><SpaceList spaces={archivedSpaces} /></section> : null}
-    <section className="admin-card add-learning-space-section" aria-labelledby="add-space-heading"><div className="card-heading"><div><h2 id="add-space-heading">Leeromgeving toevoegen</h2><p>Maak een aparte leeromgeving met een eigen publieke URL en bronconfiguratie.</p></div></div><LearningSpaceCreateForm action={createLearningSpaceAction} /></section>
+    <section className="admin-card add-learning-space-section" aria-labelledby="add-space-heading"><div className="card-heading"><div><h2 id="add-space-heading">Leeromgeving toevoegen</h2><p>Maak een aparte leeromgeving met een eigen webadres en bronconfiguratie.</p></div></div><LearningSpaceCreateForm action={createLearningSpaceAction} /></section>
   </main>;
 }
 
@@ -30,6 +30,6 @@ function SpaceList({ spaces }: { spaces: LearningSpace[] }) {
 function settingsErrorMessage(error: string): string {
   if (error === "archive-before-delete") return "Archiveer de leeromgeving eerst voordat je ze permanent verwijdert.";
   if (error === "delete-failed") return "De leeromgeving kon niet worden verwijderd. Vernieuw de pagina en probeer opnieuw.";
-  if (error === "duplicate") return "Deze publieke slug bestaat al. Kies een andere slug.";
+  if (error === "duplicate") return "Deze URL bestaat al. Kies een andere URL.";
   return "De leeromgeving kon niet worden toegevoegd. Controleer de ingevulde gegevens.";
 }
