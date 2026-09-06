@@ -56,12 +56,15 @@ describe("LearningSpace access shell", () => {
     expect(mocks.getAdminLearningSpaceBySlug).not.toHaveBeenCalled();
   });
 
-  it("renders the page heading and three placeholder sections without controls", async () => {
+  it("renders three placeholder sections without a duplicate page heading or controls", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("owner", "teacher"));
 
     const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
 
-    expect(markup).toContain("<h2>Toegang</h2>");
+    expect(markup).not.toContain("<h2>Toegang</h2>");
+    expect(markup).toContain('<h2 id="teachers-heading">Leraren</h2>');
+    expect(markup).toContain('<h2 id="groups-users-heading">Groepen en gebruikers koppelen</h2>');
+    expect(markup).toContain('<h2 id="users-heading">Gebruikers</h2>');
     expect(markup).toContain("Leraren");
     expect(markup).toContain("Beheer de leraren die deze leeromgeving kunnen bekijken of bewerken.");
     expect(markup).toContain("Groepen en gebruikers koppelen");

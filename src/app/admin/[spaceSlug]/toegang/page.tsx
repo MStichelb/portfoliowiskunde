@@ -15,9 +15,8 @@ export default async function LearningSpaceAccessPage({ params }: { params: Prom
 
   return <main className="page-shell admin-page admin-space-page learning-space-access-page">
     <AdminSpaceHeader current={space} section="access" user={user} />
-    <header className="page-header"><h2>Toegang</h2></header>
-    <section className="admin-card" aria-labelledby="teachers-heading"><h3 id="teachers-heading">Leraren</h3><p>Beheer de leraren die deze leeromgeving kunnen bekijken of bewerken.</p></section>
-    <section className="admin-card" aria-labelledby="groups-users-heading"><h3 id="groups-users-heading">Groepen en gebruikers koppelen</h3><p>Koppel Smartschoolgroepen of individuele leerlingen aan deze leeromgeving.</p></section>
-    <section className="admin-card" aria-labelledby="users-heading"><h3 id="users-heading">Gebruikers</h3><p>Bekijk de leerlingen die toegang hebben tot deze leeromgeving.</p></section>
+    <section className="admin-card" aria-labelledby="teachers-heading"><h2 id="teachers-heading">Leraren</h2><p>Beheer de leraren die deze leeromgeving kunnen bekijken of bewerken.</p></section>
+    <section className="admin-card" aria-labelledby="groups-users-heading"><h2 id="groups-users-heading">Groepen en gebruikers koppelen</h2><p>Koppel Smartschoolgroepen of individuele leerlingen aan deze leeromgeving.</p></section>
+    <section className="admin-card" aria-labelledby="users-heading"><h2 id="users-heading">Gebruikers</h2><p>Bekijk de leerlingen die toegang hebben tot deze leeromgeving.</p></section>
   </main>;
 }
