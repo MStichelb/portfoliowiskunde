@@ -16,6 +16,30 @@ export interface ManagedGroupUser { provider: string; externalGroupId: string; u
 export interface ManagedSourceOwner { learningSpaceId: string; sourceRole: "primary" | "mirror"; isActive: boolean; provider: string; connectionName: string | null; ownerName: string | null; }
 export interface ManagedUserAccess { userId: string; learningSpaceId: string; groupDerived: boolean; individual: boolean; managementRole: LearningSpaceMemberRole | null; }
 export interface ManagedStorageConnection { userId: string; provider: "onedrive" | "google_drive"; status: "active" | "disconnected"; }
+export interface LearningSpaceTeacher { userId: string; firstName: string | null; lastName: string | null; role: LearningSpaceMemberRole | "viewer"; }
+
+export async function listLearningSpaceTeachers(learningSpaceId: string): Promise<LearningSpaceTeacher[]> {
+  const rows = (await (await getDatabase()).execute({
+    sql: `SELECT users.id AS user_id, users.first_name, users.last_name,
+      CASE learning_space_members.role WHEN 'owner' THEN 'owner' WHEN 'editor' THEN 'editor' ELSE 'viewer' END AS access_role
+      FROM users
+      LEFT JOIN learning_space_members ON learning_space_members.user_id = users.id
+        AND learning_space_members.learning_space_id = ?
+      LEFT JOIN individual_learning_space_access ON individual_learning_space_access.user_id = users.id
+        AND individual_learning_space_access.learning_space_id = ?
+      WHERE users.role = 'teacher'
+        AND (learning_space_members.user_id IS NOT NULL OR individual_learning_space_access.user_id IS NOT NULL)
+      ORDER BY CASE learning_space_members.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END,
+        users.last_name, users.first_name, users.display_name`,
+    args: [learningSpaceId, learningSpaceId],
+  })).rows;
+  return rows.map((row) => ({
+    userId: String(row.user_id),
+    firstName: textOrNull(row.first_name),
+    lastName: textOrNull(row.last_name),
+    role: row.access_role === "owner" ? "owner" : row.access_role === "editor" ? "editor" : "viewer",
+  }));
+}
 
 export async function listManagedUsers(): Promise<ManagedUser[]> {
   const database = await getDatabase();
