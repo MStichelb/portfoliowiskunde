@@ -27,7 +27,6 @@ describe("UserManagementView", () => {
     expect(filterStudents(users, { class: ["class-5", "class-6"], access: "with" }).map((user) => user.id)).toEqual(["marie"]);
     expect(filterStudents(users, { sort: "last-asc" }).map((user) => user.id)).toEqual(["anna", "marie", "jonas"]);
   });
-
   it("pagineert leerlingen en toont afzonderlijke status- en toegangsbediening", () => {
     const students = Array.from({ length: 26 }, (_, index) => managedUser({
       id: `student-${index + 1}`,
@@ -65,6 +64,26 @@ describe("UserManagementView", () => {
     expect(next.getAll("class")).toEqual(["6EWI", "6LWI"]);
     expect(next.get("access")).toBe("with");
     expect(next.has("page")).toBe(false);
+  });
+
+  it("toont effectieve kijkrechten gededupliceerd, gesorteerd en begrensd", () => {
+    const student = managedUser({ id: "student", firstName: "Sara", lastName: "Student" });
+    const spaces = [1, 2, 3, 4, 5].map((number) => learningSpace(`space-${number}`, `S${number}`, number));
+    const access: ManagedUserAccess[] = [
+      { ...userAccess("student", "space-1", true), groupDerived: true },
+      userAccess("student", "space-1", true),
+      userAccess("student", "space-2", true),
+      { ...userAccess("student", "space-3", false), groupDerived: true },
+      { ...userAccess("student", "space-4", true), groupDerived: true },
+      { ...userAccess("student", "space-5", false), groupDerived: true },
+    ];
+
+    const markup = renderToStaticMarkup(<UserManagementView users={[student]} spaces={spaces} memberships={[]} access={access} storageConnections={[]} classGroups={[]} teacherGroups={[]} teacherGroupId={null} params={{}} />);
+    expect((markup.match(/title="Kijkrecht voor Space 1"/g) ?? [])).toHaveLength(1);
+    expect(markup.indexOf('title="Kijkrecht voor Space 1"')).toBeLessThan(markup.indexOf('title="Kijkrecht voor Space 2"'));
+    expect(markup.indexOf('title="Kijkrecht voor Space 2"')).toBeLessThan(markup.indexOf('title="Kijkrecht voor Space 3"'));
+    expect(markup).not.toContain('title="Kijkrecht voor Space 4"');
+    expect(markup).toContain('title="2 extra leeromgevingen">+ 2</span>');
   });
 
   it("maakt afgeleide toegang niet wijzigbaar en houdt individuele toegang apart", () => {
