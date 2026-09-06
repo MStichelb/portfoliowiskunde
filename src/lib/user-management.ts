@@ -1,4 +1,4 @@
-import { getDatabase } from "@/lib/database";
+import { executeBatch, getDatabase } from "@/lib/database";
 import type { AppUser, LearningSpaceMemberRole, UserRole, UserStatus } from "@/lib/identity";
 
 export interface ManagedUser extends AppUser {
@@ -17,6 +17,8 @@ export interface ManagedSourceOwner { learningSpaceId: string; sourceRole: "prim
 export interface ManagedUserAccess { userId: string; learningSpaceId: string; groupDerived: boolean; individual: boolean; managementRole: LearningSpaceMemberRole | null; }
 export interface ManagedStorageConnection { userId: string; provider: "onedrive" | "google_drive"; status: "active" | "disconnected"; }
 export interface LearningSpaceTeacher { userId: string; firstName: string | null; lastName: string | null; role: LearningSpaceMemberRole | "viewer"; }
+export type LearningSpaceTeacherAccessRole = "viewer" | "editor";
+export interface LearningSpaceTeacherCandidate { userId: string; displayName: string; firstName: string | null; lastName: string | null; }
 
 export async function listLearningSpaceTeachers(learningSpaceId: string): Promise<LearningSpaceTeacher[]> {
   const rows = (await (await getDatabase()).execute({
@@ -39,6 +41,81 @@ export async function listLearningSpaceTeachers(learningSpaceId: string): Promis
     lastName: textOrNull(row.last_name),
     role: row.access_role === "owner" ? "owner" : row.access_role === "editor" ? "editor" : "viewer",
   }));
+}
+
+export async function listLearningSpaceTeacherCandidates(learningSpaceId: string): Promise<LearningSpaceTeacherCandidate[]> {
+  const rows = (await (await getDatabase()).execute({
+    sql: `SELECT users.id AS user_id, users.display_name, users.first_name, users.last_name
+      FROM users
+      WHERE users.role = 'teacher' AND users.status = 'active'
+        AND NOT EXISTS (
+          SELECT 1 FROM learning_space_members
+          WHERE learning_space_members.learning_space_id = ?
+            AND learning_space_members.user_id = users.id
+            AND learning_space_members.role = 'owner'
+        )
+      ORDER BY users.last_name, users.first_name, users.display_name`,
+    args: [learningSpaceId],
+  })).rows;
+  return rows.map((row) => ({
+    userId: String(row.user_id), displayName: String(row.display_name),
+    firstName: textOrNull(row.first_name), lastName: textOrNull(row.last_name),
+  }));
+}
+
+export async function setLearningSpaceTeacherAccess(
+  learningSpaceId: string,
+  userId: string,
+  role: LearningSpaceTeacherAccessRole,
+): Promise<void> {
+  await assertMutableLearningSpaceTeacher(learningSpaceId, userId);
+  const now = new Date().toISOString();
+  if (role === "editor") {
+    await executeBatch([
+      { sql: "DELETE FROM individual_learning_space_access WHERE learning_space_id = ? AND user_id = ?", args: [learningSpaceId, userId] },
+      { sql: "DELETE FROM learning_space_members WHERE learning_space_id = ? AND user_id = ? AND role = 'editor'", args: [learningSpaceId, userId] },
+      {
+        sql: `INSERT INTO learning_space_members (learning_space_id, user_id, role, created_at, updated_at)
+          VALUES (?, ?, 'editor', ?, ?) ON CONFLICT(learning_space_id, user_id) DO NOTHING`,
+        args: [learningSpaceId, userId, now, now],
+      },
+    ]);
+    return;
+  }
+  await executeBatch([
+    { sql: "DELETE FROM learning_space_members WHERE learning_space_id = ? AND user_id = ? AND role = 'editor'", args: [learningSpaceId, userId] },
+    {
+      sql: `INSERT INTO individual_learning_space_access (user_id, learning_space_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?) ON CONFLICT(user_id, learning_space_id) DO UPDATE SET updated_at = excluded.updated_at`,
+      args: [userId, learningSpaceId, now, now],
+    },
+  ]);
+}
+
+export async function removeLearningSpaceTeacherAccess(learningSpaceId: string, userId: string): Promise<void> {
+  await assertMutableLearningSpaceTeacher(learningSpaceId, userId);
+  await executeBatch([
+    { sql: "DELETE FROM learning_space_members WHERE learning_space_id = ? AND user_id = ? AND role = 'editor'", args: [learningSpaceId, userId] },
+    { sql: "DELETE FROM individual_learning_space_access WHERE learning_space_id = ? AND user_id = ?", args: [learningSpaceId, userId] },
+  ]);
+}
+
+async function assertMutableLearningSpaceTeacher(learningSpaceId: string, userId: string): Promise<void> {
+  const database = await getDatabase();
+  const [user, space, membership] = await Promise.all([
+    database.execute({ sql: "SELECT role, status FROM users WHERE id = ?", args: [userId] }),
+    database.execute({ sql: "SELECT is_active, archived_at FROM learning_spaces WHERE id = ?", args: [learningSpaceId] }),
+    database.execute({ sql: "SELECT role FROM learning_space_members WHERE learning_space_id = ? AND user_id = ?", args: [learningSpaceId, userId] }),
+  ]);
+  if (!user.rows[0] || user.rows[0].role !== "teacher" || user.rows[0].status !== "active") {
+    throw new Error("Alleen een actieve leraar kan toegang krijgen tot deze leeromgeving.");
+  }
+  if (!space.rows[0] || Number(space.rows[0].is_active) !== 1 || space.rows[0].archived_at) {
+    throw new Error("Deze leeromgeving is niet actief.");
+  }
+  if (membership.rows[0]?.role === "owner") {
+    throw new Error("Een eigenaar kan via deze toegangspagina niet worden gewijzigd of verwijderd.");
+  }
 }
 
 export async function listManagedUsers(): Promise<ManagedUser[]> {

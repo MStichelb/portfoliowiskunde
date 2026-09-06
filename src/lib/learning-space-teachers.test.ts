@@ -3,9 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { resetDatabaseForTests } from "./database";
+import { getDatabase, resetDatabaseForTests } from "./database";
 import { createUser } from "./identity";
-import { listLearningSpaceTeachers, setIndividualLearningSpaceAccess, upsertManagedMembership } from "./user-management";
+import {
+  listLearningSpaceTeacherCandidates,
+  listLearningSpaceTeachers,
+  removeLearningSpaceTeacherAccess,
+  setIndividualLearningSpaceAccess,
+  setLearningSpaceTeacherAccess,
+  upsertManagedMembership,
+} from "./user-management";
 
 let temporaryDirectory: string | undefined;
 
@@ -16,7 +23,7 @@ afterEach(async () => {
   temporaryDirectory = undefined;
 });
 
-describe("LearningSpace teacher access readmodel", () => {
+describe("LearningSpace teacher access", () => {
   it("derives owners, editors and viewers without duplicates or students", async () => {
     await useTemporaryDatabase();
     const owner = await createUser({ displayName: "Olivia Owner", firstName: "Olivia", lastName: "Owner", role: "teacher" });
@@ -38,6 +45,61 @@ describe("LearningSpace teacher access readmodel", () => {
     ]);
   });
 
+  it("offers only active teachers and never offers the current owner", async () => {
+    await useTemporaryDatabase();
+    const owner = await createUser({ displayName: "Olivia Owner", role: "teacher" });
+    const active = await createUser({ displayName: "Vera Viewer", role: "teacher" });
+    await createUser({ displayName: "Disabled Teacher", role: "teacher", status: "disabled" });
+    await createUser({ displayName: "Sam Student", role: "student" });
+    await upsertManagedMembership("space-5", owner.id, "owner");
+
+    expect((await listLearningSpaceTeacherCandidates("space-5")).map((teacher) => teacher.userId)).toEqual([active.id]);
+  });
+
+  it("converts viewer and editor access transactionally without redundant direct access", async () => {
+    await useTemporaryDatabase();
+    const teacher = await createUser({ displayName: "Elias Editor", role: "teacher" });
+
+    await setLearningSpaceTeacherAccess("space-5", teacher.id, "viewer");
+    await expect(accessState("space-5", teacher.id)).resolves.toEqual({ membership: null, individual: true });
+
+    await setLearningSpaceTeacherAccess("space-5", teacher.id, "editor");
+    await expect(accessState("space-5", teacher.id)).resolves.toEqual({ membership: "editor", individual: false });
+
+    await setLearningSpaceTeacherAccess("space-5", teacher.id, "viewer");
+    await expect(accessState("space-5", teacher.id)).resolves.toEqual({ membership: null, individual: true });
+  });
+
+  it("removes viewer and editor access while leaving unrelated LearningSpaces intact", async () => {
+    await useTemporaryDatabase();
+    const viewer = await createUser({ displayName: "Vera Viewer", role: "teacher" });
+    const editor = await createUser({ displayName: "Elias Editor", role: "teacher" });
+    await setLearningSpaceTeacherAccess("space-5", viewer.id, "viewer");
+    await setLearningSpaceTeacherAccess("space-5", editor.id, "editor");
+    await setIndividualLearningSpaceAccess(editor.id, "space-5", true);
+    await setLearningSpaceTeacherAccess("space-6", viewer.id, "viewer");
+
+    await removeLearningSpaceTeacherAccess("space-5", viewer.id);
+    await removeLearningSpaceTeacherAccess("space-5", editor.id);
+
+    await expect(accessState("space-5", viewer.id)).resolves.toEqual({ membership: null, individual: false });
+    await expect(accessState("space-5", editor.id)).resolves.toEqual({ membership: null, individual: false });
+    await expect(accessState("space-6", viewer.id)).resolves.toEqual({ membership: null, individual: true });
+  });
+
+  it("protects owners and rejects non-teacher targets", async () => {
+    await useTemporaryDatabase();
+    const owner = await createUser({ displayName: "Olivia Owner", role: "teacher" });
+    const student = await createUser({ displayName: "Sam Student", role: "student" });
+    await upsertManagedMembership("space-5", owner.id, "owner");
+
+    await expect(setLearningSpaceTeacherAccess("space-5", owner.id, "viewer")).rejects.toThrow("Een eigenaar");
+    await expect(setLearningSpaceTeacherAccess("space-5", owner.id, "editor")).rejects.toThrow("Een eigenaar");
+    await expect(removeLearningSpaceTeacherAccess("space-5", owner.id)).rejects.toThrow("Een eigenaar");
+    await expect(setLearningSpaceTeacherAccess("space-5", student.id, "viewer")).rejects.toThrow("actieve leraar");
+    await expect(accessState("space-5", owner.id)).resolves.toEqual({ membership: "owner", individual: false });
+  });
+
   it("returns teachers only for the requested LearningSpace", async () => {
     await useTemporaryDatabase();
     const current = await createUser({ displayName: "Current Teacher", role: "teacher" });
@@ -49,6 +111,15 @@ describe("LearningSpace teacher access readmodel", () => {
     expect((await listLearningSpaceTeachers("space-6")).map((teacher) => teacher.userId)).toEqual([other.id]);
   });
 });
+
+async function accessState(learningSpaceId: string, userId: string): Promise<{ membership: string | null; individual: boolean }> {
+  const database = await getDatabase();
+  const [membership, individual] = await Promise.all([
+    database.execute({ sql: "SELECT role FROM learning_space_members WHERE learning_space_id = ? AND user_id = ?", args: [learningSpaceId, userId] }),
+    database.execute({ sql: "SELECT 1 FROM individual_learning_space_access WHERE learning_space_id = ? AND user_id = ?", args: [learningSpaceId, userId] }),
+  ]);
+  return { membership: typeof membership.rows[0]?.role === "string" ? membership.rows[0].role : null, individual: Boolean(individual.rows[0]) };
+}
 
 async function useTemporaryDatabase(): Promise<void> {
   temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-learning-space-teachers-"));

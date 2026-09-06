@@ -502,6 +502,9 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .management-add-form label { display: grid; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
 .management-add-form input, .management-add-form select { width: 100%; min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
 .management-add-form button { grid-column: 1 / -1; justify-self: start; }
+.teacher-access-add-form { grid-template-columns: minmax(220px, 1fr) minmax(130px, .45fr) auto; margin-bottom: 18px; }
+.teacher-access-add-form button { grid-column: auto; }
+.teacher-access-row-actions { display: flex; align-items: center; gap: 7px; }
 .group-user-filter { display: flex; max-width: 620px; align-items: end; gap: 10px; margin-bottom: 18px; }
 .group-user-filter label, .group-mapping-form label { display: grid; min-width: 0; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
 .group-user-filter label { flex: 1; }
