@@ -96,6 +96,44 @@ describe("UserManagementView", () => {
     expect(markup).toContain('title="2 extra leeromgevingen">+ 2</span>');
   });
 
+  it("toont de canonieke globale kolommen zonder legacy publieke-toegangtrigger", () => {
+    const teacher = managedUser({ id: "teacher", role: "teacher", firstName: "Tess", lastName: "Teacher" });
+    const student = managedUser({ id: "student", firstName: "Sara", lastName: "Student" });
+    const spaces = [learningSpace("space-5", "5WIS", 5), learningSpace("space-6", "6WIS", 6)];
+    const markup = renderToStaticMarkup(<UserManagementView
+      users={[teacher, student]}
+      spaces={spaces}
+      memberships={[membership("teacher", "space-5", "owner")]}
+      access={[userAccess("teacher", "space-6", true), userAccess("student", "space-5", true)]}
+      storageConnections={[{ userId: "teacher", provider: "onedrive", status: "active" }]}
+      classGroups={[]}
+      teacherGroups={[]}
+      teacherGroupId={null}
+      params={{}}
+    />);
+    const teacherSection = markup.slice(markup.indexOf('aria-labelledby="teachers-heading"'), markup.indexOf('aria-labelledby="students-heading"'));
+    const studentSection = markup.slice(markup.indexOf('aria-labelledby="students-heading"'));
+
+    expect(teacherSection).toContain("Beheerrechten");
+    expect(teacherSection).toContain("Kijkrechten");
+    expect(teacherSection).toContain("Verbinding");
+    expect(teacherSection).toContain("Status");
+    expect(teacherSection).toContain("Acties");
+    expect(teacherSection).toContain('title="Eigenaar van Space 5"');
+    expect(teacherSection).toContain('title="Kijker van Space 6"');
+    expect(teacherSection).toContain("OneDrive");
+    expect(studentSection).toContain("Kijkrechten");
+    expect(studentSection).toContain('title="Kijkrecht voor Space 5"');
+    expect(studentSection).toContain("Individuele toegang");
+    expect(studentSection).not.toContain("Leeromgeving");
+    expect(studentSection).toContain("Maak deze leerling leraar?");
+    expect(studentSection).toContain("Verwijder Voorbeeld Gebruiker?");
+    expect(markup).not.toContain("Publieke toegang");
+    expect(markup).not.toContain("user-access-trigger");
+    expect(markup).toContain('aria-label="Profiel van Tess Teacher"');
+    expect(markup).toContain('aria-label="Profiel van Sara Student"');
+  });
+
   it("maakt afgeleide toegang niet wijzigbaar en houdt individuele toegang apart", () => {
     const markup = renderToStaticMarkup(<UserAccessDialogContent
       userId="user-1"
