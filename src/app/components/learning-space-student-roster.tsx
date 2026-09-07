@@ -25,13 +25,12 @@ export function LearningSpaceStudentRoster({ students }: { students: LearningSpa
         <span className="sr-only">Zoeken op naam, voornaam of klas/groep</span>
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Zoek op naam, voornaam of klas/groep" />
       </label>
-      <label className="filter-control learning-space-roster-group-filter">
-        <span className="sr-only">Klas/groep</span>
-        <select value={group} onChange={(event) => setGroup(event.target.value)}>
+      <div className="learning-space-roster-group-filter">
+        <select aria-label="Klas/groep" value={group} onChange={(event) => setGroup(event.target.value)}>
           <option value="">Alle</option>
           {groupOptions.map((option) => <option key={option} value={option}>{option}</option>)}
         </select>
-      </label>
+      </div>
     </div>
     {visibleStudents.length ? <div className="admin-summary-table" role="region" aria-label="Leerlingen met toegang" tabIndex={0}>
       <table>
