@@ -52,7 +52,7 @@ describe("AdminLearningSpaceOverview", () => {
     expect(shown).toContain("Elias Editor");
     expect(shown).toContain("Klassen");
     expect(shown).toContain("5WEWI6");
-    expect(shown).toContain("Extra groepen");
+    expect(shown).toContain("Extra");
     expect(shown).toContain("Uitdaging");
     expect(shown).toContain("Bron");
     expect(shown).toContain("OneDrive");

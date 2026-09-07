@@ -43,7 +43,7 @@ export function AdminLearningSpaceCard({ card, showDetails }: { card: AdminLearn
     {showDetails ? <dl className="admin-space-details">
       {card.editorNames.length ? <Detail label="Bewerkers" value={card.editorNames.join(", ")} /> : null}
       {card.classGroups.length ? <Detail label="Klassen" value={card.classGroups.join(", ")} /> : null}
-      {card.extraGroups.length ? <Detail label="Extra groepen" value={card.extraGroups.join(", ")} /> : null}
+      {card.extraGroups.length ? <Detail label="Extra" value={card.extraGroups.join(", ")} /> : null}
       <Detail label="Bron" value={card.primarySource} />
       {card.mirrorSource ? <Detail label="Mirror" value={card.mirrorSource} /> : null}
     </dl> : null}
