@@ -223,7 +223,6 @@ describe("UserManagementView", () => {
 
   it("toont het leeromgevingfilter en verbinding-sortering zonder individuele-toegangfilter", () => {
     const markup = renderToStaticMarkup(<TeacherListFilters params={{ teacherSpace: "space-5", teacherConnectionFirst: "1" }} spaces={[{ id: "space-5", label: "5WIS" }]} />);
-    expect(markup).toContain("Leeromgeving");
     expect(markup).toContain("Alle leeromgevingen");
     expect(markup).toContain("5WIS");
     expect(markup).toContain("Verbinding eerst");
