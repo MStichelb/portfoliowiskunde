@@ -8,8 +8,8 @@ Deze kaart beschrijft de huidige implementatie ten opzichte van `masterplan-reor
 | --- | --- | --- | --- |
 | Globaal beheeroverzicht | `/admin` | `src/app/admin/page.tsx`, `PageBanner` | `requireAdminUser`, `getLearningSpaces(true)`, `getManageableLearningSpaceIds` |
 | Persoonlijke OneDrive-verbinding | `/admin/verbindingen` | `OneDriveConnectLink` | `hasOneDriveAuthorization(user.id)`, `/api/onedrive/connect`, `/api/onedrive/callback` |
-| Globale instellingen | `/admin/instellingen` | `EmergencyAccessControl`, `LearningSpaceSourceSummary`, `LearningSpaceLifecycleActions`, `LearningSpaceCreateForm` | `setPublicEmergencyAccessAction`, `createLearningSpaceAction`, lifecycle-actions, `getLearningSpaces()` |
-| Globaal toegangsbeheer | `/admin/toegang` | `AutoSubmitSelect`, `ConfirmActionButton`, eigen group-/membershiptabellen | actions in `src/app/admin/gebruikers/actions.ts`; queries in `src/lib/user-management.ts` |
+| Legacy globale instellingen | `/admin/instellingen` → `/admin` | beveiligde compatibility-redirect, geen eigen UI | `requireAdmin` vóór redirect |
+| Legacy globaal toegangsbeheer | `/admin/toegang` → `/admin/gebruikers` | beveiligde compatibility-redirect, geen eigen UI | `requireAdmin` vóór redirect |
 | Globaal gebruikersbeheer | `/admin/gebruikers` | `UserManagementView`, `UserListFilters`, `UserAccessMenu`, `StudentResetControls` | actions in `src/app/admin/gebruikers/actions.ts`; `listManagedUsers`, memberships/access/storage/group queries |
 | LearningSpace: portfolio's | `/admin/[spaceSlug]` | `AdminSpaceHeader`, `LearningSpaceNav`, portfolio-overzicht | `getAdminLearningSpaceBySlug`, `canManageLearningSpace`, portfolio/theme/warning queries |
 | LearningSpace: thema's | `/admin/[spaceSlug]/themas` | `AdminSpaceHeader`, themaformulieren | theme-actions in `src/app/admin/actions.ts`, beschermd via `requireSpaceManagement` |
@@ -26,22 +26,17 @@ Deze kaart beschrijft de huidige implementatie ten opzichte van `masterplan-reor
 - Elke kaart linkt naar `/admin/<slug>` en toont `shortLabel`, naam en `sourceSummary`: primaire provider plus eventuele mirrorprovider. Owner/editor-namen, gekoppelde groepen en connection owner zijn al opvraagbaar via `listManagedMemberships`, `listManagedGroupMappings` en `listManagedSourceOwners`, maar worden hier nog niet geladen.
 - Aanbeveling voor het masterplan: een compacte `Toon archief`-schakelaar op dezelfde pagina vraagt minder routing en kan dezelfde kaarten hergebruiken. Een aparte archiefroute is pas nuttig bij een groot archief.
 
-### B. `/admin/instellingen`
+### B. Legacy `/admin/instellingen`
 
-- `src/app/admin/instellingen/page.tsx` is superadmin-only via `requireAdmin`.
-- Leeromgeving toevoegen gebruikt `LearningSpaceCreateForm` en `createLearningSpaceAction`.
-- Actieve en gearchiveerde ruimtes komen beide uit `getLearningSpaces()` en worden lokaal op `isActive` gesplitst. `LearningSpaceLifecycleActions` levert beheren/archiveren of beheren/herstellen/verwijderen.
-- Smartschool-noodtoegang gebruikt `EmergencyAccessControl`, `getPublicEmergencyAccess` en `setPublicEmergencyAccessAction`.
-- Het verbindingenblok toont de compatibility/superadmin-OneDrive-status en globale Google-service-accountconfiguratie. Dit is niet hetzelfde als de persoonlijke teacherpagina `/admin/verbindingen`.
+- De route bewaart bookmarks, voert eerst de bestaande `requireAdmin`-controle uit en redirect daarna naar `/admin`.
+- Leeromgevingen aanmaken en het globale overzicht staan op `/admin`; verbindingen en publieke noodtoegang staan op `/admin/verbindingen`.
+- Instellingen, bronnen en lifecycleacties staan per LearningSpace op `/admin/[spaceSlug]/instellingen`.
 
-### C. `/admin/toegang`
+### C. Legacy `/admin/toegang`
 
-- De pagina is volledig superadmin-only via `requireAdmin`.
-- Automatische lerarenherkenning gebruikt `getConfiguredTeacherGroupId`/`setConfiguredTeacherGroupId` in `app_settings`; dezelfde instelling staat al op `/admin/gebruikers`.
-- Smartschoolgroepen koppelen gebruikt `learning_space_group_mappings` via `createGroupMappingAction`, `removeGroupMappingAction`, `listManagedGroupMappings` en `listKnownExternalGroups`.
-- Automatische toegang controleren combineert `listManagedGroupUsers` met de mappings. Dit is een inspectieweergave van opgeslagen snapshots, geen live Smartschool-call.
-- Gedeeld beheer gebruikt `learning_space_members` via `listManagedMemberships`, `saveMembershipAction` en `removeMembershipAction`. `listManagedSourceOwners` toont daarnaast welke persoonlijke storage connection een bron gebruikt.
-- De acties op deze globale pagina doen nu een globale superadmincheck. Ze mogen niet ongewijzigd naar een ownerpagina worden verplaatst: de latere acties moeten het concrete `learningSpaceId` server-side met `requireLearningSpaceConfiguration` controleren.
+- De route bewaart bookmarks, voert eerst de bestaande `requireAdmin`-controle uit en redirect daarna naar `/admin/gebruikers`.
+- Globaal gebruikersbeheer en automatische lerarenherkenning staan op `/admin/gebruikers`.
+- Leraren, groepskoppelingen, individuele leerlingen en het effectieve roster staan per LearningSpace op `/admin/[spaceSlug]/toegang`, met de bestaande per-space autorisatie.
 
 ### D. `/admin/gebruikers`
 
@@ -145,16 +140,16 @@ Niet nieuw nodig: een viewer-membershiprol, nieuwe view-accesstabel, nieuwe groe
 
 | Risico | Gevolg en maatregel |
 | --- | --- |
-| Autorisatie bij verplaatste actions | `/admin/toegang` gebruikt nu `requireAdmin`. Iedere nieuwe per-space mutatie moet eerst actor én target `learningSpaceId` controleren; nooit vertrouwen op verborgen formvelden of UI-filtering. |
+| Autorisatie bij verplaatste actions | De legacyroute `/admin/toegang` blijft superadmin-only vóór redirect. Per-space mutaties controleren actor én target `learningSpaceId`; nooit vertrouwen op verborgen formvelden of UI-filtering. |
 | Teacher-creatie | Alleen de UI openen is onvoldoende. Creation guard, action en transactionele repository/service moeten samen veranderen; owner-insert moet atomair zijn. |
 | Ownership van bronnen | `assignOwnedStorageConnections` koppelt bij een nieuwe OneDrive-bron de connection van de handelende user. Bestaande connection-ID's moeten bij edits behouden of expliciet veilig overgedragen worden; superadmin mag niet impliciet een persoonlijke teacherconnection overnemen. |
 | Globale querydata | `listManagedUsers`, memberships en mappings zijn globale datasets. Een ownerpagina mag geen gegevens van andere LearningSpaces lekken; gebruik target-scoped queries. |
 | Publieke toegang versus beheer | Voeg geen `viewer` toe aan `learning_space_members`; dat creëert twee bronnen van waarheid naast `individual_learning_space_access`. |
-| Lifecycle | Archive/restore/delete delen nu superadminactions en redirects naar `/admin/instellingen`. Splits autorisatie en bestemmingen zonder de archived-before-delete invariant te verzwakken. |
+| Lifecycle | Archive/restore blijft op de per-space instellingenpagina; permanent delete keert terug naar `/admin`. De archived-before-delete invariant blijft behouden. |
 | Gearchiveerde ruimtes | `getManageableLearningSpaceIds` en `/admin` werken alleen met actieve ruimtes. Een archiefweergave heeft een expliciete beheerquery nodig; maak archief niet per ongeluk publiek toegankelijk. |
 | Ownerbeheer | De huidige per-space UI kan editors toevoegen/verwijderen, maar geen owners beheren. Bij owneroverdracht moeten minimaal één geldige owner, storageafhankelijkheden en self-removal expliciet worden beslist en getest. |
 | Destructieve acties | Permanente delete wist alleen DB-metadata en is correct archived-only. Behoud bevestigingsslug, superadmincheck en repository-invariant. |
-| Redirects en oude routes | Actions verwijzen nog naar `/admin/instellingen` en `/admin/toegang`. Verplaats eerst links/actions, voeg tijdelijke compatibiliteit toe en verwijder routes pas nadat tests en bookmarks zijn afgedekt. |
+| Redirects en oude routes | Interne links/actions gebruiken de canonieke routes. `/admin/instellingen` en `/admin/toegang` blijven alleen als beveiligde compatibility-redirects bestaan. |
 | Dubbele bronnen van waarheid | Kaartdetails en toegangspagina moeten dezelfde membership/mapping/sourcequeries gebruiken als autorisatie; geen aparte UI-only status opslaan. |
 
 ## 7. Testdekking
@@ -170,7 +165,7 @@ Niet nieuw nodig: een viewer-membershiprol, nieuwe view-accesstabel, nieuwe groe
 | Connections | `src/lib/multi-user.test.ts`, `src/lib/onedrive.test.ts`, `src/app/api/onedrive/connect/route.test.ts`, storage-provider tests | ownershipisolatie, meerdere connections, read-only Graph/PKCE en teacher OAuth-start |
 | Smartschool auth/snapshots | `smartschool-auth-flow.test.ts`, `smartschool-client.test.ts`, callback/login route-tests, `multi-user.test.ts` | state, platformbinding, profile/groupnormalisatie, snapshotvervanging, disabled users |
 | Admin navigation | `src/app/admin/page.test.ts`, `learning-space-nav.test.tsx`, `admin-space-header.test.tsx`, site-navigationtests | huidige links, compacte nav en rolgedrag; nieuwe routes/zichtbaarheidsregels nog niet afgedekt |
-| LearningSpace settings | `learning-space-settings-form.test.tsx`, `src/app/admin/instellingen/page.test.tsx`, `src/app/admin/instellingen/actions.test.ts` | providers, OAuth-link en noodtoegang; geen volledige route-actiontest voor owner/source-edit/lifecycle |
+| LearningSpace settings | `learning-space-settings-form.test.tsx`, per-space settings- en lifecycletests, legacy-route-test onder `src/app/admin/instellingen` | providers, OAuth-link, noodtoegang, lifecycle en beveiligde legacyredirect |
 | Source switching | `src/lib/source-switch.test.ts`, componenttests rond bronstatus/sync | vergelijking, marker/security en archived block; behouden bij UI-verplaatsing |
 
 Deze analyse heeft geen tests uitgevoerd; de testbestanden zijn statisch geïnventariseerd.
@@ -183,9 +178,9 @@ Het opgesplitste masterplan is technisch logisch, mits functionaliteit eerst wor
 2. **Verbindingen samenbrengen:** bouw `/admin/verbindingen` uit met bestaande componenten. Houd persoonlijke OneDrive-data user-scoped en Smartschool/Google/noodtoegang superadmin-only.
 3. **Adminoverzicht verrijken:** laad actieve plus optioneel gearchiveerde ruimtes en bestaande membership/group/source-samenvattingen. Verplaats de create-UI naar een modal zonder creation policy al stil te verruimen.
 4. **Per-space Toegang read-only:** voeg route/tab en blokken Leraren, Groepen en gebruikers, en Gebruikers toe met de nieuwe scoped queries.
-5. **Per-space mutaties:** koppel bestaande individual access, group mappings en editorbeheer aan nieuwe actions met `requireLearningSpaceConfiguration`. Voeg tests toe voordat `/admin/toegang` verdwijnt.
+5. **Per-space mutaties:** individual access, group mappings en editorbeheer gebruiken LearningSpace-scoped actions en autorisatie; `/admin/toegang` bevat geen parallelle UI meer.
 6. **Teacher creation + ownership:** wijzig creation policy en maak LearningSpace, bron(nen) en owner-membership in één transactie. Test rollback, duplicate slug en connection ownership.
 7. **Lifecycle herschikken:** verplaats status naar Algemeen; laat owner archive/restore toe via aparte guards, behoud delete superadmin-only/archived-only.
-8. **Oude routes afbouwen:** pas alle links en redirects aan, behoud waar nuttig tijdelijke redirects, en verwijder pas daarna de oude inhoud van `/admin/instellingen` en `/admin/toegang`.
+8. **Oude routes afbouwen:** interne links en redirects zijn canoniek; `/admin/instellingen` en `/admin/toegang` behouden alleen beveiligde compatibility-redirects.
 
 Afhankelijkheden die vóór latere UI-batches nodig zijn: de scoped roster/summaryqueries, transactionele ownercreatie en de expliciete lifecycle-authorisatiematrix. Zonder die basis zou de reorganisatie securityregels in componenten dupliceren.

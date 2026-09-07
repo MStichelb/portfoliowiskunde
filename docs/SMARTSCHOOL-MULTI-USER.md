@@ -104,7 +104,7 @@ Gebruik `/breakglass` alleen wanneer Smartschool tijdelijk niet beschikbaar is. 
 
 ## Publieke noodtoegang
 
-Een superadmin kan op `/admin/instellingen` **Publieke noodtoegang** tijdelijk inschakelen. Deze DB-persistente instelling staat standaard uit en registreert wanneer ze werd geactiveerd. Inschakelen vereist een expliciete bevestiging en actieve noodtoegang blijft zichtbaar in de adminomgeving.
+Een superadmin kan op `/admin/verbindingen` **Publieke noodtoegang** tijdelijk inschakelen. Deze DB-persistente instelling staat standaard uit en registreert wanneer ze werd geactiveerd. Inschakelen vereist een expliciete bevestiging en actieve noodtoegang blijft zichtbaar in de adminomgeving.
 
 Wanneer de instelling actief is, mogen niet-aangemelde bezoekers alle actieve LearningSpaces openen. Zonder Smartschoolidentiteit is groepsfiltering onmogelijk. De bestaande repositoryqueries blijven uitsluitend effectief zichtbare portfolio's, oefeningen, documenten en alternatieve uitwerkingen teruggeven. Adminroutes, teacherbeheer, bronconfiguratie en break-glass krijgen nooit een uitzondering. Uitschakelen herstelt onmiddellijk de normale Smartschooltoegangscontrole. Er is bewust geen automatische vervaltijd; de hoofdbeheerder moet de tijdelijke uitzondering weer uitschakelen.
 

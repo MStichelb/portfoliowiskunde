@@ -14,7 +14,7 @@ import { createLearningSpaceAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminPage({ searchParams }: { searchParams: Promise<{ smartschool?: string; create?: string; createError?: string; created?: string }> }) {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ smartschool?: string; create?: string; createError?: string; created?: string; error?: string }> }) {
   const user = await requireAdminUser();
   const [allSpaces, activeManageableIds, memberships, groupMappings, params] = await Promise.all([
     getLearningSpaces(),
@@ -33,6 +33,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     {params.smartschool === "linked" ? <p className="success-message" role="status">Smartschool-account gekoppeld.</p> : null}
     {params.smartschool && params.smartschool !== "linked" ? <p className="error-message" role="alert">De Smartschool-koppeling is niet gelukt.</p> : null}
     {params.created === "1" ? <p className="success-message" role="status">Leeromgeving toegevoegd.</p> : null}
+    {adminErrorMessage(params.error) ? <p className="error-message" role="alert">{adminErrorMessage(params.error)}</p> : null}
     <AdminLearningSpaceOverview cards={cards} />
   </main>;
 }
@@ -40,6 +41,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 function createErrorMessage(error: string | undefined): string | null {
   if (error === "duplicate") return "Deze URL bestaat al. Kies een andere URL.";
   if (error === "invalid") return "Controleer de ingevulde gegevens.";
+  return null;
+}
+
+function adminErrorMessage(error: string | undefined): string | null {
+  if (error === "archive-before-delete") return "Archiveer de leeromgeving eerst voordat je ze permanent verwijdert.";
+  if (error === "delete-failed") return "De leeromgeving kon niet worden verwijderd. Vernieuw de pagina en probeer opnieuw.";
   return null;
 }
 

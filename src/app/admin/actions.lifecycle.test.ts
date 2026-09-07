@@ -141,7 +141,7 @@ describe("LearningSpace lifecycle action authorization", () => {
     mocks.requireAdmin.mockResolvedValue(user("superadmin", "superadmin"));
     mocks.getLearningSpace.mockResolvedValue(space(false));
 
-    await expect(permanentlyDeleteLearningSpaceAction(deleteForm())).rejects.toThrow("REDIRECT:/admin/instellingen");
+    await expect(permanentlyDeleteLearningSpaceAction(deleteForm())).rejects.toThrow("REDIRECT:/admin");
 
     expect(mocks.permanentlyDeleteLearningSpace).toHaveBeenCalledWith("space-5");
   });
@@ -159,7 +159,7 @@ describe("LearningSpace lifecycle action authorization", () => {
     mocks.requireAdmin.mockResolvedValue(user("superadmin", "superadmin"));
     mocks.getLearningSpace.mockResolvedValue(space(true));
 
-    await expect(permanentlyDeleteLearningSpaceAction(deleteForm())).rejects.toThrow("REDIRECT:/admin/instellingen?error=archive-before-delete");
+    await expect(permanentlyDeleteLearningSpaceAction(deleteForm())).rejects.toThrow("REDIRECT:/admin?error=archive-before-delete");
 
     expect(mocks.permanentlyDeleteLearningSpace).not.toHaveBeenCalled();
   });

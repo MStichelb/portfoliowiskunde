@@ -57,7 +57,7 @@ describe("createLearningSpaceAction authorization and ownership", () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher", "teacher-1"));
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue({ id: "existing" });
 
-    await expect(createLearningSpaceAction(validForm("duplicate"))).rejects.toThrow("REDIRECT:/admin/instellingen?error=duplicate");
+    await expect(createLearningSpaceAction(validForm("duplicate"))).rejects.toThrow("REDIRECT:/admin?create=1&createError=duplicate");
 
     expect(mocks.createLearningSpaceForOwner).not.toHaveBeenCalled();
   });

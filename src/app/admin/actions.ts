@@ -103,7 +103,6 @@ export async function switchSourceAction(_previousState: SourceSwitchActionState
     const result = await switchLearningSpaceSource(learningSpaceId, targetSourceId, true);
     revalidatePath("/");
     revalidatePath("/admin");
-    revalidatePath("/admin/instellingen");
     const space = await getLearningSpace(learningSpaceId);
     if (space) revalidatePath(`/admin/${encodeURIComponent(space.slug)}`);
     return { error: null, preview: result, switched: result.switched };
@@ -128,7 +127,6 @@ export async function archiveLearningSpaceAction(formData: FormData) {
   await archiveLearningSpace(id);
   revalidatePath("/");
   revalidatePath("/admin");
-  revalidatePath("/admin/instellingen");
   redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
 }
 
@@ -140,7 +138,6 @@ export async function restoreLearningSpaceAction(formData: FormData) {
   await restoreLearningSpace(id);
   revalidatePath("/");
   revalidatePath("/admin");
-  revalidatePath("/admin/instellingen");
   redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
 }
 
@@ -150,12 +147,11 @@ export async function permanentlyDeleteLearningSpaceAction(formData: FormData) {
   const confirmationSlug = stringValue(formData, "confirmationSlug");
   const space = id ? await getLearningSpace(id) : null;
   if (!space || confirmationSlug !== space.slug) return;
-  if (!canPermanentlyDeleteLearningSpace(space)) redirect("/admin/instellingen?error=archive-before-delete");
-  if (!await permanentlyDeleteLearningSpace(id)) redirect("/admin/instellingen?error=delete-failed");
+  if (!canPermanentlyDeleteLearningSpace(space)) redirect("/admin?error=archive-before-delete");
+  if (!await permanentlyDeleteLearningSpace(id)) redirect("/admin?error=delete-failed");
   revalidatePath("/");
   revalidatePath("/admin");
-  revalidatePath("/admin/instellingen");
-  redirect("/admin/instellingen");
+  redirect("/admin");
 }
 
 export async function saveLearningSpaceAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState> {
@@ -202,14 +198,14 @@ export async function createLearningSpaceAction(formData: FormData) {
     input = learningSpaceInput(formData);
     input = await assignOwnedStorageConnections(input, admin.id);
   } catch {
-    redirect(returnToAdmin ? "/admin?create=1&createError=invalid" : "/admin/instellingen?error=invalid");
+    redirect("/admin?create=1&createError=invalid");
   }
-  if (await getAdminLearningSpaceBySlug(input.slug)) redirect(returnToAdmin ? "/admin?create=1&createError=duplicate" : "/admin/instellingen?error=duplicate");
+  if (await getAdminLearningSpaceBySlug(input.slug)) redirect("/admin?create=1&createError=duplicate");
   let space;
   try {
     space = await createLearningSpaceForOwner(input, admin.id);
   } catch (error) {
-    if (isUniqueConstraintError(error)) redirect(returnToAdmin ? "/admin?create=1&createError=duplicate" : "/admin/instellingen?error=duplicate");
+    if (isUniqueConstraintError(error)) redirect("/admin?create=1&createError=duplicate");
     throw error;
   }
   revalidatePath("/admin");

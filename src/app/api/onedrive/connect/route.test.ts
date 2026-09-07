@@ -53,6 +53,15 @@ describe("GET /api/onedrive/connect", () => {
     expect(mocks.createMicrosoftAuthorizationUrl).not.toHaveBeenCalled();
   });
 
+  it("stuurt ook een hoofdbeheerder terug naar de canonieke verbindingenpagina", async () => {
+    mocks.getAuthenticatedUser.mockResolvedValue({ ...teacher, role: "superadmin" });
+    mocks.getMicrosoftConfigurationProblem.mockReturnValue("Configuratie ontbreekt");
+
+    const response = await GET(new Request("http://localhost:3000/api/onedrive/connect"));
+
+    expect(response.headers.get("location")).toBe("http://localhost:3000/admin/verbindingen?onedrive=configuration-error");
+  });
+
   it("weigert een leerling", async () => {
     mocks.getAuthenticatedUser.mockResolvedValue({ ...teacher, role: "student" });
     const response = await GET(new Request("http://localhost:3000/api/onedrive/connect"));

@@ -9,7 +9,7 @@ De definitieve productiearchitectuur, Windows/rclone-mirror, completion markers,
 ## Applicatiestructuur
 
 - `/aanmelden` is de eenvoudige Smartschool-login. `/` toont daarna uitsluitend toegankelijke leeromgevingen. `/<spaceSlug>` toont de zichtbare portfolio's per thema; pagina-, document- en oefeningroutes controleren dezelfde LearningSpace-toegang server-side.
-- `/admin` is het overzicht van leeromgevingen. **Leeromgevingen beheren** opent `/admin/instellingen`; binnen een LearningSpace zijn **Portfolio's**, **Thema's** en **Instellingen** beschikbaar en opent **Foutmeldingen** het meldingenbeheer.
+- `/admin` is het overzicht van leeromgevingen, met de globale acties **Verbindingen**, **Gebruikers** (alleen hoofdbeheerder) en **Leeromgeving toevoegen**. Binnen een LearningSpace zijn **Portfolio's**, **Thema's**, **Instellingen**, **Toegang** en de **Publieke pagina** beschikbaar.
 - Voor een leerling met één LearningSpace verwijst Home rechtstreeks naar die leeromgeving; met meerdere LearningSpaces naar de keuzepagina op `/`. Op smalle schermen vervangt één compacte selector de losse LearningSpace-labels. De beheerknop is uitsluitend zichtbaar voor leraren en hoofdbeheerders.
 - Compacte overzichten noemen de actieve primaire configuratie **Bron**. In configuratie en bronvergelijking heten de rollen **Primaire bron** en **Mirror**.
 
@@ -146,8 +146,8 @@ Er is geen `APP_URL` of `BASE_URL` nodig: interne links zijn relatief en OAuth g
 
 Een LearningSpace bewaart maximaal twee onafhankelijke bronconfiguraties: een **primaire bron** en een **mirror**. Exact een daarvan is actief. De normale productieopstelling gebruikt OneDrive als primaire bron en de persoonlijke Google Drive-kopie als mirror, maar de rollen zijn niet aan een providertype gekoppeld. Local filesystem blijft uitsluitend voor development beschikbaar.
 
-1. Open `/admin/instellingen`. Verbind de OneDrive-account van de huidige compatibility-superadmin wanneer je OneDrive gebruikt; voor Google Drive controleert deze pagina de app-brede service-accountenvironment.
-2. Open elke LearningSpace afzonderlijk.
+1. Open `/admin/verbindingen` en verbind de persoonlijke OneDrive-account wanneer je OneDrive gebruikt.
+2. Open elke LearningSpace afzonderlijk via `/admin` en ga naar **Instellingen**.
 3. Configureer de primaire bron en schakel desgewenst de mirrorconfiguratie in. Beide rollen kunnen Local filesystem, OneDrive of Google Drive gebruiken.
 4. Vul alleen de providervelden van iedere rol in. Google Drive gebruikt de folder-ID en een optioneel herkenbaar label; credentials verschijnen nooit in de UI.
 5. Sla op. Configureren wijzigt de actieve rol niet en de twee configuraties overschrijven elkaar niet.
@@ -166,7 +166,7 @@ Leerlingen kunnen bij een uitwerking een melding indienen met een optionele, vri
 
 Superadmins beheren lokale rollen, userstatus, teacher-memberships en Smartschoolgroep-mappings op `/admin/gebruikers`. Een groupID-koppeling is een bulktoewijzing: iedere reeds aangemelde leerling met die Smartschoolgroep krijgt automatisch toegang tot de gekoppelde LearningSpace. Het groepsoverzicht kan alleen gebruikers tonen die minstens één keer via Smartschool zijn aangemeld. Een LearningSpace kan meerdere `owner`/`editor`-members hebben terwijl de bron aan één expliciete storageconnection gekoppeld blijft. Alleen superadmins kunnen momenteel nieuwe LearningSpaces maken; alleen een owner of superadmin wijzigt bronconfiguratie.
 
-Bij een uitzonderlijke Smartschoolstoring kan een superadmin in `/admin/instellingen` **Publieke noodtoegang** tijdelijk inschakelen. Alleen publiek zichtbare LearningSpaces en inhoud worden dan zonder sessie bereikbaar; groepsfiltering is zonder identiteit niet mogelijk. Adminroutes, bronbeheer en alle publicatie-/visibilityregels blijven server-side beveiligd. De DB-instelling staat standaard uit en toont in beheer duidelijk wanneer ze actief is.
+Bij een uitzonderlijke Smartschoolstoring kan een superadmin in `/admin/verbindingen` **Publieke noodtoegang** tijdelijk inschakelen. Alleen publiek zichtbare LearningSpaces en inhoud worden dan zonder sessie bereikbaar; groepsfiltering is zonder identiteit niet mogelijk. Adminroutes, bronbeheer en alle publicatie-/visibilityregels blijven server-side beveiligd. De DB-instelling staat standaard uit en toont in beheer duidelijk wanneer ze actief is.
 
 Automatische sync is request-gestuurd:
 
