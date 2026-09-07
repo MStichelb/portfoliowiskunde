@@ -34,6 +34,9 @@ export function LearningSpaceSettingsForm({
         <label className="field-full">Beschrijving<textarea name="description" defaultValue={space.description} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
         <label className="color-field">Kleur<span><input name="cardColor" type="color" value={cardColor} onChange={(event) => setCardColor(event.target.value.toUpperCase())} /><code>{cardColor.toUpperCase()}</code></span><small>Accentkleur van het kaartje.</small></label>
       </div>
+      <div className="settings-card-actions">
+        <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
+      </div>
     </section>
 
     <section className="settings-card source-settings-card" aria-labelledby="source-settings-heading">
@@ -61,10 +64,12 @@ export function LearningSpaceSettingsForm({
           </> : <p className="source-connection-status">Nog geen mirror geconfigureerd.</p>}
         </fieldset>
       </div>
+      <div className="settings-card-actions">
+        <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
+      </div>
     </section>
 
     {state.error ? <p className="form-message" role="alert">{state.error}</p> : null}
-    <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
   </form>;
 }
 

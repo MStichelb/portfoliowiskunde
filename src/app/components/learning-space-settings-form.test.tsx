@@ -14,6 +14,26 @@ const space: LearningSpace = {
 };
 
 describe("LearningSpaceSettingsForm", () => {
+  it("keeps all general fields and places a save button in both settings cards", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} action={() => ({ error: null })} />);
+    const generalStart = markup.indexOf('id="general-settings-heading"');
+    const sourceStart = markup.indexOf('id="source-settings-heading"');
+    const saveButtons = [...markup.matchAll(/class="primary-button settings-save-button"/g)].map((match) => match.index ?? -1);
+
+    expect(markup).toContain("Weergavenaam");
+    expect(markup).toContain("Met deze naam verschijnt de leeromgeving bij de leerlingen.");
+    expect(markup).toContain("URL");
+    expect(markup).toContain("Kort label");
+    expect(markup).toContain("Sortering");
+    expect(markup).toContain("Beschrijving");
+    expect(markup).toContain("Kleur");
+    expect(saveButtons).toHaveLength(2);
+    expect(saveButtons[0]).toBeGreaterThan(generalStart);
+    expect(saveButtons[0]).toBeLessThan(sourceStart);
+    expect(saveButtons[1]).toBeGreaterThan(sourceStart);
+    expect((markup.match(/>Instellingen opslaan<\/button>/g) ?? [])).toHaveLength(2);
+  });
+
   it("preserves a stored Local provider and orders provider options", () => {
     const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} action={() => ({ error: null })} />);
     const oneDrive = markup.indexOf('<option value="onedrive">');
