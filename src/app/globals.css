@@ -71,6 +71,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-path input { min-width: min(100%, 620px); }
 .source-connection-status { grid-column: 1 / -1; margin: 0; color: #52616a; font-size: 14px; }
 .settings-card-actions { display: flex; justify-content: flex-end; margin-top: 18px; }
+.settings-card-lifecycle-actions { flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.settings-card-lifecycle-actions > .space-list-actions { justify-content: flex-start; }
 .settings-save-button { width: fit-content; }
 .source-settings-heading { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
 .source-settings-heading h2 { margin-bottom: 6px; }

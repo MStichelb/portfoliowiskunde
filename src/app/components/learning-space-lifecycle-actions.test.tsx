@@ -46,4 +46,11 @@ describe("LearningSpace lifecycle actions", () => {
     expect(markup).toContain("Verwijderen");
     expect(markup).not.toContain("Archiveren");
   });
+
+  it("can hide archived deletion without hiding restore", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceLifecycleActions space={{ ...activeSpace, isActive: false, archivedAt: "2026-08-14T12:00:00.000Z" }} showDelete={false} />);
+
+    expect(markup).toContain("Herstellen");
+    expect(markup).not.toContain("Verwijderen");
+  });
 });

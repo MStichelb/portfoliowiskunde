@@ -30,9 +30,6 @@ vi.mock("@/app/components/learning-space-settings-form", () => ({
 vi.mock("@/app/components/source-switch-panel", () => ({
   SourceSwitchPanel: () => <section>Actieve bron</section>,
 }));
-vi.mock("@/app/components/learning-space-lifecycle-actions", () => ({
-  LearningSpaceLifecycleActions: () => <div>Lifecyclecontrols</div>,
-}));
 
 import LearningSpaceSettingsPage from "./page";
 
@@ -44,7 +41,7 @@ describe("LearningSpace settings page", () => {
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
   });
 
-  it("removes manager UI while preserving settings, active source and lifecycle controls", async () => {
+  it("passes superadmin delete rights into settings while preserving the active source", async () => {
     const markup = renderToStaticMarkup(await LearningSpaceSettingsPage({
       params: Promise.resolve({ spaceSlug: "5" }),
       searchParams: Promise.resolve({}),
@@ -52,21 +49,22 @@ describe("LearningSpace settings page", () => {
 
     expect(mocks.settingsForm).toHaveBeenCalledWith(expect.objectContaining({
       space,
+      canPermanentlyDelete: true,
       action: mocks.saveLearningSpaceAction,
     }));
     expect(markup).toContain("Instellingenformulier");
     expect(markup).toContain("Actieve bron");
-    expect(markup).toContain("Status leeromgeving");
-    expect(markup).toContain("Lifecyclecontrols");
+    expect(markup).not.toContain("Status leeromgeving");
     expect(markup).not.toContain("Beheerders van deze leeromgeving");
     expect(markup).not.toContain("Als editor toevoegen");
   });
 
-  it("keeps the existing lifecycle visibility and archived source-switch behavior", async () => {
+  it("keeps permanent deletion out of owner settings and hides source switching when archived", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
     const teacherMarkup = renderToStaticMarkup(await LearningSpaceSettingsPage({
       params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({}),
     }));
+    expect(mocks.settingsForm).toHaveBeenLastCalledWith(expect.objectContaining({ canPermanentlyDelete: false }));
     expect(teacherMarkup).not.toContain("Status leeromgeving");
 
     mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
@@ -74,8 +72,20 @@ describe("LearningSpace settings page", () => {
     const archivedMarkup = renderToStaticMarkup(await LearningSpaceSettingsPage({
       params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({}),
     }));
-    expect(archivedMarkup).toContain("Status leeromgeving");
+    expect(mocks.settingsForm).toHaveBeenLastCalledWith(expect.objectContaining({ canPermanentlyDelete: true }));
+    expect(archivedMarkup).not.toContain("Status leeromgeving");
     expect(archivedMarkup).not.toContain("Actieve bron");
+  });
+
+  it("does not open settings for a user without configuration rights", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher"));
+    mocks.canConfigureLearningSpace.mockResolvedValue(false);
+
+    await expect(LearningSpaceSettingsPage({
+      params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({}),
+    })).rejects.toThrow("NEXT_NOT_FOUND");
+
+    expect(mocks.settingsForm).not.toHaveBeenCalled();
   });
 });
 

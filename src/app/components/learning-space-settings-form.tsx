@@ -6,12 +6,15 @@ import Link from "next/link";
 
 import type { AdminActionState } from "@/app/admin/actions";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
+import { LearningSpaceLifecycleActions } from "./learning-space-lifecycle-actions";
 
 export function LearningSpaceSettingsForm({
   space,
+  canPermanentlyDelete,
   action,
 }: {
   space: LearningSpace;
+  canPermanentlyDelete: boolean;
   action: (previousState: AdminActionState, formData: FormData) => AdminActionState | Promise<AdminActionState>;
 }) {
   const primary = space.primarySource ?? legacyPrimarySource(space);
@@ -34,7 +37,16 @@ export function LearningSpaceSettingsForm({
         <label className="field-full">Beschrijving<textarea name="description" defaultValue={space.description} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
         <label className="color-field">Kleur<span><input name="cardColor" type="color" value={cardColor} onChange={(event) => setCardColor(event.target.value.toUpperCase())} /><code>{cardColor.toUpperCase()}</code></span><small>Accentkleur van het kaartje.</small></label>
       </div>
-      <div className="settings-card-actions">
+      <div className="settings-card-actions settings-card-lifecycle-actions">
+        <LearningSpaceLifecycleActions
+          space={space}
+          showManage={false}
+          showDelete={canPermanentlyDelete}
+          embeddedInForm
+          deleteLabel="Leeromgeving verwijderen"
+          deleteConfirmTitle="Leeromgeving permanent verwijderen?"
+          deleteConfirmText="Deze actie kan niet ongedaan worden gemaakt. De leeromgeving en bijhorende configuratie worden permanent verwijderd."
+        />
         <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
       </div>
     </section>

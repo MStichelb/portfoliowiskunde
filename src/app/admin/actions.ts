@@ -119,25 +119,27 @@ export async function archiveMissingIndexAction(formData: FormData) {
 }
 
 export async function archiveLearningSpaceAction(formData: FormData) {
-  await requireAdmin();
   const id = stringValue(formData, "id");
-  if (!id || !await getLearningSpace(id)) return;
+  await requireSpaceConfiguration(id);
+  const space = await getLearningSpace(id);
+  if (!space || !space.isActive) return;
   await archiveLearningSpace(id);
   revalidatePath("/");
   revalidatePath("/admin");
   revalidatePath("/admin/instellingen");
-  redirect("/admin/instellingen");
+  redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
 }
 
 export async function restoreLearningSpaceAction(formData: FormData) {
-  await requireAdmin();
   const id = stringValue(formData, "id");
-  if (!id || !await getLearningSpace(id)) return;
+  await requireSpaceConfiguration(id);
+  const space = await getLearningSpace(id);
+  if (!space || space.isActive) return;
   await restoreLearningSpace(id);
   revalidatePath("/");
   revalidatePath("/admin");
   revalidatePath("/admin/instellingen");
-  redirect("/admin/instellingen");
+  redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
 }
 
 export async function permanentlyDeleteLearningSpaceAction(formData: FormData) {
