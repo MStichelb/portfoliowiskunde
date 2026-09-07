@@ -38,6 +38,7 @@ import {
   archiveMissingIndexItems,
   permanentlyDeleteLearningSpace,
   restoreLearningSpace,
+  setLearningSpaceEditorsCanManageAccess,
   type LearningSpaceInput,
   type LearningSpaceSourceInput,
 } from "@/lib/repositories";
@@ -51,6 +52,7 @@ const childModeSchema = z.enum(["hidden", "visible"]);
 const portfolioModeSchema = z.enum(["hidden", "visible"]);
 export interface AdminActionState { error: string | null; }
 export interface SourceSwitchActionState extends AdminActionState { preview?: SourceSwitchPreview; switched?: boolean; }
+export interface EditorPermissionsActionState { saved: boolean; error: string | null; }
 
 export async function syncAction() {
   await requireAdmin();
@@ -178,6 +180,17 @@ export async function saveLearningSpaceAction(_previousState: AdminActionState, 
   }
   revalidatePath("/admin");
   redirect(`/admin/${encodeURIComponent(input.slug)}/instellingen?saved=1`);
+}
+
+export async function saveLearningSpaceEditorPermissionsAction(learningSpaceId: string, enabled: boolean): Promise<EditorPermissionsActionState> {
+  if (typeof enabled !== "boolean") return { saved: false, error: "De gekozen instelling is ongeldig." };
+  await requireSpaceConfiguration(learningSpaceId);
+  try {
+    await setLearningSpaceEditorsCanManageAccess(learningSpaceId, enabled);
+    return { saved: true, error: null };
+  } catch {
+    return { saved: false, error: "De bewerkersrechten konden niet worden opgeslagen." };
+  }
 }
 
 export async function createLearningSpaceAction(formData: FormData) {
@@ -483,7 +496,7 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const googleDriveFolderLabel = stringValue(formData, "googleDriveFolderLabel");
   if (!name || !shortLabel || description.length > 240 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik geldige algemene instellingen.");
   if (cardColorInput && !isHexColor(cardColorInput)) throw new Error("Kies een geldige kaartkleur.");
-  const common = { name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder: Number(stringValue(formData, "sortOrder")) || 0, editorsCanManageAccess: formData.get("editorsCanManageAccess") === "true", sourceType };
+  const common = { name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder: Number(stringValue(formData, "sortOrder")) || 0, sourceType };
   if (!hasRoleSources) {
     if (sourceType === "local") return { ...common, localSourcePath: localSourcePath ? path.resolve(localSourcePath) : null };
     if (sourceType === "onedrive") {

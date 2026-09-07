@@ -17,6 +17,7 @@ describe("LearningSpaceSettingsForm", () => {
   it("keeps all general fields and places a save button in both settings cards", () => {
     const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} canPermanentlyDelete action={() => ({ error: null })} />);
     const generalStart = markup.indexOf('id="general-settings-heading"');
+    const editorPermissionsStart = markup.indexOf('id="editor-permissions-heading"');
     const sourceStart = markup.indexOf('id="source-settings-heading"');
     const saveButtons = [...markup.matchAll(/class="primary-button settings-save-button"/g)].map((match) => match.index ?? -1);
 
@@ -27,12 +28,16 @@ describe("LearningSpaceSettingsForm", () => {
     expect(markup).toContain("Sortering");
     expect(markup).toContain("Beschrijving");
     expect(markup).toContain("Kleur");
-    expect(markup).toContain("Bewerkers kunnen toegang beheren");
-    expect(markup).toContain("Bewerkers mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen.");
-    const delegationInput = markup.match(/<input[^>]*name="editorsCanManageAccess"[^>]*>/)?.[0] ?? "";
-    expect(delegationInput).toContain('type="checkbox"');
-    expect(delegationInput).toContain('value="true"');
-    expect(delegationInput).not.toContain('checked=""');
+    expect(markup).toContain("Bewerkersrechten");
+    expect(markup).toContain("Bewerkers kunnen geen toegang beheren");
+    expect(markup).toContain("Alleen de eigenaar en beheerders mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen.");
+    expect(markup).not.toContain('name="editorsCanManageAccess"');
+    const editorPermissionsSwitch = markup.match(/<button[^>]*role="switch"[^>]*>/)?.[0] ?? "";
+    expect(editorPermissionsSwitch).toContain('type="button"');
+    expect(editorPermissionsSwitch).toContain('aria-checked="false"');
+    expect(editorPermissionsSwitch).not.toContain("formAction");
+    expect(editorPermissionsStart).toBeGreaterThan(generalStart);
+    expect(editorPermissionsStart).toBeLessThan(sourceStart);
     expect(saveButtons).toHaveLength(2);
     expect(saveButtons[0]).toBeGreaterThan(generalStart);
     expect(saveButtons[0]).toBeLessThan(sourceStart);
@@ -73,8 +78,11 @@ describe("LearningSpaceSettingsForm", () => {
   it("shows the persisted editor access delegation setting", () => {
     const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={{ ...space, editorsCanManageAccess: true }} canPermanentlyDelete={false} action={() => ({ error: null })} />);
 
-    const delegationInput = markup.match(/<input[^>]*name="editorsCanManageAccess"[^>]*>/)?.[0] ?? "";
-    expect(delegationInput).toContain('checked=""');
+    const editorPermissionsSwitch = markup.match(/<button[^>]*role="switch"[^>]*>/)?.[0] ?? "";
+    expect(editorPermissionsSwitch).toContain('aria-checked="true"');
+    expect(editorPermissionsSwitch).toContain("is-enabled");
+    expect(markup).toContain("Bewerkers kunnen toegang beheren");
+    expect(markup).toContain("Bewerkers mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen.");
   });
 
   it("shows restore to an owner and reserves archived deletion for a superadmin", () => {

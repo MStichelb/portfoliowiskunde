@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { adminExercisePortfolioHref } from "./admin-routes";
-import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getPublicPortfolioDocument, getStudentPortfolios, getThemes, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setPortfolioCardColor, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getPublicPortfolioDocument, getStudentPortfolios, getThemes, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setLearningSpaceEditorsCanManageAccess, setPortfolioCardColor, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -406,15 +406,9 @@ describe("persistIndex", () => {
     resetDatabaseForTests();
 
     expect(await getLearningSpace("space-5")).toMatchObject({ editorsCanManageAccess: false });
-    await updateLearningSpace("space-5", {
-      name: "5de jaar", slug: "5", shortLabel: "5WIS", sortOrder: 50, sourceType: "local", localSourcePath: null,
-      editorsCanManageAccess: true,
-    });
+    await setLearningSpaceEditorsCanManageAccess("space-5", true);
     expect(await getLearningSpace("space-5")).toMatchObject({ editorsCanManageAccess: true });
-    await updateLearningSpace("space-5", {
-      name: "5de jaar", slug: "5", shortLabel: "5WIS", sortOrder: 50, sourceType: "local", localSourcePath: null,
-      editorsCanManageAccess: false,
-    });
+    await setLearningSpaceEditorsCanManageAccess("space-5", false);
     expect(await getLearningSpace("space-5")).toMatchObject({ editorsCanManageAccess: false });
   });
 

@@ -179,7 +179,6 @@ export interface LearningSpaceInput {
   description?: string;
   cardColor?: string;
   sortOrder: number;
-  editorsCanManageAccess?: boolean;
   sourceType: StorageSourceType;
   storageConnectionId?: string | null;
   localSourcePath?: string | null;
@@ -327,10 +326,9 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
   const id = stableId("space", input.slug);
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
   const mirror = input.mirrorSource ?? null;
-  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, description, card_color, sort_order, is_active, editors_can_manage_access, storage_provider, source_type,
+  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
     local_source_path, onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, google_drive_folder_id, google_drive_folder_label, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args: [id, input.name, input.slug, input.shortLabel, input.description ?? DEFAULT_LEARNING_SPACE_DESCRIPTION, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder,
-      input.editorsCanManageAccess ? 1 : 0,
+    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args: [id, input.name, input.slug, input.shortLabel, input.description ?? DEFAULT_LEARNING_SPACE_DESCRIPTION, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder,
       legacyStorageProvider(primary.providerType), primary.providerType, primary.localSourcePath ?? null, primary.oneDriveDriveId ?? null,
       primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now] }];
   statements.push(sourceUpsertStatement(id, "primary", primary, true, now));
@@ -357,10 +355,10 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
   const oneDrive = configured.find((source) => source.providerType === "onedrive");
   const googleDrive = configured.find((source) => source.providerType === "google_drive");
   const now = new Date().toISOString();
-  const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, editors_can_manage_access = ?, storage_provider = ?, source_type = ?,
+  const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
     local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, google_drive_folder_id = ?, google_drive_folder_label = ?, updated_at = ? WHERE id = ?`,
     args: [input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder,
-      (input.editorsCanManageAccess ?? existing.editorsCanManageAccess) ? 1 : 0, legacyStorageProvider(active.providerType), active.providerType,
+      legacyStorageProvider(active.providerType), active.providerType,
       local?.localSourcePath ?? existing.localSourcePath,
       oneDrive?.oneDriveDriveId ?? existing.oneDriveDriveId, oneDrive?.oneDriveFolderId ?? existing.oneDriveFolderId,
       oneDrive?.oneDriveFolderPath ?? existing.oneDriveFolderPath, googleDrive?.googleDriveFolderId ?? existing.googleDriveFolderId,
@@ -369,6 +367,13 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
   if (mirror) statements.push(sourceUpsertStatement(id, "mirror", mirror, existing.mirrorSource?.isActive ?? false, now));
   else statements.push({ sql: "DELETE FROM learning_space_sources WHERE learning_space_id = ? AND role = 'mirror' AND is_active = 0", args: [id] });
   await executeBatch(statements);
+}
+
+export async function setLearningSpaceEditorsCanManageAccess(id: string, enabled: boolean): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE learning_spaces SET editors_can_manage_access = ?, updated_at = ? WHERE id = ?",
+    args: [enabled ? 1 : 0, new Date().toISOString(), id],
+  });
 }
 
 function sourceFromLegacyInput(input: LearningSpaceInput): LearningSpaceSourceInput {
