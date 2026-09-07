@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   listKnownExternalGroups: vi.fn(),
   listLearningSpaceIndividualStudentAccess: vi.fn(),
   listLearningSpaceIndividualStudentCandidates: vi.fn(),
+  listLearningSpaceStudentRoster: vi.fn(),
   saveTeacherAccess: vi.fn(),
   removeTeacherAccess: vi.fn(),
   saveGroupMapping: vi.fn(),
@@ -30,6 +31,7 @@ vi.mock("@/lib/authorization", () => ({
   canConfigureLearningSpace: mocks.canConfigureLearningSpace,
 }));
 vi.mock("@/lib/repositories", () => ({ getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug }));
+vi.mock("@/lib/learning-space-student-roster", () => ({ listLearningSpaceStudentRoster: mocks.listLearningSpaceStudentRoster }));
 vi.mock("@/lib/user-management", () => ({
   isClassGroupName: (name: string) => /^[3-6]/.test(name.trim()),
   listLearningSpaceTeachers: mocks.listLearningSpaceTeachers,
@@ -66,6 +68,7 @@ describe("LearningSpace access", () => {
     mocks.listKnownExternalGroups.mockResolvedValue([]);
     mocks.listLearningSpaceIndividualStudentAccess.mockResolvedValue([]);
     mocks.listLearningSpaceIndividualStudentCandidates.mockResolvedValue([]);
+    mocks.listLearningSpaceStudentRoster.mockResolvedValue([]);
   });
 
   it.each([
@@ -236,17 +239,62 @@ describe("LearningSpace access", () => {
     expect(mocks.listLearningSpaceIndividualStudentCandidates).not.toHaveBeenCalled();
   });
 
-  it("renders the group card and remaining users placeholder", async () => {
+  it("loads and renders the effective student roster with the correct count", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("editor", "teacher"));
+    mocks.listLearningSpaceStudentRoster.mockResolvedValue([
+      {
+        userId: "group-student",
+        displayName: "Anna De Smet",
+        firstName: "Anna",
+        lastName: "De Smet",
+        className: "5WEWI6",
+        relevantGroupNames: ["5WEWI6", "Uitdaging"],
+        individualAccess: true,
+        groupDerivedAccess: true,
+        status: "active",
+      },
+      {
+        userId: "individual-student",
+        displayName: "Bram Janssens",
+        firstName: "Bram",
+        lastName: "Janssens",
+        className: null,
+        relevantGroupNames: [],
+        individualAccess: true,
+        groupDerivedAccess: false,
+        status: "disabled",
+      },
+    ]);
 
     const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
 
+    expect(mocks.listLearningSpaceStudentRoster).toHaveBeenCalledWith(space.id);
     expect(markup).toContain('<h2 id="teachers-heading">Leraren</h2>');
     expect(markup).toContain('<h2 id="groups-users-heading">Leerlingen koppelen</h2>');
     expect(markup).toContain("<h3>Groepen</h3>");
     expect(markup).toContain('<h2 id="users-heading">Gebruikers</h2>');
+    expect(markup).toContain("2 leerlingen");
+    expect(markup).toContain("5WEWI6 • Uitdaging");
+    expect(markup).toContain("Groep");
+    expect(markup).toContain("Individueel");
+    expect(markup).toContain("Uitgeschakeld");
     expect(markup).toContain("Nog geen leraren met toegang.");
-    expect(markup).not.toContain("<table");
+  });
+
+  it("uses singular count and renders the roster empty state", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("editor", "teacher"));
+
+    const emptyMarkup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+    expect(emptyMarkup).toContain("0 leerlingen");
+    expect(emptyMarkup).toContain("Nog geen leerlingen met toegang tot deze leeromgeving.");
+
+    mocks.listLearningSpaceStudentRoster.mockResolvedValue([{
+      userId: "student-1", displayName: "Anna De Smet", firstName: "Anna", lastName: "De Smet", className: "5WEWI6",
+      relevantGroupNames: ["5WEWI6"], individualAccess: false, groupDerivedAccess: true, status: "active",
+    }]);
+    const singularMarkup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+    expect(singularMarkup).toContain("1 leerling");
+    expect(singularMarkup).not.toContain("1 leerlingen");
   });
 });
 

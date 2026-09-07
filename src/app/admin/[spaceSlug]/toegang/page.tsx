@@ -5,8 +5,10 @@ import { AdminSpaceHeader } from "@/app/components/admin-space-header";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import { LearningSpaceGroupMappingForm } from "@/app/components/learning-space-group-mapping-form";
 import { LearningSpaceStudentAccessModal } from "@/app/components/learning-space-student-access-modal";
+import { LearningSpaceStudentRoster } from "@/app/components/learning-space-student-roster";
 import { requireAdminUser } from "@/lib/auth";
 import { canConfigureLearningSpace, canManageLearningSpace } from "@/lib/authorization";
+import { listLearningSpaceStudentRoster } from "@/lib/learning-space-student-roster";
 import { getAdminLearningSpaceBySlug } from "@/lib/repositories";
 import {
   isClassGroupName,
@@ -46,13 +48,14 @@ export default async function LearningSpaceAccessPage({
   if (!space || !await canManageLearningSpace(user, space.id)) notFound();
   const canConfigureAccess = await canConfigureLearningSpace(user, space.id);
   const emptyQuery: { accessSaved?: string; accessError?: string; groupSaved?: string; groupError?: string; studentSaved?: string; studentError?: string } = {};
-  const [teachers, candidates, groupMappings, knownGroups, individualStudents, studentCandidates, query] = await Promise.all([
+  const [teachers, candidates, groupMappings, knownGroups, individualStudents, studentCandidates, roster, query] = await Promise.all([
     listLearningSpaceTeachers(space.id),
     canConfigureAccess ? listLearningSpaceTeacherCandidates(space.id) : Promise.resolve([]),
     listLearningSpaceGroupMappings(space.id),
     canConfigureAccess ? listKnownExternalGroups() : Promise.resolve([]),
     listLearningSpaceIndividualStudentAccess(space.id),
     canConfigureAccess ? listLearningSpaceIndividualStudentCandidates(space.id) : Promise.resolve([]),
+    listLearningSpaceStudentRoster(space.id),
     searchParams ?? Promise.resolve(emptyQuery),
   ]);
   const mappedGroupIds = new Set(groupMappings
@@ -99,7 +102,13 @@ export default async function LearningSpaceAccessPage({
         <IndividualStudentAccessList learningSpaceId={space.id} students={individualStudents} canChange={canConfigureAccess} />
       </div>
     </section>
-    <section className="admin-card" aria-labelledby="users-heading"><h2 id="users-heading">Gebruikers</h2><p>Bekijk de leerlingen die toegang hebben tot deze leeromgeving.</p></section>
+    <section className="admin-card" aria-labelledby="users-heading">
+      <div className="card-heading">
+        <div><h2 id="users-heading">Gebruikers</h2><p>Bekijk de leerlingen die toegang hebben tot deze leeromgeving.</p></div>
+        <strong className="list-count">{roster.length} {roster.length === 1 ? "leerling" : "leerlingen"}</strong>
+      </div>
+      <LearningSpaceStudentRoster students={roster} />
+    </section>
   </main>;
 }
 

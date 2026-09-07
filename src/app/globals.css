@@ -618,6 +618,13 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .student-access-candidate-header { padding-top: 2px; padding-bottom: 7px; border-top: 0; color: #52616a; font-size: 13px; font-weight: 700; }
 .student-access-candidate-action { width: 34px; height: 34px; color: #176548; }
 .student-access-candidate-action:disabled { border-color: #c9d0cc; background: #f1f3f2; color: #879196; cursor: not-allowed; }
+.learning-space-roster-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 14px; margin-bottom: 16px; }
+.learning-space-roster-group-filter { flex: 0 1 220px; }
+.learning-space-roster-filters .user-search-field { max-width: 380px; }
+.roster-student-name { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.roster-student-name .account-status-label { min-height: 26px; padding: 3px 8px; font-size: 13px; }
+.management-badges > .roster-access-badge-group { background: #edf1ef; color: #46565d; }
+.management-badges > .roster-access-badge-individual { background: #fff4c7; color: #6f5a00; }
 
 .group-user-filter { display: flex; max-width: 620px; align-items: end; gap: 10px; margin-bottom: 18px; }
 .group-user-filter label, .group-mapping-form label { display: grid; min-width: 0; gap: 5px; color: #314149; font-size: 14px; font-weight: 700; }
@@ -702,6 +709,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
   .individual-student-access .card-heading > button { width: fit-content; }
   .student-access-candidate { grid-template-columns: 36px minmax(90px, 1fr) minmax(80px, 1fr) minmax(64px, .7fr); min-width: 430px; }
   .student-access-candidates { overflow-x: auto; }
+  .learning-space-roster-filters > .user-search-field, .learning-space-roster-filters > .filter-control { flex: 1 1 100%; max-width: none; }
   .emergency-access-control, .group-user-filter { align-items: stretch; flex-direction: column; }
   .emergency-access-control form, .emergency-switch, .group-user-filter button { width: 100%; }
   .group-mapping-form { grid-template-columns: 1fr; }
