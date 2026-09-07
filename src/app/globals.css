@@ -244,7 +244,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .learning-space-create-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .learning-space-create-dialog-heading h2 { margin: 0; font-size: 22px; }
 .learning-space-create-dialog .learning-space-create-form { margin-top: 20px; }
-.learning-space-create-dialog .create-general-grid > label:first-child > small { margin-top: -2px; }
+.learning-space-create-dialog .create-general-grid > label:not(.field-full):not(.color-field) > small { grid-row: 3; }
 .learning-space-create-dialog .create-space-actions { justify-content: flex-end; }
 .archived-message { margin: 14px 0; padding: 11px 13px; border-left: 4px solid #8a6d35; background: #f5f0e4; color: #55451f; font-weight: 700; }
 .archived-nav-status { display: inline-flex; align-items: center; padding: 6px 8px; color: #5c6265; font-weight: 700; }
