@@ -16,12 +16,12 @@ Bij een nieuwe leeromgeving is OneDrive de normale standaardkeuze. Google Drive 
 
 ## 2. OneDrive verbinden
 
-1. Open `/admin`, kies **Leeromgevingen beheren** en ga op de pagina **Leeromgevingen** naar **OneDrive-verbinding**.
+1. Open `/admin/verbindingen`.
 2. Kies OneDrive verbinden of OneDrive opnieuw verbinden.
 3. Meld je aan met het Microsoft-account dat leestoegang heeft tot de bronmap.
-4. Controleer dat de status OneDrive geconnecteerd verschijnt.
+4. Controleer dat de status **OneDrive verbonden** verschijnt.
 
-De huidige beheer-UI toont de bestaande OneDrive-verbinding van de compatibility-superadmin. Een LearningSpaceSource verwijst expliciet naar een storageconnection; drive-ID en map-ID blijven brongebonden. Tokens van de ene user worden nooit voor de persoonlijke verbinding van een andere user gebruikt.
+De beheer-UI toont de persoonlijke OneDrive-verbinding van de aangemelde teacher of hoofdbeheerder. Een LearningSpaceSource verwijst expliciet naar een storageconnection; drive-ID en map-ID blijven brongebonden. Tokens van de ene user worden nooit voor de persoonlijke verbinding van een andere user gebruikt.
 
 Een LearningSpace kan wel door meerdere leraren worden beheerd. Een **Eigenaar** mag ook de broninstellingen wijzigen. Een **Editor** beheert dagelijkse inhoud, publicatie en synchronisatie, maar gebruikt voor een bestaande LearningSpace dezelfde expliciet gekoppelde bron. De editor hoeft daarvoor geen eigen OneDrive-account te verbinden en neemt de bestaande connection niet over.
 

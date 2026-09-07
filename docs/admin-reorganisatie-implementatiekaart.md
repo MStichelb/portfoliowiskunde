@@ -1,186 +1,180 @@
-# Admin-reorganisatie implementatiekaart
+# Admin-reorganisatie: definitieve implementatie
 
-Deze kaart beschrijft de huidige implementatie ten opzichte van `masterplan-reorganisatie.txt`. De huidige code en databank zijn leidend; dit document stelt geen functionele wijziging voor.
+Dit document beschrijft de afgeronde adminarchitectuur. De huidige code, server-side autorisatie en database zijn leidend.
 
-## 1. Huidige routes en componenten
+## 1. Canonieke beheerstructuur
 
-| Functie | Route | Belangrijkste component(en) | Server action/repository |
-| --- | --- | --- | --- |
-| Globaal beheeroverzicht | `/admin` | `src/app/admin/page.tsx`, `PageBanner` | `requireAdminUser`, `getLearningSpaces(true)`, `getManageableLearningSpaceIds` |
-| Persoonlijke OneDrive-verbinding | `/admin/verbindingen` | `OneDriveConnectLink` | `hasOneDriveAuthorization(user.id)`, `/api/onedrive/connect`, `/api/onedrive/callback` |
-| Legacy globale instellingen | `/admin/instellingen` → `/admin` | beveiligde compatibility-redirect, geen eigen UI | `requireAdmin` vóór redirect |
-| Legacy globaal toegangsbeheer | `/admin/toegang` → `/admin/gebruikers` | beveiligde compatibility-redirect, geen eigen UI | `requireAdmin` vóór redirect |
-| Globaal gebruikersbeheer | `/admin/gebruikers` | `UserManagementView`, `UserListFilters`, `UserAccessMenu`, `StudentResetControls` | actions in `src/app/admin/gebruikers/actions.ts`; `listManagedUsers`, memberships/access/storage/group queries |
-| LearningSpace: portfolio's | `/admin/[spaceSlug]` | `AdminSpaceHeader`, `LearningSpaceNav`, portfolio-overzicht | `getAdminLearningSpaceBySlug`, `canManageLearningSpace`, portfolio/theme/warning queries |
-| LearningSpace: thema's | `/admin/[spaceSlug]/themas` | `AdminSpaceHeader`, themaformulieren | theme-actions in `src/app/admin/actions.ts`, beschermd via `requireSpaceManagement` |
-| LearningSpace: instellingen | `/admin/[spaceSlug]/instellingen` | `LearningSpaceSettingsForm`, beheerderssectie, `SourceSwitchPanel`, `LearningSpaceLifecycleActions` | `saveLearningSpaceAction`; editor-actions in de lokale `actions.ts`; source comparison/switch; lifecycle-actions |
-| LearningSpace: publieke pagina | `/[spaceSlug]` | publieke LearningSpace-route; link vanuit `LearningSpaceNav` | publieke queries en `requirePublicLearningSpaceAccess` |
-| LearningSpace: foutmeldingen | `/admin/[spaceSlug]/foutmeldingen` | `AdminSpaceHeader`, error-reportcomponenten | foutmelding-actions in `src/app/admin/actions.ts`, per LearningSpace beschermd |
-| OneDrive OAuth | `/api/onedrive/connect`, `/api/onedrive/callback` | echte browsernavigatie via `OneDriveConnectLink` | `canAccessAdmin`, PKCE/state/owner-cookies, `exchangeMicrosoftCode` |
-| Smartschool koppelen | `/api/auth/smartschool/link`, callback onder `/api/auth/smartschool/callback` | `SmartschoolConnectLink` | superadmincheck, Smartschool OAuth-state en identity/group-snapshotservices |
+### Globaal beheer
 
-### A. `/admin`
-
-- `src/app/admin/page.tsx` vraagt een teacher of superadmin via `requireAdminUser` en toont alleen actieve, beheerbare LearningSpaces. `getLearningSpaces(true)` sluit archief uit; `getManageableLearningSpaceIds` geeft superadmin alle actieve ruimtes en teachers alleen owner/editor-ruimtes.
-- Superadmin ziet nu knoppen voor Smartschool koppelen, Gebruikers, Toegang, Leeromgevingen beheren en Uitloggen. Een teacher ziet alleen Mijn verbindingen en Uitloggen.
-- Elke kaart linkt naar `/admin/<slug>` en toont `shortLabel`, naam en `sourceSummary`: primaire provider plus eventuele mirrorprovider. Owner/editor-namen, gekoppelde groepen en connection owner zijn al opvraagbaar via `listManagedMemberships`, `listManagedGroupMappings` en `listManagedSourceOwners`, maar worden hier nog niet geladen.
-- Aanbeveling voor het masterplan: een compacte `Toon archief`-schakelaar op dezelfde pagina vraagt minder routing en kan dezelfde kaarten hergebruiken. Een aparte archiefroute is pas nuttig bij een groot archief.
-
-### B. Legacy `/admin/instellingen`
-
-- De route bewaart bookmarks, voert eerst de bestaande `requireAdmin`-controle uit en redirect daarna naar `/admin`.
-- Leeromgevingen aanmaken en het globale overzicht staan op `/admin`; verbindingen en publieke noodtoegang staan op `/admin/verbindingen`.
-- Instellingen, bronnen en lifecycleacties staan per LearningSpace op `/admin/[spaceSlug]/instellingen`.
-
-### C. Legacy `/admin/toegang`
-
-- De route bewaart bookmarks, voert eerst de bestaande `requireAdmin`-controle uit en redirect daarna naar `/admin/gebruikers`.
-- Globaal gebruikersbeheer en automatische lerarenherkenning staan op `/admin/gebruikers`.
-- Leraren, groepskoppelingen, individuele leerlingen en het effectieve roster staan per LearningSpace op `/admin/[spaceSlug]/toegang`, met de bestaande per-space autorisatie.
-
-### D. `/admin/gebruikers`
-
-- `src/app/admin/gebruikers/page.tsx` laadt users, LearningSpaces, memberships, effectieve accessflags, storage-status, bekende klasgroepen, alle bekende groepen en de ingestelde lerarengroep.
-- `UserManagementView` splitst uitsluitend op de lokale `users.role`; Smartschoolrollen worden niet vertrouwd. Nieuwe Smartschoolusers starten als student, behalve als hun snapshot de expliciet geconfigureerde teacher-groupID bevat.
-- `listManagedUsers` levert genormaliseerde voor-/achternaam, status, gedetecteerde klas/override en een vlag voor individuele toegang.
-- `listManagedUserAccess` houdt drie oorzaken apart: `groupDerived`, `individual` en `managementRole`. `UserAccessMenu` wijzigt alleen `individual_learning_space_access`; afgeleide toegang is read-only.
-- Herbruikbaar voor een LearningSpace-roster: naamweergave, zoek/sorteer/filterpatronen, paginering en compacte tabelregio. Globale rol/status/resetcontrols horen niet in het LearningSpace-roster.
-
-### F. Per-LearningSpace beheer
-
-- `AdminSpaceHeader` levert titel, synchronisatiestatus, mirrorwaarschuwing, foutmeldingenteller en syncactie. `LearningSpaceNav` bevat nu Portfolio's, Thema's, conditioneel Instellingen en Publieke pagina; er bestaat nog geen sectie `access`.
-- Portfolio's en Thema's vereisen `canManageLearningSpace`: superadmin of owner/editor.
-- Instellingen vereisen `canConfigureLearningSpace`: superadmin of owner. `LearningSpaceSettingsForm` bevat Algemeen en Bronnen; de pagina bevat daarnaast Beheerders, Actieve bron en voor superadmin Status leeromgeving.
-- Editor toevoegen/verwijderen is al per LearningSpace beschermd via `requireLearningSpaceConfiguration`. De huidige UI kan alleen editors toevoegen; owners worden alleen getoond.
-- `SourceSwitchPanel` hergebruikt de bestaande, per-space beveiligde compare/switch-actions. Bronnen blijven read-only.
-- Lifecycle is momenteel zowel in UI als server actions superadmin-only. Archive/restore/delete gebruiken alle `requireAdmin`; permanent verwijderen controleert bovendien archived state en bevestigingsslug. Het masterplan vraagt dus een latere, securitygevoelige splitsing: owner mag archive/restore, alleen superadmin delete.
-
-## 2. Huidig rechtenmodel
-
-| Concept | Model/tabel | Resolutie/service | Server-side controle |
-| --- | --- | --- | --- |
-| Superadmin | `users.role = 'superadmin'` | `getAuthenticatedUser`; impliciet toegang/beheer/configuratie voor alle ruimtes | `requireAdmin` voor globale superadmintaken; centrale authorizationhelpers voor per-space flows |
-| Teacher | `users.role = 'teacher'` | lokale rol, eventueel alleen bij eerste registratie afgeleid uit ingestelde teacher-groupID | `requireAdminUser` laat actieve teachers de admin binnen |
-| Student | `users.role = 'student'` | standaardrol voor nieuwe externe identiteit | geen admin; publieke toegang via centrale accessresolutie |
-| LearningSpace owner | `learning_space_members.role = 'owner'` | `getLearningSpaceMemberRole`, `listManagedMemberships` | mag beheren en configureren via `canManageLearningSpace`/`canConfigureLearningSpace` |
-| LearningSpace editor | `learning_space_members.role = 'editor'` | dezelfde helpers | mag beheren/synchroniseren/publiceren, niet configureren |
-| View-only teacher | `individual_learning_space_access` of group mapping | `getAccessibleLearningSpaceIds`, `listManagedUserAccess` | dezelfde publieke accesscheck als voor leerlingen; geen managementrecht |
-| Individuele studenttoegang | `individual_learning_space_access` | `setIndividualLearningSpaceAccess` | superadminactie op `/admin/gebruikers`; target moet student/teacher en ruimte actief zijn |
-| Smartschool group-derived access | `external_identity_groups` + `learning_space_group_mappings` | exacte `(provider, external_group_id)`-join | `getAccessibleLearningSpaceIds`/`canAccessLearningSpace` |
-| Management-implied view access | `learning_space_members` | memberships zijn een derde OR-tak in `getAccessibleLearningSpaceIds` | owner/editor krijgt automatisch publieke kijktoegang |
-
-Belangrijke conclusies:
-
-1. Een teacher-kijker kan volledig met bestaande individuele view access worden gemodelleerd. Een nieuw membershiptype `viewer` zou management en publieke toegang opnieuw vermengen en is niet nodig.
-2. Owner en editor impliceren vandaag al publieke view access.
-3. Eén persoonlijke OneDrive-connection kan door meerdere `learning_space_sources` worden verwezen; er staat geen unieke beperking op `storage_connection_id`. De provider ontvangt de connection-ID per bron.
-4. Teachers kunnen nu geen LearningSpace aanmaken doordat `canCreateLearningSpace`/`requireLearningSpaceCreation` uitsluitend superadmin toestaan en `createLearningSpaceAction` deze guard uitvoert.
-5. `createLearningSpace` schrijft LearningSpace en bron(nen) transactioneel via `executeBatch`, maar maakt geen owner-membership. Voor het masterplan is een service nodig die in dezelfde batch de ruimte, bronnen en `learning_space_members(owner)` voor de maker creëert. Alleen na succesvolle creatie mag worden geredirect.
-
-## 3. Huidige verbindingen
-
-### OneDrive
-
-- `storage_connections` is persoonlijk door `owner_user_id`; credentials staan versleuteld in `encrypted_credentials` en de status is active/disconnected.
-- `learning_space_sources.storage_connection_id` wijst naar de specifieke verbinding. `getOwnedStorageConnection` en `saveStorageCredentials` bewaken ownership; de OAuth callback bindt state aan de aangemelde user-ID in een HttpOnly cookie.
-- `/admin/verbindingen` toont voor iedere teacher/superadmin diens eigen default OneDrive-connection. De connectflow is een echte browsernavigation.
-- De compatibility-superadmin heeft een gemigreerde legacyconnection. Migratie 024 koppelt historische OneDrive-LearningSpaces duplicaatvrij als owner.
-- Het schema ondersteunt meerdere connections per user, hoewel de huidige UI/OAuth-flow standaard één deterministische/default OneDrive-connection gebruikt.
-
-### Smartschool
-
-- OAuth-clientconfiguratie is app-breed/environment-based. Koppelen is superadmin-only via `/api/auth/smartschool/link`.
-- Smartschoolidentiteiten staan in `external_identities`; groepssnapshots in `external_identity_groups` met group-ID, optionele naam en `direct`/`parent` membershiptype.
-- Smartschool is de bron voor groepsinformatie. Snapshots worden bij OAuth-login vervangen; beheerweergaven doen geen live group-call.
-- Noodtoegang is een globale setting in `app_settings` en verzwakt adminautorisatie niet.
-
-### Google Drive
-
-- De huidige productieverbinding gebruikt een app-breed service account uit environmentconfiguratie en read-only Drive-scope.
-- Per LearningSpace staan folder-ID/label en validatiestatus in `learning_space_sources`. Google Drive gebruikt in de huidige UI geen persoonlijke teacher-OAuth-connectie.
-- `storage_connections` staat technisch provider `google_drive` toe, maar de huidige service-accountprovider en statusweergave zijn globaal; dit mag niet als persoonlijke connection worden voorgesteld zonder nieuwe authenticatielogica.
-
-Alle storageproviders blijven vanuit de webapp read-only. Local is een testprovider; OneDrive en Google Drive wijzigen geen bronbestanden.
-
-## 4. Herbruikbare bestaande logica
-
-- **Adminoverzicht:** bestaande LearningSpace-kaarten, `sourceSummary`, `cardColorStyle`, `getLearningSpaces` en authorization-ID-lijsten behouden; verrijk alleen de querylaag voor owner/editor/groupdetails.
-- **Nieuwe LearningSpace:** `LearningSpaceCreateForm`, `learningSpaceInput`, bronvalidatie, `assignOwnedStorageConnections` en repositorybatch hergebruiken. Voeg ownership toe binnen één creatieservice in plaats van een tweede losse action.
-- **Verbindingen:** verplaats/hercomposeer `OneDriveConnectLink`, connectionstatus, Google-configcheck, `EmergencyAccessControl` en `SmartschoolConnectLink`; wijzig OAuth-routes niet voor een layoutverplaatsing.
-- **Per-space beheer:** `AdminSpaceHeader` en `LearningSpaceNav` uitbreiden met één route/tab; bestaande `canManageLearningSpace` en `canConfigureLearningSpace` blijven de centrale grens.
-- **Gedeeld beheer:** memberships en editor-actions bestaan al. Verplaats de UI; maak owner/editor-mutaties per-space geautoriseerd voordat globale UI verdwijnt.
-- **Kijktoegang:** `individual_learning_space_access`, `setIndividualLearningSpaceAccess`, `listManagedUserAccess` en `UserAccessMenu` blijven de enige individuele accessbron.
-- **Groepstoegang:** `listKnownExternalGroups`, `isClassGroupName`, mappingrepositories en exacte ID-matching hergebruiken. De twee dropdowns zijn alleen een UI-splitsing van dezelfde dataset.
-- **Roster-UI:** zoek/sorteer/filter/paginatie uit `UserManagementView`/`UserListFilters` als patroon hergebruiken, maar met een per-space readmodel.
-- **Bronnen en switching:** `LearningSpaceSettingsForm`, `SourceSwitchPanel`, source-validation en connection ownership intact laten.
-- **Lifecycle:** repositoryfuncties en `canPermanentlyDeleteLearningSpace` behouden; alleen actionautorisatie en redirects later gericht opsplitsen.
-
-## 5. Verwachte nieuwe logica
-
-1. Een nieuwe route `/admin/[spaceSlug]/toegang` plus `access` in `AdminSpaceSection`.
-2. Een per-space summaryquery voor owner(s), editors, gekoppelde groepen en sourceproviders/owners, bruikbaar voor kaarten en toegangspagina zonder globale datasets in de UI te filteren.
-3. Een per-space rosterquery, bijvoorbeeld `listLearningSpaceRoster(learningSpaceId)`, die group-derived en individuele studenttoegang verenigt, per user dedupliceert en toegangsoorzaken/groepsnamen teruggeeft.
-4. Per-space group- en membershipactions met `requireLearningSpaceConfiguration`; globale superadminactions mogen niet simpelweg worden gekopieerd.
-5. Individuele studentzoek-/toevoegflow die bestaande `setIndividualLearningSpaceAccess` gebruikt, maar target-space en ownerbevoegdheid server-side controleert.
-6. Een transactionele `createLearningSpaceForOwner(input, actorId)`-service en aangepaste creation policy om teachers te laten creëren en direct owner te maken.
-7. Een gesplitste lifecycleaction: owner/superadmin archive/restore; permanent delete uitsluitend superadmin en archived.
-8. Een samengestelde `/admin/verbindingen`-readlaag: persoonlijk OneDrive voor teacher/admin, plus Smartschool/Google/noodtoegang alleen voor superadmin.
-
-Niet nieuw nodig: een viewer-membershiprol, nieuwe view-accesstabel, nieuwe groepsbron of tweede public-accessresolver.
-
-### Smartschoolgroepen en roster
-
-- `listKnownExternalGroups` levert provider, group-ID en laatst bekende naam. `isClassGroupName` classificeert reeds generiek met `^[3-6]`; klasgroepen en overige groepen kunnen dus zonder schemawijziging worden gesplitst.
-- `listManagedGroupUsers` levert users per group-ID, maar mist voor het beoogde roster de volledige naamvelden, klasprioriteit en de concrete reden waarom een user toegang tot één LearningSpace heeft.
-- De nieuwe rosterquery moet starten bij de gekozen LearningSpace en twee sets verenigen: users via mappings/snapshots en users via individuele access. Gebruik `UNION`/`DISTINCT` of aggregatie op `users.id`, niet één rij per membership.
-- Voor kolom `Klas`: gebruik eerst de lokale class override, anders een Smartschoolgroep waarvan de naam met 3-6 begint. Voeg alleen een niet-klasgroep toe als die groep daadwerkelijk toegang tot deze LearningSpace verleent; zo kan `6WEWI6 • wetenschappen` ontstaan zonder willekeurige andere memberships te tonen.
-- Groepssnapshots zijn login-gebonden en kunnen dus verouderd zijn tot de volgende Smartschoollogin. De UI moet ze als opgeslagen Smartschoolinformatie behandelen, niet als live roster.
-
-## 6. Risicopunten
-
-| Risico | Gevolg en maatregel |
-| --- | --- |
-| Autorisatie bij verplaatste actions | De legacyroute `/admin/toegang` blijft superadmin-only vóór redirect. Per-space mutaties controleren actor én target `learningSpaceId`; nooit vertrouwen op verborgen formvelden of UI-filtering. |
-| Teacher-creatie | Alleen de UI openen is onvoldoende. Creation guard, action en transactionele repository/service moeten samen veranderen; owner-insert moet atomair zijn. |
-| Ownership van bronnen | `assignOwnedStorageConnections` koppelt bij een nieuwe OneDrive-bron de connection van de handelende user. Bestaande connection-ID's moeten bij edits behouden of expliciet veilig overgedragen worden; superadmin mag niet impliciet een persoonlijke teacherconnection overnemen. |
-| Globale querydata | `listManagedUsers`, memberships en mappings zijn globale datasets. Een ownerpagina mag geen gegevens van andere LearningSpaces lekken; gebruik target-scoped queries. |
-| Publieke toegang versus beheer | Voeg geen `viewer` toe aan `learning_space_members`; dat creëert twee bronnen van waarheid naast `individual_learning_space_access`. |
-| Lifecycle | Archive/restore blijft op de per-space instellingenpagina; permanent delete keert terug naar `/admin`. De archived-before-delete invariant blijft behouden. |
-| Gearchiveerde ruimtes | `getManageableLearningSpaceIds` en `/admin` werken alleen met actieve ruimtes. Een archiefweergave heeft een expliciete beheerquery nodig; maak archief niet per ongeluk publiek toegankelijk. |
-| Ownerbeheer | De huidige per-space UI kan editors toevoegen/verwijderen, maar geen owners beheren. Bij owneroverdracht moeten minimaal één geldige owner, storageafhankelijkheden en self-removal expliciet worden beslist en getest. |
-| Destructieve acties | Permanente delete wist alleen DB-metadata en is correct archived-only. Behoud bevestigingsslug, superadmincheck en repository-invariant. |
-| Redirects en oude routes | Interne links/actions gebruiken de canonieke routes. `/admin/instellingen` en `/admin/toegang` blijven alleen als beveiligde compatibility-redirects bestaan. |
-| Dubbele bronnen van waarheid | Kaartdetails en toegangspagina moeten dezelfde membership/mapping/sourcequeries gebruiken als autorisatie; geen aparte UI-only status opslaan. |
-
-## 7. Testdekking
-
-| Onderwerp | Bestaande relevante tests | Huidige dekking / gat |
+| Route | Doel | Toegang |
 | --- | --- | --- |
-| LearningSpace creation | `src/lib/repositories.test.ts`, `src/app/admin/actions.authorization.test.ts`, `learning-space-create-form.test.tsx` | repositorycreatie, duplicate slug, providerdefaults en superadmin-only guard; nog geen maker-ownertransactie |
-| Owner/editor memberships | `src/lib/multi-user.test.ts`, `src/lib/user-management.test.ts`, `database-migrations.test.ts` | beheer/configuratie, upsert/remove, legacy ownerbackfill; per-space editor-actions hebben geen gerichte actiontest |
-| Individual view access | `src/lib/user-management.test.ts`, `user-management-view.test.tsx` | combinatie en UI-onderscheid tussen individual/group/management |
-| Group mappings | `src/lib/multi-user.test.ts`, `src/lib/user-management.test.ts` | exacte provider/groupID-matching, uniqueness, create/delete, snapshots |
-| User access resolution | `src/lib/multi-user.test.ts`, `src/lib/user-management.test.ts`, `src/lib/public-access.test.ts` | groep + individueel + management en noodtoegang; nog geen per-space rosterquery |
-| Archive/restore/delete | `src/lib/learning-space-lifecycle.test.ts`, `learning-space-lifecycle-actions.test.tsx`, `src/lib/repositories.test.ts`, `src/lib/source-switch.test.ts` | policy, UI, metadataretentie, DB-only delete en archived source-switchblock; owner archive/restore bestaat nog niet |
-| Connections | `src/lib/multi-user.test.ts`, `src/lib/onedrive.test.ts`, `src/app/api/onedrive/connect/route.test.ts`, storage-provider tests | ownershipisolatie, meerdere connections, read-only Graph/PKCE en teacher OAuth-start |
-| Smartschool auth/snapshots | `smartschool-auth-flow.test.ts`, `smartschool-client.test.ts`, callback/login route-tests, `multi-user.test.ts` | state, platformbinding, profile/groupnormalisatie, snapshotvervanging, disabled users |
-| Admin navigation | `src/app/admin/page.test.ts`, `learning-space-nav.test.tsx`, `admin-space-header.test.tsx`, site-navigationtests | huidige links, compacte nav en rolgedrag; nieuwe routes/zichtbaarheidsregels nog niet afgedekt |
-| LearningSpace settings | `learning-space-settings-form.test.tsx`, per-space settings- en lifecycletests, legacy-route-test onder `src/app/admin/instellingen` | providers, OAuth-link, noodtoegang, lifecycle en beveiligde legacyredirect |
-| Source switching | `src/lib/source-switch.test.ts`, componenttests rond bronstatus/sync | vergelijking, marker/security en archived block; behouden bij UI-verplaatsing |
+| `/admin` | Overzicht van actieve en gearchiveerde LearningSpaces, plus acties voor Verbindingen, Gebruikers en Leeromgeving toevoegen | teacher en superadmin |
+| `/admin/verbindingen` | Persoonlijke OneDrive-verbinding en globale Smartschool-, Google Drive- en noodtoegangsstatus | teacher; globale onderdelen alleen superadmin |
+| `/admin/gebruikers` | Globaal gebruikersoverzicht, rollen, status, profielen en accountacties | alleen superadmin |
 
-Deze analyse heeft geen tests uitgevoerd; de testbestanden zijn statisch geïnventariseerd.
+Een teacher ziet op `/admin` alleen LearningSpaces met een expliciet `owner`- of `editor`-membership. Een superadmin ziet alle LearningSpaces, maar globale superadminrechten worden niet als expliciet membership voorgesteld. Nieuwe LearningSpaces kunnen door een teacher of superadmin worden aangemaakt; de maker wordt transactioneel eigenaar.
 
-## 8. Advies voor implementatievolgorde
+### Per LearningSpace
 
-Het opgesplitste masterplan is technisch logisch, mits functionaliteit eerst wordt **toegevoegd en hergebruikt** en oude globale routes pas als laatste verdwijnen.
+| Onderdeel | Route | Doel |
+| --- | --- | --- |
+| Portfolio's | `/admin/[spaceSlug]` | Portfolio's, publicatiestatus, synchronisatie en waarschuwingen |
+| Thema's | `/admin/[spaceSlug]/themas` | Thema's aanmaken, sorteren, wijzigen en verwijderen |
+| Instellingen | `/admin/[spaceSlug]/instellingen` | Algemeen, Bewerkersrechten, Bronnen, Actieve bron en lifecycle |
+| Toegang | `/admin/[spaceSlug]/toegang` | Leraren, Smartschoolgroepen, individuele leerlingen en effectief leerlingenoverzicht |
+| Publieke pagina | `/[spaceSlug]` | Publieke leerlingweergave; de adminnavigatie opent rechtstreeks deze route |
 
-1. **Readmodels en autorisatiegrenzen:** voeg target-scoped kaartsummary en rosterquery toe. Leg per toekomstige action vast of owner, editor of superadmin bevoegd is.
-2. **Verbindingen samenbrengen:** bouw `/admin/verbindingen` uit met bestaande componenten. Houd persoonlijke OneDrive-data user-scoped en Smartschool/Google/noodtoegang superadmin-only.
-3. **Adminoverzicht verrijken:** laad actieve plus optioneel gearchiveerde ruimtes en bestaande membership/group/source-samenvattingen. Verplaats de create-UI naar een modal zonder creation policy al stil te verruimen.
-4. **Per-space Toegang read-only:** voeg route/tab en blokken Leraren, Groepen en gebruikers, en Gebruikers toe met de nieuwe scoped queries.
-5. **Per-space mutaties:** individual access, group mappings en editorbeheer gebruiken LearningSpace-scoped actions en autorisatie; `/admin/toegang` bevat geen parallelle UI meer.
-6. **Teacher creation + ownership:** wijzig creation policy en maak LearningSpace, bron(nen) en owner-membership in één transactie. Test rollback, duplicate slug en connection ownership.
-7. **Lifecycle herschikken:** verplaats status naar Algemeen; laat owner archive/restore toe via aparte guards, behoud delete superadmin-only/archived-only.
-8. **Oude routes afbouwen:** interne links en redirects zijn canoniek; `/admin/instellingen` en `/admin/toegang` behouden alleen beveiligde compatibility-redirects.
+Er bestaat bewust geen aparte `/admin/[spaceSlug]/publiek`-pagina. `AdminSpaceHeader` en `LearningSpaceNav` houden de per-space navigatie en context bij elkaar.
 
-Afhankelijkheden die vóór latere UI-batches nodig zijn: de scoped roster/summaryqueries, transactionele ownercreatie en de expliciete lifecycle-authorisatiematrix. Zonder die basis zou de reorganisatie securityregels in componenten dupliceren.
+## 2. Rollen en toegangsmodel
+
+### Applicatierollen
+
+- `superadmin`: globaal beheer, alle actieve en gearchiveerde LearningSpaces en alle superadmintaken.
+- `teacher`: toegang tot `/admin`; beheert alleen LearningSpaces waarvoor een expliciet owner- of editor-membership bestaat.
+- `student`: geen adminrechten; krijgt uitsluitend publieke toegang via de centrale accessresolutie.
+- Een uitgeschakelde user krijgt geen geldige sessie of toegang, ongeacht rol of bestaande cookie.
+
+### LearningSpace-relaties
+
+- `owner` (Eigenaar): volledig configuratie- en toegangsbeheer voor de LearningSpace.
+- `editor` (Bewerker): dagelijks inhoudsbeheer en read-only inzage in lerarenrechten. Leerlingtoegang mag alleen worden gewijzigd wanneer `editors_can_manage_access = true`.
+- `viewer` (Kijker): geen waarde in `learning_space_members`, maar individuele publieke kijktoegang via `individual_learning_space_access`.
+
+Globale superadminrechten staan los van expliciete owner/editor-memberships. Een superadmin kan alles beheren, maar verschijnt alleen als expliciete eigenaar of bewerker wanneer zo'n membership werkelijk bestaat.
+
+Publieke toegang is de unie van:
+
+1. een exact gemapte Smartschoolgroep;
+2. individuele kijktoegang;
+3. een owner- of editor-membership.
+
+Managementrechten impliceren dus publieke kijktoegang. Groepsafgeleide en individuele toegang blijven afzonderlijke routes en worden bij effectieve overzichten per user en LearningSpace gededupliceerd.
+
+## 3. Rechtenmatrix
+
+| Handeling | Superadmin | Eigenaar | Bewerker | Kijker/student |
+| --- | --- | --- | --- | --- |
+| LearningSpace beheren en inhoud synchroniseren | ja | ja | ja | nee |
+| Instellingen en bronnen wijzigen | ja | ja | nee | nee |
+| Lerarenrechten wijzigen | ja | ja | read-only | nee |
+| Leerlingtoegang wijzigen | ja | ja | alleen bij delegatie aan | nee |
+| Archiveren en herstellen | ja | ja | nee | nee |
+| Permanent verwijderen | alleen archived | nee | nee | nee |
+
+Alle mutaties controleren de actuele user, doel-LearningSpace en relevante rol opnieuw op de server. UI-verberging is nooit de autorisatiegrens. Voor een gearchiveerde LearningSpace zijn bestaande toegangsmutaties geblokkeerd. Permanent verwijderen blijft alleen mogelijk voor een superadmin en alleen nadat de LearningSpace is gearchiveerd; bronbestanden worden daarbij niet verwijderd.
+
+## 4. Globaal gebruikersbeheer
+
+`/admin/gebruikers` is een superadminoverzicht en beheert geen per-LearningSpace toegang meer.
+
+Voor leraren toont de pagina:
+
+- profiel en genormaliseerde naam;
+- beheerrechten en effectieve kijkrechten;
+- persoonlijke storageverbinding;
+- actieve of uitgeschakelde status;
+- veilige rol- en accountacties.
+
+Voor leerlingen toont de pagina:
+
+- profiel en klas, met optionele lokale klasoverride;
+- effectieve kijkrechten;
+- actieve of uitgeschakelde status;
+- veilige rol- en accountacties, inclusief gerichte reset.
+
+Per-LearningSpace lerarenrechten, Smartschoolgroepen en individuele leerlingtoegang worden uitsluitend beheerd via `/admin/[spaceSlug]/toegang`. De globale pagina toont de resulterende rechten alleen als overzicht.
+
+## 5. Verbindingen en bronnen
+
+`/admin/verbindingen` beheert verbindingen, niet de bronkeuze van een LearningSpace:
+
+- Iedere teacher en superadmin kan een eigen persoonlijke OneDrive-verbinding koppelen of opnieuw verbinden.
+- Smartschool, publieke noodtoegang en de globale Google Drive-service zijn alleen zichtbaar voor een superadmin.
+- OAuth-starts gebruiken echte browsernavigatie; tokens en secrets blijven server-side.
+
+`/admin/[spaceSlug]/instellingen` bevat per LearningSpace de bronconfiguratie:
+
+- Primaire bron en optionele Mirror worden onafhankelijk opgeslagen.
+- OneDrive verwijst naar een persoonlijke storageconnection plus stabiele drive- en map-ID.
+- Google Drive behoudt de globale read-only mirror/service-accountarchitectuur.
+- Lokale bestanden blijven alleen een development- en testprovider.
+- Alle providers zijn vanuit de webapp read-only.
+
+Een verbinding staat dus los van de LearningSpace-configuratie. De bron verwijst expliciet naar de juiste storageconnection; een superadmin behandelt de persoonlijke OneDrive-token van een andere teacher nooit impliciet als eigen verbinding.
+
+## 6. Canonieke en legacy routes
+
+De canonieke workflows zijn:
+
+- globale acties via `/admin`;
+- verbindingen via `/admin/verbindingen`;
+- users via `/admin/gebruikers`;
+- toegang per LearningSpace via `/admin/[spaceSlug]/toegang`;
+- instellingen per LearningSpace via `/admin/[spaceSlug]/instellingen`.
+
+Alleen voor bestaande bookmarks blijven beveiligde compatibility-redirects bestaan:
+
+- `/admin/instellingen` redirect na superadmincontrole naar `/admin`;
+- `/admin/toegang` redirect na superadmincontrole naar `/admin/gebruikers`.
+
+Nieuwe documentatie en interne links gebruiken deze legacy routes niet als primaire workflow.
+
+## 7. Masterplan afgerond
+
+Gerealiseerd:
+
+- compact globaal LearningSpace-overzicht met details en archiefweergave;
+- gecentraliseerde Verbindingen-pagina;
+- transactionele LearningSpace-creatie met de maker als eigenaar;
+- per-space tabs voor Portfolio's, Thema's, Instellingen en Toegang;
+- per-space lerarenbeheer met Eigenaar, Bewerker en Kijker;
+- groeps- en individuele leerlingtoegang met een gededupliceerd roster;
+- optionele delegatie van leerlingtoegang aan bewerkers;
+- lifecycle in Instellingen met owner/superadmin archive en restore;
+- superadmin-only, archived-only permanente verwijdering;
+- globale userpagina als overzicht in plaats van tweede bron van per-space toegangsbeheer;
+- beveiligde legacy redirects.
+
+Bewust uitgesteld:
+
+- overdracht van ownership tussen users;
+- extra toekomstige editorrechten buiten de huidige delegatietoggle;
+- verdere bronflexibiliteit, zoals meerdere actieve verbindingen kiezen in de OAuth-UI of nieuwe providers;
+- archivering of historische tracking van users buiten de huidige veilige resetflow.
+
+Nog handmatig in productie te controleren zijn echte Smartschool- en OneDrive-authenticatie, externe folderrechten, sync met productiebestanden en de volledige rolmatrix met echte accounts. Deze checks muteren geen productiegegevens tenzij de beheerder de betreffende test bewust uitvoert.
+
+## 8. Regressiedekking
+
+De automatische suite dekt onder meer:
+
+- sessies, rolling expiration, logout, disabled users en actuele rolwijzigingen;
+- superadmin-, teacher- en studentautorisatie;
+- owner/editor-management en afzonderlijke viewer-access;
+- groep, individueel, groep plus individueel zonder duplicaten en delegatie aan/uit;
+- archived access-invariants;
+- transactionele creatie en storageconnection-ownership;
+- archive, restore, archived-only delete en DB-only cleanup;
+- canonieke routes, beveiligde legacy redirects en per-space deep links;
+- OneDrive PKCE/read-only grenzen, connection-isolatie, sourceconfiguratie en source switching.
+
+## 9. Productiechecklist
+
+1. Meld een teacher aan via Smartschool en controleer de lokale rol en navbar.
+2. Meld een student aan via Smartschool en controleer de toegankelijke LearningSpaces.
+3. Controleer dat een uitgeschakelde Smartschooluser de normale disabled-melding krijgt en geen sessie.
+4. Laat een eigenaar leraren-, groeps- en individuele toegang wijzigen.
+5. Controleer dat een bewerker bij delegatie UIT leerlingtoegang alleen kan bekijken.
+6. Controleer dat dezelfde bewerker bij delegatie AAN groepen en individuele leerlingen kan beheren.
+7. Controleer een superadmin met expliciet owner- en editor-membership; globale rechten en badges mogen niet worden vermengd.
+8. Maak als teacher een nieuwe LearningSpace en controleer het owner-membership en de lege toestand zonder bron.
+9. Koppel de persoonlijke OneDrive van die teacher via `/admin/verbindingen`.
+10. Selecteer die verbinding onder LearningSpace `Instellingen > Bronnen`.
+11. Synchroniseer bestaande bestanden en controleer portfolio's, warnings en beveiligde assets.
+12. Hernoem of verplaats de bronmap zonder de map-ID te wijzigen en controleer dat de bron bruikbaar blijft.
+13. Controleer de publieke studentweergave en weigering van niet-toegankelijke deep links/assets.
+14. Test archiveren en herstellen als eigenaar; controleer dat toegangsmutaties archived geblokkeerd zijn.
+15. Controleer `/admin/instellingen` naar `/admin` en `/admin/toegang` naar `/admin/gebruikers` met een bevoegde sessie.
+
+Voer destructieve production checks, zoals permanent verwijderen of user reset, alleen uit met speciaal aangemaakte testdata.

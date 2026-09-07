@@ -40,7 +40,7 @@ De seed en loginroute zijn uitsluitend voor lokale development. Ze weigeren prod
 
 ## B. Microsoft Entra / OneDrive setup
 
-De app gebruikt een confidential server-side web-app en delegated OAuth. De huidige verbinding behoort intern aan de compatibility-superadmin; het model ondersteunt meerdere persoonlijke storageconnections per user. Per LearningSpace-bron worden de storageconnection, drive-ID en folder-ID afzonderlijk bewaard. Access- en refresh-tokens worden uitsluitend server-side, met AES-256-GCM, in de database opgeslagen. De flow gebruikt authorization code + PKCE.
+De app gebruikt een confidential server-side web-app en delegated OAuth. Iedere teacher en hoofdbeheerder kan een eigen persoonlijke OneDrive-verbinding koppelen; het model ondersteunt meerdere persoonlijke storageconnections per user. Per LearningSpace-bron worden de storageconnection, drive-ID en folder-ID afzonderlijk bewaard. Access- en refresh-tokens worden uitsluitend server-side, met AES-256-GCM, in de database opgeslagen. De flow gebruikt authorization code + PKCE.
 
 1. Open het [Microsoft Entra admin center](https://entra.microsoft.com/), kies de juiste schooltenant en ga naar **Entra ID > App registrations > New registration**.
 2. Naam: bijvoorbeeld `Portfolio Wiskunde`.
@@ -52,7 +52,7 @@ De app gebruikt een confidential server-side web-app en delegated OAuth. De huid
 8. `Files.Read` vereist volgens Microsoft normaal geen admin consent. Als de schooltenant user consent blokkeert, moet een tenantbeheerder wel **Grant admin consent** uitvoeren.
 9. Ga naar **Certificates & secrets > Client secrets > New client secret**. Kies de kortste praktisch beheerbare geldigheidsduur, kopieer de secret value eenmalig naar `MICROSOFT_CLIENT_SECRET` en plan rotatie voor de vervaldatum. Plaats deze waarde nooit in Git, logs of chat.
 10. Genereer lokaal 32 willekeurige bytes, base64-codeer die en zet het resultaat als `GRAPH_TOKEN_ENCRYPTION_KEY`. Bewaar deze sleutel blijvend: wijzigen maakt de opgeslagen OAuth-token onleesbaar en vereist opnieuw verbinden.
-11. Log na deployment in als admin, open **Leeromgevingen beheren** en kies **OneDrive verbinden**. In de huidige compatibility-UI beheert dit de persoonlijke verbinding van de huidige superadmin; opnieuw verbinden vervangt alleen diens versleutelde tokens.
+11. Log na deployment in, open `/admin/verbindingen` en kies **OneDrive verbinden**. De verbinding behoort aan de aangemelde teacher of hoofdbeheerder; opnieuw verbinden vervangt alleen diens versleutelde tokens.
 
 Voor een map in de standaard-OneDrive kun je de drive- en folder-ID opvragen met Microsoft Graph Explorer:
 
@@ -88,7 +88,7 @@ Productie weigert bewust te starten zonder een `postgres://` of `postgresql://` 
 3. Kopieer de TLS-verbinding als `DATABASE_URL`; gebruik `sslmode=require` wanneer de provider dat voorschrijft.
 4. Maak vóór elke latere schemamigratie een providerbackup of herstelpunt.
 
-Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001_initial` tot en met de huidige `021_multi_user_foundation` uit. PostgreSQL-starts worden met een advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
+Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001_initial` tot en met de huidige `025_editor_student_access_delegation` uit. PostgreSQL-starts worden met een advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
 
 Toekomstige rollout:
 
@@ -151,7 +151,7 @@ Een LearningSpace bewaart maximaal twee onafhankelijke bronconfiguraties: een **
 3. Configureer de primaire bron en schakel desgewenst de mirrorconfiguratie in. Beide rollen kunnen Local filesystem, OneDrive of Google Drive gebruiken.
 4. Vul alleen de providervelden van iedere rol in. Google Drive gebruikt de folder-ID en een optioneel herkenbaar label; credentials verschijnen nooit in de UI.
 5. Sla op. Configureren wijzigt de actieve rol niet en de twee configuraties overschrijven elkaar niet.
-6. Kies **Bronnen vergelijken** voordat je omschakelt. De app scant het switchdoel opnieuw en vergelijkt portfolio's, onderdelen en bestanden op logische relatieve paden.
+6. Kies **Bronnen vergelijken** voordat je omschakelt. De app scant de andere bron opnieuw en vergelijkt portfolio's, onderdelen en bestanden op logische relatieve paden.
 7. Controleer eventuele verschillen en bevestig expliciet **Overschakelen naar mirror** of **Terugschakelen naar primaire bron**.
 
 Bij een technisch probleem, zoals een onbereikbare bron of ongeldige Google completion marker, blijft de actieve bron en de laatst geldige index ongewijzigd. Inhoudsverschillen blokkeren niet, maar vereisen een bewuste bevestiging. Bestaande single-source LearningSpaces worden automatisch als primaire en actieve bron gemigreerd.
@@ -164,7 +164,7 @@ Kies per LearningSpace **Nu synchroniseren**. Deze actie gebruikt uitsluitend de
 
 Leerlingen kunnen bij een uitwerking een melding indienen met een optionele, vrij ingevulde naam van maximaal 100 tekens. Admin groepeert open meldingen als **PINNED** en **TO DO**; afgewerkte meldingen staan onder **DONE**. PINNED en TO DO kunnen lokaal op datum of natuurlijke portfolio-ID worden gesorteerd en op een portfolio worden gefilterd. De resetknop wist alleen het portfoliofilter. DONE behoudt zijn eigen volgorde en bulkcleanup gebruikt `completedAt < now - 14 dagen`.
 
-Superadmins beheren lokale rollen, userstatus, teacher-memberships en Smartschoolgroep-mappings op `/admin/gebruikers`. Een groupID-koppeling is een bulktoewijzing: iedere reeds aangemelde leerling met die Smartschoolgroep krijgt automatisch toegang tot de gekoppelde LearningSpace. Het groepsoverzicht kan alleen gebruikers tonen die minstens één keer via Smartschool zijn aangemeld. Een LearningSpace kan meerdere `owner`/`editor`-members hebben terwijl de bron aan één expliciete storageconnection gekoppeld blijft. Alleen superadmins kunnen momenteel nieuwe LearningSpaces maken; alleen een owner of superadmin wijzigt bronconfiguratie.
+Superadmins beheren lokale rollen, userstatus, profielen en accountacties op `/admin/gebruikers`. Lerarenrechten, Smartschoolgroep-mappings en individuele leerlingtoegang worden per LearningSpace beheerd via `/admin/[spaceSlug]/toegang`. Een groupID-koppeling geeft iedere reeds aangemelde leerling met exact die Smartschoolgroep toegang; het overzicht bevat alleen users die minstens één keer via Smartschool zijn aangemeld. Teachers en hoofdbeheerders kunnen een LearningSpace aanmaken en worden daarbij transactioneel eigenaar. Alleen een eigenaar of hoofdbeheerder wijzigt de bronconfiguratie.
 
 Bij een uitzonderlijke Smartschoolstoring kan een superadmin in `/admin/verbindingen` **Publieke noodtoegang** tijdelijk inschakelen. Alleen publiek zichtbare LearningSpaces en inhoud worden dan zonder sessie bereikbaar; groepsfiltering is zonder identiteit niet mogelijk. Adminroutes, bronbeheer en alle publicatie-/visibilityregels blijven server-side beveiligd. De DB-instelling staat standaard uit en toont in beheer duidelijk wanneer ze actief is.
 

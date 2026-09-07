@@ -50,7 +50,7 @@ https://portfoliowiskunde.vercel.app/api/auth/smartschool/callback
 
 ## Identiteit, groepen en rollen
 
-Migration `021_multi_user_foundation` bevat users, externe identiteiten, teacher-memberships, groepsmappings en persoonlijke storageconnections. Migration `022_smartschool_oauth` maakt externe identiteit platformgebonden en voegt vervangbare groepssnapshots toe.
+Migration `021_multi_user_foundation` bevat users, externe identiteiten, teacher-memberships, groepsmappings en persoonlijke storageconnections. Migration `022_smartschool_oauth` maakt externe identiteit platformgebonden en voegt vervangbare groepssnapshots toe. De actuele keten loopt tot `025_editor_student_access_delegation`, dat de optionele delegatie van leerlingtoegang aan bewerkers vastlegt.
 
 De identity key bestaat uit:
 
@@ -76,7 +76,7 @@ Publieke pagina's, oplossingsbestanden, portfoliodocumenten en foutmeldingsinzen
 
 Een actieve superadmin beheert alle LearningSpaces. Een actieve teacher beheert alleen LearningSpaces met een lokaal `owner`- of `editor`-membership. Een `owner` kan ook de bronconfiguratie beheren. Een `editor` kan de dagelijkse inhoud, publicatie, foutmeldingen en synchronisatie beheren, maar kan niet impliciet een bron aan de eigen storageconnection koppelen. Meerdere teachers kunnen zo dezelfde LearningSpace beheren terwijl de bron naar de persoonlijke storageconnection van een andere user blijft verwijzen.
 
-Alleen een superadmin kan momenteel een LearningSpace creëren of lifecycleacties uitvoeren. Deze regel staat centraal in `canCreateLearningSpace` en wordt ook in de server action afgedwongen.
+Een actieve teacher of superadmin kan een LearningSpace aanmaken; de maker wordt transactioneel eigenaar. Een eigenaar of superadmin kan de LearningSpace archiveren en herstellen. Permanent verwijderen blijft uitsluitend voor superadmins en alleen wanneer de LearningSpace gearchiveerd is.
 
 ## Sessies en tokens
 
@@ -89,7 +89,7 @@ Rol, status en LearningSpace-toegang staan niet in de cookie. Iedere server-side
 ## Compatibility-superadmin koppelen
 
 1. Meld alleen voor herstel rechtstreeks aan via `/breakglass` met het bestaande beheerwachtwoord.
-2. Kies op `/admin` **Smartschool koppelen**.
+2. Open `/admin/verbindingen` en kies **Smartschool koppelen**.
 3. Meld bij Smartschool aan met de identiteit die bij de bestaande compatibility-superadmin hoort.
 4. Controleer de bevestiging **Smartschool-account gekoppeld**.
 5. Test Smartschool-login in een nieuwe privésessie voordat de password-fallback ooit wordt uitgezet.
@@ -114,19 +114,18 @@ Wanneer authorization, tokenexchange of de profielcall faalt, ziet de gebruiker 
 
 ## Beheerinterface
 
-Superadmins openen via `/admin/gebruikers` het overzicht **Gebruikers en toegang**. Daar kunnen zij:
+Superadmins openen via `/admin/gebruikers` het globale overzicht **Gebruikers**. Daar kunnen zij:
 
 - studenten en leraren lokaal van rol laten wisselen;
 - users activeren of uitschakelen;
-- `owner`- en `editor`-memberships per LearningSpace beheren;
 - zien aan welke user een persoonlijke storageconnection behoort;
-- bekende Smartschoolgroepen met hun stabiele `groupID` expliciet aan een LearningSpace koppelen.
+- veilige accountresets uitvoeren wanneer ownership- en storage-invariants dat toelaten.
 
-De groep-naar-LearningSpace-koppeling is de normale bulktoewijzing. Eén mapping geeft iedere bekende leerling met hetzelfde opgeslagen groupID automatisch toegang, zodat individuele klasassignments niet nodig zijn. Het overzicht **Gebruikers per Smartschoolgroep** toont alleen users die minstens één keer via Smartschool hebben aangemeld; de app haalt geen volledige officiële klaslijst op.
+Per-LearningSpace toegang wordt niet op deze globale pagina beheerd. Eigenaren en bevoegde bewerkers gebruiken `/admin/[spaceSlug]/toegang` voor lerarenrechten, Smartschoolgroepen en individuele leerlingen. Eén groepsmapping geeft iedere bekende leerling met hetzelfde opgeslagen groupID automatisch toegang. Het roster toont alleen users die minstens één keer via Smartschool hebben aangemeld; de app haalt geen volledige officiële klaslijst op.
 
 De UI kent nooit de superadminrol toe en voorkomt dat de laatste actieve superadmin wordt uitgeschakeld. Een groepsnaam is alleen een leesbaar label; toegang gebruikt steeds provider plus exact `groupID`. Dubbele mappings worden door database en servicegrens geweigerd.
 
-Een `owner` en `editor` kunnen dezelfde LearningSpace beheren. De editor kan inhoud, publicatie, meldingen en synchronisatie beheren zonder een eigen OneDriveverbinding te koppelen. De expliciete storageconnection blijft eigendom van haar user; alleen de owner of superadmin kan de bronconfiguratie vervangen. Nieuwe LearningSpaces kunnen momenteel alleen door een superadmin worden aangemaakt.
+Een `owner` en `editor` kunnen dezelfde LearningSpace beheren. De editor kan inhoud, publicatie, meldingen en synchronisatie beheren zonder een eigen OneDriveverbinding te koppelen. De expliciete storageconnection blijft eigendom van haar user; alleen de owner of superadmin kan de bronconfiguratie vervangen. Een editor kan leerlingtoegang alleen wijzigen wanneer de eigenaar de delegatie `editors_can_manage_access` heeft ingeschakeld.
 
 ## Bronnenhulp
 
