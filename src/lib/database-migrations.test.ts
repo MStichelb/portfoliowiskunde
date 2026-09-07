@@ -117,9 +117,9 @@ describe("Google Drive LearningSpace migration", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     const database = await getDatabase();
-    const spaces = await database.execute("SELECT source_type, google_drive_folder_id, google_drive_folder_label, is_active, archived_at FROM learning_spaces ORDER BY id");
+    const spaces = await database.execute("SELECT source_type, google_drive_folder_id, google_drive_folder_label, is_active, archived_at, editors_can_manage_access FROM learning_spaces ORDER BY id");
     expect(spaces.rows).toHaveLength(2);
-    expect(spaces.rows.every((row) => row.source_type === "local" && row.google_drive_folder_id === null && row.google_drive_folder_label === null && row.is_active === 1 && row.archived_at === null)).toBe(true);
+    expect(spaces.rows.every((row) => row.source_type === "local" && row.google_drive_folder_id === null && row.google_drive_folder_label === null && row.is_active === 1 && row.archived_at === null && row.editors_can_manage_access === 0)).toBe(true);
     const sources = await database.execute("SELECT learning_space_id, role, provider_type, is_active FROM learning_space_sources ORDER BY learning_space_id");
     expect(sources.rows).toHaveLength(2);
     expect(sources.rows.every((row) => row.role === "primary" && row.provider_type === "local" && row.is_active === 1)).toBe(true);
@@ -132,6 +132,7 @@ describe("Google Drive LearningSpace migration", () => {
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '021_multi_user_foundation'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '023_multi_user_access_management'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '024_legacy_learning_space_ownership'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '025_editor_student_access_delegation'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT id, role, status FROM users WHERE id = 'user-legacy-superadmin'")).rows[0]).toMatchObject({
       role: "superadmin", status: "active",
     });
@@ -207,6 +208,7 @@ describe("Google Drive LearningSpace migration", () => {
       expect.objectContaining({ learning_space_id: "space-6", user_id: "user-legacy-superadmin", role: "owner" }),
     ]);
     expect((await upgraded.execute("SELECT version FROM schema_migrations WHERE version = '024_legacy_learning_space_ownership'")).rows).toHaveLength(1);
+    expect((await upgraded.execute("SELECT editors_can_manage_access FROM learning_spaces")).rows.every((row) => row.editors_can_manage_access === 0)).toBe(true);
   });
 
   it("keeps existing anonymous reports valid when reporter names are added", async () => {

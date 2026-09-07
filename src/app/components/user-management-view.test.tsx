@@ -292,6 +292,7 @@ function learningSpace(id: string, shortLabel: string, sortOrder: number): Learn
     sortOrder,
     isActive: true,
     archivedAt: null,
+    editorsCanManageAccess: false,
     sourceType: "local",
     localSourcePath: null,
     oneDriveDriveId: null,

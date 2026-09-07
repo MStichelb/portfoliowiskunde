@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdminUser } from "@/lib/auth";
-import { requireLearningSpaceConfiguration } from "@/lib/authorization";
+import { requireLearningSpaceStudentAccessManagement, requireLearningSpaceTeacherAccessManagement } from "@/lib/authorization";
 import { createLearningSpaceGroupMapping } from "@/lib/identity";
 import { getLearningSpace } from "@/lib/repositories";
 import {
@@ -33,7 +33,7 @@ export async function removeLearningSpaceTeacherAccessAction(formData: FormData)
 export async function saveLearningSpaceGroupMappingAction(formData: FormData) {
   const learningSpaceId = value(formData, "learningSpaceId");
   const actor = await requireAdminUser();
-  await requireLearningSpaceConfiguration(actor, learningSpaceId);
+  await requireLearningSpaceStudentAccessManagement(actor, learningSpaceId);
   const space = await getLearningSpace(learningSpaceId);
   if (!space) redirect("/admin");
 
@@ -61,7 +61,7 @@ export async function saveLearningSpaceGroupMappingAction(formData: FormData) {
 export async function removeLearningSpaceGroupMappingAction(formData: FormData) {
   const learningSpaceId = value(formData, "learningSpaceId");
   const actor = await requireAdminUser();
-  await requireLearningSpaceConfiguration(actor, learningSpaceId);
+  await requireLearningSpaceStudentAccessManagement(actor, learningSpaceId);
   const space = await getLearningSpace(learningSpaceId);
   if (!space) redirect("/admin");
 
@@ -99,7 +99,7 @@ async function mutateIndividualStudentAccess(
   enabled: boolean,
 ): Promise<never> {
   const actor = await requireAdminUser();
-  await requireLearningSpaceConfiguration(actor, learningSpaceId);
+  await requireLearningSpaceStudentAccessManagement(actor, learningSpaceId);
   const space = await getLearningSpace(learningSpaceId);
   if (!space) redirect("/admin");
 
@@ -124,7 +124,7 @@ async function mutateTeacherAccess(
   requestedRole: string | null,
 ): Promise<never> {
   const actor = await requireAdminUser();
-  await requireLearningSpaceConfiguration(actor, learningSpaceId);
+  await requireLearningSpaceTeacherAccessManagement(actor, learningSpaceId);
   const space = await getLearningSpace(learningSpaceId);
   if (!space) redirect("/admin");
   try {

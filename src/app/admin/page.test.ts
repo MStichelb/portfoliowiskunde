@@ -24,7 +24,7 @@ function spaceWithSources(): LearningSpace {
   const mirror = source("mirror", "google_drive");
   return {
     id: "space-6", name: "Zesde jaar", slug: "6", shortLabel: "6WIS", description: "Oefenmateriaal",
-    cardColor: "#DCEFE9", sortOrder: 6, isActive: true, archivedAt: null, sourceType: "onedrive",
+    cardColor: "#DCEFE9", sortOrder: 6, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "onedrive",
     localSourcePath: null, oneDriveDriveId: "drive", oneDriveFolderId: "folder", oneDriveFolderPath: "6WIS",
     googleDriveFolderId: null, googleDriveFolderLabel: null, sources: [primary, mirror],
     activeSourceId: primary.id, primarySource: primary, mirrorSource: mirror,

@@ -128,6 +128,15 @@ describe("LearningSpace teacher access actions", () => {
     await expect(saveLearningSpaceTeacherAccessAction(accessForm("space-5", actors.student.id, "viewer"))).rejects.toThrow("accessError=");
     await expect(accessState("space-5", actors.student.id)).resolves.toEqual({ membership: null, individual: false });
   });
+
+  it("keeps teacher access blocked for an editor when student-access delegation is enabled", async () => {
+    await setEditorDelegation(true);
+    mocks.requireAdminUser.mockResolvedValue(actors.editor);
+
+    await expect(saveLearningSpaceTeacherAccessAction(accessForm("space-5", actors.targetViewer.id, "viewer"))).rejects.toThrow("Alleen een eigenaar of hoofdbeheerder");
+
+    await expect(accessState("space-5", actors.targetViewer.id)).resolves.toEqual({ membership: null, individual: false });
+  });
 });
 
 describe("LearningSpace group mapping actions", () => {
@@ -147,14 +156,14 @@ describe("LearningSpace group mapping actions", () => {
   it("blocks an editor mutation server-side", async () => {
     mocks.requireAdminUser.mockResolvedValue(actors.editor);
 
-    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-5", "class-5"))).rejects.toThrow("Alleen een eigenaar of hoofdbeheerder");
+    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-5", "class-5"))).rejects.toThrow("Je mag de leerlingtoegang");
     await expect(listLearningSpaceGroupMappings("space-5")).resolves.toEqual([]);
   });
 
   it("scopes owner mutations to the exact LearningSpace", async () => {
     mocks.requireAdminUser.mockResolvedValue(actors.owner);
 
-    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-6", "class-5"))).rejects.toThrow("Alleen een eigenaar of hoofdbeheerder");
+    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-6", "class-5"))).rejects.toThrow("Je mag de leerlingtoegang");
     await expect(listLearningSpaceGroupMappings("space-6")).resolves.toEqual([]);
   });
 
@@ -188,6 +197,37 @@ describe("LearningSpace group mapping actions", () => {
     ]);
   });
 
+  it("blocks an editor from removing a group mapping while delegation is disabled", async () => {
+    mocks.requireAdminUser.mockResolvedValue(actors.editor);
+    const id = await createLearningSpaceGroupMapping({
+      learningSpaceId: "space-5", provider: "smartschool", externalGroupId: "class-5", externalGroupName: "5WEWI",
+    });
+
+    await expect(removeLearningSpaceGroupMappingAction(removeGroupForm("space-5", id))).rejects.toThrow("Je mag de leerlingtoegang");
+
+    await expect(listLearningSpaceGroupMappings("space-5")).resolves.toHaveLength(1);
+  });
+
+  it("lets an editor add and remove group mappings when delegation is enabled", async () => {
+    await setEditorDelegation(true);
+    mocks.requireAdminUser.mockResolvedValue(actors.editor);
+
+    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-5", "class-5"))).rejects.toThrow("groupSaved=1");
+    const [mapping] = await listLearningSpaceGroupMappings("space-5");
+    await expect(removeLearningSpaceGroupMappingAction(removeGroupForm("space-5", mapping.id))).rejects.toThrow("groupSaved=1");
+
+    await expect(listLearningSpaceGroupMappings("space-5")).resolves.toEqual([]);
+  });
+
+  it.each(["viewer", "student"] as const)("keeps a %s out of delegated group management", async (actorRole) => {
+    await setEditorDelegation(true);
+    mocks.requireAdminUser.mockResolvedValue(actors[actorRole]);
+
+    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-5", "class-5"))).rejects.toThrow("Je mag de leerlingtoegang");
+
+    await expect(listLearningSpaceGroupMappings("space-5")).resolves.toEqual([]);
+  });
+
   it("prevents duplicate mappings in the same LearningSpace", async () => {
     mocks.requireAdminUser.mockResolvedValue(actors.owner);
 
@@ -212,7 +252,7 @@ describe("LearningSpace individual student access actions", () => {
   it.each(["editor", "viewer", "student"] as const)("rejects a %s mutation server-side", async (actorRole) => {
     mocks.requireAdminUser.mockResolvedValue(actors[actorRole]);
 
-    await expect(saveLearningSpaceIndividualStudentAccessAction(studentForm("space-5", actors.student.id))).rejects.toThrow("Alleen een eigenaar of hoofdbeheerder");
+    await expect(saveLearningSpaceIndividualStudentAccessAction(studentForm("space-5", actors.student.id))).rejects.toThrow("Je mag de leerlingtoegang");
     await expect(listLearningSpaceIndividualStudentAccess("space-5")).resolves.toEqual([]);
   });
 
@@ -229,7 +269,7 @@ describe("LearningSpace individual student access actions", () => {
 
     await expect(saveLearningSpaceIndividualStudentAccessAction(studentForm("space-5", actors.student.id))).rejects.toThrow("studentSaved=1");
     await expect(saveLearningSpaceIndividualStudentAccessAction(studentForm("space-5", actors.student.id))).rejects.toThrow("studentError=");
-    await expect(saveLearningSpaceIndividualStudentAccessAction(studentForm("space-6", actors.student.id))).rejects.toThrow("Alleen een eigenaar of hoofdbeheerder");
+    await expect(saveLearningSpaceIndividualStudentAccessAction(studentForm("space-6", actors.student.id))).rejects.toThrow("Je mag de leerlingtoegang");
 
     await expect(listLearningSpaceIndividualStudentAccess("space-5")).resolves.toHaveLength(1);
     await expect(listLearningSpaceIndividualStudentAccess("space-6")).resolves.toEqual([]);
@@ -257,6 +297,37 @@ describe("LearningSpace individual student access actions", () => {
     await expect(removeLearningSpaceIndividualStudentAccessAction(studentForm("space-5", groupStudent.id))).rejects.toThrow("studentSaved=1");
 
     expect(await getAccessibleLearningSpaceIds(groupStudent)).toContain("space-5");
+    await expect(listLearningSpaceIndividualStudentAccess("space-5")).resolves.toEqual([]);
+  });
+
+  it("blocks an editor from removing individual access while delegation is disabled", async () => {
+    await setIndividualLearningSpaceAccess(actors.student.id, "space-5", true);
+    mocks.requireAdminUser.mockResolvedValue(actors.editor);
+
+    await expect(removeLearningSpaceIndividualStudentAccessAction(studentForm("space-5", actors.student.id))).rejects.toThrow("Je mag de leerlingtoegang");
+
+    await expect(listLearningSpaceIndividualStudentAccess("space-5")).resolves.toHaveLength(1);
+  });
+
+  it("lets an editor add and remove individual student access when delegation is enabled", async () => {
+    await setEditorDelegation(true);
+    mocks.requireAdminUser.mockResolvedValue(actors.editor);
+
+    await expect(saveLearningSpaceIndividualStudentAccessAction(studentForm("space-5", actors.student.id))).rejects.toThrow("studentSaved=1");
+    await expect(removeLearningSpaceIndividualStudentAccessAction(studentForm("space-5", actors.student.id))).rejects.toThrow("studentSaved=1");
+
+    await expect(listLearningSpaceIndividualStudentAccess("space-5")).resolves.toEqual([]);
+  });
+
+  it("keeps student-access mutations blocked for an archived LearningSpace", async () => {
+    await setEditorDelegation(true);
+    await (await getDatabase()).execute("UPDATE learning_spaces SET is_active = 0, archived_at = '2026-09-07T00:00:00.000Z' WHERE id = 'space-5'");
+    mocks.requireAdminUser.mockResolvedValue(actors.owner);
+
+    await expect(saveLearningSpaceGroupMappingAction(groupForm("space-5", "class-5"))).rejects.toThrow("Je mag de leerlingtoegang");
+    await expect(saveLearningSpaceIndividualStudentAccessAction(studentForm("space-5", actors.student.id))).rejects.toThrow("Je mag de leerlingtoegang");
+
+    await expect(listLearningSpaceGroupMappings("space-5")).resolves.toEqual([]);
     await expect(listLearningSpaceIndividualStudentAccess("space-5")).resolves.toEqual([]);
   });
 });
@@ -297,6 +368,13 @@ async function accessState(learningSpaceId: string, userId: string): Promise<{ m
     database.execute({ sql: "SELECT 1 FROM individual_learning_space_access WHERE learning_space_id = ? AND user_id = ?", args: [learningSpaceId, userId] }),
   ]);
   return { membership: typeof membership.rows[0]?.role === "string" ? membership.rows[0].role : null, individual: Boolean(individual.rows[0]) };
+}
+
+async function setEditorDelegation(enabled: boolean): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE learning_spaces SET editors_can_manage_access = ? WHERE id = 'space-5'",
+    args: [enabled ? 1 : 0],
+  });
 }
 
 async function removeTemporaryDirectory(directory: string): Promise<void> {

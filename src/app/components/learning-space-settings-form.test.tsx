@@ -7,7 +7,7 @@ import { LearningSpaceSettingsForm } from "./learning-space-settings-form";
 
 const space: LearningSpace = {
   id: "space-6", name: "Zesde jaar", slug: "6", shortLabel: "6WIS", description: "Oefenmateriaal",
-  cardColor: "#DCEFE9", sortOrder: 6, isActive: true, archivedAt: null, sourceType: "local",
+  cardColor: "#DCEFE9", sortOrder: 6, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "local",
   localSourcePath: "C:\\Portfolio", oneDriveDriveId: null, oneDriveFolderId: null,
   oneDriveFolderPath: null, googleDriveFolderId: null, googleDriveFolderLabel: null,
   sources: [], activeSourceId: null, primarySource: null, mirrorSource: null,
@@ -27,6 +27,12 @@ describe("LearningSpaceSettingsForm", () => {
     expect(markup).toContain("Sortering");
     expect(markup).toContain("Beschrijving");
     expect(markup).toContain("Kleur");
+    expect(markup).toContain("Bewerkers kunnen toegang beheren");
+    expect(markup).toContain("Bewerkers mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen.");
+    const delegationInput = markup.match(/<input[^>]*name="editorsCanManageAccess"[^>]*>/)?.[0] ?? "";
+    expect(delegationInput).toContain('type="checkbox"');
+    expect(delegationInput).toContain('value="true"');
+    expect(delegationInput).not.toContain('checked=""');
     expect(saveButtons).toHaveLength(2);
     expect(saveButtons[0]).toBeGreaterThan(generalStart);
     expect(saveButtons[0]).toBeLessThan(sourceStart);
@@ -62,6 +68,13 @@ describe("LearningSpaceSettingsForm", () => {
     expect(markup).toContain('<option value="google_drive" selected="">Google Drive</option>');
     expect(markup).toContain('name="primaryGoogleDriveFolderId"');
     expect(markup).not.toContain('name="primaryLocalSourcePath"');
+  });
+
+  it("shows the persisted editor access delegation setting", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={{ ...space, editorsCanManageAccess: true }} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+
+    const delegationInput = markup.match(/<input[^>]*name="editorsCanManageAccess"[^>]*>/)?.[0] ?? "";
+    expect(delegationInput).toContain('checked=""');
   });
 
   it("shows restore to an owner and reserves archived deletion for a superadmin", () => {

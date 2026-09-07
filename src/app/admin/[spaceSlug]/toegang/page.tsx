@@ -7,7 +7,7 @@ import { LearningSpaceGroupMappingForm } from "@/app/components/learning-space-g
 import { LearningSpaceStudentAccessModal } from "@/app/components/learning-space-student-access-modal";
 import { LearningSpaceStudentRoster } from "@/app/components/learning-space-student-roster";
 import { requireAdminUser } from "@/lib/auth";
-import { canConfigureLearningSpace, canManageLearningSpace } from "@/lib/authorization";
+import { canManageLearningSpace, canManageLearningSpaceStudentAccess, canManageLearningSpaceTeacherAccess } from "@/lib/authorization";
 import { listLearningSpaceStudentRoster } from "@/lib/learning-space-student-roster";
 import { getAdminLearningSpaceBySlug } from "@/lib/repositories";
 import {
@@ -46,15 +46,18 @@ export default async function LearningSpaceAccessPage({
   const { spaceSlug } = await params;
   const space = await getAdminLearningSpaceBySlug(spaceSlug);
   if (!space || !await canManageLearningSpace(user, space.id)) notFound();
-  const canConfigureAccess = await canConfigureLearningSpace(user, space.id);
+  const [canManageTeacherAccess, canManageStudentAccess] = await Promise.all([
+    canManageLearningSpaceTeacherAccess(user, space.id),
+    canManageLearningSpaceStudentAccess(user, space.id),
+  ]);
   const emptyQuery: { accessSaved?: string; accessError?: string; groupSaved?: string; groupError?: string; studentSaved?: string; studentError?: string } = {};
   const [teachers, candidates, groupMappings, knownGroups, individualStudents, studentCandidates, roster, query] = await Promise.all([
     listLearningSpaceTeachers(space.id),
-    canConfigureAccess ? listLearningSpaceTeacherCandidates(space.id) : Promise.resolve([]),
+    canManageTeacherAccess ? listLearningSpaceTeacherCandidates(space.id) : Promise.resolve([]),
     listLearningSpaceGroupMappings(space.id),
-    canConfigureAccess ? listKnownExternalGroups() : Promise.resolve([]),
+    canManageStudentAccess ? listKnownExternalGroups() : Promise.resolve([]),
     listLearningSpaceIndividualStudentAccess(space.id),
-    canConfigureAccess ? listLearningSpaceIndividualStudentCandidates(space.id) : Promise.resolve([]),
+    canManageStudentAccess ? listLearningSpaceIndividualStudentCandidates(space.id) : Promise.resolve([]),
     listLearningSpaceStudentRoster(space.id),
     searchParams ?? Promise.resolve(emptyQuery),
   ]);
@@ -74,9 +77,9 @@ export default async function LearningSpaceAccessPage({
     {query.accessError ? <p className="form-message" role="alert">{query.accessError}</p> : null}
     <section className="admin-card" aria-labelledby="teachers-heading">
       <div className="card-heading"><div><h2 id="teachers-heading">Leraren</h2><p>Beheer de leraren die deze leeromgeving kunnen bekijken of bewerken.</p></div></div>
-      {canConfigureAccess ? <TeacherAccessForm learningSpaceId={space.id} candidates={candidates} /> : null}
+      {canManageTeacherAccess ? <TeacherAccessForm learningSpaceId={space.id} candidates={candidates} /> : null}
       {teachers.length
-        ? <TeacherAccessTable learningSpaceId={space.id} teachers={teachers} canChange={canConfigureAccess} />
+        ? <TeacherAccessTable learningSpaceId={space.id} teachers={teachers} canChange={canManageTeacherAccess} />
         : <p className="empty-state compact-empty">Nog geen leraren met toegang.</p>}
     </section>
     <section className="admin-card" aria-labelledby="groups-users-heading">
@@ -86,20 +89,20 @@ export default async function LearningSpaceAccessPage({
         <p>Koppel Smartschoolgroepen aan deze leeromgeving om leerlingen automatisch kijktoegang te geven.</p>
         {query.groupSaved === "1" ? <p className="success-message save-feedback" role="status">Groepskoppeling bijgewerkt.</p> : null}
         {query.groupError ? <p className="form-message" role="alert">{query.groupError}</p> : null}
-        {canConfigureAccess ? <div className="learning-space-group-forms">
+        {canManageStudentAccess ? <div className="learning-space-group-forms">
           <LearningSpaceGroupMappingForm learningSpaceId={space.id} label="Klasgroep" groups={classGroups} action={saveLearningSpaceGroupMappingAction} />
           <LearningSpaceGroupMappingForm learningSpaceId={space.id} label="Andere groep" groups={otherGroups} action={saveLearningSpaceGroupMappingAction} />
         </div> : null}
-        <GroupMappingList learningSpaceId={space.id} mappings={groupMappings} canChange={canConfigureAccess} />
+        <GroupMappingList learningSpaceId={space.id} mappings={groupMappings} canChange={canManageStudentAccess} />
       </div>
       <div className="individual-student-access">
         <div className="card-heading">
           <div><h3>Individuele leerlingen</h3><p>Geef een leerling rechtstreeks kijktoegang tot deze leeromgeving.</p></div>
-          {canConfigureAccess ? <LearningSpaceStudentAccessModal learningSpaceId={space.id} candidates={studentCandidates} action={saveLearningSpaceIndividualStudentAccessAction} /> : null}
+          {canManageStudentAccess ? <LearningSpaceStudentAccessModal learningSpaceId={space.id} candidates={studentCandidates} action={saveLearningSpaceIndividualStudentAccessAction} /> : null}
         </div>
         {query.studentSaved === "1" ? <p className="success-message save-feedback compact-save-feedback" role="status">Individuele toegang bijgewerkt.</p> : null}
         {query.studentError ? <p className="form-message" role="alert">{query.studentError}</p> : null}
-        <IndividualStudentAccessList learningSpaceId={space.id} students={individualStudents} canChange={canConfigureAccess} />
+        <IndividualStudentAccessList learningSpaceId={space.id} students={individualStudents} canChange={canManageStudentAccess} />
       </div>
     </section>
     <section className="admin-card" aria-labelledby="users-heading">

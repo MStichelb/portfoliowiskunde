@@ -36,6 +36,7 @@ export function LearningSpaceSettingsForm({
         <label>Sortering<input name="sortOrder" type="number" defaultValue={space.sortOrder} required /><small>Dit bepaalt de volgorde van leeromgevingen in de navigatie.</small></label>
         <label className="field-full">Beschrijving<textarea name="description" defaultValue={space.description} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
         <label className="color-field">Kleur<span><input name="cardColor" type="color" value={cardColor} onChange={(event) => setCardColor(event.target.value.toUpperCase())} /><code>{cardColor.toUpperCase()}</code></span><small>Accentkleur van het kaartje.</small></label>
+        <label className="field-full delegated-access-setting"><span><input name="editorsCanManageAccess" type="checkbox" value="true" defaultChecked={space.editorsCanManageAccess} />Bewerkers kunnen toegang beheren</span><small>Bewerkers mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen.</small></label>
       </div>
       <div className="settings-card-actions settings-card-lifecycle-actions">
         <LearningSpaceLifecycleActions

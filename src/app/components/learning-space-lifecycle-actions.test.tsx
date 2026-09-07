@@ -15,6 +15,7 @@ const activeSpace: LearningSpace = {
   sortOrder: 1,
   isActive: true,
   archivedAt: null,
+  editorsCanManageAccess: false,
   sourceType: "local",
   localSourcePath: "C:\\bron",
   oneDriveDriveId: null,

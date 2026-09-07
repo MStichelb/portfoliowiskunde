@@ -7,7 +7,8 @@ import type { LearningSpace } from "@/lib/repositories";
 const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   canManageLearningSpace: vi.fn(),
-  canConfigureLearningSpace: vi.fn(),
+  canManageLearningSpaceTeacherAccess: vi.fn(),
+  canManageLearningSpaceStudentAccess: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
   listLearningSpaceTeachers: vi.fn(),
   listLearningSpaceTeacherCandidates: vi.fn(),
@@ -28,7 +29,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/authorization", () => ({
   canManageLearningSpace: mocks.canManageLearningSpace,
-  canConfigureLearningSpace: mocks.canConfigureLearningSpace,
+  canManageLearningSpaceTeacherAccess: mocks.canManageLearningSpaceTeacherAccess,
+  canManageLearningSpaceStudentAccess: mocks.canManageLearningSpaceStudentAccess,
 }));
 vi.mock("@/lib/repositories", () => ({ getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug }));
 vi.mock("@/lib/learning-space-student-roster", () => ({ listLearningSpaceStudentRoster: mocks.listLearningSpaceStudentRoster }));
@@ -61,7 +63,8 @@ describe("LearningSpace access", () => {
     vi.clearAllMocks();
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
     mocks.canManageLearningSpace.mockResolvedValue(true);
-    mocks.canConfigureLearningSpace.mockResolvedValue(false);
+    mocks.canManageLearningSpaceTeacherAccess.mockResolvedValue(false);
+    mocks.canManageLearningSpaceStudentAccess.mockResolvedValue(false);
     mocks.listLearningSpaceTeachers.mockResolvedValue([]);
     mocks.listLearningSpaceTeacherCandidates.mockResolvedValue([]);
     mocks.listLearningSpaceGroupMappings.mockResolvedValue([]);
@@ -140,7 +143,8 @@ describe("LearningSpace access", () => {
     ["superadmin", user("superadmin", "superadmin")],
   ] as const)("shows compact controls to a %s while keeping owners read-only", async (_label, actor) => {
     mocks.requireAdminUser.mockResolvedValue(actor);
-    mocks.canConfigureLearningSpace.mockResolvedValue(true);
+    mocks.canManageLearningSpaceTeacherAccess.mockResolvedValue(true);
+    mocks.canManageLearningSpaceStudentAccess.mockResolvedValue(true);
     mocks.listLearningSpaceTeachers.mockResolvedValue(teachers);
     mocks.listLearningSpaceTeacherCandidates.mockResolvedValue([
       { userId: "candidate", displayName: "Nieuwe Leraar", firstName: "Nieuwe", lastName: "Leraar" },
@@ -164,7 +168,8 @@ describe("LearningSpace access", () => {
 
   it("splits class and other Smartschool groups and excludes existing mappings", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("owner", "teacher"));
-    mocks.canConfigureLearningSpace.mockResolvedValue(true);
+    mocks.canManageLearningSpaceTeacherAccess.mockResolvedValue(true);
+    mocks.canManageLearningSpaceStudentAccess.mockResolvedValue(true);
     mocks.listKnownExternalGroups.mockResolvedValue([
       { provider: "smartschool", externalGroupId: "class-5", externalGroupName: "5WEWI" },
       { provider: "smartschool", externalGroupId: "class-6", externalGroupName: "6WEWI" },
@@ -204,9 +209,31 @@ describe("LearningSpace access", () => {
     expect(markup).not.toContain("Groepskoppeling verwijderen?");
   });
 
+  it("shows only student-access controls to an editor when delegation is enabled", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("editor", "teacher"));
+    mocks.canManageLearningSpaceStudentAccess.mockResolvedValue(true);
+    mocks.listKnownExternalGroups.mockResolvedValue([
+      { provider: "smartschool", externalGroupId: "class-5", externalGroupName: "5WEWI" },
+    ]);
+    mocks.listLearningSpaceIndividualStudentCandidates.mockResolvedValue([
+      { userId: "student-2", displayName: "Bram Janssens", firstName: "Bram", lastName: "Janssens", className: "6WIS", status: "active" },
+    ]);
+
+    const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+
+    expect(markup).toContain("Koppelen");
+    expect(markup).toContain("Leerling toevoegen");
+    expect(markup).not.toContain("Nieuwe Leraar");
+    expect(markup).not.toContain("teacher-role-action");
+    expect(mocks.listKnownExternalGroups).toHaveBeenCalled();
+    expect(mocks.listLearningSpaceIndividualStudentCandidates).toHaveBeenCalledWith(space.id);
+    expect(mocks.listLearningSpaceTeacherCandidates).not.toHaveBeenCalled();
+  });
+
   it("shows individual students and add/remove controls to an owner", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("owner", "teacher"));
-    mocks.canConfigureLearningSpace.mockResolvedValue(true);
+    mocks.canManageLearningSpaceTeacherAccess.mockResolvedValue(true);
+    mocks.canManageLearningSpaceStudentAccess.mockResolvedValue(true);
     mocks.listLearningSpaceIndividualStudentAccess.mockResolvedValue([
       { userId: "student-1", displayName: "Anna De Smet", firstName: "Anna", lastName: "De Smet", className: "5WEWI", status: "active" },
     ]);
@@ -306,7 +333,7 @@ const teachers = [
 
 const space: LearningSpace = {
   id: "space-5", name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
-  sortOrder: 5, isActive: true, archivedAt: null, sourceType: "local", localSourcePath: null, oneDriveDriveId: null,
+  sortOrder: 5, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "local", localSourcePath: null, oneDriveDriveId: null,
   oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: null, googleDriveFolderLabel: null, sources: [],
   activeSourceId: null, primarySource: null, mirrorSource: null,
 };

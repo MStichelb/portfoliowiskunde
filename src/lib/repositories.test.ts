@@ -396,8 +396,26 @@ describe("persistIndex", () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-create-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
-    await expect(createLearningSpace({ name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, sourceType: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4", sourceType: "local", isActive: true, archivedAt: null });
+    await expect(createLearningSpace({ name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, sourceType: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4", sourceType: "local", isActive: true, archivedAt: null, editorsCanManageAccess: false });
     await expect(createLearningSpace({ name: "Dubbel", slug: "fysica-4", shortLabel: "D", sortOrder: 41, sourceType: "local", localSourcePath: null })).rejects.toThrow();
+  });
+
+  it("persists editor delegation without changing its safe default", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-editor-delegation-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    expect(await getLearningSpace("space-5")).toMatchObject({ editorsCanManageAccess: false });
+    await updateLearningSpace("space-5", {
+      name: "5de jaar", slug: "5", shortLabel: "5WIS", sortOrder: 50, sourceType: "local", localSourcePath: null,
+      editorsCanManageAccess: true,
+    });
+    expect(await getLearningSpace("space-5")).toMatchObject({ editorsCanManageAccess: true });
+    await updateLearningSpace("space-5", {
+      name: "5de jaar", slug: "5", shortLabel: "5WIS", sortOrder: 50, sourceType: "local", localSourcePath: null,
+      editorsCanManageAccess: false,
+    });
+    expect(await getLearningSpace("space-5")).toMatchObject({ editorsCanManageAccess: false });
   });
 
   it("persists presentation metadata and keeps portfolio colors across resync", async () => {

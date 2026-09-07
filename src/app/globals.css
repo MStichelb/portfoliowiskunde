@@ -66,6 +66,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .learning-space-settings-form label { display: grid; gap: 6px; color: #314149; font-size: 14px; font-weight: 700; }
 .learning-space-settings-form input, .learning-space-settings-form select { width: 100%; min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; color: #17222b; font: inherit; }
 .learning-space-settings-form small { color: #52616a; font-size: 12px; font-weight: 400; line-height: 1.35; }
+.delegated-access-setting > span { display: inline-flex; align-items: center; gap: 8px; }
+.learning-space-settings-form .delegated-access-setting input { width: 18px; min-height: 18px; }
 .source-type { max-width: 320px; margin-bottom: 16px; }
 .source-path, .field-full { grid-column: 1 / -1; }
 .source-path input { min-width: min(100%, 620px); }

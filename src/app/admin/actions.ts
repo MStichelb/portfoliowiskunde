@@ -483,7 +483,7 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const googleDriveFolderLabel = stringValue(formData, "googleDriveFolderLabel");
   if (!name || !shortLabel || description.length > 240 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik geldige algemene instellingen.");
   if (cardColorInput && !isHexColor(cardColorInput)) throw new Error("Kies een geldige kaartkleur.");
-  const common = { name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder: Number(stringValue(formData, "sortOrder")) || 0, sourceType };
+  const common = { name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder: Number(stringValue(formData, "sortOrder")) || 0, editorsCanManageAccess: formData.get("editorsCanManageAccess") === "true", sourceType };
   if (!hasRoleSources) {
     if (sourceType === "local") return { ...common, localSourcePath: localSourcePath ? path.resolve(localSourcePath) : null };
     if (sourceType === "onedrive") {

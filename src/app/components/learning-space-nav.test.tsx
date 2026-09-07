@@ -7,7 +7,7 @@ import { LearningSpaceNav } from "./learning-space-nav";
 
 const base: LearningSpace = {
   id: "space-5", name: "Vijfde jaar wiskunde", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
-  sortOrder: 50, isActive: true, archivedAt: null, sourceType: "local", localSourcePath: null,
+  sortOrder: 50, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "local", localSourcePath: null,
   oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: null,
   googleDriveFolderLabel: null, sources: [], activeSourceId: null, primarySource: null, mirrorSource: null,
 };

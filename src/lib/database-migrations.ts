@@ -480,4 +480,10 @@ export const migrations: DatabaseMigration[] = [
         ON CONFLICT(learning_space_id, user_id) DO NOTHING`,
     ],
   },
+  {
+    version: "025_editor_student_access_delegation",
+    statements: [
+      "ALTER TABLE learning_spaces ADD COLUMN editors_can_manage_access INTEGER NOT NULL DEFAULT 0",
+    ],
+  },
 ];

@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   requireLearningSpaceConfiguration: vi.fn(),
   getLearningSpace: vi.fn(),
+  getAdminLearningSpaceBySlug: vi.fn(),
+  updateLearningSpace: vi.fn(),
   archiveLearningSpace: vi.fn(),
   restoreLearningSpace: vi.fn(),
   permanentlyDeleteLearningSpace: vi.fn(),
@@ -26,6 +28,8 @@ vi.mock("@/lib/authorization", () => ({
 }));
 vi.mock("@/lib/repositories", () => ({
   getLearningSpace: mocks.getLearningSpace,
+  getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug,
+  updateLearningSpace: mocks.updateLearningSpace,
   archiveLearningSpace: mocks.archiveLearningSpace,
   restoreLearningSpace: mocks.restoreLearningSpace,
   permanentlyDeleteLearningSpace: mocks.permanentlyDeleteLearningSpace,
@@ -35,6 +39,7 @@ import {
   archiveLearningSpaceAction,
   permanentlyDeleteLearningSpaceAction,
   restoreLearningSpaceAction,
+  saveLearningSpaceAction,
 } from "./actions";
 
 describe("LearningSpace lifecycle action authorization", () => {
@@ -44,10 +49,36 @@ describe("LearningSpace lifecycle action authorization", () => {
     mocks.archiveLearningSpace.mockResolvedValue(true);
     mocks.restoreLearningSpace.mockResolvedValue(true);
     mocks.permanentlyDeleteLearningSpace.mockResolvedValue(true);
+    mocks.getAdminLearningSpaceBySlug.mockResolvedValue(null);
+    mocks.updateLearningSpace.mockResolvedValue(undefined);
     mocks.requireLearningSpaceConfiguration.mockImplementation(async (actor) => {
       if (actor.role === "superadmin" || actor.id === "owner") return;
       throw new Error("Alleen een eigenaar of hoofdbeheerder kan de broninstellingen wijzigen.");
     });
+  });
+
+  it.each([
+    ["owner", "teacher"],
+    ["superadmin", "superadmin"],
+  ] as const)("allows %s to enable and disable editor student-access delegation", async (id, role) => {
+    const actor = user(id, role);
+    mocks.requireAdminUser.mockResolvedValue(actor);
+    mocks.getLearningSpace.mockResolvedValue(space(true));
+
+    await expect(saveLearningSpaceAction({ error: null }, settingsForm(true))).rejects.toThrow("REDIRECT:/admin/5/instellingen?saved=1");
+    expect(mocks.updateLearningSpace).toHaveBeenLastCalledWith("space-5", expect.objectContaining({ editorsCanManageAccess: true }));
+
+    await expect(saveLearningSpaceAction({ error: null }, settingsForm(false))).rejects.toThrow("REDIRECT:/admin/5/instellingen?saved=1");
+    expect(mocks.updateLearningSpace).toHaveBeenLastCalledWith("space-5", expect.objectContaining({ editorsCanManageAccess: false }));
+  });
+
+  it("does not let an editor change the delegation setting", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("editor", "teacher"));
+    mocks.getLearningSpace.mockResolvedValue(space(true));
+
+    await expect(saveLearningSpaceAction({ error: null }, settingsForm(true))).rejects.toThrow("Alleen een eigenaar of hoofdbeheerder");
+
+    expect(mocks.updateLearningSpace).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -144,6 +175,19 @@ function form(): FormData {
 function deleteForm(): FormData {
   const data = form();
   data.set("confirmationSlug", "5");
+  return data;
+}
+
+function settingsForm(editorsCanManageAccess: boolean): FormData {
+  const data = form();
+  data.set("name", "Vijfde jaar");
+  data.set("slug", "5");
+  data.set("shortLabel", "5WIS");
+  data.set("description", "Oefenmateriaal");
+  data.set("cardColor", "#DCEFE9");
+  data.set("sortOrder", "5");
+  data.set("primaryProviderType", "local");
+  if (editorsCanManageAccess) data.set("editorsCanManageAccess", "true");
   return data;
 }
 
