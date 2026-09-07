@@ -3,15 +3,15 @@ import { describe, expect, it } from "vitest";
 import type { AppUser } from "./identity";
 import type { LearningSpace, LearningSpaceSource } from "./repositories";
 import type { ManagedGroupMapping, ManagedMembership } from "./user-management";
-import { buildAdminLearningSpaceCards, visibleAdminLearningSpaceCards } from "./admin-learning-space-overview";
+import { buildAdminLearningSpaceCards } from "./admin-learning-space-overview";
 
 describe("admin LearningSpace overview model", () => {
   it("keeps core card data and resolves owner, editor, class and source details in one model", () => {
     const cards = buildAdminLearningSpaceCards({
-      spaces: [space("space-5", "5", "5WIS", "Vijfde jaar", true, "onedrive", source("space-5", "mirror", "google_drive"))],
+      spaces: [space("space-5", "5", "5WIS", "Vijfde jaar", true, "onedrive", { ...source("space-5", "mirror", "google_drive"), lastValidationStatus: "valid" })],
       activeManageableIds: ["space-5"],
       memberships: [membership("space-5", "owner", "Olivia Owner", "owner"), membership("space-5", "editor", "Elias Editor", "editor")],
-      groupMappings: [mapping("space-5", "5WEWI6"), mapping("space-5", "Wetenschappen")],
+      groupMappings: [mapping("space-5", "5WEWI6"), mapping("space-5", "Wetenschappen"), mapping("space-5", "Wetenschappen")],
       user: user("owner", "teacher"),
     });
 
@@ -21,6 +21,7 @@ describe("admin LearningSpace overview model", () => {
       ownerNames: ["Olivia Owner"],
       editorNames: ["Elias Editor"],
       classGroups: ["5WEWI6"],
+      extraGroups: ["Wetenschappen"],
       primarySource: "OneDrive",
       mirrorSource: "Google Drive",
       currentUserRole: "owner",
@@ -89,12 +90,6 @@ describe("admin LearningSpace overview model", () => {
     expect(cards.map((card) => card.id)).toEqual(["active-owned", "archived-owned"]);
   });
 
-  it("hides archive by default and appends archived cards without changing group order", () => {
-    const cards = [card("active-2", false), card("archived-1", true), card("active-1", false), card("archived-2", true)];
-
-    expect(visibleAdminLearningSpaceCards(cards, false).map((item) => item.id)).toEqual(["active-2", "active-1"]);
-    expect(visibleAdminLearningSpaceCards(cards, true).map((item) => item.id)).toEqual(["active-2", "active-1", "archived-1", "archived-2"]);
-  });
 });
 
 function user(id: string, role: AppUser["role"]): AppUser {
@@ -126,12 +121,5 @@ function source(learningSpaceId: string, role: LearningSpaceSource["role"], prov
     localSourcePath: null, oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null,
     googleDriveFolderId: null, googleDriveFolderLabel: null, lastValidatedAt: null, lastValidationStatus: null,
     lastValidationMessage: null, mirrorCompletedAt: null,
-  };
-}
-
-function card(id: string, isArchived: boolean) {
-  return {
-    id, slug: id, shortLabel: id, displayName: id, cardColor: "#DCEFE9", isArchived,
-    ownerNames: [], editorNames: [], classGroups: [], primarySource: "OneDrive", mirrorSource: null, currentUserRole: null,
   };
 }

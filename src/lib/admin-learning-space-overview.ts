@@ -12,6 +12,7 @@ export interface AdminLearningSpaceCardData {
   ownerNames: string[];
   editorNames: string[];
   classGroups: string[];
+  extraGroups: string[];
   primarySource: string;
   mirrorSource: string | null;
   currentUserRole: LearningSpaceMemberRole | null;
@@ -43,8 +44,8 @@ export function buildAdminLearningSpaceCards({
       : user.role === "superadmin" || currentMemberships.has(space.id))
     .map((space) => {
       const spaceMemberships = memberships.filter((membership) => membership.learningSpaceId === space.id);
-      const classGroups = groupMappings
-        .filter((mapping) => mapping.learningSpaceId === space.id && mapping.externalGroupName && isClassGroupName(mapping.externalGroupName))
+      const groupNames = groupMappings
+        .filter((mapping) => mapping.learningSpaceId === space.id && mapping.provider === "smartschool" && mapping.externalGroupName)
         .map((mapping) => mapping.externalGroupName!)
         .filter((name, index, names) => names.indexOf(name) === index);
       return {
@@ -56,26 +57,17 @@ export function buildAdminLearningSpaceCards({
         isArchived: !space.isActive,
         ownerNames: spaceMemberships.filter((membership) => membership.role === "owner").map((membership) => membership.displayName),
         editorNames: spaceMemberships.filter((membership) => membership.role === "editor").map((membership) => membership.displayName),
-        classGroups,
+        classGroups: groupNames.filter(isClassGroupName),
+        extraGroups: groupNames.filter((name) => !isClassGroupName(name)),
         primarySource: providerLabel(space.primarySource?.providerType ?? space.sourceType),
-        mirrorSource: space.mirrorSource ? mirrorLabel(space.mirrorSource.providerType, space.mirrorSource.isActive, space.mirrorSource.lastValidationStatus) : null,
+        mirrorSource: space.mirrorSource ? providerLabel(space.mirrorSource.providerType) : null,
         currentUserRole: currentMemberships.get(space.id) ?? null,
       };
     });
-}
-
-export function visibleAdminLearningSpaceCards(cards: AdminLearningSpaceCardData[], showArchive: boolean): AdminLearningSpaceCardData[] {
-  const active = cards.filter((card) => !card.isArchived);
-  return showArchive ? [...active, ...cards.filter((card) => card.isArchived)] : active;
 }
 
 export function providerLabel(provider: LearningSpace["sourceType"]): string {
   if (provider === "onedrive") return "OneDrive";
   if (provider === "google_drive") return "Google Drive";
   return "Lokale bestanden (test)";
-}
-
-function mirrorLabel(provider: LearningSpace["sourceType"], isActive: boolean, validationStatus: "valid" | "invalid" | null): string {
-  const status = isActive ? "actief" : validationStatus === "valid" ? "beschikbaar" : validationStatus === "invalid" ? "controle nodig" : null;
-  return status ? `${providerLabel(provider)} · ${status}` : providerLabel(provider);
 }
