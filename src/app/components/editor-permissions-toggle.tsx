@@ -23,7 +23,7 @@ export function EditorPermissionsToggle({
   const label = enabled ? "Bewerkers kunnen toegang beheren" : "Bewerkers kunnen geen toegang beheren";
   const helpText = enabled
     ? "Bewerkers mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen."
-    : "Alleen de eigenaar en beheerders mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen.";
+    : "Alleen de eigenaar en hoofdbeheerders mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen.";
 
   function toggle() {
     if (!canChange || isPending) return;

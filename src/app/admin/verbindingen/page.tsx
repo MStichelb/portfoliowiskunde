@@ -38,7 +38,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
     {emergency ? <p className="success-message" role="status">Publieke noodtoegang is {emergency === "enabled" ? "ingeschakeld" : "uitgeschakeld"}.</p> : null}
     <section className="admin-card connections-card" aria-labelledby="onedrive-heading">
       <div className="card-heading"><div><h2 id="onedrive-heading" className="heading-with-icon"><KeyRound size={20} aria-hidden />OneDrive</h2><p>Deze persoonlijke verbinding behoort uitsluitend aan jouw account.</p></div></div>
-      <div className="connection-list"><div className="connection-row"><ConnectionStatus ok={connected} label={connected ? "OneDrive geconnecteerd" : "OneDrive niet geconnecteerd"} detail={configurationProblem} /><OneDriveConnectLink authorized={authorized} /></div></div>
+      <div className="connection-list"><div className="connection-row"><ConnectionStatus ok={connected} label={connected ? "OneDrive verbonden" : "OneDrive niet verbonden"} detail={configurationProblem} /><OneDriveConnectLink authorized={authorized} /></div></div>
     </section>
     {isSuperadmin ? <>
       <section className="admin-card connections-card" aria-labelledby="smartschool-heading">
@@ -50,8 +50,8 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
         </div>
       </section>
       <section className="admin-card connections-card" aria-labelledby="google-drive-heading">
-        <div className="card-heading"><div><h2 id="google-drive-heading" className="heading-with-icon"><Cloud size={20} aria-hidden />Google Drive</h2><p>Applicatiebrede, read-only mirrorverbinding via het serviceaccount.</p></div><Link className="secondary-button link-button connection-action" href="/admin/help/bronnen"><CircleHelp size={17} aria-hidden />Hulp bij bronnen</Link></div>
-        <div className="connection-list"><div className="connection-row"><ConnectionStatus ok={!googleProblem} label={googleProblem ? "Google Drive service niet geconfigureerd" : "Google Drive service geconfigureerd"} detail={googleProblem} /></div></div>
+        <div className="card-heading"><div><h2 id="google-drive-heading" className="heading-with-icon"><Cloud size={20} aria-hidden />Google Drive</h2><p>Applicatiebrede alleen-lezenverbinding voor Google Drive-mirrors.</p></div><Link className="secondary-button link-button connection-action" href="/admin/help/bronnen"><CircleHelp size={17} aria-hidden />Hulp bij bronnen</Link></div>
+        <div className="connection-list"><div className="connection-row"><ConnectionStatus ok={!googleProblem} label={googleProblem ? "Google Drive niet geconfigureerd" : "Google Drive geconfigureerd"} detail={googleProblem} /></div></div>
       </section>
     </> : null}
   </main>;

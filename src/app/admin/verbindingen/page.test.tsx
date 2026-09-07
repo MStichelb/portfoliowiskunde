@@ -42,6 +42,8 @@ describe("connections page visibility", () => {
 
     expect(markup).toContain('id="onedrive-heading"');
     expect(markup).toContain('href="/api/onedrive/connect"');
+    expect(markup).toContain("OneDrive verbonden");
+    expect(markup).not.toContain("geconnecteerd");
     expect(markup).not.toContain('id="smartschool-heading"');
     expect(markup).not.toContain('id="google-drive-heading"');
     expect(mocks.getPublicEmergencyAccess).not.toHaveBeenCalled();
@@ -59,6 +61,8 @@ describe("connections page visibility", () => {
     expect(markup).toContain('id="emergency-access-heading"');
     expect(markup).toContain('id="google-drive-heading"');
     expect(markup).toContain('href="/api/auth/smartschool/link"');
+    expect(markup).toContain("Google Drive geconfigureerd");
+    expect(markup).not.toContain("serviceaccount");
   });
 });
 

@@ -69,7 +69,7 @@ export function LearningSpaceSettingsForm({
         <fieldset className={`source-role-card${primary.isActive ? " active-source-card" : ""}`}>
           <legend>Primaire bron</legend>
           <SourceStatus source={primary} />
-          <label>Provider<select name="primaryProviderType" value={primaryProvider} onChange={(event) => setPrimaryProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
+          <label>Brontype<select name="primaryProviderType" value={primaryProvider} onChange={(event) => setPrimaryProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
           <SourceFields prefix="primary" provider={primaryProvider} source={primary} />
         </fieldset>
 
@@ -79,7 +79,7 @@ export function LearningSpaceSettingsForm({
           {space.mirrorSource?.isActive ? <input type="hidden" name="mirrorEnabled" value="true" /> : null}
           {mirrorEnabled ? <>
             <SourceStatus source={space.mirrorSource} />
-            <label>Provider<select name="mirrorProviderType" value={mirrorProvider} onChange={(event) => setMirrorProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
+            <label>Brontype<select name="mirrorProviderType" value={mirrorProvider} onChange={(event) => setMirrorProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
             <SourceFields prefix="mirror" provider={mirrorProvider} source={space.mirrorSource} />
           </> : <p className="source-connection-status">Nog geen mirror geconfigureerd.</p>}
         </fieldset>
@@ -99,12 +99,12 @@ function SourceFields({ prefix, provider, source }: { prefix: "primary" | "mirro
     <label>OneDrive drive-ID<input name={`${prefix}OneDriveDriveId`} defaultValue={source?.oneDriveDriveId ?? ""} required /></label>
     <label>OneDrive map-ID<input name={`${prefix}OneDriveFolderId`} defaultValue={source?.oneDriveFolderId ?? ""} required /></label>
     <label className="field-full">OneDrive mapnaam of pad<input name={`${prefix}OneDriveFolderPath`} defaultValue={source?.oneDriveFolderPath ?? ""} /></label>
-    <p className="source-context-help">Een nieuwe OneDrive-bron gebruikt jouw persoonlijke verbinding. Controleer die eerst bij <Link href="/admin/verbindingen">Mijn verbindingen</Link>.</p>
+    <p className="source-context-help">Een nieuwe OneDrive-bron gebruikt jouw persoonlijke verbinding. Controleer die eerst bij <Link href="/admin/verbindingen">Verbindingen</Link>.</p>
   </div>;
   return <div className="settings-grid google-drive-fields">
     <label>Google Drive folder-ID<input name={`${prefix}GoogleDriveFolderId`} defaultValue={source?.googleDriveFolderId ?? ""} required pattern="[A-Za-z0-9_-]+" /></label>
     <label>Herkenbaar label of pad<input name={`${prefix}GoogleDriveFolderLabel`} defaultValue={source?.googleDriveFolderLabel ?? ""} maxLength={240} placeholder="Mirror leeromgeving" /></label>
-    <p className="source-connection-status">De map moet gedeeld zijn met het geconfigureerde service account als Viewer.</p>
+    <p className="source-connection-status">De map moet met de ingestelde Google Drive-lezer gedeeld zijn als Kijker.</p>
   </div>;
 }
 

@@ -133,7 +133,7 @@ describe("LearningSpace access", () => {
     const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
 
     expect((markup.match(/teacher-admin-indicator/g) ?? [])).toHaveLength(1);
-    expect(markup).toContain('title="Beheerder"');
+    expect(markup).toContain('title="Hoofdbeheerder"');
     expect(markup).toContain("Admin");
     expect(markup).toContain("Teacher");
   });

@@ -120,14 +120,14 @@ function GroupMappingList({ learningSpaceId, mappings, canChange }: { learningSp
   return <ul className="management-list learning-space-group-list">{mappings.map((mapping) => {
     const isClassGroup = Boolean(mapping.externalGroupName && isClassGroupName(mapping.externalGroupName));
     return <li key={mapping.id}>
-      <span><strong>{mapping.externalGroupName ?? mapping.externalGroupId}</strong></span>
+      <span><strong>{mapping.externalGroupName ?? "Onbekende Smartschoolgroep"}</strong></span>
       <span className="group-type-badge">{isClassGroup ? "Klasgroep" : "Andere groep"}</span>
       {canChange ? <ConfirmActionButton
         action={removeLearningSpaceGroupMappingAction}
         fields={{ learningSpaceId, mappingId: mapping.id }}
         label={<Trash2 size={16} aria-hidden />}
         confirmTitle="Groepskoppeling verwijderen?"
-        confirmText="De automatische kijktoegang via deze Smartschoolgroep valt weg. Individuele en beheerrechten blijven behouden."
+        confirmText="De automatische kijktoegang via deze Smartschoolgroep valt weg. Individuele kijkrechten en rechten voor eigenaars of bewerkers blijven behouden."
       /> : null}
     </li>;
   })}</ul>;
@@ -154,7 +154,7 @@ function TeacherAccessForm({ learningSpaceId, candidates }: { learningSpaceId: s
 }
 
 function TeacherAccessTable({ learningSpaceId, teachers, canChange }: { learningSpaceId: string; teachers: LearningSpaceTeacher[]; canChange: boolean }) {
-  return <div className="admin-summary-table" role="region" aria-label="Leraren met toegang" tabIndex={0}><table><thead><tr><th>Naam</th><th>Voornaam</th><th>Rol</th>{canChange ? <th><span className="sr-only">Beheren</span></th> : null}</tr></thead><tbody>{teachers.map((teacher) => <tr key={teacher.userId}><td><span className="teacher-name-cell">{teacher.lastName ?? "-"}{teacher.isSuperadmin ? <span className="teacher-admin-indicator" title="Beheerder"><Crown size={14} aria-hidden /><span className="sr-only">Beheerder</span></span> : null}</span></td><td>{teacher.firstName ?? "-"}</td><td><TeacherRoleBadge role={teacher.role} /></td>{canChange ? <td>{teacher.role === "owner" ? null : <TeacherAccessActions learningSpaceId={learningSpaceId} teacher={teacher} />}</td> : null}</tr>)}</tbody></table></div>;
+  return <div className="admin-summary-table" role="region" aria-label="Leraren met toegang" tabIndex={0}><table><thead><tr><th>Naam</th><th>Voornaam</th><th>Rol</th>{canChange ? <th><span className="sr-only">Beheren</span></th> : null}</tr></thead><tbody>{teachers.map((teacher) => <tr key={teacher.userId}><td><span className="teacher-name-cell">{teacher.lastName ?? "-"}{teacher.isSuperadmin ? <span className="teacher-admin-indicator" title="Hoofdbeheerder"><Crown size={14} aria-hidden /><span className="sr-only">Hoofdbeheerder</span></span> : null}</span></td><td>{teacher.firstName ?? "-"}</td><td><TeacherRoleBadge role={teacher.role} /></td>{canChange ? <td>{teacher.role === "owner" ? null : <TeacherAccessActions learningSpaceId={learningSpaceId} teacher={teacher} />}</td> : null}</tr>)}</tbody></table></div>;
 }
 
 function TeacherAccessActions({ learningSpaceId, teacher }: { learningSpaceId: string; teacher: LearningSpaceTeacher }) {

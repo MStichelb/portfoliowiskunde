@@ -30,7 +30,8 @@ describe("LearningSpaceSettingsForm", () => {
     expect(markup).toContain("Kleur");
     expect(markup).toContain("Bewerkersrechten");
     expect(markup).toContain("Bewerkers kunnen geen toegang beheren");
-    expect(markup).toContain("Alleen de eigenaar en beheerders mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen.");
+    expect(markup).toContain("Alleen de eigenaar en hoofdbeheerders mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen.");
+    expect((markup.match(/>Brontype</g) ?? [])).toHaveLength(1);
     expect(markup).not.toContain('name="editorsCanManageAccess"');
     const editorPermissionsSwitch = markup.match(/<button[^>]*role="switch"[^>]*>/)?.[0] ?? "";
     expect(editorPermissionsSwitch).toContain('type="button"');
@@ -73,6 +74,20 @@ describe("LearningSpaceSettingsForm", () => {
     expect(markup).toContain('<option value="google_drive" selected="">Google Drive</option>');
     expect(markup).toContain('name="primaryGoogleDriveFolderId"');
     expect(markup).not.toContain('name="primaryLocalSourcePath"');
+  });
+
+  it("links OneDrive source guidance to the canonical connections page", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={{
+      ...space,
+      sourceType: "onedrive",
+      localSourcePath: null,
+      oneDriveDriveId: "drive-6",
+      oneDriveFolderId: "folder-6",
+      oneDriveFolderPath: "Portfolio/6WIS",
+    }} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+
+    expect(markup).toContain('href="/admin/verbindingen">Verbindingen</a>');
+    expect(markup).not.toContain("Mijn verbindingen");
   });
 
   it("shows the persisted editor access delegation setting", () => {
