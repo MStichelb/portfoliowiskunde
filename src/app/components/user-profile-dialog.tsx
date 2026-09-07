@@ -43,7 +43,7 @@ export function UserProfileButton({ profile }: { profile: UserProfileData }) {
   }, [close, open]);
 
   return <>
-    <button ref={triggerRef} className="icon-button" type="button" onClick={() => setOpen(true)} aria-label={`Profiel van ${displayName}`} title="Profiel bekijken"><CircleUserRound size={17} aria-hidden /></button>
+    <button ref={triggerRef} className="icon-button user-profile-trigger" type="button" onClick={() => setOpen(true)} aria-label={`Profiel van ${displayName}`} title="Profiel bekijken"><CircleUserRound size={17} aria-hidden /></button>
     {open ? <div className="confirm-backdrop" role="presentation"><UserProfileDialogContent profile={profile} titleId={titleId} closeButtonRef={closeRef} onClose={close} /></div> : null}
   </>;
 }

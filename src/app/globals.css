@@ -499,7 +499,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .filter-control select, .student-filter-panel input { min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
 .filter-sort { flex: 0 1 150px; }
 .filter-page-size { flex: 0 0 92px; }
-.user-filter-checkbox { display: inline-flex; min-height: 40px; align-items: center; gap: 7px; color: #314149; font-size: 14px; font-weight: 700; white-space: nowrap; }
+.user-filter-checkbox { display: inline-flex; min-height: 40px; margin: 0; align-items: center; gap: 7px; color: #314149; font-size: 14px; font-weight: 700; white-space: nowrap; }
 .user-filter-checkbox input { width: 18px; height: 18px; accent-color: #075c75; }
 .teacher-filter-bar { margin-top: 10px; }
 .teacher-space-filter { flex: 0 1 220px; }
@@ -544,6 +544,15 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .user-profile-grid dt { min-height: 28px; text-align: right; padding-top: 4px; color: #3b4950; font-size: 14px; font-weight: 600; }
 .user-profile-grid dd { min-width: 0; text-align: left; min-height: 28px; margin: 0; }
 .user-profile-grid .muted-value { display: inline-block; padding-top: 4px; font-size: 14px; }
+.user-profile-trigger svg {
+  display: block;
+  transform: translateY(-0.5px);
+}
+
+.connection-badge svg {
+  display: block;
+  flex: 0 0 auto;
+}
 .teacher-group-setting select { width: min(100%, 440px); min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; }
 .learning-space-managers { display: grid; gap: 16px; }
 .manager-role-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }

@@ -21,7 +21,7 @@ export type FilterUpdate = Record<string, string | string[] | null>;
 export function TeacherListFilters({ params, spaces }: { params: UserListSearchParams; spaces: LearningSpaceOption[] }) {
   const update = useImmediateFilters();
   return <div className="user-filter-bar teacher-filter-bar" aria-label="Leraren filteren">
-    <label className="filter-control teacher-space-filter">Leeromgeving<select value={params.teacherSpace ?? ""} onChange={(event) => update({ teacherSpace: event.target.value || null })}><option value="">Alle leeromgevingen</option>{spaces.map((space) => <option key={space.id} value={space.id}>{space.label}</option>)}</select></label>
+    <label className="filter-control teacher-space-filter"><select value={params.teacherSpace ?? ""} onChange={(event) => update({ teacherSpace: event.target.value || null })}><option value="">Alle leeromgevingen</option>{spaces.map((space) => <option key={space.id} value={space.id}>{space.label}</option>)}</select></label>
     <label className="user-filter-checkbox"><input type="checkbox" checked={params.teacherStatus === "disabled"} onChange={(event) => update({ teacherStatus: event.target.checked ? "disabled" : null })} />Uitgeschakeld</label>
     <label className="user-filter-checkbox"><input type="checkbox" checked={params.teacherConnectionFirst === "1"} onChange={(event) => update({ teacherConnectionFirst: event.target.checked ? "1" : null })} />Verbinding eerst</label>
   </div>;
