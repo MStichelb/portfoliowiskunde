@@ -16,21 +16,21 @@ export interface ManagedGroupUser { provider: string; externalGroupId: string; e
 export interface ManagedSourceOwner { learningSpaceId: string; sourceRole: "primary" | "mirror"; isActive: boolean; provider: string; connectionName: string | null; ownerName: string | null; }
 export interface ManagedUserAccess { userId: string; learningSpaceId: string; groupDerived: boolean; individual: boolean; managementRole: LearningSpaceMemberRole | null; }
 export interface ManagedStorageConnection { userId: string; provider: "onedrive" | "google_drive"; status: "active" | "disconnected"; }
-export interface LearningSpaceTeacher { userId: string; firstName: string | null; lastName: string | null; role: LearningSpaceMemberRole | "viewer"; }
+export interface LearningSpaceTeacher { userId: string; firstName: string | null; lastName: string | null; role: LearningSpaceMemberRole | "viewer"; isSuperadmin: boolean; }
 export type LearningSpaceTeacherAccessRole = "viewer" | "editor";
 export interface LearningSpaceTeacherCandidate { userId: string; displayName: string; firstName: string | null; lastName: string | null; }
 export interface LearningSpaceIndividualStudent { userId: string; displayName: string; firstName: string | null; lastName: string | null; className: string | null; status: UserStatus; }
 
 export async function listLearningSpaceTeachers(learningSpaceId: string): Promise<LearningSpaceTeacher[]> {
   const rows = (await (await getDatabase()).execute({
-    sql: `SELECT users.id AS user_id, users.first_name, users.last_name,
+    sql: `SELECT users.id AS user_id, users.first_name, users.last_name, users.role AS user_role,
       CASE learning_space_members.role WHEN 'owner' THEN 'owner' WHEN 'editor' THEN 'editor' ELSE 'viewer' END AS access_role
       FROM users
       LEFT JOIN learning_space_members ON learning_space_members.user_id = users.id
         AND learning_space_members.learning_space_id = ?
       LEFT JOIN individual_learning_space_access ON individual_learning_space_access.user_id = users.id
         AND individual_learning_space_access.learning_space_id = ?
-      WHERE users.role = 'teacher'
+      WHERE users.role IN ('teacher', 'superadmin')
         AND (learning_space_members.user_id IS NOT NULL OR individual_learning_space_access.user_id IS NOT NULL)
       ORDER BY CASE learning_space_members.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END,
         users.last_name, users.first_name, users.display_name`,
@@ -41,6 +41,7 @@ export async function listLearningSpaceTeachers(learningSpaceId: string): Promis
     firstName: textOrNull(row.first_name),
     lastName: textOrNull(row.last_name),
     role: row.access_role === "owner" ? "owner" : row.access_role === "editor" ? "editor" : "viewer",
+    isSuperadmin: row.user_role === "superadmin",
   }));
 }
 
@@ -48,7 +49,7 @@ export async function listLearningSpaceTeacherCandidates(learningSpaceId: string
   const rows = (await (await getDatabase()).execute({
     sql: `SELECT users.id AS user_id, users.display_name, users.first_name, users.last_name
       FROM users
-      WHERE users.role = 'teacher' AND users.status = 'active'
+      WHERE users.role IN ('teacher', 'superadmin') AND users.status = 'active'
         AND NOT EXISTS (
           SELECT 1 FROM learning_space_members
           WHERE learning_space_members.learning_space_id = ?
@@ -108,7 +109,7 @@ async function assertMutableLearningSpaceTeacher(learningSpaceId: string, userId
     database.execute({ sql: "SELECT is_active, archived_at FROM learning_spaces WHERE id = ?", args: [learningSpaceId] }),
     database.execute({ sql: "SELECT role FROM learning_space_members WHERE learning_space_id = ? AND user_id = ?", args: [learningSpaceId, userId] }),
   ]);
-  if (!user.rows[0] || user.rows[0].role !== "teacher" || user.rows[0].status !== "active") {
+  if (!user.rows[0] || !["teacher", "superadmin"].includes(String(user.rows[0].role)) || user.rows[0].status !== "active") {
     throw new Error("Alleen een actieve leraar kan toegang krijgen tot deze leeromgeving.");
   }
   if (!space.rows[0] || Number(space.rows[0].is_active) !== 1 || space.rows[0].archived_at) {
@@ -181,10 +182,7 @@ export async function updateManagedUserStatus(userId: string, status: UserStatus
   const database = await getDatabase();
   const target = (await database.execute({ sql: "SELECT role, status FROM users WHERE id = ?", args: [userId] })).rows[0];
   if (!target) throw new Error("Gebruiker niet gevonden.");
-  if (target.role === "superadmin" && target.status === "active" && status === "disabled") {
-    const active = Number((await database.execute("SELECT COUNT(*) AS count FROM users WHERE role = 'superadmin' AND status = 'active'")).rows[0]?.count ?? 0);
-    if (active <= 1) throw new Error("De laatste actieve hoofdbeheerder kan niet worden uitgeschakeld.");
-  }
+  if (target.role === "superadmin" && status === "disabled") throw new Error("Hoofdbeheerders kunnen niet worden uitgeschakeld.");
   await database.execute({ sql: "UPDATE users SET status = ?, updated_at = ? WHERE id = ?", args: [status, new Date().toISOString(), userId] });
 }
 
@@ -351,7 +349,7 @@ export async function listManagedMemberships(): Promise<ManagedMembership[]> {
 export async function upsertManagedMembership(learningSpaceId: string, userId: string, role: LearningSpaceMemberRole): Promise<void> {
   const database = await getDatabase();
   const user = (await database.execute({ sql: "SELECT role, status FROM users WHERE id = ?", args: [userId] })).rows[0];
-  if (!user || user.role !== "teacher" || user.status !== "active") throw new Error("Alleen een actieve leraar kan als beheerder worden toegevoegd.");
+  if (!user || (user.role !== "teacher" && user.role !== "superadmin") || user.status !== "active") throw new Error("Alleen een actieve leraar kan als beheerder worden toegevoegd.");
   const now = new Date().toISOString();
   await database.execute({
     sql: `INSERT INTO learning_space_members (learning_space_id, user_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?)

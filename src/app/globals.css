@@ -571,7 +571,10 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .teacher-role-badge-viewer {
   background: #fff4c7;
   color: #6f5a00;
-} 
+}
+.teacher-name-cell, .teacher-admin-indicator { display: inline-flex; align-items: center; }
+.teacher-name-cell { gap: 6px; }
+.teacher-admin-indicator { color: #7a5a12; }
 
 .learning-space-group-forms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
 .learning-space-group-form { grid-template-columns: minmax(0, 1fr) auto; }

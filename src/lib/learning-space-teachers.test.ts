@@ -39,21 +39,46 @@ describe("LearningSpace teacher access", () => {
     await setIndividualLearningSpaceAccess(student.id, "space-5", true);
 
     expect(await listLearningSpaceTeachers("space-5")).toEqual([
-      { userId: owner.id, firstName: "Olivia", lastName: "Owner", role: "owner" },
-      { userId: editor.id, firstName: "Elias", lastName: "Editor", role: "editor" },
-      { userId: viewer.id, firstName: "Vera", lastName: "Viewer", role: "viewer" },
+      { userId: owner.id, firstName: "Olivia", lastName: "Owner", role: "owner", isSuperadmin: false },
+      { userId: editor.id, firstName: "Elias", lastName: "Editor", role: "editor", isSuperadmin: false },
+      { userId: viewer.id, firstName: "Vera", lastName: "Viewer", role: "viewer", isSuperadmin: false },
     ]);
   });
 
-  it("offers only active teachers and never offers the current owner", async () => {
+  it("offers only active teachers and superadmins and never offers the current owner", async () => {
     await useTemporaryDatabase();
     const owner = await createUser({ displayName: "Olivia Owner", role: "teacher" });
     const active = await createUser({ displayName: "Vera Viewer", role: "teacher" });
+    const activeAdmin = await createUser({ displayName: "Active Admin", role: "superadmin" });
     await createUser({ displayName: "Disabled Teacher", role: "teacher", status: "disabled" });
+    const disabledAdmin = await createUser({ displayName: "Disabled Admin", role: "superadmin", status: "disabled" });
     await createUser({ displayName: "Sam Student", role: "student" });
     await upsertManagedMembership("space-5", owner.id, "owner");
 
-    expect((await listLearningSpaceTeacherCandidates("space-5")).map((teacher) => teacher.userId)).toEqual([active.id]);
+    const candidateIds = (await listLearningSpaceTeacherCandidates("space-5")).map((teacher) => teacher.userId);
+    expect(candidateIds).toEqual(expect.arrayContaining([active.id, activeAdmin.id]));
+    expect(candidateIds).not.toContain(owner.id);
+    expect(candidateIds).not.toContain(disabledAdmin.id);
+  });
+
+  it("retains explicit viewer, editor and owner roles for superadmins", async () => {
+    await useTemporaryDatabase();
+    const viewer = await createUser({ displayName: "Admin Viewer", firstName: "Admin", lastName: "Viewer", role: "superadmin" });
+    const editor = await createUser({ displayName: "Admin Editor", firstName: "Admin", lastName: "Editor", role: "superadmin" });
+    const owner = await createUser({ displayName: "Admin Owner", firstName: "Admin", lastName: "Owner", role: "superadmin" });
+    const disabled = await createUser({ displayName: "Admin Disabled", role: "superadmin", status: "disabled" });
+
+    await setLearningSpaceTeacherAccess("space-5", viewer.id, "viewer");
+    await setLearningSpaceTeacherAccess("space-5", editor.id, "editor");
+    await upsertManagedMembership("space-5", owner.id, "owner");
+
+    expect(await listLearningSpaceTeachers("space-5")).toEqual(expect.arrayContaining([
+      expect.objectContaining({ userId: viewer.id, role: "viewer", isSuperadmin: true }),
+      expect.objectContaining({ userId: editor.id, role: "editor", isSuperadmin: true }),
+      expect.objectContaining({ userId: owner.id, role: "owner", isSuperadmin: true }),
+    ]));
+    await expect(setLearningSpaceTeacherAccess("space-5", disabled.id, "viewer")).rejects.toThrow("actieve leraar");
+    await expect(setLearningSpaceTeacherAccess("space-5", owner.id, "editor")).rejects.toThrow("Een eigenaar");
   });
 
   it("converts viewer and editor access transactionally without redundant direct access", async () => {

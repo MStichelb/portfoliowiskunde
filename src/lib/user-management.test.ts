@@ -52,12 +52,16 @@ describe("superadmin user and access management", () => {
     await expect(updateManagedUserRole("user-legacy-superadmin", "teacher")).rejects.toThrow("hoofdbeheerderrol");
   });
 
-  it("blokkeert het uitschakelen van de laatste actieve superadmin", async () => {
+  it("blokkeert het uitschakelen van iedere superadmin en behoudt gewone statuswijzigingen", async () => {
     await useTemporaryDatabase();
-    await expect(updateManagedUserStatus("user-legacy-superadmin", "disabled")).rejects.toThrow("laatste actieve hoofdbeheerder");
+    await expect(updateManagedUserStatus("user-legacy-superadmin", "disabled")).rejects.toThrow("Hoofdbeheerders kunnen niet");
     const second = await createUser({ displayName: "Tweede beheerder", role: "superadmin" });
-    await updateManagedUserStatus(second.id, "disabled");
-    expect((await listManagedUsers()).find((user) => user.id === second.id)?.status).toBe("disabled");
+    await expect(updateManagedUserStatus(second.id, "disabled")).rejects.toThrow("Hoofdbeheerders kunnen niet");
+    const teacher = await createUser({ displayName: "Leraar", role: "teacher" });
+    const student = await createUser({ displayName: "Leerling", role: "student" });
+    await updateManagedUserStatus(teacher.id, "disabled");
+    await updateManagedUserStatus(student.id, "disabled");
+    expect((await listManagedUsers()).filter((user) => user.id === teacher.id || user.id === student.id).every((user) => user.status === "disabled")).toBe(true);
   });
 
   it("beheert owner/editor memberships en blokkeert een rolwijziging zonder cleanup", async () => {

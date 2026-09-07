@@ -15,6 +15,16 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("UserManagementView", () => {
+  it("toont voor superadmins alleen een statische status zonder beheeracties", () => {
+    const markup = renderToStaticMarkup(<UserManagementView users={[managedUser({ id: "admin", role: "superadmin", firstName: "Ada", lastName: "Admin" })]} spaces={[]} memberships={[]} access={[]} storageConnections={[]} classGroups={[]} teacherGroups={[]} teacherGroupId={null} params={{}} />);
+    const administratorSection = markup.slice(markup.indexOf('aria-labelledby="administrators-heading"'), markup.indexOf('aria-labelledby="teachers-heading"'));
+
+    expect(administratorSection).toContain("Ada");
+    expect(administratorSection).toContain("Actief");
+    expect(administratorSection).not.toContain("<button");
+    expect(administratorSection).not.toContain("<form");
+  });
+
   it("zoekt op voor- en achternaam en combineert klas-, status- en toegangsfilters", () => {
     const users = [
       managedUser({ id: "marie", firstName: "Marie", lastName: "De Smet", effectiveClassGroupId: "class-5", hasIndividualAccess: true }),

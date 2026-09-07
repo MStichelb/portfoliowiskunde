@@ -108,12 +108,28 @@ describe("LearningSpace access", () => {
     expect(markup).toContain("lucide-pencil");
     expect(markup).toContain("Kijker");
     expect(markup).toContain("lucide-eye");
+    expect(markup).not.toContain("teacher-admin-indicator");
     expect(markup).not.toContain("Toevoegen");
     expect(markup).not.toContain("Wijzigen");
     expect(markup).not.toContain("Lerarentoegang verwijderen");
     expect(markup).not.toContain("<form");
     expect(markup).not.toContain("<select");
     expect(mocks.listLearningSpaceTeacherCandidates).not.toHaveBeenCalled();
+  });
+
+  it("marks only superadmins with a Crown beside their name", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("editor", "teacher"));
+    mocks.listLearningSpaceTeachers.mockResolvedValue([
+      { userId: "admin", firstName: "Ada", lastName: "Admin", role: "viewer", isSuperadmin: true },
+      { userId: "teacher", firstName: "Tess", lastName: "Teacher", role: "viewer", isSuperadmin: false },
+    ]);
+
+    const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+
+    expect((markup.match(/teacher-admin-indicator/g) ?? [])).toHaveLength(1);
+    expect(markup).toContain('title="Beheerder"');
+    expect(markup).toContain("Admin");
+    expect(markup).toContain("Teacher");
   });
 
   it.each([
@@ -235,9 +251,9 @@ describe("LearningSpace access", () => {
 });
 
 const teachers = [
-  { userId: "owner", firstName: "Olivia", lastName: "Owner", role: "owner" as const },
-  { userId: "editor", firstName: "Elias", lastName: "Editor", role: "editor" as const },
-  { userId: "viewer", firstName: "Vera", lastName: "Viewer", role: "viewer" as const },
+  { userId: "owner", firstName: "Olivia", lastName: "Owner", role: "owner" as const, isSuperadmin: false },
+  { userId: "editor", firstName: "Elias", lastName: "Editor", role: "editor" as const, isSuperadmin: false },
+  { userId: "viewer", firstName: "Vera", lastName: "Viewer", role: "viewer" as const, isSuperadmin: false },
 ];
 
 const space: LearningSpace = {
