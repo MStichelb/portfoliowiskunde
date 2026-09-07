@@ -8,6 +8,7 @@ import { executeBatch, getDatabase } from "@/lib/database";
 import type { IndexedPortfolio } from "@/lib/domain";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRelativePath } from "@/lib/parser";
+import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { SourceManifestEntry } from "@/lib/source-comparison";
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
 import {
@@ -78,6 +79,8 @@ export interface AdminPortfolio {
   themeId: string | null;
   themeName: string | null;
   cardColor: string;
+  customText: string | null;
+  customTextPosition: PortfolioCustomTextPosition;
   sections: AdminSection[];
 }
 
@@ -88,6 +91,8 @@ export interface StudentPortfolio {
   themeId: string | null;
   themeName: string | null;
   cardColor: string;
+  customText: string | null;
+  customTextPosition: PortfolioCustomTextPosition;
   hintsDocumentPath: string | null;
   sections: Array<{
     id: string;
@@ -898,6 +903,8 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
       finalSolutionsPdfPath: nullableText(portfolio, "final_solutions_pdf_path"),
       learningSpaceId: text(portfolio, "learning_space_id"), themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
       cardColor: text(portfolio, "card_color"),
+      customText: nullableText(portfolio, "custom_text"),
+      customTextPosition: text(portfolio, "custom_text_position") as PortfolioCustomTextPosition,
       sections: sections.rows.filter((section) => text(section, "portfolio_id") === portfolioId).map((section) => {
         const sectionId = text(section, "id");
         const sectionPublication = { mode: childMode(section), limited: bool(section.publication_limited), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
@@ -1000,6 +1007,11 @@ export async function setPortfolioCardColor(id: string, cardColor: string): Prom
   await database.execute({ sql: "UPDATE portfolios SET card_color = ? WHERE id = ?", args: [cardColor, id] });
 }
 
+export async function setPortfolioCustomMessage(id: string, customText: string | null, customTextPosition: PortfolioCustomTextPosition): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "UPDATE portfolios SET custom_text = ?, custom_text_position = ? WHERE id = ?", args: [customText, customTextPosition, id] });
+}
+
 export async function setSectionPublication(id: string, mode: ChildVisibilityMode, limited: boolean, publishFrom: string | null, publishUntil: string | null): Promise<void> {
   const database = await getDatabase();
   await database.execute({ sql: "UPDATE sections SET visibility_mode = ?, publication_limited = ?, publish_from = ?, publish_until = ? WHERE id = ?", args: [mode, limited ? 1 : 0, publishFrom, publishUntil, id] });
@@ -1056,6 +1068,8 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
       title: nullableText(portfolio, "title_override") ?? text(portfolio, "title"),
       themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
       cardColor: text(portfolio, "card_color"),
+      customText: nullableText(portfolio, "custom_text"),
+      customTextPosition: text(portfolio, "custom_text_position") as PortfolioCustomTextPosition,
       hintsDocumentPath: nullableText(portfolio, "hints_document_path"),
       sections: [],
     };

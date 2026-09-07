@@ -486,4 +486,11 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE learning_spaces ADD COLUMN editors_can_manage_access INTEGER NOT NULL DEFAULT 0",
     ],
   },
+  {
+    version: "026_portfolio_custom_message",
+    statements: [
+      "ALTER TABLE portfolios ADD COLUMN custom_text TEXT",
+      "ALTER TABLE portfolios ADD COLUMN custom_text_position TEXT NOT NULL DEFAULT 'above_documents' CHECK(custom_text_position IN ('above_documents', 'below_documents'))",
+    ],
+  },
 ];

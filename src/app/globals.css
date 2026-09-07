@@ -183,7 +183,10 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .segmented-control button.scheduled-choice.selected { background: #aa7400; color: #fff; }
 .segmented-control button.hidden-choice.selected { background: #5e686d; color: #fff; }
 .portfolio-settings-form label, .section-settings-form label, .bulk-toolbar label { display: grid; gap: 6px; font-size: 14px; font-weight: 700; color: #314149; }
-.portfolio-settings-form input, .portfolio-settings-form select, .section-settings-form input, .section-settings-form select, .bulk-toolbar input, .bulk-toolbar select { min-height: 40px; width: 100%; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; color: #17222b; font: inherit; }
+.portfolio-settings-form input, .portfolio-settings-form select, .portfolio-settings-form textarea, .section-settings-form input, .section-settings-form select, .bulk-toolbar input, .bulk-toolbar select { min-height: 40px; width: 100%; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; color: #17222b; font: inherit; }
+.portfolio-settings-form textarea { min-height: 104px; resize: vertical; }
+.portfolio-settings-form small { color: #52616a; font-size: 14px; font-weight: 400; line-height: 1.4; }
+.portfolio-settings-actions { display: flex; justify-content: flex-end; }
 .field-wide { width: 100%; }
 .document-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .document-item { display: flex; gap: 16px; justify-content: space-between; align-items: center; padding: 16px; border: 1px solid #d9dfdb; border-radius: 4px; background: #fbfcfb; }

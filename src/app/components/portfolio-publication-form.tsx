@@ -4,6 +4,7 @@ import { Eye, EyeOff, Hourglass } from "lucide-react";
 import { useState } from "react";
 
 import { SubmitButton } from "@/app/components/submit-button";
+import { PORTFOLIO_CUSTOM_TEXT_MAX_LENGTH, type PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 
 interface PortfolioPublicationFormProps {
   id: string;
@@ -13,10 +14,12 @@ interface PortfolioPublicationFormProps {
   limited: boolean;
   publishFrom: string;
   publishUntil: string;
+  customText: string | null;
+  customTextPosition: PortfolioCustomTextPosition;
   action: (formData: FormData) => void | Promise<void>;
 }
 
-export function PortfolioPublicationForm({ id, title, cardColor, visible, limited, publishFrom, publishUntil, action }: PortfolioPublicationFormProps) {
+export function PortfolioPublicationForm({ id, title, cardColor, visible, limited, publishFrom, publishUntil, customText, customTextPosition, action }: PortfolioPublicationFormProps) {
   const [mode, setMode] = useState<"visible" | "limited" | "hidden">(!visible ? "hidden" : limited ? "limited" : "visible");
   const [color, setColor] = useState(cardColor);
   return <form action={action} className="portfolio-settings-form">
@@ -31,8 +34,10 @@ export function PortfolioPublicationForm({ id, title, cardColor, visible, limite
         <button type="button" aria-pressed={mode === "limited"} className={`scheduled-choice ${mode === "limited" ? "selected" : ""}`} onClick={() => setMode("limited")}><Hourglass size={16} aria-hidden />Plannen</button>
         <button type="button" aria-pressed={mode === "hidden"} className={`hidden-choice ${mode === "hidden" ? "selected" : ""}`} onClick={() => setMode("hidden")}><EyeOff size={16} aria-hidden />Verborgen</button>
       </div></fieldset>
-      <SubmitButton pendingLabel="Opslaan...">Instellingen opslaan</SubmitButton>
     </div>
     {mode === "limited" ? <div className="planning-fields field-wide"><label>Vanaf<input name="publishFrom" type="datetime-local" defaultValue={publishFrom} /></label><label>Tot<input name="publishUntil" type="datetime-local" defaultValue={publishUntil} /></label></div> : null}
+    <label className="field-wide">Bericht voor leerlingen<textarea name="customText" defaultValue={customText ?? ""} maxLength={PORTFOLIO_CUSTOM_TEXT_MAX_LENGTH} rows={4} /><small>Optionele tekst die op de portfoliopagina bij de documentknoppen wordt getoond.</small></label>
+    <label className="field-wide">Positie van bericht<select name="customTextPosition" defaultValue={customTextPosition}><option value="above_documents">Boven de documentknoppen</option><option value="below_documents">Onder de documentknoppen</option></select></label>
+    <div className="portfolio-settings-actions field-wide"><SubmitButton pendingLabel="Opslaan...">Instellingen opslaan</SubmitButton></div>
   </form>;
 }

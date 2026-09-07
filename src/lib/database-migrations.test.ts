@@ -124,7 +124,7 @@ describe("Google Drive LearningSpace migration", () => {
     expect(sources.rows).toHaveLength(2);
     expect(sources.rows.every((row) => row.role === "primary" && row.provider_type === "local" && row.is_active === 1)).toBe(true);
     const portfolioColumns = (await database.execute("PRAGMA table_info(portfolios)")).rows.map((row) => row.name);
-    expect(portfolioColumns).toEqual(expect.arrayContaining(["hints_document_path", "hints_document_source_id"]));
+    expect(portfolioColumns).toEqual(expect.arrayContaining(["hints_document_path", "hints_document_source_id", "custom_text", "custom_text_position"]));
     const userColumns = (await database.execute("PRAGMA table_info(users)")).rows.map((row) => row.name);
     expect(userColumns).toEqual(expect.arrayContaining(["first_name", "last_name", "class_group_override_id"]));
     expect((await database.execute("PRAGMA table_info(individual_learning_space_access)")).rows.map((row) => row.name))
@@ -133,12 +133,41 @@ describe("Google Drive LearningSpace migration", () => {
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '023_multi_user_access_management'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '024_legacy_learning_space_ownership'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '025_editor_student_access_delegation'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '026_portfolio_custom_message'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT id, role, status FROM users WHERE id = 'user-legacy-superadmin'")).rows[0]).toMatchObject({
       role: "superadmin", status: "active",
     });
     expect((await database.execute("SELECT owner_user_id, provider, status FROM storage_connections")).rows).toEqual([
       expect.objectContaining({ owner_user_id: "user-legacy-superadmin", provider: "onedrive", status: "disconnected" }),
     ]);
+  });
+
+  it("adds custom message defaults without changing existing portfolio data", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-custom-message-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 25)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-07T10:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.execute({
+      sql: `INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, is_indexed, indexed_at)
+        VALUES ('legacy-message-portfolio', 'space-5:1', '1', 'space-5', 'Bestaande titel', 'Portfolio 1 - Bestaande titel', 1, '2026-09-07T10:00:00.000Z')`,
+      args: [],
+    });
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT title, custom_text, custom_text_position FROM portfolios WHERE id = 'legacy-message-portfolio'")).rows[0]).toMatchObject({
+      title: "Bestaande titel",
+      custom_text: null,
+      custom_text_position: "above_documents",
+    });
   });
 
   it("migreert de bestaande versleutelde OneDrive-token en sessies naar de compatibility-superadmin", async () => {
