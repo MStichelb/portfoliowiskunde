@@ -26,7 +26,7 @@ export function LearningSpaceStudentRoster({ students }: { students: LearningSpa
         <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Zoek op naam, voornaam of klas/groep" />
       </label>
       <label className="filter-control learning-space-roster-group-filter">
-        Klas/groep
+        <span className="sr-only">Klas/groep</span>
         <select value={group} onChange={(event) => setGroup(event.target.value)}>
           <option value="">Alle</option>
           {groupOptions.map((option) => <option key={option} value={option}>{option}</option>)}
