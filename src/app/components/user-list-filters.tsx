@@ -28,12 +28,15 @@ export function TeacherListFilters({ params, spaces }: { params: UserListSearchP
 }
 
 export function StudentListFilters({ params, classes }: { params: UserListSearchParams; classes: ClassOption[] }) {
+  const selectedClasses = stringValues(params.class);
+  return <StudentListFilterFields key={JSON.stringify([params.q ?? "", selectedClasses])} params={params} classes={classes} />;
+}
+
+function StudentListFilterFields({ params, classes }: { params: UserListSearchParams; classes: ClassOption[] }) {
   const update = useImmediateFilters();
   const [query, setQuery] = useState(params.q ?? "");
   const [selectedClasses, setSelectedClasses] = useState(stringValues(params.class));
 
-  useEffect(() => setQuery(params.q ?? ""), [params.q]);
-  useEffect(() => setSelectedClasses(stringValues(params.class)), [params.class]);
   useEffect(() => {
     if (query === (params.q ?? "")) return;
     const timeout = window.setTimeout(() => update({ q: query.trim() || null }), 400);

@@ -88,7 +88,7 @@ Productie weigert bewust te starten zonder een `postgres://` of `postgresql://` 
 3. Kopieer de TLS-verbinding als `DATABASE_URL`; gebruik `sslmode=require` wanneer de provider dat voorschrijft.
 4. Maak vóór elke latere schemamigratie een providerbackup of herstelpunt.
 
-Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001_initial` tot en met de huidige `025_editor_student_access_delegation` uit. PostgreSQL-starts worden met een advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
+Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001_initial` tot en met de huidige `029_error_report_threads` uit. PostgreSQL-starts worden met een advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
 
 Toekomstige rollout:
 
