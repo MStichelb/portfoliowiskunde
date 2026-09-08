@@ -466,6 +466,7 @@ export async function permanentlyDeleteLearningSpace(id: string): Promise<boolea
   const syncRunIds = "SELECT id FROM sync_runs WHERE learning_space_id = ?";
   await executeBatch([
     { sql: `DELETE FROM error_reports WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
+    { sql: "DELETE FROM error_report_issues WHERE learning_space_id = ?", args: [id] },
     { sql: `DELETE FROM solution_assets WHERE variant_id IN (${variantIds})`, args: [id] },
     { sql: `DELETE FROM solution_variants WHERE exercise_id IN (${exerciseIds})`, args: [id] },
     { sql: `DELETE FROM exercises WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
@@ -1256,6 +1257,45 @@ export interface AdminErrorReport {
   solutionConfiguredVisible: boolean;
   solutionStatus: EffectivePublication;
   solutionVisible: boolean;
+}
+
+export type ErrorReportDocumentKind = "assignment" | "final_solutions" | "hints";
+
+export interface ErrorReportIssue {
+  id: string;
+  learningSpaceId: string;
+  portfolioId: string;
+  exerciseId: string;
+  documentKind: ErrorReportDocumentKind;
+  variantKind: "standard" | "alternative" | null;
+  status: "TODO" | "DONE";
+  pinned: boolean;
+  adminNote: string;
+  createdAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+}
+
+export async function getErrorReportIssue(id: string): Promise<ErrorReportIssue | null> {
+  const row = (await (await getDatabase()).execute({
+    sql: "SELECT * FROM error_report_issues WHERE id = ?",
+    args: [id],
+  })).rows[0];
+  if (!row) return null;
+  return {
+    id: text(row, "id"),
+    learningSpaceId: text(row, "learning_space_id"),
+    portfolioId: text(row, "portfolio_id"),
+    exerciseId: text(row, "exercise_id"),
+    documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
+    variantKind: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
+    status: text(row, "status") === "DONE" ? "DONE" : "TODO",
+    pinned: bool(row.pinned),
+    adminNote: nullableText(row, "admin_note") ?? "",
+    createdAt: text(row, "created_at"),
+    completedAt: nullableText(row, "completed_at"),
+    updatedAt: text(row, "updated_at"),
+  };
 }
 
 export async function getOpenErrorReportCount(learningSpaceId?: string): Promise<number> {

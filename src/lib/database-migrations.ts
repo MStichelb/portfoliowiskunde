@@ -493,4 +493,73 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE portfolios ADD COLUMN custom_text_position TEXT NOT NULL DEFAULT 'above_documents' CHECK(custom_text_position IN ('above_documents', 'below_documents'))",
     ],
   },
+  {
+    version: "027_grouped_error_report_issues",
+    statements: [
+      `CREATE TABLE error_report_issues (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id),
+        portfolio_id TEXT NOT NULL REFERENCES portfolios(id),
+        exercise_id TEXT NOT NULL REFERENCES exercises(id),
+        document_kind TEXT NOT NULL CHECK(document_kind IN ('assignment', 'final_solutions', 'hints')),
+        variant_kind TEXT CHECK(variant_kind IN ('standard', 'alternative')),
+        status TEXT NOT NULL DEFAULT 'TODO' CHECK(status IN ('TODO', 'DONE')),
+        pinned INTEGER NOT NULL DEFAULT 0,
+        admin_note TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        completed_at TEXT,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE UNIQUE INDEX error_report_issues_location_unique
+        ON error_report_issues(learning_space_id, portfolio_id, document_kind, exercise_id, COALESCE(variant_kind, ''))`,
+      "CREATE INDEX error_report_issues_status_index ON error_report_issues(learning_space_id, status, pinned)",
+      "ALTER TABLE error_reports ADD COLUMN issue_id TEXT REFERENCES error_report_issues(id) ON DELETE SET NULL",
+      "ALTER TABLE error_reports ADD COLUMN reporter_user_id TEXT REFERENCES users(id) ON DELETE SET NULL",
+      `INSERT INTO error_report_issues (
+          id, learning_space_id, portfolio_id, exercise_id, document_kind, variant_kind,
+          status, pinned, admin_note, created_at, completed_at, updated_at
+        )
+        SELECT
+          'issue-' || MIN(error_reports.id),
+          portfolios.learning_space_id,
+          error_reports.portfolio_id,
+          error_reports.exercise_id,
+          'final_solutions',
+          error_reports.variant_kind,
+          CASE WHEN SUM(CASE WHEN error_reports.status = 'TODO' THEN 1 ELSE 0 END) > 0 THEN 'TODO' ELSE 'DONE' END,
+          MAX(error_reports.pinned),
+          CASE
+            WHEN COUNT(DISTINCT NULLIF(TRIM(error_reports.admin_note), '')) = 1
+              THEN MAX(NULLIF(TRIM(error_reports.admin_note), ''))
+            ELSE ''
+          END,
+          MIN(error_reports.created_at),
+          CASE
+            WHEN SUM(CASE WHEN error_reports.status = 'TODO' THEN 1 ELSE 0 END) = 0
+              AND COUNT(error_reports.completed_at) = COUNT(*)
+              THEN MAX(error_reports.completed_at)
+            ELSE NULL
+          END,
+          MAX(error_reports.updated_at)
+        FROM error_reports
+        INNER JOIN portfolios ON portfolios.id = error_reports.portfolio_id
+        GROUP BY portfolios.learning_space_id, error_reports.portfolio_id, error_reports.exercise_id, error_reports.variant_kind`,
+      `UPDATE error_reports
+        SET issue_id = (
+          SELECT error_report_issues.id
+          FROM error_report_issues
+          INNER JOIN portfolios ON portfolios.id = error_reports.portfolio_id
+          WHERE error_report_issues.learning_space_id = portfolios.learning_space_id
+            AND error_report_issues.portfolio_id = error_reports.portfolio_id
+            AND error_report_issues.document_kind = 'final_solutions'
+            AND error_report_issues.exercise_id = error_reports.exercise_id
+            AND COALESCE(error_report_issues.variant_kind, '') = COALESCE(error_reports.variant_kind, '')
+        )`,
+      `CREATE UNIQUE INDEX error_reports_issue_reporter_unique
+        ON error_reports(issue_id, reporter_user_id)
+        WHERE reporter_user_id IS NOT NULL`,
+      "CREATE INDEX error_reports_issue_index ON error_reports(issue_id)",
+      "CREATE INDEX error_reports_reporter_user_index ON error_reports(reporter_user_id)",
+    ],
+  },
 ];
