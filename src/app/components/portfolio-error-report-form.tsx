@@ -3,6 +3,7 @@
 import { Bell, ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 
+import { normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
 import type { ErrorReportDocumentKind } from "@/lib/repositories";
 
 export interface PortfolioErrorReportExerciseOption {
@@ -29,12 +30,14 @@ export function PortfolioErrorReportForm({
   const [open, setOpen] = useState(initiallyOpen);
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [documentKind, setDocumentKind] = useState<ErrorReportDocumentKind>(documents[0] ?? "assignment");
-  const [exerciseId, setExerciseId] = useState(exercises[0]?.id ?? "");
+  const [exerciseCode, setExerciseCode] = useState(exercises[0]?.code ?? "");
   const contentId = useId();
-  const selectedExercise = exercises.find((exercise) => exercise.id === exerciseId);
+  const exerciseListId = useId();
+  const normalizedExerciseCode = normalizeErrorReportExerciseCode(exerciseCode);
+  const selectedExercise = exercises.find((exercise) => normalizeErrorReportExerciseCode(exercise.code) === normalizedExerciseCode);
   const showVariant = shouldShowErrorReportVariant(documentKind, selectedExercise);
 
-  if (documents.length === 0 || exercises.length === 0) return null;
+  if (documents.length === 0) return null;
 
   async function submit(formData: FormData) {
     setStatus("sending");
@@ -44,7 +47,7 @@ export function PortfolioErrorReportForm({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           portfolioId,
-          exerciseId,
+          exerciseCode,
           documentKind,
           variant: documentKind === "final_solutions" ? formData.get("variant") : null,
           message: formData.get("message"),
@@ -62,7 +65,8 @@ export function PortfolioErrorReportForm({
     {open ? <div id={contentId} className="report-disclosure-content">
       {status === "sent" ? <p className="success-message" role="status">Bedankt. Je melding is doorgestuurd.</p> : <form action={submit} className="report-form">
         <label>Document<select name="documentKind" value={documentKind} onChange={(event) => setDocumentKind(event.target.value as ErrorReportDocumentKind)}>{documents.map((document) => <option key={document} value={document}>{documentLabel(document)}</option>)}</select></label>
-        <label>Oefening<select name="exerciseId" value={exerciseId} onChange={(event) => setExerciseId(event.target.value)}>{exercises.map((exercise) => <option key={exercise.id} value={exercise.id}>Oefening {exercise.code}</option>)}</select></label>
+        <label>Oefening<input name="exerciseCode" value={exerciseCode} onChange={(event) => setExerciseCode(event.target.value)} list={exerciseListId} required maxLength={20} autoComplete="off" /></label>
+        <datalist id={exerciseListId}>{exercises.map((exercise) => <option key={exercise.id} value={exercise.code}>Oefening {exercise.code}</option>)}</datalist>
         {showVariant ? <label>Uitwerking<select name="variant"><option value="standard">Uitwerking</option><option value="alternative">Alternatieve uitwerking</option></select></label> : <input type="hidden" name="variant" value={documentKind === "final_solutions" ? "standard" : ""} />}
         <label>Wat heb je opgemerkt?<textarea name="message" required minLength={3} maxLength={2000} /></label>
         <label className="honeypot">Website<input name="website" tabIndex={-1} autoComplete="off" /></label>

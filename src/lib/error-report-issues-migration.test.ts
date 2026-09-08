@@ -21,11 +21,13 @@ describe("grouped error report issue migration", () => {
   it("creates the additive issue schema in a fresh database", async () => {
     const database = await createFreshDatabase("portfolio-error-issues-fresh-");
 
-    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '027_grouped_error_report_issues'")).rows).toHaveLength(1);
-    expect((await database.execute("PRAGMA table_info(error_report_issues)")).rows.map((row) => row.name)).toEqual(expect.arrayContaining([
-      "id", "learning_space_id", "portfolio_id", "exercise_id", "document_kind", "variant_kind",
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '028_unmatched_error_report_exercises'")).rows).toHaveLength(1);
+    const issueColumns = (await database.execute("PRAGMA table_info(error_report_issues)")).rows;
+    expect(issueColumns.map((row) => row.name)).toEqual(expect.arrayContaining([
+      "id", "learning_space_id", "portfolio_id", "exercise_id", "exercise_code", "document_kind", "variant_kind",
       "status", "pinned", "admin_note", "created_at", "completed_at", "updated_at",
     ]));
+    expect(issueColumns.find((row) => row.name === "exercise_id")?.notnull).toBe(0);
     expect((await database.execute("PRAGMA table_info(error_reports)")).rows.map((row) => row.name)).toEqual(expect.arrayContaining([
       "issue_id", "reporter_user_id", "reporter_name", "status", "pinned", "admin_note",
     ]));
@@ -46,6 +48,7 @@ describe("grouped error report issue migration", () => {
 
     const standardIssue = issues.find((issue) => issue.portfolio_id === "issue-portfolio-1" && issue.exercise_id === "issue-exercise-1" && issue.variant_kind === "standard");
     expect(standardIssue).toMatchObject({
+      exercise_code: "1",
       document_kind: "final_solutions",
       status: "TODO",
       pinned: 1,
@@ -88,24 +91,24 @@ describe("grouped error report issue migration", () => {
   it("enforces null-safe issue identity and one authenticated report per issue", async () => {
     const database = await upgradeLegacyFixture();
     const now = "2026-09-08T10:00:00.000Z";
-    const issueArgs = ["space-5", "issue-portfolio-1", "issue-exercise-1", now, now];
+    const issueArgs = ["space-5", "issue-portfolio-1", "issue-exercise-1", "1", now, now];
 
     await database.execute({
       sql: `INSERT INTO error_report_issues
-        (id, learning_space_id, portfolio_id, exercise_id, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
-        VALUES ('assignment-issue', ?, ?, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('assignment-issue', ?, ?, ?, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
       args: issueArgs,
     });
     await expect(database.execute({
       sql: `INSERT INTO error_report_issues
-        (id, learning_space_id, portfolio_id, exercise_id, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
-        VALUES ('assignment-duplicate', ?, ?, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('assignment-duplicate', ?, ?, ?, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
       args: issueArgs,
     })).rejects.toThrow();
     await database.execute({
       sql: `INSERT INTO error_report_issues
-        (id, learning_space_id, portfolio_id, exercise_id, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
-        VALUES ('hints-issue', ?, ?, ?, 'hints', NULL, 'TODO', 0, '', ?, ?)`,
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('hints-issue', ?, ?, ?, ?, 'hints', NULL, 'TODO', 0, '', ?, ?)`,
       args: issueArgs,
     });
 
@@ -114,6 +117,20 @@ describe("grouped error report issue migration", () => {
     await insertReport(database, "anonymous-a", "assignment-issue", null, now);
     await insertReport(database, "anonymous-b", "assignment-issue", null, now);
     expect((await database.execute("SELECT id FROM error_reports WHERE issue_id = 'assignment-issue'")).rows).toHaveLength(3);
+
+    const unmatchedArgs = ["space-5", "issue-portfolio-1", "11", now, now];
+    await database.execute({
+      sql: `INSERT INTO error_report_issues
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('unmatched-issue', ?, ?, NULL, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
+      args: unmatchedArgs,
+    });
+    await expect(database.execute({
+      sql: `INSERT INTO error_report_issues
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('unmatched-duplicate', ?, ?, NULL, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
+      args: unmatchedArgs,
+    })).rejects.toThrow();
   });
 
   it("keeps the existing report-level reads working before the grouped D2 read model", async () => {

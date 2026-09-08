@@ -73,6 +73,26 @@ describe("grouped error report read model", () => {
     expect(sixthSpace[0]).toMatchObject({ id: "issue-space-6", learningSpaceId: "space-6", portfolioId: "read-portfolio-3" });
   });
 
+  it("returns unmatched exercise issues with their stored code", async () => {
+    const database = await getDatabase();
+    await database.execute({
+      sql: `INSERT INTO error_report_issues
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind,
+          status, pinned, admin_note, created_at, updated_at)
+        VALUES ('issue-unmatched', 'space-5', 'read-portfolio-1', NULL, '11a', 'assignment', NULL,
+          'TODO', 0, '', '2026-09-08T12:00:00.000Z', '2026-09-08T12:00:00.000Z')`,
+      args: [],
+    });
+
+    const issue = (await getGroupedErrorReportIssues("space-5")).find((item) => item.id === "issue-unmatched");
+    expect(issue).toMatchObject({
+      exerciseId: null,
+      exerciseCode: "11a",
+      isMatchedExercise: false,
+      sectionTitle: "Onbekende oefening",
+    });
+  });
+
   it("reads legacy report details newest-first and preserves reporter names", async () => {
     const details = await listErrorReportsForIssue("issue-main", "space-5");
 
@@ -182,9 +202,9 @@ function exercise(id: string, portfolioId: string, sectionId: string, code: stri
 function issue(id: string, learningSpaceId: string, portfolioId: string, exerciseId: string, documentKind: string, variant: string | null, status: string, pinned: number, note: string, updatedAt: string) {
   return {
     sql: `INSERT INTO error_report_issues
-      (id, learning_space_id, portfolio_id, exercise_id, document_kind, variant_kind, status, pinned, admin_note, created_at, completed_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, '2026-09-01T10:00:00.000Z', ?, ?)`,
-    args: [id, learningSpaceId, portfolioId, exerciseId, documentKind, variant, status, pinned, note, status === "DONE" ? updatedAt : null, updatedAt],
+      (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, completed_at, updated_at)
+      VALUES (?, ?, ?, ?, (SELECT exercise_code FROM exercises WHERE id = ?), ?, ?, ?, ?, ?, '2026-09-01T10:00:00.000Z', ?, ?)`,
+    args: [id, learningSpaceId, portfolioId, exerciseId, exerciseId, documentKind, variant, status, pinned, note, status === "DONE" ? updatedAt : null, updatedAt],
   };
 }
 

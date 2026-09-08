@@ -19,15 +19,24 @@ describe("PortfolioErrorReportForm", () => {
     expect(open).not.toContain('name="reporterName"');
   });
 
-  it("uses internal exercise IDs and shows variants only for eligible final solutions", () => {
+  it("uses a free exercise-code input with indexed suggestions and only offers eligible variants", () => {
     const markup = renderToStaticMarkup(<PortfolioErrorReportForm portfolioId="portfolio-1" documents={["final_solutions"]} exercises={[alternativeExercise, standardExercise]} initiallyOpen />);
 
-    expect(markup).toContain('<option value="exercise-5a" selected="">Oefening 5a</option>');
-    expect(markup).toContain('<option value="exercise-5">Oefening 5</option>');
+    expect(markup).toContain('name="exerciseCode"');
+    expect(markup).toContain('value="5a"');
+    expect(markup).toContain('<option value="5a">Oefening 5a</option>');
+    expect(markup).toContain('<option value="5">Oefening 5</option>');
     expect(markup).toContain("Alternatieve uitwerking");
     expect(shouldShowErrorReportVariant("final_solutions", alternativeExercise)).toBe(true);
     expect(shouldShowErrorReportVariant("final_solutions", standardExercise)).toBe(false);
     expect(shouldShowErrorReportVariant("assignment", alternativeExercise)).toBe(false);
     expect(shouldShowErrorReportVariant("hints", alternativeExercise)).toBe(false);
+  });
+
+  it("keeps the free input available when the index has no exercise suggestions", () => {
+    const markup = renderToStaticMarkup(<PortfolioErrorReportForm portfolioId="portfolio-1" documents={["assignment"]} exercises={[]} initiallyOpen />);
+
+    expect(markup).toContain('name="exerciseCode"');
+    expect(markup).toContain("Melding versturen");
   });
 });

@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests, type DatabaseClient } from "./database";
+import { normalizeErrorReportExerciseCode } from "./error-report-exercise-code";
 import { createErrorReport } from "./repositories";
 
 let temporaryDirectory: string | undefined;
@@ -23,6 +24,51 @@ afterEach(async () => {
 });
 
 describe("error report v2 submission", () => {
+  it("normalizes simple exercise codes without fuzzy matching", () => {
+    expect(normalizeErrorReportExerciseCode(" 11A ")).toBe("11a");
+    expect(normalizeErrorReportExerciseCode("5")).toBe("5");
+    expect(normalizeErrorReportExerciseCode("5 a")).toBeNull();
+    expect(normalizeErrorReportExerciseCode("oef 5")).toBeNull();
+  });
+
+  it("matches a known code exactly within the current portfolio", async () => {
+    const result = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: " 5B ", rateLimitKey: "known-code" }));
+    const issue = (await (await getDatabase()).execute({ sql: "SELECT exercise_id, exercise_code FROM error_report_issues WHERE id = ?", args: [result.issueId] })).rows[0];
+
+    expect(issue).toMatchObject({ exercise_id: "submission-exercise", exercise_code: "5b" });
+  });
+
+  it("groups unknown codes by normalized code, document and portfolio", async () => {
+    const first = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: " 11A ", rateLimitKey: "unknown-first" }));
+    const repeated = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "11a", reporterUserId: "report-user-2", rateLimitKey: "unknown-repeat" }));
+    const otherDocument = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "11a", documentKind: "hints", rateLimitKey: "unknown-document" }));
+    const otherPortfolio = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "11a", portfolioId: "other-portfolio", rateLimitKey: "unknown-portfolio" }));
+    const issue = (await (await getDatabase()).execute({ sql: "SELECT exercise_id, exercise_code FROM error_report_issues WHERE id = ?", args: [first.issueId] })).rows[0];
+
+    expect(repeated.issueId).toBe(first.issueId);
+    expect(otherDocument.issueId).not.toBe(first.issueId);
+    expect(otherPortfolio.issueId).not.toBe(first.issueId);
+    expect(issue).toMatchObject({ exercise_id: null, exercise_code: "11a" });
+  });
+
+  it("allows unknown assignment and final-solution reports but never guesses an alternative", async () => {
+    const assignment = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "11", documentKind: "assignment", rateLimitKey: "unknown-assignment" }));
+    const solutions = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "12b", documentKind: "final_solutions", variant: "standard", rateLimitKey: "unknown-solutions" }));
+
+    expect(assignment.issueId).toBeTruthy();
+    expect(solutions.issueId).toBeTruthy();
+    await expect(createErrorReport(submission({ exerciseId: undefined, exerciseCode: "13", documentKind: "final_solutions", variant: "alternative", rateLimitKey: "unknown-alternative" }))).rejects.toThrow("alleen de standaarduitwerking");
+  });
+
+  it("does not match an exercise from another portfolio or a merely similar code", async () => {
+    const otherPortfolioCode = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "1", rateLimitKey: "other-portfolio-code" }));
+    const similarCode = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "5", rateLimitKey: "similar-code" }));
+    const database = await getDatabase();
+
+    expect((await database.execute({ sql: "SELECT exercise_id FROM error_report_issues WHERE id = ?", args: [otherPortfolioCode.issueId] })).rows[0]?.exercise_id).toBeNull();
+    expect((await database.execute({ sql: "SELECT exercise_id FROM error_report_issues WHERE id = ?", args: [similarCode.issueId] })).rows[0]?.exercise_id).toBeNull();
+  });
+
   it.each([
     ["assignment", null],
     ["final_solutions", "standard"],
@@ -125,7 +171,7 @@ async function seedSubmissionFixture(database: DatabaseClient): Promise<void> {
     portfolio("other-portfolio", "space-5", "2", false),
     section("submission-section", "submission-portfolio"),
     section("other-section", "other-portfolio"),
-    exercise("submission-exercise", "submission-portfolio", "submission-section", "1"),
+    exercise("submission-exercise", "submission-portfolio", "submission-section", "5b"),
     exercise("submission-exercise-no-alt", "submission-portfolio", "submission-section", "2"),
     exercise("other-exercise", "other-portfolio", "other-section", "1"),
     variant("submission-standard", "submission-exercise", "standard"),

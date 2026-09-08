@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   createErrorReport: vi.fn(),
   getAuthenticatedUser: vi.fn(),
   getVisibleExercise: vi.fn(),
+  getVisiblePortfolioContext: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ getAuthenticatedUser: mocks.getAuthenticatedUser }));
@@ -12,6 +13,7 @@ vi.mock("@/lib/public-access", () => ({ canAccessPublicLearningSpace: mocks.canA
 vi.mock("@/lib/repositories", () => ({
   createErrorReport: mocks.createErrorReport,
   getVisibleExercise: mocks.getVisibleExercise,
+  getVisiblePortfolioContext: mocks.getVisiblePortfolioContext,
 }));
 
 import { POST } from "./route";
@@ -21,6 +23,7 @@ beforeEach(() => {
   vi.stubEnv("REPORT_RATE_LIMIT_SECRET", "error-report-rate-limit-secret");
   mocks.getAuthenticatedUser.mockResolvedValue({ id: "student-1", role: "student", status: "active" });
   mocks.getVisibleExercise.mockResolvedValue({ id: "exercise-1", portfolioId: "portfolio-1", learningSpaceId: "space-5" });
+  mocks.getVisiblePortfolioContext.mockResolvedValue({ id: "portfolio-1", learningSpaceId: "space-5" });
   mocks.canAccessPublicLearningSpace.mockResolvedValue(true);
   mocks.createErrorReport.mockResolvedValue({ issueId: "issue-1" });
 });
@@ -29,18 +32,19 @@ afterEach(() => vi.unstubAllEnvs());
 
 describe("POST /api/error-reports", () => {
   it("stores the authenticated user through the shared v2 create flow", async () => {
-    const response = await POST(request({ portfolioId: "portfolio-1", exerciseId: "exercise-1", documentKind: "assignment", variant: null, message: "De opgave bevat een typfout." }));
+    const response = await POST(request({ portfolioId: "portfolio-1", exerciseCode: "5b", documentKind: "assignment", variant: null, message: "De opgave bevat een typfout." }));
 
     expect(response.status).toBe(200);
     expect(mocks.createErrorReport).toHaveBeenCalledWith(expect.objectContaining({
       learningSpaceId: "space-5",
       portfolioId: "portfolio-1",
-      exerciseId: "exercise-1",
+      exerciseCode: "5b",
       documentKind: "assignment",
       variant: null,
       reporterUserId: "student-1",
     }));
     expect(mocks.createErrorReport.mock.calls[0][0]).not.toHaveProperty("reporterName");
+    expect(mocks.createErrorReport.mock.calls[0][0].exerciseId).toBeUndefined();
   });
 
   it("does not create reports for anonymous users or users without LearningSpace access", async () => {

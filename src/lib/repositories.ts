@@ -6,6 +6,7 @@ import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { executeBatch, getDatabase } from "@/lib/database";
 import type { IndexedPortfolio } from "@/lib/domain";
+import { normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRelativePath } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
@@ -1228,7 +1229,8 @@ function portfolioDocumentColumns(kind: PortfolioDocumentKind) {
 
 
 export interface CreateErrorReportInput {
-  exerciseId: string;
+  exerciseId?: string;
+  exerciseCode?: string;
   learningSpaceId?: string;
   portfolioId?: string;
   documentKind?: ErrorReportDocumentKind;
@@ -1239,18 +1241,40 @@ export interface CreateErrorReportInput {
   rateLimitKey: string;
 }
 
+export async function getVisiblePortfolioContext(portfolioId: string): Promise<{ id: string; learningSpaceId: string } | null> {
+  const result = await (await getDatabase()).execute({
+    sql: "SELECT * FROM portfolios WHERE id = ? AND is_indexed = 1",
+    args: [portfolioId],
+  });
+  const portfolio = result.rows[0];
+  if (!portfolio || resolvePortfolioPublication({
+    visible: bool(portfolio.visible),
+    limited: bool(portfolio.publication_limited),
+    publishFrom: nullableText(portfolio, "publish_from"),
+    publishUntil: nullableText(portfolio, "publish_until"),
+  }).state !== "visible") return null;
+  return { id: text(portfolio, "id"), learningSpaceId: text(portfolio, "learning_space_id") };
+}
+
 export async function createErrorReport(input: CreateErrorReportInput): Promise<{ issueId: string }> {
-  const exercise = await getVisibleExercise(input.exerciseId, input.learningSpaceId);
-  if (!exercise || input.message.trim().length < 3 || input.message.trim().length > 2_000) throw new Error("De melding is ongeldig of de oplossing is niet beschikbaar.");
-  const learningSpaceId = input.learningSpaceId ?? exercise.learningSpaceId;
-  const portfolioId = input.portfolioId ?? exercise.portfolioId;
-  if (exercise.learningSpaceId !== learningSpaceId || exercise.portfolioId !== portfolioId) throw new Error("De gekozen oefening hoort niet bij deze portfolio.");
+  if (input.message.trim().length < 3 || input.message.trim().length > 2_000) throw new Error("De melding is ongeldig of de oplossing is niet beschikbaar.");
+  const isPortfolioFlow = Boolean(input.portfolioId);
+  const initialExercise = input.exerciseId ? await getVisibleExercise(input.exerciseId, input.learningSpaceId) : null;
+  if (!isPortfolioFlow && !initialExercise) throw new Error("De melding is ongeldig of de oplossing is niet beschikbaar.");
+  const learningSpaceId = input.learningSpaceId ?? initialExercise?.learningSpaceId;
+  const portfolioId = input.portfolioId ?? initialExercise?.portfolioId;
+  if (!learningSpaceId || !portfolioId) throw new Error("De portfolio is niet beschikbaar.");
   const portfolio = await getStudentPortfolio(portfolioId, learningSpaceId);
-  const portfolioExercise = portfolio?.sections.flatMap((section) => section.exercises).find((item) => item.id === input.exerciseId && item.visible);
-  if (!portfolio || !portfolioExercise) throw new Error("De portfolio of oefening is niet beschikbaar.");
+  if (!portfolio) throw new Error("De portfolio is niet beschikbaar.");
+  const requestedExerciseCode = normalizeErrorReportExerciseCode(input.exerciseCode ?? initialExercise?.code ?? "");
+  if (!requestedExerciseCode) throw new Error("Vul een geldige oefening in, bijvoorbeeld 5 of 5a.");
+  const portfolioExercise = portfolio.sections.flatMap((section) => section.exercises)
+    .find((item) => item.visible && normalizeErrorReportExerciseCode(item.code) === requestedExerciseCode);
+  const exerciseId = portfolioExercise?.id ?? null;
+  const exercise = exerciseId === initialExercise?.id ? initialExercise : exerciseId ? await getVisibleExercise(exerciseId, learningSpaceId) : null;
+  if (initialExercise && (initialExercise.learningSpaceId !== learningSpaceId || initialExercise.portfolioId !== portfolioId)) throw new Error("De gekozen oefening hoort niet bij deze portfolio.");
 
   const documentKind = input.documentKind ?? "final_solutions";
-  const isPortfolioFlow = Boolean(input.portfolioId);
   let variant: "standard" | "alternative" | null;
   let assetSnapshot: string;
   let sourceLastModifiedAt: string | null = null;
@@ -1265,10 +1289,11 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
     if (variant !== "standard" && variant !== "alternative") throw new Error("De gekozen documentvariant is ongeldig.");
     if (isPortfolioFlow) {
       if (!portfolio.finalSolutionsPdfPath) throw new Error("Het gekozen document is niet beschikbaar.");
-      if (variant === "alternative" && !portfolioExercise.hasAlternativeSolution) throw new Error("Deze alternatieve uitwerking bestaat niet.");
+      if (!exerciseId && variant === "alternative") throw new Error("Voor een onbekende oefening is alleen de standaarduitwerking beschikbaar.");
+      if (variant === "alternative" && !portfolioExercise?.hasAlternativeSolution) throw new Error("Deze alternatieve uitwerking bestaat niet.");
       assetSnapshot = JSON.stringify([{ documentKind, relativePath: portfolio.finalSolutionsPdfPath, variant }]);
     } else {
-      const matchingAssets = exercise.assets.filter((asset) => asset.kind === variant);
+      const matchingAssets = exercise!.assets.filter((asset) => asset.kind === variant);
       if (matchingAssets.length === 0) throw new Error("Deze oplossingsvariant bestaat niet.");
       assetSnapshot = JSON.stringify(matchingAssets.map((asset) => ({ id: asset.id, fileName: asset.fileName, lastModifiedAt: asset.lastModifiedAt })));
       sourceLastModifiedAt = matchingAssets.map((asset) => asset.lastModifiedAt).filter(Boolean).sort().at(-1) ?? null;
@@ -1280,26 +1305,28 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
   const reporterName = input.reporterName?.trim() || null;
   if (reporterName && reporterName.length > 100) throw new Error("De naam mag maximaal 100 tekens bevatten.");
   const database = await getDatabase();
-  const identifiers = await database.execute({ sql: "SELECT portfolio_id, section_id FROM exercises WHERE id = ?", args: [input.exerciseId] });
-  const row = identifiers.rows[0];
-  if (!row) throw new Error("Oefening niet gevonden.");
+  const sectionId = exerciseId
+    ? nullableText((await database.execute({ sql: "SELECT section_id FROM exercises WHERE id = ?", args: [exerciseId] })).rows[0] ?? {}, "section_id")
+    : null;
   const now = new Date();
   const windowStartedAt = new Date(Math.floor(now.getTime() / 600_000) * 600_000).toISOString();
   const current = await database.execute({ sql: "SELECT attempts FROM error_report_rate_limits WHERE key = ?", args: [input.rateLimitKey] });
   if (Number(current.rows[0]?.attempts ?? 0) >= 5) throw new Error("Probeer later opnieuw.");
-  const issueId = stableId("error-issue", learningSpaceId, portfolioId, documentKind, input.exerciseId, variant ?? "");
+  const exerciseIdentity = exerciseId ?? `code:${requestedExerciseCode}`;
+  const issueId = stableId("error-issue", learningSpaceId, portfolioId, documentKind, exerciseIdentity, variant ?? "");
   await database.execute({
     sql: `INSERT INTO error_report_issues
-      (id, learning_space_id, portfolio_id, exercise_id, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, ?)
+      (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, ?)
       ON CONFLICT DO NOTHING`,
-    args: [issueId, learningSpaceId, portfolioId, input.exerciseId, documentKind, variant, now.toISOString(), now.toISOString()],
+    args: [issueId, learningSpaceId, portfolioId, exerciseId, requestedExerciseCode, documentKind, variant, now.toISOString(), now.toISOString()],
   });
   const resolvedIssue = (await database.execute({
     sql: `SELECT id FROM error_report_issues
-      WHERE learning_space_id = ? AND portfolio_id = ? AND document_kind = ? AND exercise_id = ?
+      WHERE learning_space_id = ? AND portfolio_id = ? AND document_kind = ?
+        AND COALESCE(exercise_id, 'code:' || LOWER(exercise_code)) = ?
         AND COALESCE(variant_kind, '') = COALESCE(?, '')`,
-    args: [learningSpaceId, portfolioId, documentKind, input.exerciseId, variant],
+    args: [learningSpaceId, portfolioId, documentKind, exerciseIdentity, variant],
   })).rows[0];
   if (!resolvedIssue) throw new Error("De foutlocatie kon niet worden opgeslagen.");
   const resolvedIssueId = text(resolvedIssue, "id");
@@ -1317,14 +1344,14 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
         status = 'TODO',
         completed_at = NULL,
         updated_at = excluded.updated_at`,
-    args: [randomUUID(), portfolioId, text(row, "section_id"), input.exerciseId, variant ?? "standard", assetSnapshot,
+    args: [randomUUID(), portfolioId, sectionId, exerciseId, variant ?? "standard", assetSnapshot,
       sourceLastModifiedAt, input.message.trim(), now.toISOString(), now.toISOString(), resolvedIssueId, reporterUserId],
   } : {
     sql: `INSERT INTO error_reports
       (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message,
         reporter_name, status, pinned, admin_note, created_at, completed_at, updated_at, issue_id, reporter_user_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, NULL, ?, ?, NULL)`,
-    args: [randomUUID(), portfolioId, text(row, "section_id"), input.exerciseId, variant ?? "standard", assetSnapshot,
+    args: [randomUUID(), portfolioId, sectionId, exerciseId, variant ?? "standard", assetSnapshot,
       sourceLastModifiedAt, input.message.trim(), reporterName, now.toISOString(), now.toISOString(), resolvedIssueId],
   };
   await database.batch([
@@ -1364,7 +1391,8 @@ export interface ErrorReportIssue {
   id: string;
   learningSpaceId: string;
   portfolioId: string;
-  exerciseId: string;
+  exerciseId: string | null;
+  exerciseCode: string;
   documentKind: ErrorReportDocumentKind;
   variantKind: "standard" | "alternative" | null;
   status: "TODO" | "DONE";
@@ -1379,7 +1407,7 @@ export interface GroupedErrorReportIssue extends Omit<ErrorReportIssue, "variant
   portfolioCode: string;
   portfolioTitle: string;
   sectionTitle: string;
-  exerciseCode: string;
+  isMatchedExercise: boolean;
   variant: "standard" | "alternative" | null;
   reportCount: number;
   reporterCount: number;
@@ -1406,7 +1434,8 @@ export async function getErrorReportIssue(id: string): Promise<ErrorReportIssue 
     id: text(row, "id"),
     learningSpaceId: text(row, "learning_space_id"),
     portfolioId: text(row, "portfolio_id"),
-    exerciseId: text(row, "exercise_id"),
+    exerciseId: nullableText(row, "exercise_id"),
+    exerciseCode: text(row, "exercise_code"),
     documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
     variantKind: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
     status: text(row, "status") === "DONE" ? "DONE" : "TODO",
@@ -1423,15 +1452,15 @@ export async function getGroupedErrorReportIssues(learningSpaceId?: string): Pro
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const result = await database.execute({
     sql: `SELECT error_report_issues.*, portfolios.portfolio_code, portfolios.title AS portfolio_title,
-      portfolios.title_override, sections.title AS section_title, exercises.exercise_code,
+      portfolios.title_override, sections.title AS section_title,
       COALESCE(report_summary.report_count, 0) AS report_count,
       COALESCE(report_summary.reporter_count, 0) AS reporter_count,
       report_summary.latest_report_at,
       COALESCE(report_summary.has_legacy_anonymous_reports, 0) AS has_legacy_anonymous_reports
       FROM error_report_issues
       INNER JOIN portfolios ON portfolios.id = error_report_issues.portfolio_id
-      INNER JOIN exercises ON exercises.id = error_report_issues.exercise_id
-      INNER JOIN sections ON sections.id = exercises.section_id
+      LEFT JOIN exercises ON exercises.id = error_report_issues.exercise_id
+      LEFT JOIN sections ON sections.id = exercises.section_id
       LEFT JOIN (
         SELECT issue_id, COUNT(*) AS report_count,
           COUNT(DISTINCT reporter_user_id) AS reporter_count,
@@ -1454,9 +1483,10 @@ export async function getGroupedErrorReportIssues(learningSpaceId?: string): Pro
     portfolioId: text(row, "portfolio_id"),
     portfolioCode: text(row, "portfolio_code"),
     portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"),
-    sectionTitle: text(row, "section_title"),
-    exerciseId: text(row, "exercise_id"),
+    sectionTitle: nullableText(row, "section_title") ?? "Onbekende oefening",
+    exerciseId: nullableText(row, "exercise_id"),
     exerciseCode: text(row, "exercise_code"),
+    isMatchedExercise: nullableText(row, "exercise_id") !== null,
     documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
     variant: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
     status: text(row, "status") === "DONE" ? "DONE" : "TODO",
