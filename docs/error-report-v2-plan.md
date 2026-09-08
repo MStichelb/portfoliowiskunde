@@ -32,9 +32,11 @@ De writeflow maakt of hergebruikt het issue via de unieke locatie-index. Een eer
 
 `reportCount` is het totale aantal individuele meldingen onder een issue. `reporterCount` telt uitsluitend unieke niet-lege interne user-IDs; anonieme legacyreports en `reporter_name` worden niet als unieke users geïnterpreteerd.
 
-De canonieke v2-teller `getOpenErrorIssueCount()` telt TODO-issues. Alle Batch E-writes zijn issuegericht; `getOpenErrorReportCount()` blijft alleen tijdelijk beschikbaar voor de nog niet gemigreerde admin-UI. Batch F schakelt de zichtbare teller om.
+Batch F is afgerond. Status, pin en beheernotitie worden voor nieuwe beheerfunctionaliteit uitsluitend op `error_report_issues` gewijzigd. De issue-actions autoriseren via de server-side issue- en portfoliorelatie naar de LearningSpace en werken daardoor ook voor onbekende oefeningen zonder `exercise_id`. De zichtbare LearningSpace-teller gebruikt `getOpenErrorIssueCount()` en telt dus TODO-issues in plaats van onderliggende meldingen.
+
+De bestaande report-level actions en redundante reportvelden blijven tijdelijk beschikbaar voor de oude admin-UI, maar zijn niet langer het doelmodel voor nieuwe beheerfunctionaliteit. Issue-delete en de definitieve bewaarlifecycle zijn nog bewust open; de volgende stap is de gegroepeerde admin-UI op het issue-readmodel en de nieuwe issue-actions aansluiten.
 
 ## Vervolg
 
-- **F:** meldingen voor opgaven, eindoplossingen en hints uitbreiden.
+- **Grouped admin-UI:** het issue-readmodel en de issue-level beheeracties zichtbaar aansluiten.
 - **G:** legacyvelden gecontroleerd opruimen nadat alle reads en writes issuegericht zijn.

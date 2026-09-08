@@ -1569,6 +1569,38 @@ export async function getErrorReportLearningSpaceId(id: string): Promise<string 
   return row ? text(row, "learning_space_id") : null;
 }
 
+export async function getErrorReportIssueLearningSpaceId(issueId: string): Promise<string | null> {
+  const row = (await (await getDatabase()).execute({
+    sql: `SELECT portfolios.learning_space_id FROM error_report_issues
+      INNER JOIN portfolios ON portfolios.id = error_report_issues.portfolio_id
+      WHERE error_report_issues.id = ?`,
+    args: [issueId],
+  })).rows[0];
+  return row ? text(row, "learning_space_id") : null;
+}
+
+export async function setErrorReportIssueStatus(issueId: string, status: "TODO" | "DONE"): Promise<void> {
+  const now = new Date().toISOString();
+  await (await getDatabase()).execute({
+    sql: "UPDATE error_report_issues SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
+    args: [status, status === "DONE" ? now : null, now, issueId],
+  });
+}
+
+export async function toggleErrorReportIssuePin(issueId: string): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE error_report_issues SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END, updated_at = ? WHERE id = ?",
+    args: [new Date().toISOString(), issueId],
+  });
+}
+
+export async function saveErrorReportIssueNote(issueId: string, note: string): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE error_report_issues SET admin_note = ?, updated_at = ? WHERE id = ?",
+    args: [note.slice(0, 4000), new Date().toISOString(), issueId],
+  });
+}
+
 export async function setErrorReportStatus(id: string, status: "TODO" | "DONE"): Promise<void> {
   const database = await getDatabase();
   const now = new Date().toISOString();

@@ -9,10 +9,10 @@ vi.mock("@/app/components/sync-space-form", () => ({
 
 vi.mock("@/lib/repositories", () => ({
   getLatestSyncSummary: vi.fn(),
-  getOpenErrorReportCount: vi.fn(),
+  getOpenErrorIssueCount: vi.fn(),
 }));
 
-import { getLatestSyncSummary, getOpenErrorReportCount } from "@/lib/repositories";
+import { getLatestSyncSummary, getOpenErrorIssueCount } from "@/lib/repositories";
 import { AdminSpaceHeader } from "./admin-space-header";
 
 const mirror: LearningSpaceSource = {
@@ -34,7 +34,7 @@ describe("shared LearningSpace admin header", () => {
       startedAt: "2026-08-20T12:00:00.000Z", finishedAt: "2026-08-20T12:01:00.000Z", portfolioCount: 3,
       warningCount: 0, status: "completed", providerType: "google_drive", addedCount: 0, updatedCount: 0, missingCount: 0, failureMessage: null,
     });
-    vi.mocked(getOpenErrorReportCount).mockResolvedValue(4);
+    vi.mocked(getOpenErrorIssueCount).mockResolvedValue(4);
 
     const markup = renderToStaticMarkup(await AdminSpaceHeader({ current: space, section: "settings", user: { id: "admin", displayName: "Admin", firstName: null, lastName: null, email: null, role: "superadmin", status: "active", classGroupOverrideId: null } }));
     expect(markup).toContain("Beheer");

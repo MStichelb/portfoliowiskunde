@@ -6,10 +6,15 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { getDatabase, resetDatabaseForTests, type DatabaseClient } from "./database";
 import {
   getAdminErrorReports,
+  getErrorReportIssue,
   getGroupedErrorReportIssues,
+  getErrorReportIssueLearningSpaceId,
   getOpenErrorIssueCount,
   getOpenErrorReportCount,
   listErrorReportsForIssue,
+  saveErrorReportIssueNote,
+  setErrorReportIssueStatus,
+  toggleErrorReportIssuePin,
 } from "./repositories";
 
 let temporaryDirectory: string | undefined;
@@ -91,6 +96,47 @@ describe("grouped error report read model", () => {
       isMatchedExercise: false,
       sectionTitle: "Onbekende oefening",
     });
+    expect(await getErrorReportIssueLearningSpaceId("issue-unmatched")).toBe("space-5");
+
+    await setErrorReportIssueStatus("issue-unmatched", "DONE");
+    await toggleErrorReportIssuePin("issue-unmatched");
+    await saveErrorReportIssueNote("issue-unmatched", "Onbekende oefening nakijken");
+    expect(await getErrorReportIssue("issue-unmatched")).toMatchObject({
+      exerciseId: null,
+      status: "DONE",
+      pinned: true,
+      adminNote: "Onbekende oefening nakijken",
+    });
+  });
+
+  it("manages canonical issue state without changing legacy report fields", async () => {
+    const database = await getDatabase();
+    const reportsBefore = (await database.execute({
+      sql: "SELECT id, status, pinned, admin_note FROM error_reports WHERE issue_id = ? ORDER BY id",
+      args: ["issue-main"],
+    })).rows;
+
+    await setErrorReportIssueStatus("issue-main", "DONE");
+    let issue = await getErrorReportIssue("issue-main");
+    expect(issue?.status).toBe("DONE");
+    expect(issue?.completedAt).toBeTruthy();
+
+    await setErrorReportIssueStatus("issue-main", "TODO");
+    issue = await getErrorReportIssue("issue-main");
+    expect(issue).toMatchObject({ status: "TODO", completedAt: null });
+
+    await toggleErrorReportIssuePin("issue-main");
+    expect((await getErrorReportIssue("issue-main"))?.pinned).toBe(false);
+    await saveErrorReportIssueNote("issue-main", "N".repeat(4_001));
+    expect((await getErrorReportIssue("issue-main"))?.adminNote).toHaveLength(4_000);
+
+    const reportsAfter = (await database.execute({
+      sql: "SELECT id, status, pinned, admin_note FROM error_reports WHERE issue_id = ? ORDER BY id",
+      args: ["issue-main"],
+    })).rows;
+    expect(reportsAfter).toEqual(reportsBefore);
+    expect(await getErrorReportIssueLearningSpaceId("issue-main")).toBe("space-5");
+    expect(await getErrorReportIssueLearningSpaceId("missing-issue")).toBeNull();
   });
 
   it("reads legacy report details newest-first and preserves reporter names", async () => {
