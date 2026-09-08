@@ -38,7 +38,7 @@ De bestaande reportkolommen voor locatie, status, pin en notitie blijven bewust 
 
 Een partial unique index op `(issue_id, reporter_user_id)` geldt alleen wanneer `reporter_user_id IS NOT NULL`. Een ingelogde user kan daardoor later maximaal één melding per issue hebben, terwijl meerdere anonieme legacyreports met `NULL` behouden blijven.
 
-De writeflow maakt of hergebruikt het issue via de unieke locatie-index. Een eerste melding maakt een report; een volgende melding van dezelfde user werkt die reporttekst en timestamp bij. Een andere user krijgt een tweede report onder hetzelfde issue. Een opnieuw gemeld DONE-issue gaat terug naar TODO en verliest zijn voltooiingstijd, terwijl pin en beheernotitie behouden blijven. Nieuwe reports bewaren `reporter_user_id` en laten `reporter_name` leeg.
+De writeflow maakt of hergebruikt het issue via de unieke locatie-index. Een eerste melding maakt een report; een volgende melding van dezelfde user werkt die reporttekst en timestamp bij. Een andere user krijgt een tweede report onder hetzelfde issue. Een nieuwe melding heropent de thread naar TODO maar bewaart `completed_at` als grens tussen eerder behandelde en nieuwere reports; pin en beheernotitie blijven eveneens behouden. De issue-compatibiliteitsvelden behouden voorlopig hun bestaande reopen-gedrag. Een handmatige adminactie naar TODO wist de completiondatum wel, terwijl opnieuw DONE zetten `completed_at` en `updated_at` naar het nieuwe afwerkmoment verplaatst. Nieuwe reports bewaren `reporter_user_id` en laten `reporter_name` leeg.
 
 `reportCount` is het totale aantal individuele meldingen onder een issue. `reporterCount` telt uitsluitend unieke niet-lege interne user-IDs; anonieme legacyreports en `reporter_name` worden niet als unieke users geïnterpreteerd.
 
@@ -53,6 +53,8 @@ Batch G1.1 voegt de thread-readlaag toe. Het overzicht levert één rij per oefe
 Batch G1.2 schakelt de LearningSpace-inbox om naar één adminkaart per oefeningthread. Issues zijn binnen die kaart de afzonderlijke foutlocaties en reports blijven de individuele leerlingmeldingen. Status, pin en beheernotitie worden uitsluitend op threadniveau beheerd; issue- en reportworkflowvelden blijven voorlopig alleen als compatibiliteitsdata bestaan. De inbox gebruikt één threadoverzichtsquery en één bulkquery voor alle onderliggende issues en reports. Delete en bewaarlifecycle blijven open.
 
 Batch G1.3 maakt de threadkaarten compacter met locatiechips, compacte reportmetadata en een beheernotitie die alleen tijdens bewerken als formulier verschijnt. Voor gematchte oefeningen is de bestaande visibilityactie opnieuw beschikbaar. Onbekende oefeningcodes krijgen een toegankelijk waarschuwingsicoon in plaats van een extra tekstregel.
+
+Batch G1.4 combineert aantal, laatste melding en eventuele afwerkdatum in de disclosuretrigger. Individuele reports verschijnen per locatie als compacte minikaarten. DONE-reports zijn behandeld; een automatisch heropende TODO-thread gebruikt de bewaarde `completed_at` als cutoff om oudere reports terughoudend en nieuwere reports als onbehandeld weer te geven. De interne beheernotitie heeft een afzonderlijk subtiel bordeaux accent.
 
 Thread-delete, de definitieve bewaarlifecycle en het opruimen van de tijdelijke issue-/report-level actions en redundante legacyvelden blijven open.
 

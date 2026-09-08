@@ -123,7 +123,7 @@ describe("error report v2 submission", () => {
       expect.objectContaining({ reporter_user_id: "report-user-2", message: "Andere leerling" }),
     ]);
     expect(issue).toMatchObject({ status: "TODO", completed_at: null, pinned: 1, admin_note: "Behouden notitie" });
-    expect(thread).toMatchObject({ status: "TODO", completed_at: null });
+    expect(thread).toMatchObject({ status: "TODO", completed_at: "2026-09-08T12:00:00.000Z" });
   });
 
   it("groups document issues for one exercise into one race-safe thread", async () => {

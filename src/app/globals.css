@@ -303,25 +303,35 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .report-reporter { margin: 0 0 8px; color: #314149; font-size: 14px; font-weight: 700; }
 .report-date { margin: 4px 0; color: #52616a; font-size: 14px; }
 .report-note { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: end; margin-top: 14px; }
+.report-note.report-note-accent { padding-left: 12px; border-left: 3px solid #c9aeb2; }
 .report-note label { display: grid; gap: 5px; font-size: 14px; font-weight: 700; }
 .report-note textarea { min-height: 64px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; font: inherit; resize: vertical; }
 .report-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .9fr); gap: 20px; margin-top: 14px; }
 .report-content .report-note { margin-top: 0; }
 .report-note-compact { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; min-width: 0; }
 .report-note-compact p { min-width: 0; margin: 0; color: #52616a; font-size: 14px; white-space: pre-wrap; }
+.report-note-compact.report-note-accent p { padding-left: 10px; border-left: 3px solid #c9aeb2; color: #5c353b; }
 .report-note-compact .secondary-button { min-height: 34px; padding: 6px 10px; }
-.report-issue-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; color: #52616a; font-size: 14px; }
-.report-issue-summary strong { color: #17222b; }
 .report-exercise-context { display: flex !important; align-items: center; gap: 6px; }
 .report-card-heading .report-unmatched-warning { display: inline-flex; flex: 0 0 auto; margin: 0; color: #805700; }
 .report-location-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; color: #33434c; font-size: 14px; }
 .report-location-chip { display: inline-flex; align-items: center; min-height: 26px; padding: 3px 8px; border-radius: 4px; background: #ecefed; color: #4f5c62; font-weight: 700; }
-.issue-report-details > summary { cursor: pointer; font-weight: 700; }
+.issue-report-details > summary { display: flex; align-items: center; gap: 7px; color: #52616a; font-size: 14px; font-weight: 700; cursor: pointer; list-style: none; }
+.issue-report-details > summary::-webkit-details-marker { display: none; }
+.issue-report-details > summary::before { content: "▸"; color: #17222b; }
+.issue-report-details[open] > summary::before { content: "▾"; }
 .issue-report-list { display: grid; gap: 12px; margin-top: 12px; }
 .issue-report-location { display: grid; gap: 8px; }
 .issue-report-location h3 { margin: 0; font-size: 15px; }
-.issue-report-item { padding-top: 12px; border-top: 1px solid #d5ddda; }
-.issue-report-item .report-reporter { margin: 4px 0; color: #52616a; font-size: 14px; }
+.issue-report-stack { display: grid; gap: 6px; }
+.issue-report-item { padding: 9px 10px; border: 1px solid #d5ddda; border-radius: 4px; background: #fff; }
+.issue-report-item .report-message { margin: 0; color: #17222b; }
+.issue-report-item .report-reporter { margin: 4px 0 0; color: #52616a; font-size: 13px; font-weight: 400; }
+.issue-report-item.is-treated { background: #f2f4f3; }
+.issue-report-item.is-treated .report-message { color: #68767e; }
+.issue-report-item.is-treated .report-reporter { color: #7b858a; }
+.report-actions .status-action { display: inline-flex; height: 34px; min-height: 34px; align-items: center; justify-content: center; padding: 3px 8px; }
+.report-actions .status-action .status-badge { margin: 0; }
 .report-note-actions { display: flex; align-items: center; gap: 10px; min-height: 34px; }
 .report-note-saved { margin: 0; color: #174a36; font-size: 14px; font-weight: 700; }
 .done-group > summary { cursor: pointer; list-style: none; }

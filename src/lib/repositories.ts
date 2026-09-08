@@ -1378,7 +1378,7 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
       ON CONFLICT(key) DO UPDATE SET attempts = error_report_rate_limits.attempts + 1, window_started_at = excluded.window_started_at`, args: [input.rateLimitKey, windowStartedAt] },
     reportStatement,
     { sql: `UPDATE error_report_issues SET status = 'TODO', completed_at = NULL, updated_at = ? WHERE id = ?`, args: [now.toISOString(), resolvedIssueId] },
-    { sql: `UPDATE error_report_threads SET status = 'TODO', completed_at = NULL, updated_at = ? WHERE id = ?`, args: [now.toISOString(), resolvedThreadId] },
+    { sql: `UPDATE error_report_threads SET status = 'TODO', updated_at = ? WHERE id = ?`, args: [now.toISOString(), resolvedThreadId] },
   ]);
   return { issueId: resolvedIssueId };
 }

@@ -22,7 +22,7 @@ export function ErrorReportNoteForm({ threadId, note }: { threadId: string; note
   }, [state.saved]);
 
   if (!editing) {
-    return <div className="report-note-compact">
+    return <div className="report-note-compact report-note-accent">
       {note ? <p><strong>Notitie:</strong> {note}</p> : null}
       <button type="button" className="secondary-button" onClick={() => dispatch({ type: "edit" })}>
         {note ? "Bewerken" : "Notitie toevoegen"}
@@ -30,7 +30,7 @@ export function ErrorReportNoteForm({ threadId, note }: { threadId: string; note
     </div>;
   }
 
-  return <form className="report-note" action={action}>
+  return <form className="report-note report-note-accent" action={action}>
     <input type="hidden" name="threadId" value={threadId} />
     <label htmlFor={`report-note-${threadId}`}>Adminnotitie
       <textarea id={`report-note-${threadId}`} name="note" defaultValue={note} maxLength={4000} />

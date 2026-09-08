@@ -15,6 +15,7 @@ import {
   errorReportLocationLabel,
   GroupedErrorReportThreadCards,
   GroupedErrorReportThreadInbox,
+  isErrorReportTreated,
 } from "./error-report-groups";
 
 describe("grouped error report thread inbox", () => {
@@ -44,7 +45,7 @@ describe("grouped error report thread inbox", () => {
     expect(errorReportLocationLabel(issue({ documentKind: "final_solutions", variant: "alternative" }))).toBe("Eindoplossingen - Alternatieve uitwerking");
   });
 
-  it("renders one collapsed disclosure and groups reports per location newest-first", () => {
+  it("renders compact disclosure metadata and groups report cards per location newest-first", () => {
     const assignment = issue({
       issueId: "assignment",
       documentKind: "assignment",
@@ -56,9 +57,11 @@ describe("grouped error report thread inbox", () => {
     const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[thread({ reportCount: 3 })]} issuesByThread={{ "thread-main": [assignment, hints] }} spaceSlug="5wis" />);
 
     expect(markup.match(/<details class="issue-report-details">/g)).toHaveLength(1);
-    expect(markup).toContain("Bekijk 3 meldingen");
+    expect(markup).toContain("3 meldingen • laatste: 8 sep 2026, 13:00");
+    expect(markup).not.toContain("Bekijk 3 meldingen");
     expect(markup).toMatch(/<h3>Opgaven<\/h3>[\s\S]*Nieuwste melding[\s\S]*Oudere melding/);
     expect(markup).toMatch(/<h3>Hints<\/h3>[\s\S]*Hintmelding/);
+    expect(markup.match(/class="issue-report-item is-unhandled"/g)).toHaveLength(3);
     expect(markup.indexOf("Nieuwste melding")).toBeLessThan(markup.indexOf("Oudere melding"));
     expect(markup).toContain("Leerling · 8 sep 2026, 14:00");
     expect(markup).toContain("Onbekende melder · 8 sep 2026, 13:00");
@@ -73,6 +76,7 @@ describe("grouped error report thread inbox", () => {
     expect(markup).toContain("Notitie:");
     expect(markup).toContain("Threadnotitie");
     expect(markup).toContain("Bewerken");
+    expect(markup).toContain("report-note-compact report-note-accent");
     expect(markup).not.toContain("textarea");
     expect(markup).not.toContain('name="issueId"');
     expect(markup).not.toContain("Status: TO DO");
@@ -82,6 +86,43 @@ describe("grouped error report thread inbox", () => {
     expect(markup).toContain("Melding pinnen");
     expect(markup).toContain("Markeren als afgewerkt");
     expect(markup).not.toContain("Foutmelding verwijderen");
+  });
+
+  it("shows a completion date without time for DONE threads", () => {
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards
+      threads={[thread({ status: "DONE", completedAt: "2026-09-22T14:35:00.000Z", reportCount: 2 })]}
+      issuesByThread={{ "thread-main": [issue({ reportCount: 2 })] }}
+      spaceSlug="5wis"
+    />);
+
+    expect(markup).toContain("2 meldingen • laatste: 8 sep 2026, 13:00 • afgewerkt: 22 sep 2026");
+    expect(markup).not.toContain("afgewerkt: 22 sep 2026,");
+    expect(markup).toContain('class="issue-report-item is-treated"');
+  });
+
+  it("distinguishes treated and new reports after automatic reopen", () => {
+    const reopened = thread({ completedAt: "2026-09-08T11:00:00.000Z" });
+    const oldReport = report("old", "Eerder behandeld", "2026-09-08T10:00:00.000Z");
+    const newReport = report("new", "Nieuwe melding", "2026-09-08T12:00:00.000Z");
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards
+      threads={[reopened]}
+      issuesByThread={{ "thread-main": [issue({ reports: [newReport, oldReport], reportCount: 2 })] }}
+      spaceSlug="5wis"
+    />);
+
+    expect(markup).toMatch(/is-unhandled[^>]*aria-label="Onbehandelde melding"[\s\S]*Nieuwe melding/);
+    expect(markup).toMatch(/is-treated[^>]*aria-label="Eerder afgehandelde melding"[\s\S]*Eerder behandeld/);
+    expect(markup).not.toContain("afgewerkt:");
+  });
+
+  it("applies the documented treated-report cutoff semantics", () => {
+    const reportBeforeCutoff = report("old", "Oud", "2026-09-08T10:00:00.000Z");
+    const reportAfterCutoff = report("new", "Nieuw", "2026-09-08T12:00:00.000Z");
+
+    expect(isErrorReportTreated(thread(), reportBeforeCutoff)).toBe(false);
+    expect(isErrorReportTreated(thread({ status: "DONE" }), reportAfterCutoff)).toBe(true);
+    expect(isErrorReportTreated(thread({ completedAt: "2026-09-08T11:00:00.000Z" }), reportBeforeCutoff)).toBe(true);
+    expect(isErrorReportTreated(thread({ completedAt: "2026-09-08T11:00:00.000Z" }), reportAfterCutoff)).toBe(false);
   });
 
   it("shows a compact add-note action when the thread note is empty", () => {

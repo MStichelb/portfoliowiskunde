@@ -229,6 +229,13 @@ describe("grouped error report read model", () => {
     await setErrorReportThreadStatus("thread-exercise-1", "TODO");
     current = (await database.execute("SELECT * FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows[0];
     expect(current).toMatchObject({ status: "TODO", completed_at: null });
+
+    await database.execute("UPDATE error_report_threads SET completed_at = '2000-01-01T00:00:00.000Z' WHERE id = 'thread-exercise-1'");
+    await setErrorReportThreadStatus("thread-exercise-1", "DONE");
+    current = (await database.execute("SELECT * FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows[0];
+    expect(current?.status).toBe("DONE");
+    expect(current?.completed_at).not.toBe("2000-01-01T00:00:00.000Z");
+    expect(current?.updated_at).toBe(current?.completed_at);
     expect((await database.execute("SELECT status, pinned, admin_note FROM error_report_issues WHERE id = 'issue-main'")).rows[0]).toEqual(issueBefore);
     expect((await database.execute("SELECT id, status, pinned, admin_note FROM error_reports WHERE issue_id = 'issue-main' ORDER BY id")).rows).toEqual(reportsBefore);
   });

@@ -16,7 +16,7 @@ import {
   openGroupedErrorReportThreadGroups,
   sortGroupedErrorReportThreads,
 } from "@/lib/error-report-sort";
-import type { ErrorReportDocumentKind, ErrorReportThreadIssueDetail, GroupedErrorReportThread } from "@/lib/repositories";
+import type { ErrorReportDocumentKind, ErrorReportIssueDetail, ErrorReportThreadIssueDetail, GroupedErrorReportThread } from "@/lib/repositories";
 
 export function GroupedErrorReportThreadInbox({ threads, issuesByThread, spaceSlug }: {
   threads: GroupedErrorReportThread[];
@@ -97,7 +97,6 @@ function GroupedErrorReportThreadCard({ thread, issues, spaceSlug }: {
     ? `/admin/${encodeURIComponent(spaceSlug)}/oefening/${encodeURIComponent(thread.exerciseId)}`
     : null;
   const reportLabel = `${thread.reportCount} ${thread.reportCount === 1 ? "melding" : "meldingen"}`;
-  const activityDate = thread.latestReportAt ?? thread.updatedAt;
   const canToggleVisibility = thread.exerciseId !== null && thread.solutionStatus !== null && thread.solutionConfiguredVisible !== null;
 
   return <article className="report-card">
@@ -128,35 +127,54 @@ function GroupedErrorReportThreadCard({ thread, issues, spaceSlug }: {
         </form>
       </div>
     </div>
-    <div className="report-issue-summary">
-      <strong>{reportLabel}</strong>
-      <span>Laatste melding: {formatReportDate(activityDate)}</span>
-    </div>
     <div className="report-location-summary" aria-label="Foutlocaties">
       {issues.map((issue) => <span key={issue.issueId} className="report-location-chip">
         {errorReportLocationLabel(issue)}{issues.length > 1 || issue.reportCount > 1 ? ` · ${issue.reportCount}` : ""}
       </span>)}
     </div>
     <div className="report-content">
-      <ThreadReportDetails issues={issues} reportLabel={reportLabel} />
+      <ThreadReportDetails thread={thread} issues={issues} reportLabel={reportLabel} />
       <ErrorReportNoteForm threadId={thread.id} note={thread.adminNote} />
     </div>
   </article>;
 }
 
-function ThreadReportDetails({ issues, reportLabel }: { issues: ErrorReportThreadIssueDetail[]; reportLabel: string }) {
+function ThreadReportDetails({ thread, issues, reportLabel }: {
+  thread: GroupedErrorReportThread;
+  issues: ErrorReportThreadIssueDetail[];
+  reportLabel: string;
+}) {
+  const activityDate = thread.latestReportAt ?? thread.updatedAt;
   return <details className="issue-report-details">
-    <summary>Bekijk {reportLabel}</summary>
+    <summary>{reportLabel} • laatste: {formatReportDate(activityDate)}{thread.status === "DONE" && thread.completedAt ? ` • afgewerkt: ${formatReportCompletionDate(thread.completedAt)}` : ""}</summary>
     <div className="issue-report-list">{issues.map((issue) => <section key={issue.issueId} className="issue-report-location">
       <h3>{errorReportLocationLabel(issue)}</h3>
-      {issue.reports.map((report) => <article key={report.id} className="issue-report-item">
-        <p className="report-message">{report.message}</p>
-        <p className="report-reporter">{report.reporterDisplayName ?? report.reporterName ?? "Onbekende melder"} · {formatReportDate(report.createdAt)}</p>
-      </article>)}
+      <div className="issue-report-stack">{issue.reports.map((report) => {
+        const treated = isErrorReportTreated(thread, report);
+        return <article key={report.id} className={`issue-report-item ${treated ? "is-treated" : "is-unhandled"}`} aria-label={treated ? "Eerder afgehandelde melding" : "Onbehandelde melding"}>
+          <p className="report-message">{report.message}</p>
+          <p className="report-reporter">{report.reporterDisplayName ?? report.reporterName ?? "Onbekende melder"} · {formatReportDate(report.createdAt)}</p>
+        </article>;
+      })}</div>
     </section>)}</div>
   </details>;
 }
 
+export function isErrorReportTreated(
+  thread: Pick<GroupedErrorReportThread, "status" | "completedAt">,
+  report: Pick<ErrorReportIssueDetail, "createdAt">,
+): boolean {
+  if (thread.status === "DONE") return true;
+  if (!thread.completedAt) return false;
+  const completedAt = Date.parse(thread.completedAt);
+  const createdAt = Date.parse(report.createdAt);
+  return Number.isFinite(completedAt) && Number.isFinite(createdAt) && createdAt <= completedAt;
+}
+
 function formatReportDate(value: string) {
   return new Intl.DateTimeFormat("nl-BE", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Brussels" }).format(new Date(value));
+}
+
+function formatReportCompletionDate(value: string) {
+  return new Intl.DateTimeFormat("nl-BE", { dateStyle: "medium", timeZone: "Europe/Brussels" }).format(new Date(value));
 }
