@@ -6,6 +6,8 @@
 
 D1 met migratie 027 is afgerond. D2 voegt het server-side grouped readmodel toe: één issue per resultaat, aangevuld met portfolio-, sectie- en oefeningscontext en geaggregeerde reportgegevens. De overzichtsquery gebruikt één vaste SQL-query met een gegroepeerde reportsubquery; issue-detail gebruikt één afzonderlijke expliciete query.
 
+Batch E is afgerond. Een ingelogde leerling kan nu vanaf de publieke portfoliopagina een bestaand opgaven-, eindoplossingen- of hintsdocument en een zichtbare oefening kiezen. De server valideert de LearningSpace, portfolio, oefening, documentbeschikbaarheid en eventuele alternatieve uitwerking opnieuw. De bestaande solution-page disclosure gebruikt dezelfde API- en repository-writeflow.
+
 De locatie-identiteit is:
 
 `learning_space_id + portfolio_id + document_kind + exercise_id + variant_kind`
@@ -24,12 +26,13 @@ De bestaande reportkolommen voor locatie, status, pin en notitie blijven bewust 
 
 Een partial unique index op `(issue_id, reporter_user_id)` geldt alleen wanneer `reporter_user_id IS NOT NULL`. Een ingelogde user kan daardoor later maximaal één melding per issue hebben, terwijl meerdere anonieme legacyreports met `NULL` behouden blijven.
 
+De writeflow maakt of hergebruikt het issue via de unieke locatie-index. Een eerste melding maakt een report; een volgende melding van dezelfde user werkt die reporttekst en timestamp bij. Een andere user krijgt een tweede report onder hetzelfde issue. Een opnieuw gemeld DONE-issue gaat terug naar TODO en verliest zijn voltooiingstijd, terwijl pin en beheernotitie behouden blijven. Nieuwe reports bewaren `reporter_user_id` en laten `reporter_name` leeg.
+
 `reportCount` is het totale aantal individuele meldingen onder een issue. `reporterCount` telt uitsluitend unieke niet-lege interne user-IDs; anonieme legacyreports en `reporter_name` worden niet als unieke users geïnterpreteerd.
 
-De canonieke v2-teller `getOpenErrorIssueCount()` telt TODO-issues. De bestaande `getOpenErrorReportCount()` blijft tijdelijk beschikbaar voor de nog niet gemigreerde UI en API, omdat nieuwe D2-reports nog niet issuegericht worden geschreven. Batch F schakelt de zichtbare teller om zodra de writeflow issues garandeert.
+De canonieke v2-teller `getOpenErrorIssueCount()` telt TODO-issues. Alle Batch E-writes zijn issuegericht; `getOpenErrorReportCount()` blijft alleen tijdelijk beschikbaar voor de nog niet gemigreerde admin-UI. Batch F schakelt de zichtbare teller om.
 
 ## Vervolg
 
-- **E:** ingelogde leerlingmeldingen aan issues en users koppelen, inclusief duplicate UX.
 - **F:** meldingen voor opgaven, eindoplossingen en hints uitbreiden.
 - **G:** legacyvelden gecontroleerd opruimen nadat alle reads en writes issuegericht zijn.

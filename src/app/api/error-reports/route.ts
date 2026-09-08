@@ -2,18 +2,24 @@ import { createHmac } from "node:crypto";
 
 import { getAuthenticatedUser } from "@/lib/auth";
 import { canAccessPublicLearningSpace } from "@/lib/public-access";
-import { createErrorReport, getVisibleExercise } from "@/lib/repositories";
+import { createErrorReport, getVisibleExercise, type ErrorReportDocumentKind } from "@/lib/repositories";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const body = await request.json().catch(() => null) as { exerciseId?: unknown; variant?: unknown; message?: unknown; reporterName?: unknown; website?: unknown } | null;
+  const body = await request.json().catch(() => null) as { portfolioId?: unknown; exerciseId?: unknown; documentKind?: unknown; variant?: unknown; message?: unknown; website?: unknown } | null;
   if (!body || body.website) return Response.json({ ok: true });
-  if (typeof body.exerciseId !== "string" || (body.variant !== "standard" && body.variant !== "alternative") || typeof body.message !== "string" || (body.reporterName !== undefined && typeof body.reporterName !== "string")) return Response.json({ error: "Ongeldige melding." }, { status: 400 });
+  const documentKind = body.documentKind ?? "final_solutions";
+  if (typeof body.exerciseId !== "string"
+    || (body.portfolioId !== undefined && typeof body.portfolioId !== "string")
+    || !isDocumentKind(documentKind)
+    || (body.variant !== undefined && body.variant !== null && body.variant !== "standard" && body.variant !== "alternative")
+    || typeof body.message !== "string") return Response.json({ error: "Ongeldige melding." }, { status: 400 });
   const user = await getAuthenticatedUser();
+  if (!user) return Response.json({ error: "Niet aangemeld." }, { status: 401 });
   const exercise = await getVisibleExercise(body.exerciseId);
   if (!exercise || !await canAccessPublicLearningSpace(user, exercise.learningSpaceId)) {
-    return Response.json({ error: user ? "Oefening niet gevonden." : "Niet aangemeld." }, { status: user ? 404 : 401 });
+    return Response.json({ error: "Oefening niet gevonden." }, { status: 404 });
   }
   const secret = process.env.REPORT_RATE_LIMIT_SECRET?.trim() || process.env.ADMIN_SESSION_SECRET?.trim() || process.env.ADMIN_PASSWORD?.trim();
   if (!secret) return Response.json({ error: "Meldingen zijn tijdelijk niet beschikbaar." }, { status: 503 });
@@ -21,9 +27,22 @@ export async function POST(request: Request) {
   const bucket = Math.floor(Date.now() / 600_000);
   const rateLimitKey = createHmac("sha256", secret).update(`${bucket}:${visitor}`).digest("base64url");
   try {
-    await createErrorReport({ exerciseId: body.exerciseId, variant: body.variant, message: body.message, reporterName: body.reporterName, rateLimitKey });
+    await createErrorReport({
+      exerciseId: body.exerciseId,
+      learningSpaceId: exercise.learningSpaceId,
+      portfolioId: body.portfolioId,
+      documentKind,
+      variant: body.variant as "standard" | "alternative" | null | undefined,
+      message: body.message,
+      reporterUserId: user.id,
+      rateLimitKey,
+    });
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "De melding kon niet worden verstuurd." }, { status: 400 });
   }
+}
+
+function isDocumentKind(value: unknown): value is ErrorReportDocumentKind {
+  return value === "assignment" || value === "final_solutions" || value === "hints";
 }

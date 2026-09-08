@@ -1,0 +1,189 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { getDatabase, resetDatabaseForTests, type DatabaseClient } from "./database";
+import { createErrorReport } from "./repositories";
+
+let temporaryDirectory: string | undefined;
+
+beforeEach(async () => {
+  temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-error-submission-"));
+  process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+  resetDatabaseForTests();
+  await seedSubmissionFixture(await getDatabase());
+});
+
+afterEach(async () => {
+  resetDatabaseForTests();
+  delete process.env.PORTFOLIO_DATABASE_PATH;
+  if (temporaryDirectory) await removeTemporaryDirectory(temporaryDirectory);
+  temporaryDirectory = undefined;
+});
+
+describe("error report v2 submission", () => {
+  it.each([
+    ["assignment", null],
+    ["final_solutions", "standard"],
+    ["hints", null],
+  ] as const)("creates and links a %s issue for the authenticated reporter", async (documentKind, variant) => {
+    const result = await createErrorReport(submission({ documentKind, variant, reporterUserId: "report-user-1", rateLimitKey: `kind-${documentKind}` }));
+    const database = await getDatabase();
+    const issue = (await database.execute({ sql: "SELECT * FROM error_report_issues WHERE id = ?", args: [result.issueId] })).rows[0];
+    const report = (await database.execute({ sql: "SELECT * FROM error_reports WHERE issue_id = ?", args: [result.issueId] })).rows[0];
+
+    expect(issue).toMatchObject({ document_kind: documentKind, variant_kind: variant, portfolio_id: "submission-portfolio" });
+    expect(report).toMatchObject({ reporter_user_id: "report-user-1", reporter_name: null, issue_id: result.issueId });
+  });
+
+  it("validates portfolio ownership, document presence and alternative availability", async () => {
+    await expect(createErrorReport(submission({ portfolioId: "other-portfolio", documentKind: "assignment", variant: null, rateLimitKey: "wrong-portfolio" }))).rejects.toThrow("hoort niet bij");
+    await expect(createErrorReport(submission({ portfolioId: "other-portfolio", exerciseId: "other-exercise", documentKind: "hints", variant: null, rateLimitKey: "missing-document" }))).rejects.toThrow("niet beschikbaar");
+    await expect(createErrorReport(submission({ exerciseId: "submission-exercise-no-alt", documentKind: "final_solutions", variant: "alternative", rateLimitKey: "missing-alternative" }))).rejects.toThrow("alternatieve uitwerking");
+
+    const validAlternative = await createErrorReport(submission({ documentKind: "final_solutions", variant: "alternative", rateLimitKey: "valid-alternative" }));
+    expect((await (await getDatabase()).execute({ sql: "SELECT variant_kind FROM error_report_issues WHERE id = ?", args: [validAlternative.issueId] })).rows[0]?.variant_kind).toBe("alternative");
+  });
+
+  it("updates the same user's report, shares the issue with other users and safely reopens DONE", async () => {
+    const first = await createErrorReport(submission({ documentKind: "assignment", variant: null, reporterUserId: "report-user-1", message: "Eerste melding", rateLimitKey: "first" }));
+    const database = await getDatabase();
+    await database.execute({
+      sql: "UPDATE error_report_issues SET status = 'DONE', completed_at = '2026-09-08T12:00:00.000Z', pinned = 1, admin_note = 'Behouden notitie' WHERE id = ?",
+      args: [first.issueId],
+    });
+
+    const updated = await createErrorReport(submission({ documentKind: "assignment", variant: null, reporterUserId: "report-user-1", message: "Bijgewerkte melding", rateLimitKey: "second" }));
+    const secondUser = await createErrorReport(submission({ documentKind: "assignment", variant: null, reporterUserId: "report-user-2", message: "Andere leerling", rateLimitKey: "third" }));
+    const issue = (await database.execute({ sql: "SELECT * FROM error_report_issues WHERE id = ?", args: [first.issueId] })).rows[0];
+    const reports = (await database.execute({ sql: "SELECT reporter_user_id, message FROM error_reports WHERE issue_id = ? ORDER BY reporter_user_id", args: [first.issueId] })).rows;
+
+    expect(updated.issueId).toBe(first.issueId);
+    expect(secondUser.issueId).toBe(first.issueId);
+    expect(reports).toEqual([
+      expect.objectContaining({ reporter_user_id: "report-user-1", message: "Bijgewerkte melding" }),
+      expect.objectContaining({ reporter_user_id: "report-user-2", message: "Andere leerling" }),
+    ]);
+    expect(issue).toMatchObject({ status: "TODO", completed_at: null, pinned: 1, admin_note: "Behouden notitie" });
+  });
+
+  it("rejects hidden public content and retains the existing rate limit", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE portfolios SET visible = 0 WHERE id = 'submission-portfolio'");
+    await expect(createErrorReport(submission({ documentKind: "assignment", variant: null, rateLimitKey: "hidden" }))).rejects.toThrow("niet beschikbaar");
+    expect((await database.execute("SELECT id FROM error_reports")).rows).toHaveLength(0);
+
+    await database.execute("UPDATE portfolios SET visible = 1 WHERE id = 'submission-portfolio'");
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await createErrorReport(submission({ documentKind: "assignment", variant: null, message: `Melding ${attempt}`, rateLimitKey: "limited" }));
+    }
+    await expect(createErrorReport(submission({ documentKind: "assignment", variant: null, message: "Zesde melding", rateLimitKey: "limited" }))).rejects.toThrow("Probeer later opnieuw");
+  });
+
+  it("keeps the legacy solution-page submission on the shared issue write path", async () => {
+    const result = await createErrorReport({
+      exerciseId: "submission-exercise",
+      learningSpaceId: "space-5",
+      documentKind: "final_solutions",
+      variant: "standard",
+      message: "Fout in de getoonde uitwerking",
+      reporterUserId: "report-user-1",
+      rateLimitKey: "legacy-solution",
+    });
+    const database = await getDatabase();
+    expect((await database.execute({ sql: "SELECT document_kind, variant_kind FROM error_report_issues WHERE id = ?", args: [result.issueId] })).rows[0]).toMatchObject({
+      document_kind: "final_solutions",
+      variant_kind: "standard",
+    });
+    expect((await database.execute({ sql: "SELECT issue_id, reporter_user_id FROM error_reports WHERE issue_id = ?", args: [result.issueId] })).rows[0]).toMatchObject({
+      issue_id: result.issueId,
+      reporter_user_id: "report-user-1",
+    });
+  });
+});
+
+function submission(overrides: Partial<Parameters<typeof createErrorReport>[0]> = {}): Parameters<typeof createErrorReport>[0] {
+  return {
+    exerciseId: "submission-exercise",
+    learningSpaceId: "space-5",
+    portfolioId: "submission-portfolio",
+    documentKind: "assignment",
+    variant: null,
+    message: "Er staat een fout in dit document.",
+    reporterUserId: "report-user-1",
+    rateLimitKey: "submission",
+    ...overrides,
+  };
+}
+
+async function seedSubmissionFixture(database: DatabaseClient): Promise<void> {
+  await database.batch([
+    user("report-user-1", "Eerste leerling"),
+    user("report-user-2", "Tweede leerling"),
+    portfolio("submission-portfolio", "space-5", "1", true),
+    portfolio("other-portfolio", "space-5", "2", false),
+    section("submission-section", "submission-portfolio"),
+    section("other-section", "other-portfolio"),
+    exercise("submission-exercise", "submission-portfolio", "submission-section", "1"),
+    exercise("submission-exercise-no-alt", "submission-portfolio", "submission-section", "2"),
+    exercise("other-exercise", "other-portfolio", "other-section", "1"),
+    variant("submission-standard", "submission-exercise", "standard"),
+    variant("submission-alternative", "submission-exercise", "alternative"),
+    variant("submission-no-alt-standard", "submission-exercise-no-alt", "standard"),
+    variant("other-standard", "other-exercise", "standard"),
+    asset("submission-standard-asset", "submission-standard", "PF1-Oef1.png"),
+    asset("submission-alternative-asset", "submission-alternative", "PF1-Oef1-alt.png"),
+    asset("submission-no-alt-standard-asset", "submission-no-alt-standard", "PF1-Oef2.png"),
+    asset("other-standard-asset", "other-standard", "PF2-Oef1.png"),
+  ]);
+}
+
+function user(id: string, displayName: string) {
+  return { sql: `INSERT INTO users (id, display_name, role, status, created_at, updated_at)
+    VALUES (?, ?, 'student', 'active', '2026-09-08T10:00:00.000Z', '2026-09-08T10:00:00.000Z')`, args: [id, displayName] };
+}
+
+function portfolio(id: string, learningSpaceId: string, code: string, allDocuments: boolean) {
+  return { sql: `INSERT INTO portfolios
+    (id, code, portfolio_code, learning_space_id, title, relative_path, assignment_pdf_path, hints_document_path,
+      final_solutions_pdf_path, visible, is_indexed, indexed_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, '2026-09-08T10:00:00.000Z')`, args: [
+      id, `${learningSpaceId}:${code}`, code, learningSpaceId, `Portfolio ${code}`, `Portfolio ${code}`,
+      `${id}/Portfolio ${code}.pdf`, allDocuments ? `${id}/Hints portfolio ${code}.pdf` : null,
+      allDocuments ? `${id}/Eindoplossingen portfolio ${code}.pdf` : null,
+    ] };
+}
+
+function section(id: string, portfolioId: string) {
+  return { sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path, visibility_mode)
+    VALUES (?, ?, 1, 'Deel 1', ?, 'visible')`, args: [id, portfolioId, `${portfolioId}/Uitwerkingen/1 - Deel`] };
+}
+
+function exercise(id: string, portfolioId: string, sectionId: string, code: string) {
+  return { sql: `INSERT INTO exercises
+    (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, visibility_mode, show_alternative_to_students)
+    VALUES (?, ?, ?, ?, 1, '', 'visible', 1)`, args: [id, portfolioId, sectionId, code] };
+}
+
+function variant(id: string, exerciseId: string, kind: "standard" | "alternative") {
+  return { sql: "INSERT INTO solution_variants (id, exercise_id, kind, label) VALUES (?, ?, ?, ?)", args: [id, exerciseId, kind, kind] };
+}
+
+function asset(id: string, variantId: string, fileName: string) {
+  return { sql: `INSERT INTO solution_assets (id, variant_id, relative_path, file_name, extension, step)
+    VALUES (?, ?, ?, ?, 'png', 1)`, args: [id, variantId, `Uitwerkingen/${fileName}`, fileName] };
+}
+
+async function removeTemporaryDirectory(directory: string): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try {
+      await rm(directory, { recursive: true, force: true });
+      return;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EBUSY") throw error;
+      if (attempt === 9) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+}

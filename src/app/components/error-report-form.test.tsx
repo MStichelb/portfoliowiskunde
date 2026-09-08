@@ -12,14 +12,12 @@ describe("ErrorReportForm", () => {
     expect(markup).not.toContain('name="reporterName"');
   });
 
-  it("renders an optional reporter name with guidance and a client-side length hint when open", () => {
+  it("uses the authenticated v2 flow without asking for a reporter name", () => {
     const markup = renderToStaticMarkup(<ErrorReportForm exerciseId="exercise-1" variants={["standard"]} initiallyOpen />);
 
-    expect(markup).toContain("Naam <em>(optioneel)</em>");
     expect(markup).toContain('aria-expanded="true"');
-    expect(markup).toContain('name="reporterName"');
-    expect(markup).toContain('maxLength="100"');
-    expect(markup).not.toContain('name="reporterName" required');
-    expect(markup).toContain("Vul je naam in als je graag een persoonlijke terugkoppeling wilt.");
+    expect(markup).not.toContain('name="reporterName"');
+    expect(markup).toContain('name="variant"');
+    expect(markup).toContain("Wat heb je opgemerkt?");
   });
 });

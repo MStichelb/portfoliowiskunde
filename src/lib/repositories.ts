@@ -93,12 +93,14 @@ export interface StudentPortfolio {
   cardColor: string;
   customText: string | null;
   customTextPosition: PortfolioCustomTextPosition;
+  assignmentPdfPath: string | null;
   hintsDocumentPath: string | null;
+  finalSolutionsPdfPath: string | null;
   sections: Array<{
     id: string;
     title: string;
     order: number;
-    exercises: Array<{ id: string; code: string; visible: boolean }>;
+    exercises: Array<{ id: string; code: string; visible: boolean; hasAlternativeSolution: boolean }>;
   }>;
 }
 
@@ -1054,7 +1056,16 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
     database.execute({ sql: `SELECT portfolios.*, themes.name AS theme_name FROM portfolios LEFT JOIN themes ON themes.id = portfolios.theme_id
       WHERE portfolios.is_indexed = 1 AND portfolios.learning_space_id = ?`, args: [spaceId] }),
     database.execute({ sql: "SELECT * FROM sections WHERE is_indexed = 1 AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY portfolio_id, sort_order", args: [spaceId] }),
-    database.execute({ sql: "SELECT * FROM exercises WHERE is_indexed = 1 AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY section_id, exercise_number, exercise_suffix", args: [spaceId] }),
+    database.execute({ sql: `SELECT exercises.*,
+      CASE WHEN exercises.show_alternative_to_students = 1 AND EXISTS (
+        SELECT 1 FROM solution_variants
+        INNER JOIN solution_assets ON solution_assets.variant_id = solution_variants.id
+        WHERE solution_variants.exercise_id = exercises.id AND solution_variants.kind = 'alternative'
+          AND solution_variants.is_indexed = 1 AND solution_assets.is_indexed = 1
+      ) THEN 1 ELSE 0 END AS has_alternative_solution
+      FROM exercises WHERE exercises.is_indexed = 1
+        AND exercises.portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)
+      ORDER BY exercises.section_id, exercises.exercise_number, exercises.exercise_suffix`, args: [spaceId] }),
   ]);
   const now = new Date();
   const result: StudentPortfolio[] = [];
@@ -1071,7 +1082,9 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
       cardColor: text(portfolio, "card_color"),
       customText: nullableText(portfolio, "custom_text"),
       customTextPosition: text(portfolio, "custom_text_position") as PortfolioCustomTextPosition,
+      assignmentPdfPath: nullableText(portfolio, "assignment_pdf_path"),
       hintsDocumentPath: nullableText(portfolio, "hints_document_path"),
+      finalSolutionsPdfPath: nullableText(portfolio, "final_solutions_pdf_path"),
       sections: [],
     };
     for (const section of sections.rows.filter((row) => text(row, "portfolio_id") === portfolioId)) {
@@ -1085,6 +1098,7 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
           return {
             id: text(exercise, "id"), code: text(exercise, "exercise_code"),
             visible: resolveChildPublication(exercisePublication, sectionStatus, now).state === "visible",
+            hasAlternativeSolution: bool(exercise.has_alternative_solution),
           };
         }),
       });
@@ -1213,13 +1227,58 @@ function portfolioDocumentColumns(kind: PortfolioDocumentKind) {
 }
 
 
-export async function createErrorReport(input: { exerciseId: string; variant: "standard" | "alternative"; message: string; reporterName?: string; rateLimitKey: string }): Promise<void> {
-  const exercise = await getVisibleExercise(input.exerciseId);
+export interface CreateErrorReportInput {
+  exerciseId: string;
+  learningSpaceId?: string;
+  portfolioId?: string;
+  documentKind?: ErrorReportDocumentKind;
+  variant?: "standard" | "alternative" | null;
+  message: string;
+  reporterUserId?: string;
+  reporterName?: string;
+  rateLimitKey: string;
+}
+
+export async function createErrorReport(input: CreateErrorReportInput): Promise<{ issueId: string }> {
+  const exercise = await getVisibleExercise(input.exerciseId, input.learningSpaceId);
   if (!exercise || input.message.trim().length < 3 || input.message.trim().length > 2_000) throw new Error("De melding is ongeldig of de oplossing is niet beschikbaar.");
+  const learningSpaceId = input.learningSpaceId ?? exercise.learningSpaceId;
+  const portfolioId = input.portfolioId ?? exercise.portfolioId;
+  if (exercise.learningSpaceId !== learningSpaceId || exercise.portfolioId !== portfolioId) throw new Error("De gekozen oefening hoort niet bij deze portfolio.");
+  const portfolio = await getStudentPortfolio(portfolioId, learningSpaceId);
+  const portfolioExercise = portfolio?.sections.flatMap((section) => section.exercises).find((item) => item.id === input.exerciseId && item.visible);
+  if (!portfolio || !portfolioExercise) throw new Error("De portfolio of oefening is niet beschikbaar.");
+
+  const documentKind = input.documentKind ?? "final_solutions";
+  const isPortfolioFlow = Boolean(input.portfolioId);
+  let variant: "standard" | "alternative" | null;
+  let assetSnapshot: string;
+  let sourceLastModifiedAt: string | null = null;
+  if (documentKind === "assignment" || documentKind === "hints") {
+    if (!isPortfolioFlow || input.variant != null) throw new Error("De gekozen documentvariant is ongeldig.");
+    const documentPath = documentKind === "assignment" ? portfolio.assignmentPdfPath : portfolio.hintsDocumentPath;
+    if (!documentPath) throw new Error("Het gekozen document is niet beschikbaar.");
+    variant = null;
+    assetSnapshot = JSON.stringify([{ documentKind, relativePath: documentPath }]);
+  } else if (documentKind === "final_solutions") {
+    variant = input.variant ?? "standard";
+    if (variant !== "standard" && variant !== "alternative") throw new Error("De gekozen documentvariant is ongeldig.");
+    if (isPortfolioFlow) {
+      if (!portfolio.finalSolutionsPdfPath) throw new Error("Het gekozen document is niet beschikbaar.");
+      if (variant === "alternative" && !portfolioExercise.hasAlternativeSolution) throw new Error("Deze alternatieve uitwerking bestaat niet.");
+      assetSnapshot = JSON.stringify([{ documentKind, relativePath: portfolio.finalSolutionsPdfPath, variant }]);
+    } else {
+      const matchingAssets = exercise.assets.filter((asset) => asset.kind === variant);
+      if (matchingAssets.length === 0) throw new Error("Deze oplossingsvariant bestaat niet.");
+      assetSnapshot = JSON.stringify(matchingAssets.map((asset) => ({ id: asset.id, fileName: asset.fileName, lastModifiedAt: asset.lastModifiedAt })));
+      sourceLastModifiedAt = matchingAssets.map((asset) => asset.lastModifiedAt).filter(Boolean).sort().at(-1) ?? null;
+    }
+  } else {
+    throw new Error("Het gekozen document is ongeldig.");
+  }
+
   const reporterName = input.reporterName?.trim() || null;
   if (reporterName && reporterName.length > 100) throw new Error("De naam mag maximaal 100 tekens bevatten.");
-  const matchingAssets = exercise.assets.filter((asset) => asset.kind === input.variant);
-  if (matchingAssets.length === 0) throw new Error("Deze oplossingsvariant bestaat niet.");
   const database = await getDatabase();
   const identifiers = await database.execute({ sql: "SELECT portfolio_id, section_id FROM exercises WHERE id = ?", args: [input.exerciseId] });
   const row = identifiers.rows[0];
@@ -1228,14 +1287,54 @@ export async function createErrorReport(input: { exerciseId: string; variant: "s
   const windowStartedAt = new Date(Math.floor(now.getTime() / 600_000) * 600_000).toISOString();
   const current = await database.execute({ sql: "SELECT attempts FROM error_report_rate_limits WHERE key = ?", args: [input.rateLimitKey] });
   if (Number(current.rows[0]?.attempts ?? 0) >= 5) throw new Error("Probeer later opnieuw.");
-  const snapshot = matchingAssets.map((asset) => ({ id: asset.id, fileName: asset.fileName, lastModifiedAt: asset.lastModifiedAt }));
+  const issueId = stableId("error-issue", learningSpaceId, portfolioId, documentKind, input.exerciseId, variant ?? "");
+  await database.execute({
+    sql: `INSERT INTO error_report_issues
+      (id, learning_space_id, portfolio_id, exercise_id, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, ?)
+      ON CONFLICT DO NOTHING`,
+    args: [issueId, learningSpaceId, portfolioId, input.exerciseId, documentKind, variant, now.toISOString(), now.toISOString()],
+  });
+  const resolvedIssue = (await database.execute({
+    sql: `SELECT id FROM error_report_issues
+      WHERE learning_space_id = ? AND portfolio_id = ? AND document_kind = ? AND exercise_id = ?
+        AND COALESCE(variant_kind, '') = COALESCE(?, '')`,
+    args: [learningSpaceId, portfolioId, documentKind, input.exerciseId, variant],
+  })).rows[0];
+  if (!resolvedIssue) throw new Error("De foutlocatie kon niet worden opgeslagen.");
+  const resolvedIssueId = text(resolvedIssue, "id");
+  const reporterUserId = input.reporterUserId ?? null;
+  const reportStatement: InStatement = reporterUserId ? {
+    sql: `INSERT INTO error_reports
+      (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message,
+        reporter_name, status, pinned, admin_note, created_at, completed_at, updated_at, issue_id, reporter_user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'TODO', 0, '', ?, NULL, ?, ?, ?)
+      ON CONFLICT(issue_id, reporter_user_id) WHERE reporter_user_id IS NOT NULL DO UPDATE SET
+        asset_snapshot = excluded.asset_snapshot,
+        source_last_modified_at = excluded.source_last_modified_at,
+        message = excluded.message,
+        reporter_name = NULL,
+        status = 'TODO',
+        completed_at = NULL,
+        updated_at = excluded.updated_at`,
+    args: [randomUUID(), portfolioId, text(row, "section_id"), input.exerciseId, variant ?? "standard", assetSnapshot,
+      sourceLastModifiedAt, input.message.trim(), now.toISOString(), now.toISOString(), resolvedIssueId, reporterUserId],
+  } : {
+    sql: `INSERT INTO error_reports
+      (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message,
+        reporter_name, status, pinned, admin_note, created_at, completed_at, updated_at, issue_id, reporter_user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, NULL, ?, ?, NULL)`,
+    args: [randomUUID(), portfolioId, text(row, "section_id"), input.exerciseId, variant ?? "standard", assetSnapshot,
+      sourceLastModifiedAt, input.message.trim(), reporterName, now.toISOString(), now.toISOString(), resolvedIssueId],
+  };
   await database.batch([
     { sql: "DELETE FROM error_report_rate_limits WHERE window_started_at < ?", args: [new Date(now.getTime() - 3_600_000).toISOString()] },
     { sql: `INSERT INTO error_report_rate_limits (key, window_started_at, attempts) VALUES (?, ?, 1)
       ON CONFLICT(key) DO UPDATE SET attempts = error_report_rate_limits.attempts + 1, window_started_at = excluded.window_started_at`, args: [input.rateLimitKey, windowStartedAt] },
-    { sql: `INSERT INTO error_reports (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message, reporter_name, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'TODO', ?, ?)`, args: [randomUUID(), text(row, "portfolio_id"), text(row, "section_id"), input.exerciseId, input.variant, JSON.stringify(snapshot), matchingAssets.map((asset) => asset.lastModifiedAt).filter(Boolean).sort().at(-1) ?? null, input.message.trim(), reporterName, now.toISOString(), now.toISOString()] },
+    reportStatement,
+    { sql: `UPDATE error_report_issues SET status = 'TODO', completed_at = NULL, updated_at = ? WHERE id = ?`, args: [now.toISOString(), resolvedIssueId] },
   ]);
+  return { issueId: resolvedIssueId };
 }
 
 export interface AdminErrorReport {
