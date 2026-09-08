@@ -1413,6 +1413,8 @@ export interface GroupedErrorReportIssue extends Omit<ErrorReportIssue, "variant
   reporterCount: number;
   latestReportAt: string | null;
   hasLegacyAnonymousReports: boolean;
+  solutionConfiguredVisible: boolean | null;
+  solutionStatus: EffectivePublication | null;
 }
 
 export interface ErrorReportIssueDetail {
@@ -1420,6 +1422,7 @@ export interface ErrorReportIssueDetail {
   issueId: string;
   reporterUserId: string | null;
   reporterName: string | null;
+  reporterDisplayName: string | null;
   message: string;
   createdAt: string;
 }
@@ -1453,6 +1456,15 @@ export async function getGroupedErrorReportIssues(learningSpaceId?: string): Pro
   const result = await database.execute({
     sql: `SELECT error_report_issues.*, portfolios.portfolio_code, portfolios.title AS portfolio_title,
       portfolios.title_override, sections.title AS section_title,
+      exercises.visibility_mode AS exercise_visibility_mode,
+      sections.visibility_mode AS section_visibility_mode,
+      sections.publication_limited AS section_publication_limited,
+      sections.publish_from AS section_publish_from,
+      sections.publish_until AS section_publish_until,
+      portfolios.visible AS portfolio_visible,
+      portfolios.publication_limited,
+      portfolios.publish_from AS portfolio_publish_from,
+      portfolios.publish_until AS portfolio_publish_until,
       COALESCE(report_summary.report_count, 0) AS report_count,
       COALESCE(report_summary.reporter_count, 0) AS reporter_count,
       report_summary.latest_report_at,
@@ -1477,48 +1489,66 @@ export async function getGroupedErrorReportIssues(learningSpaceId?: string): Pro
         error_report_issues.id`,
     args: [spaceId],
   });
-  return result.rows.map((row) => ({
-    id: text(row, "id"),
-    learningSpaceId: text(row, "learning_space_id"),
-    portfolioId: text(row, "portfolio_id"),
-    portfolioCode: text(row, "portfolio_code"),
-    portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"),
-    sectionTitle: nullableText(row, "section_title") ?? "Onbekende oefening",
-    exerciseId: nullableText(row, "exercise_id"),
-    exerciseCode: text(row, "exercise_code"),
-    isMatchedExercise: nullableText(row, "exercise_id") !== null,
-    documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
-    variant: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
-    status: text(row, "status") === "DONE" ? "DONE" : "TODO",
-    pinned: bool(row.pinned),
-    adminNote: nullableText(row, "admin_note") ?? "",
-    createdAt: text(row, "created_at"),
-    completedAt: nullableText(row, "completed_at"),
-    updatedAt: text(row, "updated_at"),
-    reportCount: Number(row.report_count),
-    reporterCount: Number(row.reporter_count),
-    latestReportAt: nullableText(row, "latest_report_at"),
-    hasLegacyAnonymousReports: bool(row.has_legacy_anonymous_reports),
-  }));
+  const now = new Date();
+  return result.rows.map((row) => {
+    const exerciseId = nullableText(row, "exercise_id");
+    const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
+    const sectionStatus = exerciseId ? resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now) : null;
+    const solutionStatus = sectionStatus ? resolveChildPublication({ mode: childMode({ visibility_mode: row.exercise_visibility_mode }), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now) : null;
+    return {
+      id: text(row, "id"),
+      learningSpaceId: text(row, "learning_space_id"),
+      portfolioId: text(row, "portfolio_id"),
+      portfolioCode: text(row, "portfolio_code"),
+      portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"),
+      sectionTitle: nullableText(row, "section_title") ?? "Onbekende oefening",
+      exerciseId,
+      exerciseCode: text(row, "exercise_code"),
+      isMatchedExercise: exerciseId !== null,
+      documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
+      variant: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
+      status: text(row, "status") === "DONE" ? "DONE" : "TODO",
+      pinned: bool(row.pinned),
+      adminNote: nullableText(row, "admin_note") ?? "",
+      createdAt: text(row, "created_at"),
+      completedAt: nullableText(row, "completed_at"),
+      updatedAt: text(row, "updated_at"),
+      reportCount: Number(row.report_count),
+      reporterCount: Number(row.reporter_count),
+      latestReportAt: nullableText(row, "latest_report_at"),
+      hasLegacyAnonymousReports: bool(row.has_legacy_anonymous_reports),
+      solutionConfiguredVisible: exerciseId ? childMode({ visibility_mode: row.exercise_visibility_mode }) === "visible" : null,
+      solutionStatus,
+    };
+  });
 }
 
 export async function listErrorReportsForIssue(issueId: string, learningSpaceId?: string): Promise<ErrorReportIssueDetail[]> {
+  return (await listErrorReportsForIssues([issueId], learningSpaceId)).filter((report) => report.issueId === issueId);
+}
+
+export async function listErrorReportsForIssues(issueIds: string[], learningSpaceId?: string): Promise<ErrorReportIssueDetail[]> {
+  if (issueIds.length === 0) return [];
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const placeholders = issueIds.map(() => "?").join(", ");
   const result = await database.execute({
     sql: `SELECT error_reports.id, error_reports.issue_id, error_reports.reporter_user_id,
-      error_reports.reporter_name, error_reports.message, error_reports.created_at
+      error_reports.reporter_name, users.display_name AS reporter_display_name,
+      error_reports.message, error_reports.created_at
       FROM error_reports
       INNER JOIN error_report_issues ON error_report_issues.id = error_reports.issue_id
-      WHERE error_reports.issue_id = ? AND error_report_issues.learning_space_id = ?
+      LEFT JOIN users ON users.id = error_reports.reporter_user_id
+      WHERE error_reports.issue_id IN (${placeholders}) AND error_report_issues.learning_space_id = ?
       ORDER BY error_reports.created_at DESC, error_reports.id DESC`,
-    args: [issueId, spaceId],
+    args: [...issueIds, spaceId],
   });
   return result.rows.map((row) => ({
     id: text(row, "id"),
     issueId: text(row, "issue_id"),
     reporterUserId: nullableText(row, "reporter_user_id"),
     reporterName: nullableText(row, "reporter_name"),
+    reporterDisplayName: nullableText(row, "reporter_display_name"),
     message: text(row, "message"),
     createdAt: text(row, "created_at"),
   }));

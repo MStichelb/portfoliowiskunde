@@ -1,23 +1,40 @@
 "use client";
 
-import { Check, Pin, PinOff, RotateCcw, Search, Trash2 } from "lucide-react";
+import { Check, Pin, PinOff, RotateCcw, Search } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useReducer } from "react";
 
-import { deleteErrorReportAction, errorReportPinAction, errorReportStatusAction, toggleReportedExerciseVisibilityAction } from "@/app/admin/actions";
-import { ConfirmActionButton } from "@/app/components/confirm-action-button";
+import { errorReportIssuePinAction, errorReportIssueStatusAction, toggleReportedExerciseVisibilityAction } from "@/app/admin/actions";
 import { ErrorReportNoteForm } from "@/app/components/error-report-note-form";
 import { ErrorReportSortControls } from "@/app/components/error-report-sort-controls";
 import { PublicationStatus } from "@/app/components/publication-status";
-import { errorReportViewReducer, initialErrorReportViewState, openErrorReportGroups, portfolioFilterOptions } from "@/lib/error-report-sort";
-import type { AdminErrorReport } from "@/lib/repositories";
+import {
+  errorReportViewReducer,
+  filterGroupedErrorReportIssues,
+  groupedErrorReportPortfolioFilterOptions,
+  initialErrorReportViewState,
+  openGroupedErrorReportIssueGroups,
+  sortGroupedErrorReportIssues,
+} from "@/lib/error-report-sort";
+import type { ErrorReportDocumentKind, ErrorReportIssueDetail, GroupedErrorReportIssue } from "@/lib/repositories";
 
-export function ErrorReportOpenGroups({ reports, spaceSlug, learningSpaceId }: { reports: AdminErrorReport[]; spaceSlug: string; learningSpaceId: string }) {
+export function GroupedErrorReportInbox({ issues, reportsByIssue, spaceSlug }: {
+  issues: GroupedErrorReportIssue[];
+  reportsByIssue: Record<string, ErrorReportIssueDetail[]>;
+  spaceSlug: string;
+}) {
   const [state, dispatch] = useReducer(errorReportViewReducer, initialErrorReportViewState);
-  const portfolios = useMemo(() => portfolioFilterOptions(reports), [reports]);
-  const groups = useMemo(
-    () => openErrorReportGroups(reports, state.sortMode, state.selectedPortfolio),
-    [reports, state.sortMode, state.selectedPortfolio],
+  const portfolios = useMemo(() => groupedErrorReportPortfolioFilterOptions(issues), [issues]);
+  const openGroups = useMemo(
+    () => openGroupedErrorReportIssueGroups(issues, state.sortMode, state.selectedPortfolio),
+    [issues, state.sortMode, state.selectedPortfolio],
+  );
+  const done = useMemo(
+    () => sortGroupedErrorReportIssues(
+      filterGroupedErrorReportIssues(issues, state.selectedPortfolio).filter((issue) => issue.status === "DONE"),
+      state.sortMode,
+    ),
+    [issues, state.sortMode, state.selectedPortfolio],
   );
 
   return <>
@@ -29,35 +46,106 @@ export function ErrorReportOpenGroups({ reports, spaceSlug, learningSpaceId }: {
       onPortfolioChange={(portfolioId) => dispatch({ type: "filter", portfolioId })}
       onReset={() => dispatch({ type: "reset-filter" })}
     />
-    <ErrorReportGroup title="PINNED" reports={groups.pinned} spaceSlug={spaceSlug} learningSpaceId={learningSpaceId} />
-    <ErrorReportGroup title="TO DO" reports={groups.todo} spaceSlug={spaceSlug} learningSpaceId={learningSpaceId} />
+    <GroupedErrorReportGroup title="PINNED" issues={openGroups.pinned} reportsByIssue={reportsByIssue} spaceSlug={spaceSlug} />
+    <GroupedErrorReportGroup title="TO DO" issues={openGroups.todo} reportsByIssue={reportsByIssue} spaceSlug={spaceSlug} />
+    <details className="report-group done-group">
+      <summary><h2>DONE <span>{done.length}</span></h2></summary>
+      <GroupedErrorReportCards issues={done} reportsByIssue={reportsByIssue} spaceSlug={spaceSlug} />
+    </details>
   </>;
 }
 
-function ErrorReportGroup({ title, reports, spaceSlug, learningSpaceId }: { title: string; reports: AdminErrorReport[]; spaceSlug: string; learningSpaceId: string }) {
-  return <section className="report-group"><h2>{title} <span>{reports.length}</span></h2><ErrorReportCards reports={reports} spaceSlug={spaceSlug} learningSpaceId={learningSpaceId} /></section>;
+function GroupedErrorReportGroup({ title, issues, reportsByIssue, spaceSlug }: {
+  title: string;
+  issues: GroupedErrorReportIssue[];
+  reportsByIssue: Record<string, ErrorReportIssueDetail[]>;
+  spaceSlug: string;
+}) {
+  return <section className="report-group"><h2>{title} <span>{issues.length}</span></h2><GroupedErrorReportCards issues={issues} reportsByIssue={reportsByIssue} spaceSlug={spaceSlug} /></section>;
 }
 
-export function ErrorReportCards({ reports, spaceSlug, learningSpaceId }: { reports: AdminErrorReport[]; spaceSlug: string; learningSpaceId: string }) {
-  return reports.length === 0 ? <p className="empty-state">Geen meldingen.</p> : <div className="report-card-list">{reports.map((report) => <ErrorReportCard key={report.id} report={report} spaceSlug={spaceSlug} learningSpaceId={learningSpaceId} />)}</div>;
+export function GroupedErrorReportCards({ issues, reportsByIssue, spaceSlug }: {
+  issues: GroupedErrorReportIssue[];
+  reportsByIssue: Record<string, ErrorReportIssueDetail[]>;
+  spaceSlug: string;
+}) {
+  return issues.length === 0
+    ? <p className="empty-state">Geen meldingen.</p>
+    : <div className="report-card-list">{issues.map((issue) => <GroupedErrorReportCard key={issue.id} issue={issue} reports={reportsByIssue[issue.id] ?? []} spaceSlug={spaceSlug} />)}</div>;
+}
+
+export function errorReportDocumentLabel(kind: ErrorReportDocumentKind): string {
+  if (kind === "assignment") return "Opgaven";
+  if (kind === "hints") return "Hints";
+  return "Eindoplossingen";
+}
+
+function GroupedErrorReportCard({ issue, reports, spaceSlug }: {
+  issue: GroupedErrorReportIssue;
+  reports: ErrorReportIssueDetail[];
+  spaceSlug: string;
+}) {
+  const todo = issue.status === "TODO";
+  const canOpenExercise = issue.documentKind === "final_solutions" && issue.exerciseId !== null;
+  const previewHref = canOpenExercise ? `/admin/${encodeURIComponent(spaceSlug)}/oefening/${encodeURIComponent(issue.exerciseId!)}` : null;
+  const description = [
+    issue.isMatchedExercise ? issue.sectionTitle : null,
+    errorReportDocumentLabel(issue.documentKind),
+    `Oefening ${issue.exerciseCode}`,
+    issue.variant === "alternative" ? "Alternatieve uitwerking" : null,
+  ].filter(Boolean).join(" - ");
+  const reportLabel = `${issue.reportCount} ${issue.reportCount === 1 ? "melding" : "meldingen"}`;
+  const activityDate = issue.latestReportAt ?? issue.updatedAt;
+
+  return <article className="report-card">
+    <div className="report-card-heading">
+      <div>
+        <strong>Portfolio {issue.portfolioCode}: {issue.portfolioTitle}</strong>
+        <span>{description}</span>
+        {!issue.isMatchedExercise ? <span className="report-unmatched">Niet automatisch gekoppeld</span> : null}
+      </div>
+      <div className="report-actions">
+        {canOpenExercise && issue.solutionStatus && issue.solutionConfiguredVisible !== null ? <form action={toggleReportedExerciseVisibilityAction}>
+          <input type="hidden" name="exerciseId" value={issue.exerciseId!} />
+          <input type="hidden" name="portfolioId" value={issue.portfolioId} />
+          <input type="hidden" name="visible" value={String(!issue.solutionConfiguredVisible)} />
+          <button className="status-action" title="Zichtbaarheid wisselen" aria-label="Zichtbaarheid wisselen"><PublicationStatus status={issue.solutionStatus} /></button>
+        </form> : null}
+        {previewHref ? <Link href={previewHref} className="icon-button" title="Uitwerking als admin bekijken" aria-label="Uitwerking als admin bekijken"><Search size={16} aria-hidden /></Link> : null}
+        <form action={errorReportIssuePinAction}>
+          <input type="hidden" name="issueId" value={issue.id} />
+          <button className="icon-button" title={issue.pinned ? "Melding losmaken" : "Melding pinnen"} aria-label={issue.pinned ? "Melding losmaken" : "Melding pinnen"}>{issue.pinned ? <PinOff size={16} aria-hidden /> : <Pin size={16} aria-hidden />}</button>
+        </form>
+        <form action={errorReportIssueStatusAction}>
+          <input type="hidden" name="issueId" value={issue.id} />
+          <input type="hidden" name="status" value={todo ? "DONE" : "TODO"} />
+          <button className="icon-button" title={todo ? "Markeren als afgewerkt" : "Terugzetten naar TO DO"} aria-label={todo ? "Markeren als afgewerkt" : "Terugzetten naar TO DO"}>{todo ? <Check size={16} aria-hidden /> : <RotateCcw size={16} aria-hidden />}</button>
+        </form>
+      </div>
+    </div>
+    <div className="report-issue-summary">
+      <strong>{reportLabel}</strong>
+      <span>Laatste melding: {formatReportDate(activityDate)}</span>
+      <span>Status: {todo ? "TO DO" : "DONE"}</span>
+    </div>
+    <div className="report-content">
+      <IssueReportDetails reports={reports} reportLabel={reportLabel} />
+      <ErrorReportNoteForm issueId={issue.id} note={issue.adminNote} />
+    </div>
+  </article>;
+}
+
+function IssueReportDetails({ reports, reportLabel }: { reports: ErrorReportIssueDetail[]; reportLabel: string }) {
+  return <details className="issue-report-details">
+    <summary>Bekijk {reportLabel}</summary>
+    <div className="issue-report-list">{reports.map((report) => <article key={report.id} className="issue-report-item">
+      <p className="report-message">{report.message}</p>
+      <p className="report-reporter">Gemeld door: {report.reporterDisplayName ?? report.reporterName ?? "Onbekende melder"}</p>
+      <p className="report-date">Gemeld op {formatReportDate(report.createdAt)}</p>
+    </article>)}</div>
+  </details>;
 }
 
 function formatReportDate(value: string) {
   return new Intl.DateTimeFormat("nl-BE", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Brussels" }).format(new Date(value));
-}
-
-function ErrorReportCard({ report, spaceSlug, learningSpaceId }: { report: AdminErrorReport; spaceSlug: string; learningSpaceId: string }) {
-  const todo = report.status === "TODO";
-  const label = report.variant === "alternative" ? "Alternatieve uitwerking" : "Uitwerking";
-  const previewHref = `/admin/${encodeURIComponent(spaceSlug)}/oefening/${encodeURIComponent(report.exerciseId)}`;
-  return <article className="report-card">
-    <div className="report-card-heading"><div><strong>Portfolio {report.portfolioCode}: {report.portfolioTitle}</strong><span>{report.sectionTitle} - Oefening {report.exerciseCode} - {label}</span></div><div className="report-actions">
-      <form action={toggleReportedExerciseVisibilityAction}><input type="hidden" name="exerciseId" value={report.exerciseId} /><input type="hidden" name="portfolioId" value={report.portfolioId} /><input type="hidden" name="visible" value={String(!report.solutionConfiguredVisible)} /><button className="status-action" title="Zichtbaarheid wisselen"><PublicationStatus status={report.solutionStatus} /></button></form>
-      <Link href={previewHref} className="icon-button" title="Uitwerking als admin bekijken" aria-label="Uitwerking als admin bekijken"><Search size={16} /></Link>
-      <form action={errorReportPinAction}><input type="hidden" name="id" value={report.id} /><button className="icon-button" title="Melding pinnen" aria-label="Melding pinnen">{report.pinned ? <PinOff size={16} /> : <Pin size={16} />}</button></form>
-      <form action={errorReportStatusAction}><input type="hidden" name="id" value={report.id} /><input type="hidden" name="status" value={todo ? "DONE" : "TODO"} /><button className="icon-button" title="Status wisselen" aria-label="Status wisselen">{todo ? <Check size={16} /> : <RotateCcw size={16} />}</button></form>
-      <ConfirmActionButton action={deleteErrorReportAction} fields={{ id: report.id }} label={<Trash2 size={16} />} confirmTitle="Foutmelding verwijderen" confirmText="Deze foutmelding wordt permanent verwijderd." />
-    </div></div>
-    <div className="report-content"><div><p className="report-message">{report.message}</p>{report.reporterName ? <p className="report-reporter">Gemeld door: {report.reporterName}</p> : null}<p className="report-date">Gemeld op {formatReportDate(report.createdAt)}</p>{report.status === "DONE" && report.completedAt ? <p className="report-date">Afgewerkt op {formatReportDate(report.completedAt)}</p> : null}</div><ErrorReportNoteForm reportId={report.id} learningSpaceId={learningSpaceId} note={report.adminNote} /></div>
-  </article>;
 }

@@ -36,7 +36,11 @@ Batch F is afgerond. Status, pin en beheernotitie worden voor nieuwe beheerfunct
 
 De bestaande report-level actions en redundante reportvelden blijven tijdelijk beschikbaar voor de oude admin-UI, maar zijn niet langer het doelmodel voor nieuwe beheerfunctionaliteit. Issue-delete en de definitieve bewaarlifecycle zijn nog bewust open; de volgende stap is de gegroepeerde admin-UI op het issue-readmodel en de nieuwe issue-actions aansluiten.
 
+Batch G1 is afgerond. De LearningSpace-inbox toont één kaart per grouped issue en gebruikt issue-level status, pin en beheernotitie. Individuele reports zijn alleen nog als ingeklapte detailhistoriek zichtbaar en worden voor het volledige overzicht in één bulkquery geladen. Ook onbekende oefeningcodes blijven als issues zonder previewlink bruikbaar.
+
+Issue-delete, de definitieve bewaarlifecycle en het opruimen van de tijdelijke report-level actions en redundante legacyvelden blijven open.
+
 ## Vervolg
 
-- **Grouped admin-UI:** het issue-readmodel en de issue-level beheeracties zichtbaar aansluiten.
+- **G2:** issue-delete en bewaarlifecycle bepalen.
 - **G:** legacyvelden gecontroleerd opruimen nadat alle reads en writes issuegericht zijn.

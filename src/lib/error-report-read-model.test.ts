@@ -12,6 +12,7 @@ import {
   getOpenErrorIssueCount,
   getOpenErrorReportCount,
   listErrorReportsForIssue,
+  listErrorReportsForIssues,
   saveErrorReportIssueNote,
   setErrorReportIssueStatus,
   toggleErrorReportIssuePin,
@@ -150,9 +151,20 @@ describe("grouped error report read model", () => {
     expect(details.find((report) => report.id === "main-report-09")).toMatchObject({
       reporterUserId: null,
       reporterName: "Legacy leerling",
+      reporterDisplayName: null,
       message: "Melding 10",
     });
+    expect(details.find((report) => report.id === "main-report-00")?.reporterDisplayName).toBe("Reporter A");
     expect(await listErrorReportsForIssue("issue-main", "space-6")).toEqual([]);
+  });
+
+  it("loads details for multiple issues in one ordered bulk read", async () => {
+    const details = await listErrorReportsForIssues(["issue-main", "issue-alternative"], "space-5");
+
+    expect(details).toHaveLength(11);
+    expect(details[0].id).toBe("main-report-09");
+    expect(details.some((report) => report.issueId === "issue-alternative")).toBe(true);
+    expect(await listErrorReportsForIssues([], "space-5")).toEqual([]);
   });
 
   it("counts open issues instead of underlying reports while legacy reads remain available", async () => {
