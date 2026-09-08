@@ -50,10 +50,12 @@ Batch G1 is afgerond. De LearningSpace-inbox toont één kaart per grouped issue
 
 Batch G1.1 voegt de thread-readlaag toe. Het overzicht levert één rij per oefening met geaggregeerde issue- en reportaantallen; een afzonderlijke bulkquery levert alle onderliggende issuelocaties voor een verzameling threads. `getOpenErrorThreadCount()` telt open beheereenheden. De inbox en beheeracties worden pas in een volgende batch van issue- naar threadniveau omgezet.
 
-Issue-delete, de definitieve bewaarlifecycle en het opruimen van de tijdelijke report-level actions en redundante legacyvelden blijven open.
+Batch G1.2 schakelt de LearningSpace-inbox om naar één adminkaart per oefeningthread. Issues zijn binnen die kaart de afzonderlijke foutlocaties en reports blijven de individuele leerlingmeldingen. Status, pin en beheernotitie worden uitsluitend op threadniveau beheerd; issue- en reportworkflowvelden blijven voorlopig alleen als compatibiliteitsdata bestaan. De inbox gebruikt één threadoverzichtsquery en één bulkquery voor alle onderliggende issues en reports. Delete en bewaarlifecycle blijven open.
+
+Thread-delete, de definitieve bewaarlifecycle en het opruimen van de tijdelijke issue-/report-level actions en redundante legacyvelden blijven open.
 
 ## Vervolg
 
-- **G2:** issue-delete en bewaarlifecycle bepalen.
+- **G2:** thread-delete en bewaarlifecycle bepalen.
 - **G:** legacyvelden gecontroleerd opruimen nadat alle reads en writes issuegericht zijn.
 - **Resources:** documentsoorten later uitbreidbaar maken via configureerbare resourcedefinities; migratie 029 beperkt zich bewust tot de vier huidige kinds.

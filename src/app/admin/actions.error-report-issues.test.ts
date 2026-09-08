@@ -2,13 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getErrorReportIssueLearningSpaceId: vi.fn(),
+  getErrorReportThreadLearningSpaceId: vi.fn(),
   getLearningSpace: vi.fn(),
   requireAdminUser: vi.fn(),
   requireLearningSpaceManagement: vi.fn(),
   revalidatePath: vi.fn(),
   saveErrorReportIssueNote: vi.fn(),
+  saveErrorReportThreadNote: vi.fn(),
   setErrorReportIssueStatus: vi.fn(),
+  setErrorReportThreadStatus: vi.fn(),
   toggleErrorReportIssuePin: vi.fn(),
+  toggleErrorReportThreadPin: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
@@ -21,10 +25,14 @@ vi.mock("@/lib/authorization", () => ({
 }));
 vi.mock("@/lib/repositories", () => ({
   getErrorReportIssueLearningSpaceId: mocks.getErrorReportIssueLearningSpaceId,
+  getErrorReportThreadLearningSpaceId: mocks.getErrorReportThreadLearningSpaceId,
   getLearningSpace: mocks.getLearningSpace,
   saveErrorReportIssueNote: mocks.saveErrorReportIssueNote,
+  saveErrorReportThreadNote: mocks.saveErrorReportThreadNote,
   setErrorReportIssueStatus: mocks.setErrorReportIssueStatus,
+  setErrorReportThreadStatus: mocks.setErrorReportThreadStatus,
   toggleErrorReportIssuePin: mocks.toggleErrorReportIssuePin,
+  toggleErrorReportThreadPin: mocks.toggleErrorReportThreadPin,
 }));
 vi.mock("@/lib/storage-connections", () => ({ ensureStorageConnection: vi.fn() }));
 
@@ -32,13 +40,45 @@ import {
   errorReportIssueNoteAction,
   errorReportIssuePinAction,
   errorReportIssueStatusAction,
+  errorReportThreadNoteAction,
+  errorReportThreadPinAction,
+  errorReportThreadStatusAction,
 } from "./actions";
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.getErrorReportIssueLearningSpaceId.mockResolvedValue("space-5");
+  mocks.getErrorReportThreadLearningSpaceId.mockResolvedValue("space-5");
   mocks.getLearningSpace.mockResolvedValue({ id: "space-5", slug: "5wis" });
   mocks.requireLearningSpaceManagement.mockResolvedValue(undefined);
+});
+
+describe("error report thread management actions", () => {
+  it("authorizes and mutates status, pin and note by trusted thread lookup", async () => {
+    const actor = { id: "owner-1", role: "teacher", status: "active" };
+    mocks.requireAdminUser.mockResolvedValue(actor);
+
+    await errorReportThreadStatusAction(form({ threadId: "thread-1", status: "DONE" }));
+    await errorReportThreadPinAction(form({ threadId: "thread-1" }));
+    const result = await errorReportThreadNoteAction({ error: null }, form({ threadId: "thread-1", learningSpaceId: "other", note: "Nakijken" }));
+
+    expect(mocks.getErrorReportThreadLearningSpaceId).toHaveBeenCalledWith("thread-1");
+    expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(actor, "space-5");
+    expect(mocks.setErrorReportThreadStatus).toHaveBeenCalledWith("thread-1", "DONE");
+    expect(mocks.toggleErrorReportThreadPin).toHaveBeenCalledWith("thread-1");
+    expect(mocks.saveErrorReportThreadNote).toHaveBeenCalledWith("thread-1", "Nakijken");
+    expect(result).toEqual({ error: null, saved: true });
+  });
+
+  it("blocks missing, invalid and unauthorized thread mutations", async () => {
+    mocks.getErrorReportThreadLearningSpaceId.mockResolvedValueOnce(null);
+    await expect(errorReportThreadPinAction(form({ threadId: "missing" }))).rejects.toThrow("Foutmelding niet gevonden");
+
+    await expect(errorReportThreadStatusAction(form({ threadId: "thread-1", status: "INVALID" }))).rejects.toThrow("Ongeldige meldingsstatus");
+
+    mocks.requireLearningSpaceManagement.mockRejectedValueOnce(new Error("Geen beheerrechten."));
+    await expect(errorReportThreadPinAction(form({ threadId: "thread-1" }))).rejects.toThrow("Geen beheerrechten");
+  });
 });
 
 describe("error report issue management actions", () => {

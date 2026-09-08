@@ -14,6 +14,7 @@ import { portfolioCustomMessageSchema } from "@/lib/portfolio-custom-message";
 import {
   getAdminPortfolioAny,
   getErrorReportIssueLearningSpaceId,
+  getErrorReportThreadLearningSpaceId,
   getErrorReportLearningSpaceId,
   getAdminLearningSpaceBySlug,
   archiveLearningSpace,
@@ -35,12 +36,15 @@ import {
   setErrorReportIssueStatus,
   saveErrorReportNote,
   saveErrorReportIssueNote,
+  saveErrorReportThreadNote,
   deleteErrorReport,
   deleteOldDoneErrorReports,
   setSectionPublication,
   setSectionVisibility,
   toggleErrorReportPin,
   toggleErrorReportIssuePin,
+  setErrorReportThreadStatus,
+  toggleErrorReportThreadPin,
   archiveMissingIndexItems,
   permanentlyDeleteLearningSpace,
   restoreLearningSpace,
@@ -429,6 +433,30 @@ export async function errorReportIssueNoteAction(_previousState: AdminActionStat
   return { error: null, saved: true };
 }
 
+export async function errorReportThreadStatusAction(formData: FormData) {
+  const threadId = stringValue(formData, "threadId");
+  const learningSpaceId = await requireErrorReportThreadManagement(threadId);
+  const status = stringValue(formData, "status");
+  if (status !== "TODO" && status !== "DONE") throw new Error("Ongeldige meldingsstatus.");
+  await setErrorReportThreadStatus(threadId, status);
+  await refreshErrorReportIssuePaths(learningSpaceId);
+}
+
+export async function errorReportThreadPinAction(formData: FormData) {
+  const threadId = stringValue(formData, "threadId");
+  const learningSpaceId = await requireErrorReportThreadManagement(threadId);
+  await toggleErrorReportThreadPin(threadId);
+  await refreshErrorReportIssuePaths(learningSpaceId);
+}
+
+export async function errorReportThreadNoteAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState & { saved?: boolean }> {
+  const threadId = stringValue(formData, "threadId");
+  const learningSpaceId = await requireErrorReportThreadManagement(threadId);
+  await saveErrorReportThreadNote(threadId, stringValue(formData, "note"));
+  await refreshErrorReportIssuePaths(learningSpaceId);
+  return { error: null, saved: true };
+}
+
 export async function deleteErrorReportAction(formData: FormData) {
   const id = stringValue(formData, "id");
   await requireErrorReportManagement(id);
@@ -510,6 +538,13 @@ async function requireErrorReportManagement(id: string) {
 
 async function requireErrorReportIssueManagement(issueId: string) {
   const learningSpaceId = issueId ? await getErrorReportIssueLearningSpaceId(issueId) : null;
+  if (!learningSpaceId) throw new Error("Foutmelding niet gevonden.");
+  await requireSpaceManagement(learningSpaceId);
+  return learningSpaceId;
+}
+
+async function requireErrorReportThreadManagement(threadId: string) {
+  const learningSpaceId = threadId ? await getErrorReportThreadLearningSpaceId(threadId) : null;
   if (!learningSpaceId) throw new Error("Foutmelding niet gevonden.");
   await requireSpaceManagement(learningSpaceId);
   return learningSpaceId;

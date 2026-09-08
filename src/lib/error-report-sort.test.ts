@@ -4,12 +4,16 @@ import {
   errorReportViewReducer,
   filterGroupedErrorReportIssues,
   groupedErrorReportPortfolioFilterOptions,
+  groupedErrorReportThreadPortfolioFilterOptions,
   initialErrorReportViewState,
   openErrorReportGroups,
   openGroupedErrorReportIssueGroups,
+  openGroupedErrorReportThreadGroups,
   portfolioFilterOptions,
   sortErrorReports,
   sortGroupedErrorReportIssues,
+  sortGroupedErrorReportThreads,
+  filterGroupedErrorReportThreads,
   type SortableGroupedErrorReportIssue,
 } from "./error-report-sort";
 
@@ -178,5 +182,29 @@ describe("grouped error report issue sorting", () => {
 
     expect(options.map(({ code }) => code)).toEqual(["2", "12", "X"]);
     expect(options).toHaveLength(3);
+  });
+});
+
+describe("grouped error report thread sorting", () => {
+  it("uses latest report recency with updatedAt fallback", () => {
+    const threads = [
+      issue("fallback", "1", 9),
+      issue("latest", "2", 1, { latestReportAt: "2026-08-12T12:00:00.000Z" }),
+    ];
+    expect(sortGroupedErrorReportThreads(threads, "date").map(({ id }) => id)).toEqual(["latest", "fallback"]);
+  });
+
+  it("filters, groups and builds portfolio options at thread level", () => {
+    const threads = [
+      issue("todo", "2", 2),
+      issue("pinned", "2", 3, { pinned: true }),
+      issue("done", "2", 4, { status: "DONE" }),
+      issue("other", "12", 5),
+    ];
+    expect(filterGroupedErrorReportThreads(threads, "portfolio-2")).toHaveLength(3);
+    const groups = openGroupedErrorReportThreadGroups(threads, "date", "portfolio-2");
+    expect(groups.pinned.map(({ id }) => id)).toEqual(["pinned"]);
+    expect(groups.todo.map(({ id }) => id)).toEqual(["todo"]);
+    expect(groupedErrorReportThreadPortfolioFilterOptions(threads).map(({ code }) => code)).toEqual(["2", "12"]);
   });
 });

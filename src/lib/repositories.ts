@@ -1475,6 +1475,7 @@ export interface ErrorReportThreadIssueDetail {
   variant: "standard" | "alternative" | null;
   reportCount: number;
   latestReportAt: string | null;
+  reports: ErrorReportIssueDetail[];
 }
 
 export async function getErrorReportIssue(id: string): Promise<ErrorReportIssue | null> {
@@ -1637,25 +1638,50 @@ export async function listErrorReportIssuesForThreads(threadIds: string[], learn
   const result = await database.execute({
     sql: `SELECT error_report_issues.thread_id, error_report_issues.id AS issue_id,
       error_report_issues.document_kind, error_report_issues.variant_kind,
-      COUNT(error_reports.id) AS report_count, MAX(error_reports.created_at) AS latest_report_at
+      error_reports.id AS report_id, error_reports.reporter_user_id, error_reports.reporter_name,
+      users.display_name AS reporter_display_name, error_reports.message, error_reports.created_at AS report_created_at,
+      COUNT(error_reports.id) OVER (PARTITION BY error_report_issues.id) AS report_count,
+      MAX(error_reports.created_at) OVER (PARTITION BY error_report_issues.id) AS latest_report_at
       FROM error_report_issues
       INNER JOIN error_report_threads ON error_report_threads.id = error_report_issues.thread_id
       LEFT JOIN error_reports ON error_reports.issue_id = error_report_issues.id
+      LEFT JOIN users ON users.id = error_reports.reporter_user_id
       WHERE error_report_issues.thread_id IN (${placeholders})
         AND error_report_threads.learning_space_id = ?
-      GROUP BY error_report_issues.thread_id, error_report_issues.id,
-        error_report_issues.document_kind, error_report_issues.variant_kind
-      ORDER BY latest_report_at DESC, error_report_issues.id`,
+      ORDER BY latest_report_at DESC, error_report_issues.id,
+        error_reports.created_at DESC, error_reports.id DESC`,
     args: [...threadIds, spaceId],
   });
-  return result.rows.map((row) => ({
-    threadId: text(row, "thread_id"),
-    issueId: text(row, "issue_id"),
-    documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
-    variant: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
-    reportCount: Number(row.report_count),
-    latestReportAt: nullableText(row, "latest_report_at"),
-  }));
+  const issues = new Map<string, ErrorReportThreadIssueDetail>();
+  for (const row of result.rows) {
+    const issueId = text(row, "issue_id");
+    let issue = issues.get(issueId);
+    if (!issue) {
+      issue = {
+        threadId: text(row, "thread_id"),
+        issueId,
+        documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
+        variant: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
+        reportCount: Number(row.report_count),
+        latestReportAt: nullableText(row, "latest_report_at"),
+        reports: [],
+      };
+      issues.set(issueId, issue);
+    }
+    const reportId = nullableText(row, "report_id");
+    if (reportId) {
+      issue.reports.push({
+        id: reportId,
+        issueId,
+        reporterUserId: nullableText(row, "reporter_user_id"),
+        reporterName: nullableText(row, "reporter_name"),
+        reporterDisplayName: nullableText(row, "reporter_display_name"),
+        message: text(row, "message"),
+        createdAt: text(row, "report_created_at"),
+      });
+    }
+  }
+  return [...issues.values()];
 }
 
 export async function listErrorReportsForIssue(issueId: string, learningSpaceId?: string): Promise<ErrorReportIssueDetail[]> {
@@ -1762,6 +1788,28 @@ export async function getErrorReportThreadLearningSpaceId(threadId: string): Pro
     args: [threadId],
   })).rows[0];
   return row ? text(row, "learning_space_id") : null;
+}
+
+export async function setErrorReportThreadStatus(threadId: string, status: "TODO" | "DONE"): Promise<void> {
+  const now = new Date().toISOString();
+  await (await getDatabase()).execute({
+    sql: "UPDATE error_report_threads SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
+    args: [status, status === "DONE" ? now : null, now, threadId],
+  });
+}
+
+export async function toggleErrorReportThreadPin(threadId: string): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE error_report_threads SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END, updated_at = ? WHERE id = ?",
+    args: [new Date().toISOString(), threadId],
+  });
+}
+
+export async function saveErrorReportThreadNote(threadId: string, note: string): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE error_report_threads SET admin_note = ?, updated_at = ? WHERE id = ?",
+    args: [note.slice(0, 4000), new Date().toISOString(), threadId],
+  });
 }
 
 export async function setErrorReportIssueStatus(issueId: string, status: "TODO" | "DONE"): Promise<void> {

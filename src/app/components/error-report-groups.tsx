@@ -4,37 +4,36 @@ import { Check, Pin, PinOff, RotateCcw, Search } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useReducer } from "react";
 
-import { errorReportIssuePinAction, errorReportIssueStatusAction, toggleReportedExerciseVisibilityAction } from "@/app/admin/actions";
+import { errorReportThreadPinAction, errorReportThreadStatusAction } from "@/app/admin/actions";
 import { ErrorReportNoteForm } from "@/app/components/error-report-note-form";
 import { ErrorReportSortControls } from "@/app/components/error-report-sort-controls";
-import { PublicationStatus } from "@/app/components/publication-status";
 import {
   errorReportViewReducer,
-  filterGroupedErrorReportIssues,
-  groupedErrorReportPortfolioFilterOptions,
+  filterGroupedErrorReportThreads,
+  groupedErrorReportThreadPortfolioFilterOptions,
   initialErrorReportViewState,
-  openGroupedErrorReportIssueGroups,
-  sortGroupedErrorReportIssues,
+  openGroupedErrorReportThreadGroups,
+  sortGroupedErrorReportThreads,
 } from "@/lib/error-report-sort";
-import type { ErrorReportDocumentKind, ErrorReportIssueDetail, GroupedErrorReportIssue } from "@/lib/repositories";
+import type { ErrorReportDocumentKind, ErrorReportThreadIssueDetail, GroupedErrorReportThread } from "@/lib/repositories";
 
-export function GroupedErrorReportInbox({ issues, reportsByIssue, spaceSlug }: {
-  issues: GroupedErrorReportIssue[];
-  reportsByIssue: Record<string, ErrorReportIssueDetail[]>;
+export function GroupedErrorReportThreadInbox({ threads, issuesByThread, spaceSlug }: {
+  threads: GroupedErrorReportThread[];
+  issuesByThread: Record<string, ErrorReportThreadIssueDetail[]>;
   spaceSlug: string;
 }) {
   const [state, dispatch] = useReducer(errorReportViewReducer, initialErrorReportViewState);
-  const portfolios = useMemo(() => groupedErrorReportPortfolioFilterOptions(issues), [issues]);
+  const portfolios = useMemo(() => groupedErrorReportThreadPortfolioFilterOptions(threads), [threads]);
   const openGroups = useMemo(
-    () => openGroupedErrorReportIssueGroups(issues, state.sortMode, state.selectedPortfolio),
-    [issues, state.sortMode, state.selectedPortfolio],
+    () => openGroupedErrorReportThreadGroups(threads, state.sortMode, state.selectedPortfolio),
+    [threads, state.sortMode, state.selectedPortfolio],
   );
   const done = useMemo(
-    () => sortGroupedErrorReportIssues(
-      filterGroupedErrorReportIssues(issues, state.selectedPortfolio).filter((issue) => issue.status === "DONE"),
+    () => sortGroupedErrorReportThreads(
+      filterGroupedErrorReportThreads(threads, state.selectedPortfolio).filter((thread) => thread.status === "DONE"),
       state.sortMode,
     ),
-    [issues, state.sortMode, state.selectedPortfolio],
+    [threads, state.sortMode, state.selectedPortfolio],
   );
 
   return <>
@@ -46,78 +45,74 @@ export function GroupedErrorReportInbox({ issues, reportsByIssue, spaceSlug }: {
       onPortfolioChange={(portfolioId) => dispatch({ type: "filter", portfolioId })}
       onReset={() => dispatch({ type: "reset-filter" })}
     />
-    <GroupedErrorReportGroup title="PINNED" issues={openGroups.pinned} reportsByIssue={reportsByIssue} spaceSlug={spaceSlug} />
-    <GroupedErrorReportGroup title="TO DO" issues={openGroups.todo} reportsByIssue={reportsByIssue} spaceSlug={spaceSlug} />
+    <GroupedErrorReportThreadGroup title="PINNED" threads={openGroups.pinned} issuesByThread={issuesByThread} spaceSlug={spaceSlug} />
+    <GroupedErrorReportThreadGroup title="TO DO" threads={openGroups.todo} issuesByThread={issuesByThread} spaceSlug={spaceSlug} />
     <details className="report-group done-group">
       <summary><h2>DONE <span>{done.length}</span></h2></summary>
-      <GroupedErrorReportCards issues={done} reportsByIssue={reportsByIssue} spaceSlug={spaceSlug} />
+      <GroupedErrorReportThreadCards threads={done} issuesByThread={issuesByThread} spaceSlug={spaceSlug} />
     </details>
   </>;
 }
 
-function GroupedErrorReportGroup({ title, issues, reportsByIssue, spaceSlug }: {
+function GroupedErrorReportThreadGroup({ title, threads, issuesByThread, spaceSlug }: {
   title: string;
-  issues: GroupedErrorReportIssue[];
-  reportsByIssue: Record<string, ErrorReportIssueDetail[]>;
+  threads: GroupedErrorReportThread[];
+  issuesByThread: Record<string, ErrorReportThreadIssueDetail[]>;
   spaceSlug: string;
 }) {
-  return <section className="report-group"><h2>{title} <span>{issues.length}</span></h2><GroupedErrorReportCards issues={issues} reportsByIssue={reportsByIssue} spaceSlug={spaceSlug} /></section>;
+  return <section className="report-group"><h2>{title} <span>{threads.length}</span></h2><GroupedErrorReportThreadCards threads={threads} issuesByThread={issuesByThread} spaceSlug={spaceSlug} /></section>;
 }
 
-export function GroupedErrorReportCards({ issues, reportsByIssue, spaceSlug }: {
-  issues: GroupedErrorReportIssue[];
-  reportsByIssue: Record<string, ErrorReportIssueDetail[]>;
+export function GroupedErrorReportThreadCards({ threads, issuesByThread, spaceSlug }: {
+  threads: GroupedErrorReportThread[];
+  issuesByThread: Record<string, ErrorReportThreadIssueDetail[]>;
   spaceSlug: string;
 }) {
-  return issues.length === 0
+  return threads.length === 0
     ? <p className="empty-state">Geen meldingen.</p>
-    : <div className="report-card-list">{issues.map((issue) => <GroupedErrorReportCard key={issue.id} issue={issue} reports={reportsByIssue[issue.id] ?? []} spaceSlug={spaceSlug} />)}</div>;
+    : <div className="report-card-list">{threads.map((thread) => <GroupedErrorReportThreadCard key={thread.id} thread={thread} issues={issuesByThread[thread.id] ?? []} spaceSlug={spaceSlug} />)}</div>;
 }
 
 export function errorReportDocumentLabel(kind: ErrorReportDocumentKind): string {
   if (kind === "assignment") return "Opgaven";
-  if (kind === "hints") return "Hints";
-  return "Eindoplossingen";
+  if (kind === "final_solutions") return "Eindoplossingen";
+  if (kind === "exercise_solution") return "Uitwerking";
+  return "Hints";
 }
 
-function GroupedErrorReportCard({ issue, reports, spaceSlug }: {
-  issue: GroupedErrorReportIssue;
-  reports: ErrorReportIssueDetail[];
+export function errorReportLocationLabel(issue: Pick<ErrorReportThreadIssueDetail, "documentKind" | "variant">): string {
+  if (issue.variant !== "alternative") return errorReportDocumentLabel(issue.documentKind);
+  if (issue.documentKind === "exercise_solution") return "Alternatieve uitwerking";
+  return `${errorReportDocumentLabel(issue.documentKind)} - Alternatieve uitwerking`;
+}
+
+function GroupedErrorReportThreadCard({ thread, issues, spaceSlug }: {
+  thread: GroupedErrorReportThread;
+  issues: ErrorReportThreadIssueDetail[];
   spaceSlug: string;
 }) {
-  const todo = issue.status === "TODO";
-  const canOpenExercise = issue.documentKind === "final_solutions" && issue.exerciseId !== null;
-  const previewHref = canOpenExercise ? `/admin/${encodeURIComponent(spaceSlug)}/oefening/${encodeURIComponent(issue.exerciseId!)}` : null;
-  const description = [
-    issue.isMatchedExercise ? issue.sectionTitle : null,
-    errorReportDocumentLabel(issue.documentKind),
-    `Oefening ${issue.exerciseCode}`,
-    issue.variant === "alternative" ? "Alternatieve uitwerking" : null,
-  ].filter(Boolean).join(" - ");
-  const reportLabel = `${issue.reportCount} ${issue.reportCount === 1 ? "melding" : "meldingen"}`;
-  const activityDate = issue.latestReportAt ?? issue.updatedAt;
+  const todo = thread.status === "TODO";
+  const previewHref = thread.exerciseId
+    ? `/admin/${encodeURIComponent(spaceSlug)}/oefening/${encodeURIComponent(thread.exerciseId)}`
+    : null;
+  const reportLabel = `${thread.reportCount} ${thread.reportCount === 1 ? "melding" : "meldingen"}`;
+  const activityDate = thread.latestReportAt ?? thread.updatedAt;
 
   return <article className="report-card">
     <div className="report-card-heading">
       <div>
-        <strong>Portfolio {issue.portfolioCode}: {issue.portfolioTitle}</strong>
-        <span>{description}</span>
-        {!issue.isMatchedExercise ? <span className="report-unmatched">Niet automatisch gekoppeld</span> : null}
+        <strong>Portfolio {thread.portfolioCode}: {thread.portfolioTitle}</strong>
+        <span>{thread.isMatchedExercise ? `${thread.sectionTitle} - ` : ""}Oefening {thread.exerciseCode}</span>
+        {!thread.isMatchedExercise ? <span className="report-unmatched">Niet automatisch gekoppeld</span> : null}
       </div>
       <div className="report-actions">
-        {canOpenExercise && issue.solutionStatus && issue.solutionConfiguredVisible !== null ? <form action={toggleReportedExerciseVisibilityAction}>
-          <input type="hidden" name="exerciseId" value={issue.exerciseId!} />
-          <input type="hidden" name="portfolioId" value={issue.portfolioId} />
-          <input type="hidden" name="visible" value={String(!issue.solutionConfiguredVisible)} />
-          <button className="status-action" title="Zichtbaarheid wisselen" aria-label="Zichtbaarheid wisselen"><PublicationStatus status={issue.solutionStatus} /></button>
-        </form> : null}
-        {previewHref ? <Link href={previewHref} className="icon-button" title="Uitwerking als admin bekijken" aria-label="Uitwerking als admin bekijken"><Search size={16} aria-hidden /></Link> : null}
-        <form action={errorReportIssuePinAction}>
-          <input type="hidden" name="issueId" value={issue.id} />
-          <button className="icon-button" title={issue.pinned ? "Melding losmaken" : "Melding pinnen"} aria-label={issue.pinned ? "Melding losmaken" : "Melding pinnen"}>{issue.pinned ? <PinOff size={16} aria-hidden /> : <Pin size={16} aria-hidden />}</button>
+        {previewHref ? <Link href={previewHref} className="icon-button" title="Oefening als admin bekijken" aria-label="Oefening als admin bekijken"><Search size={16} aria-hidden /></Link> : null}
+        <form action={errorReportThreadPinAction}>
+          <input type="hidden" name="threadId" value={thread.id} />
+          <button className="icon-button" title={thread.pinned ? "Melding losmaken" : "Melding pinnen"} aria-label={thread.pinned ? "Melding losmaken" : "Melding pinnen"}>{thread.pinned ? <PinOff size={16} aria-hidden /> : <Pin size={16} aria-hidden />}</button>
         </form>
-        <form action={errorReportIssueStatusAction}>
-          <input type="hidden" name="issueId" value={issue.id} />
+        <form action={errorReportThreadStatusAction}>
+          <input type="hidden" name="threadId" value={thread.id} />
           <input type="hidden" name="status" value={todo ? "DONE" : "TODO"} />
           <button className="icon-button" title={todo ? "Markeren als afgewerkt" : "Terugzetten naar TO DO"} aria-label={todo ? "Markeren als afgewerkt" : "Terugzetten naar TO DO"}>{todo ? <Check size={16} aria-hidden /> : <RotateCcw size={16} aria-hidden />}</button>
         </form>
@@ -126,23 +121,28 @@ function GroupedErrorReportCard({ issue, reports, spaceSlug }: {
     <div className="report-issue-summary">
       <strong>{reportLabel}</strong>
       <span>Laatste melding: {formatReportDate(activityDate)}</span>
-      <span>Status: {todo ? "TO DO" : "DONE"}</span>
+    </div>
+    <div className="report-location-summary" aria-label="Foutlocaties">
+      {issues.map((issue) => <span key={issue.issueId}>{errorReportLocationLabel(issue)} - {issue.reportCount} {issue.reportCount === 1 ? "melding" : "meldingen"}</span>)}
     </div>
     <div className="report-content">
-      <IssueReportDetails reports={reports} reportLabel={reportLabel} />
-      <ErrorReportNoteForm issueId={issue.id} note={issue.adminNote} />
+      <ThreadReportDetails issues={issues} reportLabel={reportLabel} />
+      <ErrorReportNoteForm threadId={thread.id} note={thread.adminNote} />
     </div>
   </article>;
 }
 
-function IssueReportDetails({ reports, reportLabel }: { reports: ErrorReportIssueDetail[]; reportLabel: string }) {
+function ThreadReportDetails({ issues, reportLabel }: { issues: ErrorReportThreadIssueDetail[]; reportLabel: string }) {
   return <details className="issue-report-details">
     <summary>Bekijk {reportLabel}</summary>
-    <div className="issue-report-list">{reports.map((report) => <article key={report.id} className="issue-report-item">
-      <p className="report-message">{report.message}</p>
-      <p className="report-reporter">Gemeld door: {report.reporterDisplayName ?? report.reporterName ?? "Onbekende melder"}</p>
-      <p className="report-date">Gemeld op {formatReportDate(report.createdAt)}</p>
-    </article>)}</div>
+    <div className="issue-report-list">{issues.map((issue) => <section key={issue.issueId} className="issue-report-location">
+      <h3>{errorReportLocationLabel(issue)}</h3>
+      {issue.reports.map((report) => <article key={report.id} className="issue-report-item">
+        <p className="report-message">{report.message}</p>
+        <p className="report-reporter">Gemeld door: {report.reporterDisplayName ?? report.reporterName ?? "Onbekende melder"}</p>
+        <p className="report-date">Gemeld op {formatReportDate(report.createdAt)}</p>
+      </article>)}
+    </section>)}</div>
   </details>;
 }
 

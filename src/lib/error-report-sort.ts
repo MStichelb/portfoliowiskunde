@@ -35,6 +35,8 @@ export interface SortableGroupedErrorReportIssue extends SortableErrorReportLoca
   updatedAt: string;
 }
 
+export type SortableGroupedErrorReportThread = SortableGroupedErrorReportIssue;
+
 export interface PortfolioFilterOption {
   id: string;
   code: string;
@@ -69,6 +71,26 @@ export function openGroupedErrorReportIssueGroups<T extends SortableGroupedError
 
 export function groupedErrorReportPortfolioFilterOptions(issues: readonly SortableGroupedErrorReportIssue[]): PortfolioFilterOption[] {
   return portfolioFilterOptions(issues);
+}
+
+export function sortGroupedErrorReportThreads<T extends SortableGroupedErrorReportThread>(threads: readonly T[], sort: ErrorReportSort): T[] {
+  return sortErrorReportItems(threads, sort, groupedIssueActivityDate);
+}
+
+export function filterGroupedErrorReportThreads<T extends SortableGroupedErrorReportThread>(threads: readonly T[], selectedPortfolio: string | null): T[] {
+  return threads.filter((thread) => !selectedPortfolio || thread.portfolioId === selectedPortfolio);
+}
+
+export function openGroupedErrorReportThreadGroups<T extends SortableGroupedErrorReportThread>(threads: readonly T[], sort: ErrorReportSort, selectedPortfolio: string | null) {
+  const visible = filterGroupedErrorReportThreads(threads, selectedPortfolio).filter((thread) => thread.status === "TODO");
+  return {
+    pinned: sortGroupedErrorReportThreads(visible.filter((thread) => thread.pinned), sort),
+    todo: sortGroupedErrorReportThreads(visible.filter((thread) => !thread.pinned), sort),
+  };
+}
+
+export function groupedErrorReportThreadPortfolioFilterOptions(threads: readonly SortableGroupedErrorReportThread[]): PortfolioFilterOption[] {
+  return portfolioFilterOptions(threads);
 }
 
 function sortErrorReportItems<T extends SortableErrorReportLocation>(items: readonly T[], sort: ErrorReportSort, activityDate: (item: T) => string): T[] {

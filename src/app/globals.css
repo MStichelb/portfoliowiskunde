@@ -310,8 +310,11 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .report-issue-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; color: #52616a; font-size: 14px; }
 .report-issue-summary strong { color: #17222b; }
 .report-unmatched { color: #68767e !important; font-style: italic; }
+.report-location-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; color: #33434c; font-size: 14px; }
 .issue-report-details > summary { cursor: pointer; font-weight: 700; }
 .issue-report-list { display: grid; gap: 12px; margin-top: 12px; }
+.issue-report-location { display: grid; gap: 8px; }
+.issue-report-location h3 { margin: 0; font-size: 15px; }
 .issue-report-item { padding-top: 12px; border-top: 1px solid #d5ddda; }
 .issue-report-item .report-reporter { margin: 4px 0; color: #52616a; font-size: 14px; }
 .report-note-actions { display: flex; align-items: center; gap: 10px; min-height: 34px; }

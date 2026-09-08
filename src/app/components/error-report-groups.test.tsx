@@ -1,155 +1,150 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ErrorReportIssueDetail, GroupedErrorReportIssue } from "@/lib/repositories";
+import type { ErrorReportIssueDetail, ErrorReportThreadIssueDetail, GroupedErrorReportThread } from "@/lib/repositories";
 
 vi.mock("@/app/admin/actions", () => ({
-  errorReportIssueNoteAction: vi.fn(),
-  errorReportIssuePinAction: vi.fn(),
-  errorReportIssueStatusAction: vi.fn(),
-  toggleReportedExerciseVisibilityAction: vi.fn(),
+  errorReportThreadNoteAction: vi.fn(),
+  errorReportThreadPinAction: vi.fn(),
+  errorReportThreadStatusAction: vi.fn(),
 }));
 
-import { errorReportDocumentLabel, GroupedErrorReportCards, GroupedErrorReportInbox } from "./error-report-groups";
+import {
+  errorReportDocumentLabel,
+  errorReportLocationLabel,
+  GroupedErrorReportThreadCards,
+  GroupedErrorReportThreadInbox,
+} from "./error-report-groups";
 
-describe("grouped error report inbox", () => {
-  it("renders one issue card and issue counter for ten underlying reports", () => {
-    const current = issue({ id: "issue-main", reportCount: 10, pinned: true });
-    const reports = Array.from({ length: 10 }, (_, index) => report(index));
-    const markup = renderToStaticMarkup(<GroupedErrorReportInbox issues={[current]} reportsByIssue={{ "issue-main": reports }} spaceSlug="5wis" />);
+describe("grouped error report thread inbox", () => {
+  it("renders one card with total and per-location report counts", () => {
+    const current = thread({ reportCount: 6 });
+    const issues = [
+      issue({ issueId: "assignment", documentKind: "assignment", variant: null, reportCount: 2 }),
+      issue({ issueId: "final", documentKind: "final_solutions", variant: "standard", reportCount: 1 }),
+      issue({ issueId: "solution", documentKind: "exercise_solution", variant: "standard", reportCount: 3 }),
+    ];
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadInbox threads={[current]} issuesByThread={{ "thread-main": issues }} spaceSlug="5wis" />);
 
     expect(markup.match(/class="report-card"/g)).toHaveLength(1);
-    expect(markup).toContain("10 meldingen");
-    expect(markup).toMatch(/PINNED[\s\S]*?<span>1<\/span>/);
-    expect(markup).toMatch(/TO DO[\s\S]*?<span>0<\/span>/);
+    expect(markup).toContain("6 meldingen");
+    expect(markup).toContain("Opgaven - 2 meldingen");
+    expect(markup).toContain("Eindoplossingen - 1 melding");
+    expect(markup).toContain("Uitwerking - 3 meldingen");
+    expect(markup).toMatch(/TO DO[\s\S]*?<span>1<\/span>/);
   });
 
-  it("renders document and alternative labels without technical enum values", () => {
+  it("uses understandable document and variant labels", () => {
     expect(errorReportDocumentLabel("assignment")).toBe("Opgaven");
     expect(errorReportDocumentLabel("final_solutions")).toBe("Eindoplossingen");
+    expect(errorReportDocumentLabel("exercise_solution")).toBe("Uitwerking");
     expect(errorReportDocumentLabel("hints")).toBe("Hints");
-
-    const markup = renderToStaticMarkup(<GroupedErrorReportCards
-      issues={[
-        issue({ id: "assignment", documentKind: "assignment", variant: null }),
-        issue({ id: "hints", documentKind: "hints", variant: null }),
-        issue({ id: "alternative", variant: "alternative" }),
-      ]}
-      reportsByIssue={{}}
-      spaceSlug="5wis"
-    />);
-    expect(markup).toContain("Opgaven - Oefening 5b");
-    expect(markup).toContain("Hints - Oefening 5b");
-    expect(markup).toContain("Eindoplossingen - Oefening 5b - Alternatieve uitwerking");
-    expect(markup).not.toContain("final_solutions");
+    expect(errorReportLocationLabel(issue({ documentKind: "exercise_solution", variant: "alternative" }))).toBe("Alternatieve uitwerking");
+    expect(errorReportLocationLabel(issue({ documentKind: "final_solutions", variant: "alternative" }))).toBe("Eindoplossingen - Alternatieve uitwerking");
   });
 
-  it("keeps unmatched issues usable without preview or visibility controls", () => {
-    const unmatched = issue({
-      id: "issue-unmatched",
-      exerciseId: null,
-      exerciseCode: "11",
-      isMatchedExercise: false,
-      sectionTitle: "Onbekende oefening",
-      solutionConfiguredVisible: null,
-      solutionStatus: null,
+  it("renders one collapsed disclosure and groups reports per location newest-first", () => {
+    const assignment = issue({
+      issueId: "assignment",
+      documentKind: "assignment",
+      variant: null,
+      reportCount: 2,
+      reports: [report("new", "Nieuwste melding", "2026-09-08T12:00:00.000Z"), report("old", "Oudere melding", "2026-09-08T10:00:00.000Z")],
     });
-    const markup = renderToStaticMarkup(<GroupedErrorReportCards issues={[unmatched]} reportsByIssue={{}} spaceSlug="5wis" />);
+    const hints = issue({ issueId: "hints", documentKind: "hints", variant: null, reports: [report("hint", "Hintmelding", "2026-09-08T11:00:00.000Z")] });
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[thread({ reportCount: 3 })]} issuesByThread={{ "thread-main": [assignment, hints] }} spaceSlug="5wis" />);
 
-    expect(markup).toContain("Oefening 11");
-    expect(markup).toContain("Niet automatisch gekoppeld");
-    expect(markup).not.toContain("/oefening/");
+    expect(markup.match(/<details class="issue-report-details">/g)).toHaveLength(1);
+    expect(markup).toContain("Bekijk 3 meldingen");
+    expect(markup).toMatch(/<h3>Opgaven<\/h3>[\s\S]*Nieuwste melding[\s\S]*Oudere melding/);
+    expect(markup).toMatch(/<h3>Hints<\/h3>[\s\S]*Hintmelding/);
+    expect(markup.indexOf("Nieuwste melding")).toBeLessThan(markup.indexOf("Oudere melding"));
+  });
+
+  it("uses only thread-level status, pin and note controls", () => {
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[thread()]} issuesByThread={{ "thread-main": [issue()] }} spaceSlug="5wis" />);
+
+    expect(markup).toContain('name="threadId" value="thread-main"');
+    expect(markup).toContain('id="report-note-thread-main"');
+    expect(markup).not.toContain('name="issueId"');
+    expect(markup).not.toContain("Status: TO DO");
     expect(markup).not.toContain("Zichtbaarheid wisselen");
-  });
-
-  it("offers preview and visibility only for a matched final-solutions issue", () => {
-    const matched = issue({ id: "issue-matched" });
-    const assignment = issue({ id: "issue-assignment", documentKind: "assignment", variant: null });
-    const markup = renderToStaticMarkup(<GroupedErrorReportCards issues={[matched, assignment]} reportsByIssue={{}} spaceSlug="5 wis" />);
-
-    expect(markup).toContain("/admin/5%20wis/oefening/exercise-5b");
-    expect(markup.match(/aria-label="Zichtbaarheid wisselen"/g)).toHaveLength(1);
-  });
-
-  it("uses issue-level actions and shows no report-level or delete controls", () => {
-    const markup = renderToStaticMarkup(<GroupedErrorReportCards issues={[issue({ id: "issue-actions" })]} reportsByIssue={{}} spaceSlug="5wis" />);
-
-    expect(markup).toContain('name="issueId" value="issue-actions"');
-    expect(markup).toContain('id="report-note-issue-actions"');
-    expect(markup).not.toContain('name="id" value="issue-actions"');
     expect(markup).not.toContain("Foutmelding verwijderen");
   });
 
-  it("keeps details collapsed and renders reports newest-first with reporter identity", () => {
-    const reports = [
-      report(2, { message: "Nieuwste melding", reporterDisplayName: "Karel Leerling" }),
-      report(1, { message: "Oudere melding", reporterName: "Legacy naam" }),
-    ];
-    const markup = renderToStaticMarkup(<GroupedErrorReportCards issues={[issue({ id: "issue-details", reportCount: 2 })]} reportsByIssue={{ "issue-details": reports }} spaceSlug="5wis" />);
+  it("supports unmatched threads without preview and matched threads with preview", () => {
+    const unmatched = thread({ id: "thread-unmatched", exerciseId: null, exerciseCode: "12", isMatchedExercise: false, sectionTitle: "Onbekende oefening" });
+    const unmatchedMarkup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[unmatched]} issuesByThread={{}} spaceSlug="5wis" />);
+    expect(unmatchedMarkup).toContain("Oefening 12");
+    expect(unmatchedMarkup).toContain("Niet automatisch gekoppeld");
+    expect(unmatchedMarkup).not.toContain("/oefening/");
 
-    expect(markup).toContain("<details class=\"issue-report-details\">");
-    expect(markup.indexOf("Nieuwste melding")).toBeLessThan(markup.indexOf("Oudere melding"));
-    expect(markup).toContain("Gemeld door: Karel Leerling");
-    expect(markup).toContain("Gemeld door: Legacy naam");
-    expect(markup).not.toContain("Legacy reportnotitie");
+    const matchedMarkup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[thread()]} issuesByThread={{}} spaceSlug="5 wis" />);
+    expect(matchedMarkup).toContain("/admin/5%20wis/oefening/exercise-5b");
   });
 
-  it("places TODO, pinned and DONE issues in their issue-level sections", () => {
-    const markup = renderToStaticMarkup(<GroupedErrorReportInbox
-      issues={[
-        issue({ id: "todo", portfolioTitle: "Todo portfolio" }),
-        issue({ id: "pinned", portfolioTitle: "Pinned portfolio", pinned: true }),
-        issue({ id: "done", portfolioTitle: "Done portfolio", status: "DONE" }),
+  it("places pinned, TODO and DONE threads in thread-counted sections", () => {
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadInbox
+      threads={[
+        thread({ id: "todo", portfolioTitle: "Todo portfolio" }),
+        thread({ id: "pinned", portfolioTitle: "Pinned portfolio", pinned: true }),
+        thread({ id: "done", portfolioTitle: "Done portfolio", status: "DONE" }),
       ]}
-      reportsByIssue={{}}
+      issuesByThread={{}}
       spaceSlug="5wis"
     />);
 
-    expect(markup).toMatch(/PINNED[\s\S]*Pinned portfolio/);
-    expect(markup).toMatch(/TO DO[\s\S]*Todo portfolio/);
-    expect(markup).toMatch(/DONE[\s\S]*Done portfolio/);
+    expect(markup).toMatch(/PINNED[\s\S]*?<span>1<\/span>[\s\S]*Pinned portfolio/);
+    expect(markup).toMatch(/TO DO[\s\S]*?<span>1<\/span>[\s\S]*Todo portfolio/);
+    expect(markup).toMatch(/DONE[\s\S]*?<span>1<\/span>[\s\S]*Done portfolio/);
   });
 });
 
-function issue(overrides: Partial<GroupedErrorReportIssue> = {}): GroupedErrorReportIssue {
+function thread(overrides: Partial<GroupedErrorReportThread> = {}): GroupedErrorReportThread {
   return {
-    id: "issue-main",
-    threadId: "thread-main",
+    id: "thread-main",
     learningSpaceId: "space-5",
     portfolioId: "portfolio-1",
     portfolioCode: "1",
     portfolioTitle: "Veeltermfuncties",
-    sectionTitle: "Eerste deel",
     exerciseId: "exercise-5b",
     exerciseCode: "5b",
+    sectionTitle: "Eerste deel",
     isMatchedExercise: true,
-    documentKind: "final_solutions",
-    variant: "standard",
     status: "TODO",
     pinned: false,
-    adminNote: "Issue-notitie",
+    adminNote: "Threadnotitie",
     createdAt: "2026-09-08T10:00:00.000Z",
     completedAt: null,
     updatedAt: "2026-09-08T11:00:00.000Z",
+    issueCount: 1,
     reportCount: 1,
-    reporterCount: 1,
     latestReportAt: "2026-09-08T11:00:00.000Z",
-    hasLegacyAnonymousReports: false,
-    solutionConfiguredVisible: true,
-    solutionStatus: { configuredVisibility: "visible", state: "visible", reason: null, effectiveFrom: null, effectiveUntil: null },
     ...overrides,
   };
 }
 
-function report(index: number, overrides: Partial<ErrorReportIssueDetail> = {}): ErrorReportIssueDetail {
+function issue(overrides: Partial<ErrorReportThreadIssueDetail> = {}): ErrorReportThreadIssueDetail {
   return {
-    id: `report-${index}`,
+    threadId: "thread-main",
+    issueId: "issue-main",
+    documentKind: "exercise_solution",
+    variant: "standard",
+    reportCount: 1,
+    latestReportAt: "2026-09-08T11:00:00.000Z",
+    reports: [report("report-main", "Melding", "2026-09-08T11:00:00.000Z")],
+    ...overrides,
+  };
+}
+
+function report(id: string, message: string, createdAt: string): ErrorReportIssueDetail {
+  return {
+    id,
     issueId: "issue-main",
     reporterUserId: null,
-    reporterName: null,
+    reporterName: "Leerling",
     reporterDisplayName: null,
-    message: `Melding ${index}`,
-    createdAt: `2026-09-08T10:${String(index).padStart(2, "0")}:00.000Z`,
-    ...overrides,
+    message,
+    createdAt,
   };
 }

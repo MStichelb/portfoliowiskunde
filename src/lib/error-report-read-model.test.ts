@@ -18,8 +18,11 @@ import {
   listErrorReportsForIssue,
   listErrorReportsForIssues,
   saveErrorReportIssueNote,
+  saveErrorReportThreadNote,
   setErrorReportIssueStatus,
+  setErrorReportThreadStatus,
   toggleErrorReportIssuePin,
+  toggleErrorReportThreadPin,
 } from "./repositories";
 
 let temporaryDirectory: string | undefined;
@@ -197,7 +200,30 @@ describe("grouped error report read model", () => {
       documentKind: "hints",
       reportCount: 1,
     });
+    expect(details.find((detail) => detail.issueId === "issue-main")?.reports).toHaveLength(10);
+    expect(details.find((detail) => detail.issueId === "issue-main")?.reports.map((report) => report.id).slice(0, 2)).toEqual(["main-report-09", "main-report-08"]);
     expect(await listErrorReportIssuesForThreads([], "space-5")).toEqual([]);
+  });
+
+  it("manages thread workflow without mutating issue or report workflow fields", async () => {
+    const database = await getDatabase();
+    const issueBefore = (await database.execute("SELECT status, pinned, admin_note FROM error_report_issues WHERE id = 'issue-main'")).rows[0];
+    const reportsBefore = (await database.execute("SELECT id, status, pinned, admin_note FROM error_reports WHERE issue_id = 'issue-main' ORDER BY id")).rows;
+
+    await setErrorReportThreadStatus("thread-exercise-1", "DONE");
+    await toggleErrorReportThreadPin("thread-exercise-1");
+    await saveErrorReportThreadNote("thread-exercise-1", "T".repeat(4_001));
+    let current = (await database.execute("SELECT * FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows[0];
+    expect(current?.status).toBe("DONE");
+    expect(current?.completed_at).toBeTruthy();
+    expect(current?.pinned).toBe(0);
+    expect(String(current?.admin_note)).toHaveLength(4_000);
+
+    await setErrorReportThreadStatus("thread-exercise-1", "TODO");
+    current = (await database.execute("SELECT * FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows[0];
+    expect(current).toMatchObject({ status: "TODO", completed_at: null });
+    expect((await database.execute("SELECT status, pinned, admin_note FROM error_report_issues WHERE id = 'issue-main'")).rows[0]).toEqual(issueBefore);
+    expect((await database.execute("SELECT id, status, pinned, admin_note FROM error_reports WHERE issue_id = 'issue-main' ORDER BY id")).rows).toEqual(reportsBefore);
   });
 
   it("counts and resolves threads, including an unmatched exercise", async () => {

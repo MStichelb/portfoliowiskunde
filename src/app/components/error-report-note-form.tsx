@@ -2,18 +2,18 @@
 
 import { useActionState } from "react";
 
-import { errorReportIssueNoteAction, type AdminActionState } from "@/app/admin/actions";
+import { errorReportThreadNoteAction, type AdminActionState } from "@/app/admin/actions";
 import { SubmitButton } from "@/app/components/submit-button";
 
 const initialState: AdminActionState & { saved?: boolean } = { error: null };
 
-export function ErrorReportNoteForm({ issueId, note }: { issueId: string; note: string }) {
-  const [state, action] = useActionState(errorReportIssueNoteAction, initialState);
+export function ErrorReportNoteForm({ threadId, note }: { threadId: string; note: string }) {
+  const [state, action] = useActionState(errorReportThreadNoteAction, initialState);
 
   return <form className="report-note" action={action}>
-    <input type="hidden" name="issueId" value={issueId} />
-    <label htmlFor={`report-note-${issueId}`}>Adminnotitie
-      <textarea id={`report-note-${issueId}`} name="note" defaultValue={note} maxLength={4000} />
+    <input type="hidden" name="threadId" value={threadId} />
+    <label htmlFor={`report-note-${threadId}`}>Adminnotitie
+      <textarea id={`report-note-${threadId}`} name="note" defaultValue={note} maxLength={4000} />
     </label>
     <div className="report-note-actions">
       <SubmitButton className="secondary-button" pendingLabel="Opslaan...">Opslaan</SubmitButton>
