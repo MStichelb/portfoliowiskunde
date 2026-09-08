@@ -17,13 +17,22 @@ export const initialErrorReportViewState: ErrorReportViewState = {
   selectedPortfolio: null,
 };
 
-interface SortableErrorReport {
+interface SortableErrorReportLocation {
   portfolioId: string;
   portfolioCode: string;
   portfolioTitle: string;
-  createdAt: string;
   status: "TODO" | "DONE";
   pinned: boolean;
+}
+
+interface SortableErrorReport extends SortableErrorReportLocation {
+  createdAt: string;
+}
+
+export interface SortableGroupedErrorReportIssue extends SortableErrorReportLocation {
+  exerciseId: string | null;
+  latestReportAt: string | null;
+  updatedAt: string;
 }
 
 export interface PortfolioFilterOption {
@@ -39,7 +48,31 @@ export function errorReportViewReducer(state: ErrorReportViewState, action: Erro
 }
 
 export function sortErrorReports<T extends SortableErrorReport>(reports: readonly T[], sort: ErrorReportSort): T[] {
-  return [...reports].sort((left, right) => {
+  return sortErrorReportItems(reports, sort, (report) => report.createdAt);
+}
+
+export function sortGroupedErrorReportIssues<T extends SortableGroupedErrorReportIssue>(issues: readonly T[], sort: ErrorReportSort): T[] {
+  return sortErrorReportItems(issues, sort, groupedIssueActivityDate);
+}
+
+export function filterGroupedErrorReportIssues<T extends SortableGroupedErrorReportIssue>(issues: readonly T[], selectedPortfolio: string | null): T[] {
+  return issues.filter((issue) => !selectedPortfolio || issue.portfolioId === selectedPortfolio);
+}
+
+export function openGroupedErrorReportIssueGroups<T extends SortableGroupedErrorReportIssue>(issues: readonly T[], sort: ErrorReportSort, selectedPortfolio: string | null) {
+  const visible = filterGroupedErrorReportIssues(issues, selectedPortfolio).filter((issue) => issue.status === "TODO");
+  return {
+    pinned: sortGroupedErrorReportIssues(visible.filter((issue) => issue.pinned), sort),
+    todo: sortGroupedErrorReportIssues(visible.filter((issue) => !issue.pinned), sort),
+  };
+}
+
+export function groupedErrorReportPortfolioFilterOptions(issues: readonly SortableGroupedErrorReportIssue[]): PortfolioFilterOption[] {
+  return portfolioFilterOptions(issues);
+}
+
+function sortErrorReportItems<T extends SortableErrorReportLocation>(items: readonly T[], sort: ErrorReportSort, activityDate: (item: T) => string): T[] {
+  return [...items].sort((left, right) => {
     if (sort === "portfolio") {
       const leftHasValidCode = isValidPortfolioId(left.portfolioCode);
       const rightHasValidCode = isValidPortfolioId(right.portfolioCode);
@@ -49,7 +82,7 @@ export function sortErrorReports<T extends SortableErrorReport>(reports: readonl
         if (portfolioOrder !== 0) return portfolioOrder;
       }
     }
-    return compareCreatedAtDescending(left.createdAt, right.createdAt);
+    return compareDateDescending(activityDate(left), activityDate(right));
   });
 }
 
@@ -61,7 +94,7 @@ export function openErrorReportGroups<T extends SortableErrorReport>(reports: re
   };
 }
 
-export function portfolioFilterOptions(reports: readonly SortableErrorReport[]): PortfolioFilterOption[] {
+export function portfolioFilterOptions(reports: readonly SortableErrorReportLocation[]): PortfolioFilterOption[] {
   const portfolios = new Map<string, PortfolioFilterOption>();
   for (const report of reports) {
     if (!report.portfolioId || !isValidPortfolioId(report.portfolioCode) || !report.portfolioTitle.trim()) continue;
@@ -84,7 +117,12 @@ function truncatePortfolioTitle(title: string): string {
   return normalized.length > 23 ? `${normalized.slice(0, 20).trimEnd()}...` : normalized;
 }
 
-function compareCreatedAtDescending(left: string, right: string): number {
+// Grouped recency follows the latest report, falling back to the issue mutation time when no report date exists.
+function groupedIssueActivityDate(issue: SortableGroupedErrorReportIssue): string {
+  return issue.latestReportAt ?? issue.updatedAt;
+}
+
+function compareDateDescending(left: string, right: string): number {
   const leftTimestamp = timestampOrOldest(left);
   const rightTimestamp = timestampOrOldest(right);
   if (leftTimestamp === rightTimestamp) return 0;
