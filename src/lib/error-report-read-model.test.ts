@@ -8,9 +8,13 @@ import {
   getAdminErrorReports,
   getErrorReportIssue,
   getGroupedErrorReportIssues,
+  getGroupedErrorReportThreads,
   getErrorReportIssueLearningSpaceId,
+  getErrorReportThreadLearningSpaceId,
   getOpenErrorIssueCount,
   getOpenErrorReportCount,
+  getOpenErrorThreadCount,
+  listErrorReportIssuesForThreads,
   listErrorReportsForIssue,
   listErrorReportsForIssues,
   saveErrorReportIssueNote,
@@ -82,10 +86,17 @@ describe("grouped error report read model", () => {
   it("returns unmatched exercise issues with their stored code", async () => {
     const database = await getDatabase();
     await database.execute({
+      sql: `INSERT INTO error_report_threads
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('thread-unmatched', 'space-5', 'read-portfolio-1', NULL, '11a', 'TODO', 0, '',
+          '2026-09-08T12:00:00.000Z', '2026-09-08T12:00:00.000Z')`,
+      args: [],
+    });
+    await database.execute({
       sql: `INSERT INTO error_report_issues
-        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind,
+        (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind,
           status, pinned, admin_note, created_at, updated_at)
-        VALUES ('issue-unmatched', 'space-5', 'read-portfolio-1', NULL, '11a', 'assignment', NULL,
+        VALUES ('issue-unmatched', 'thread-unmatched', 'space-5', 'read-portfolio-1', NULL, '11a', 'assignment', NULL,
           'TODO', 0, '', '2026-09-08T12:00:00.000Z', '2026-09-08T12:00:00.000Z')`,
       args: [],
     });
@@ -167,6 +178,43 @@ describe("grouped error report read model", () => {
     expect(await listErrorReportsForIssues([], "space-5")).toEqual([]);
   });
 
+  it("groups issues and reports by exercise thread with one bulk issue-detail read", async () => {
+    const threads = await getGroupedErrorReportThreads("space-5");
+    const firstExercise = threads.find((thread) => thread.exerciseId === "read-exercise-1");
+
+    expect(firstExercise).toMatchObject({
+      portfolioId: "read-portfolio-1",
+      exerciseCode: "1",
+      issueCount: 4,
+      reportCount: 13,
+      status: "TODO",
+      pinned: true,
+      isMatchedExercise: true,
+    });
+    const details = await listErrorReportIssuesForThreads(threads.map((thread) => thread.id), "space-5");
+    expect(details.filter((detail) => detail.threadId === firstExercise?.id)).toHaveLength(4);
+    expect(details.find((detail) => detail.issueId === "issue-hints")).toMatchObject({
+      documentKind: "hints",
+      reportCount: 1,
+    });
+    expect(await listErrorReportIssuesForThreads([], "space-5")).toEqual([]);
+  });
+
+  it("counts and resolves threads, including an unmatched exercise", async () => {
+    const database = await getDatabase();
+    await database.execute({
+      sql: `INSERT INTO error_report_threads
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('thread-unmatched-lookup', 'space-5', 'read-portfolio-1', NULL, '17b', 'TODO', 0, '',
+          '2026-09-08T12:00:00.000Z', '2026-09-08T12:00:00.000Z')`,
+      args: [],
+    });
+
+    expect(await getOpenErrorThreadCount("space-5")).toBe(2);
+    expect(await getErrorReportThreadLearningSpaceId("thread-unmatched-lookup")).toBe("space-5");
+    expect(await getErrorReportThreadLearningSpaceId("missing-thread")).toBeNull();
+  });
+
   it("counts open issues instead of underlying reports while legacy reads remain available", async () => {
     expect(await getOpenErrorIssueCount("space-5")).toBe(1);
     expect(await getOpenErrorIssueCount("space-6")).toBe(1);
@@ -197,6 +245,10 @@ async function seedReadModelFixture(database: DatabaseClient): Promise<void> {
     exercise("read-exercise-2", "read-portfolio-1", "read-section-1", "2", 2),
     exercise("read-exercise-3", "read-portfolio-2", "read-section-2", "1", 1),
     exercise("read-exercise-4", "read-portfolio-3", "read-section-3", "1", 1),
+    thread("thread-exercise-1", "space-5", "read-portfolio-1", "read-exercise-1", "1", "TODO", 1, "Canonieke threadnotitie", "2026-09-08T11:00:00.000Z"),
+    thread("thread-exercise-2", "space-5", "read-portfolio-1", "read-exercise-2", "2", "DONE", 0, "", "2026-09-08T10:20:00.000Z"),
+    thread("thread-exercise-3", "space-5", "read-portfolio-2", "read-exercise-3", "1", "DONE", 0, "", "2026-09-08T10:10:00.000Z"),
+    thread("thread-exercise-4", "space-6", "read-portfolio-3", "read-exercise-4", "1", "TODO", 0, "", "2026-09-08T10:00:00.000Z"),
     issue("issue-main", "space-5", "read-portfolio-1", "read-exercise-1", "final_solutions", "standard", "TODO", 1, "Canonieke issuenotitie", "2026-09-08T11:00:00.000Z"),
     issue("issue-alternative", "space-5", "read-portfolio-1", "read-exercise-1", "final_solutions", "alternative", "DONE", 0, "", "2026-09-08T10:50:00.000Z"),
     issue("issue-hints", "space-5", "read-portfolio-1", "read-exercise-1", "hints", null, "DONE", 0, "", "2026-09-08T10:40:00.000Z"),
@@ -260,9 +312,18 @@ function exercise(id: string, portfolioId: string, sectionId: string, code: stri
 function issue(id: string, learningSpaceId: string, portfolioId: string, exerciseId: string, documentKind: string, variant: string | null, status: string, pinned: number, note: string, updatedAt: string) {
   return {
     sql: `INSERT INTO error_report_issues
-      (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, completed_at, updated_at)
-      VALUES (?, ?, ?, ?, (SELECT exercise_code FROM exercises WHERE id = ?), ?, ?, ?, ?, ?, '2026-09-01T10:00:00.000Z', ?, ?)`,
-    args: [id, learningSpaceId, portfolioId, exerciseId, exerciseId, documentKind, variant, status, pinned, note, status === "DONE" ? updatedAt : null, updatedAt],
+      (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, completed_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, (SELECT exercise_code FROM exercises WHERE id = ?), ?, ?, ?, ?, ?, '2026-09-01T10:00:00.000Z', ?, ?)`,
+    args: [id, `thread-${exerciseId.replace("read-", "")}`, learningSpaceId, portfolioId, exerciseId, exerciseId, documentKind, variant, status, pinned, note, status === "DONE" ? updatedAt : null, updatedAt],
+  };
+}
+
+function thread(id: string, learningSpaceId: string, portfolioId: string, exerciseId: string, exerciseCode: string, status: string, pinned: number, note: string, updatedAt: string) {
+  return {
+    sql: `INSERT INTO error_report_threads
+      (id, learning_space_id, portfolio_id, exercise_id, exercise_code, status, pinned, admin_note, created_at, completed_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, '2026-09-01T10:00:00.000Z', ?, ?)`,
+    args: [id, learningSpaceId, portfolioId, exerciseId, exerciseCode, status, pinned, note, status === "DONE" ? updatedAt : null, updatedAt],
   };
 }
 

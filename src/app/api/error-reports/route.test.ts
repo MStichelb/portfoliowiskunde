@@ -47,6 +47,20 @@ describe("POST /api/error-reports", () => {
     expect(mocks.createErrorReport.mock.calls[0][0].exerciseId).toBeUndefined();
   });
 
+  it("distinguishes solution-page assets from the global final-solutions document", async () => {
+    await POST(request({ exerciseId: "exercise-1", documentKind: "exercise_solution", variant: "standard", message: "Fout in de uitwerking." }));
+    expect(mocks.createErrorReport).toHaveBeenLastCalledWith(expect.objectContaining({
+      exerciseId: "exercise-1",
+      documentKind: "exercise_solution",
+    }));
+
+    await POST(request({ portfolioId: "portfolio-1", exerciseCode: "5b", documentKind: "final_solutions", variant: "standard", message: "Fout in het document." }));
+    expect(mocks.createErrorReport).toHaveBeenLastCalledWith(expect.objectContaining({
+      portfolioId: "portfolio-1",
+      documentKind: "final_solutions",
+    }));
+  });
+
   it("does not create reports for anonymous users or users without LearningSpace access", async () => {
     mocks.getAuthenticatedUser.mockResolvedValueOnce(null);
     expect((await POST(request({ exerciseId: "exercise-1", message: "Niet aangemeld" }))).status).toBe(401);

@@ -1274,7 +1274,7 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
   const exercise = exerciseId === initialExercise?.id ? initialExercise : exerciseId ? await getVisibleExercise(exerciseId, learningSpaceId) : null;
   if (initialExercise && (initialExercise.learningSpaceId !== learningSpaceId || initialExercise.portfolioId !== portfolioId)) throw new Error("De gekozen oefening hoort niet bij deze portfolio.");
 
-  const documentKind = input.documentKind ?? "final_solutions";
+  const documentKind = input.documentKind ?? (isPortfolioFlow ? "final_solutions" : "exercise_solution");
   let variant: "standard" | "alternative" | null;
   let assetSnapshot: string;
   let sourceLastModifiedAt: string | null = null;
@@ -1284,15 +1284,17 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
     if (!documentPath) throw new Error("Het gekozen document is niet beschikbaar.");
     variant = null;
     assetSnapshot = JSON.stringify([{ documentKind, relativePath: documentPath }]);
-  } else if (documentKind === "final_solutions") {
+  } else if (documentKind === "final_solutions" || documentKind === "exercise_solution") {
     variant = input.variant ?? "standard";
     if (variant !== "standard" && variant !== "alternative") throw new Error("De gekozen documentvariant is ongeldig.");
-    if (isPortfolioFlow) {
+    if (documentKind === "final_solutions") {
+      if (!isPortfolioFlow) throw new Error("De gekozen documentvariant is ongeldig.");
       if (!portfolio.finalSolutionsPdfPath) throw new Error("Het gekozen document is niet beschikbaar.");
       if (!exerciseId && variant === "alternative") throw new Error("Voor een onbekende oefening is alleen de standaarduitwerking beschikbaar.");
       if (variant === "alternative" && !portfolioExercise?.hasAlternativeSolution) throw new Error("Deze alternatieve uitwerking bestaat niet.");
       assetSnapshot = JSON.stringify([{ documentKind, relativePath: portfolio.finalSolutionsPdfPath, variant }]);
     } else {
+      if (isPortfolioFlow || !exercise) throw new Error("De gekozen documentvariant is ongeldig.");
       const matchingAssets = exercise!.assets.filter((asset) => asset.kind === variant);
       if (matchingAssets.length === 0) throw new Error("Deze oplossingsvariant bestaat niet.");
       assetSnapshot = JSON.stringify(matchingAssets.map((asset) => ({ id: asset.id, fileName: asset.fileName, lastModifiedAt: asset.lastModifiedAt })));
@@ -1313,13 +1315,29 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
   const current = await database.execute({ sql: "SELECT attempts FROM error_report_rate_limits WHERE key = ?", args: [input.rateLimitKey] });
   if (Number(current.rows[0]?.attempts ?? 0) >= 5) throw new Error("Probeer later opnieuw.");
   const exerciseIdentity = exerciseId ?? `code:${requestedExerciseCode}`;
+  const threadId = stableId("error-thread", learningSpaceId, portfolioId, exerciseIdentity);
+  await database.execute({
+    sql: `INSERT INTO error_report_threads
+      (id, learning_space_id, portfolio_id, exercise_id, exercise_code, status, pinned, admin_note, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'TODO', 0, '', ?, ?)
+      ON CONFLICT DO NOTHING`,
+    args: [threadId, learningSpaceId, portfolioId, exerciseId, requestedExerciseCode, now.toISOString(), now.toISOString()],
+  });
+  const resolvedThread = (await database.execute({
+    sql: `SELECT id FROM error_report_threads
+      WHERE learning_space_id = ? AND portfolio_id = ?
+        AND COALESCE(exercise_id, 'code:' || LOWER(exercise_code)) = ?`,
+    args: [learningSpaceId, portfolioId, exerciseIdentity],
+  })).rows[0];
+  if (!resolvedThread) throw new Error("De foutmelding kon niet worden gegroepeerd.");
+  const resolvedThreadId = text(resolvedThread, "id");
   const issueId = stableId("error-issue", learningSpaceId, portfolioId, documentKind, exerciseIdentity, variant ?? "");
   await database.execute({
     sql: `INSERT INTO error_report_issues
-      (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, ?)
+      (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, ?)
       ON CONFLICT DO NOTHING`,
-    args: [issueId, learningSpaceId, portfolioId, exerciseId, requestedExerciseCode, documentKind, variant, now.toISOString(), now.toISOString()],
+    args: [issueId, resolvedThreadId, learningSpaceId, portfolioId, exerciseId, requestedExerciseCode, documentKind, variant, now.toISOString(), now.toISOString()],
   });
   const resolvedIssue = (await database.execute({
     sql: `SELECT id FROM error_report_issues
@@ -1360,6 +1378,7 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
       ON CONFLICT(key) DO UPDATE SET attempts = error_report_rate_limits.attempts + 1, window_started_at = excluded.window_started_at`, args: [input.rateLimitKey, windowStartedAt] },
     reportStatement,
     { sql: `UPDATE error_report_issues SET status = 'TODO', completed_at = NULL, updated_at = ? WHERE id = ?`, args: [now.toISOString(), resolvedIssueId] },
+    { sql: `UPDATE error_report_threads SET status = 'TODO', completed_at = NULL, updated_at = ? WHERE id = ?`, args: [now.toISOString(), resolvedThreadId] },
   ]);
   return { issueId: resolvedIssueId };
 }
@@ -1385,10 +1404,11 @@ export interface AdminErrorReport {
   solutionVisible: boolean;
 }
 
-export type ErrorReportDocumentKind = "assignment" | "final_solutions" | "hints";
+export type ErrorReportDocumentKind = "assignment" | "final_solutions" | "hints" | "exercise_solution";
 
 export interface ErrorReportIssue {
   id: string;
+  threadId: string;
   learningSpaceId: string;
   portfolioId: string;
   exerciseId: string | null;
@@ -1427,6 +1447,36 @@ export interface ErrorReportIssueDetail {
   createdAt: string;
 }
 
+export interface GroupedErrorReportThread {
+  id: string;
+  learningSpaceId: string;
+  portfolioId: string;
+  portfolioCode: string;
+  portfolioTitle: string;
+  exerciseId: string | null;
+  exerciseCode: string;
+  sectionTitle: string;
+  isMatchedExercise: boolean;
+  status: "TODO" | "DONE";
+  pinned: boolean;
+  adminNote: string;
+  createdAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+  issueCount: number;
+  reportCount: number;
+  latestReportAt: string | null;
+}
+
+export interface ErrorReportThreadIssueDetail {
+  threadId: string;
+  issueId: string;
+  documentKind: ErrorReportDocumentKind;
+  variant: "standard" | "alternative" | null;
+  reportCount: number;
+  latestReportAt: string | null;
+}
+
 export async function getErrorReportIssue(id: string): Promise<ErrorReportIssue | null> {
   const row = (await (await getDatabase()).execute({
     sql: "SELECT * FROM error_report_issues WHERE id = ?",
@@ -1435,6 +1485,7 @@ export async function getErrorReportIssue(id: string): Promise<ErrorReportIssue 
   if (!row) return null;
   return {
     id: text(row, "id"),
+    threadId: text(row, "thread_id"),
     learningSpaceId: text(row, "learning_space_id"),
     portfolioId: text(row, "portfolio_id"),
     exerciseId: nullableText(row, "exercise_id"),
@@ -1497,6 +1548,7 @@ export async function getGroupedErrorReportIssues(learningSpaceId?: string): Pro
     const solutionStatus = sectionStatus ? resolveChildPublication({ mode: childMode({ visibility_mode: row.exercise_visibility_mode }), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now) : null;
     return {
       id: text(row, "id"),
+      threadId: text(row, "thread_id"),
       learningSpaceId: text(row, "learning_space_id"),
       portfolioId: text(row, "portfolio_id"),
       portfolioCode: text(row, "portfolio_code"),
@@ -1521,6 +1573,89 @@ export async function getGroupedErrorReportIssues(learningSpaceId?: string): Pro
       solutionStatus,
     };
   });
+}
+
+export async function getGroupedErrorReportThreads(learningSpaceId?: string): Promise<GroupedErrorReportThread[]> {
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({
+    sql: `SELECT error_report_threads.*, portfolios.portfolio_code, portfolios.title AS portfolio_title,
+      portfolios.title_override, sections.title AS section_title,
+      COALESCE(thread_summary.issue_count, 0) AS issue_count,
+      COALESCE(thread_summary.report_count, 0) AS report_count,
+      thread_summary.latest_report_at
+      FROM error_report_threads
+      INNER JOIN portfolios ON portfolios.id = error_report_threads.portfolio_id
+      LEFT JOIN exercises ON exercises.id = error_report_threads.exercise_id
+      LEFT JOIN sections ON sections.id = exercises.section_id
+      LEFT JOIN (
+        SELECT error_report_issues.thread_id,
+          COUNT(DISTINCT error_report_issues.id) AS issue_count,
+          COUNT(error_reports.id) AS report_count,
+          MAX(error_reports.created_at) AS latest_report_at
+        FROM error_report_issues
+        LEFT JOIN error_reports ON error_reports.issue_id = error_report_issues.id
+        GROUP BY error_report_issues.thread_id
+      ) thread_summary ON thread_summary.thread_id = error_report_threads.id
+      WHERE error_report_threads.learning_space_id = ?
+      ORDER BY error_report_threads.pinned DESC,
+        CASE error_report_threads.status WHEN 'TODO' THEN 0 ELSE 1 END,
+        error_report_threads.updated_at DESC,
+        error_report_threads.id`,
+    args: [spaceId],
+  });
+  return result.rows.map((row) => {
+    const exerciseId = nullableText(row, "exercise_id");
+    return {
+      id: text(row, "id"),
+      learningSpaceId: text(row, "learning_space_id"),
+      portfolioId: text(row, "portfolio_id"),
+      portfolioCode: text(row, "portfolio_code"),
+      portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"),
+      exerciseId,
+      exerciseCode: text(row, "exercise_code"),
+      sectionTitle: nullableText(row, "section_title") ?? "Onbekende oefening",
+      isMatchedExercise: exerciseId !== null,
+      status: text(row, "status") === "DONE" ? "DONE" : "TODO",
+      pinned: bool(row.pinned),
+      adminNote: nullableText(row, "admin_note") ?? "",
+      createdAt: text(row, "created_at"),
+      completedAt: nullableText(row, "completed_at"),
+      updatedAt: text(row, "updated_at"),
+      issueCount: Number(row.issue_count),
+      reportCount: Number(row.report_count),
+      latestReportAt: nullableText(row, "latest_report_at"),
+    };
+  });
+}
+
+export async function listErrorReportIssuesForThreads(threadIds: string[], learningSpaceId?: string): Promise<ErrorReportThreadIssueDetail[]> {
+  if (threadIds.length === 0) return [];
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const placeholders = threadIds.map(() => "?").join(", ");
+  const result = await database.execute({
+    sql: `SELECT error_report_issues.thread_id, error_report_issues.id AS issue_id,
+      error_report_issues.document_kind, error_report_issues.variant_kind,
+      COUNT(error_reports.id) AS report_count, MAX(error_reports.created_at) AS latest_report_at
+      FROM error_report_issues
+      INNER JOIN error_report_threads ON error_report_threads.id = error_report_issues.thread_id
+      LEFT JOIN error_reports ON error_reports.issue_id = error_report_issues.id
+      WHERE error_report_issues.thread_id IN (${placeholders})
+        AND error_report_threads.learning_space_id = ?
+      GROUP BY error_report_issues.thread_id, error_report_issues.id,
+        error_report_issues.document_kind, error_report_issues.variant_kind
+      ORDER BY latest_report_at DESC, error_report_issues.id`,
+    args: [...threadIds, spaceId],
+  });
+  return result.rows.map((row) => ({
+    threadId: text(row, "thread_id"),
+    issueId: text(row, "issue_id"),
+    documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
+    variant: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
+    reportCount: Number(row.report_count),
+    latestReportAt: nullableText(row, "latest_report_at"),
+  }));
 }
 
 export async function listErrorReportsForIssue(issueId: string, learningSpaceId?: string): Promise<ErrorReportIssueDetail[]> {
@@ -1559,6 +1694,16 @@ export async function getOpenErrorIssueCount(learningSpaceId?: string): Promise<
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const result = await database.execute({
     sql: "SELECT COUNT(*) AS count FROM error_report_issues WHERE status = 'TODO' AND learning_space_id = ?",
+    args: [spaceId],
+  });
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+export async function getOpenErrorThreadCount(learningSpaceId?: string): Promise<number> {
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({
+    sql: "SELECT COUNT(*) AS count FROM error_report_threads WHERE status = 'TODO' AND learning_space_id = ?",
     args: [spaceId],
   });
   return Number(result.rows[0]?.count ?? 0);
@@ -1605,6 +1750,16 @@ export async function getErrorReportIssueLearningSpaceId(issueId: string): Promi
       INNER JOIN portfolios ON portfolios.id = error_report_issues.portfolio_id
       WHERE error_report_issues.id = ?`,
     args: [issueId],
+  })).rows[0];
+  return row ? text(row, "learning_space_id") : null;
+}
+
+export async function getErrorReportThreadLearningSpaceId(threadId: string): Promise<string | null> {
+  const row = (await (await getDatabase()).execute({
+    sql: `SELECT portfolios.learning_space_id FROM error_report_threads
+      INNER JOIN portfolios ON portfolios.id = error_report_threads.portfolio_id
+      WHERE error_report_threads.id = ?`,
+    args: [threadId],
   })).rows[0];
   return row ? text(row, "learning_space_id") : null;
 }

@@ -21,10 +21,15 @@ describe("grouped error report issue migration", () => {
   it("creates the additive issue schema in a fresh database", async () => {
     const database = await createFreshDatabase("portfolio-error-issues-fresh-");
 
-    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '028_unmatched_error_report_exercises'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '029_error_report_threads'")).rows).toHaveLength(1);
+    const threadColumns = (await database.execute("PRAGMA table_info(error_report_threads)")).rows;
+    expect(threadColumns.map((row) => row.name)).toEqual(expect.arrayContaining([
+      "id", "learning_space_id", "portfolio_id", "exercise_id", "exercise_code", "status", "pinned",
+      "admin_note", "created_at", "completed_at", "updated_at",
+    ]));
     const issueColumns = (await database.execute("PRAGMA table_info(error_report_issues)")).rows;
     expect(issueColumns.map((row) => row.name)).toEqual(expect.arrayContaining([
-      "id", "learning_space_id", "portfolio_id", "exercise_id", "exercise_code", "document_kind", "variant_kind",
+      "id", "thread_id", "learning_space_id", "portfolio_id", "exercise_id", "exercise_code", "document_kind", "variant_kind",
       "status", "pinned", "admin_note", "created_at", "completed_at", "updated_at",
     ]));
     expect(issueColumns.find((row) => row.name === "exercise_id")?.notnull).toBe(0);
@@ -37,9 +42,12 @@ describe("grouped error report issue migration", () => {
     const database = await upgradeLegacyFixture();
     const issues = (await database.execute(`SELECT * FROM error_report_issues
       ORDER BY portfolio_id, exercise_id, variant_kind`)).rows;
+    const threads = (await database.execute("SELECT * FROM error_report_threads ORDER BY portfolio_id, exercise_id")).rows;
     const reports = (await database.execute("SELECT * FROM error_reports ORDER BY id")).rows;
 
     expect(issues).toHaveLength(4);
+    expect(threads).toHaveLength(3);
+    expect(issues.every((issue) => typeof issue.thread_id === "string" && issue.thread_id.length > 0)).toBe(true);
     expect(reports).toHaveLength(13);
     expect(reports.every((report) => typeof report.issue_id === "string" && report.issue_id.length > 0)).toBe(true);
     expect(reports.every((report) => report.reporter_user_id === null)).toBe(true);
@@ -75,6 +83,14 @@ describe("grouped error report issue migration", () => {
     expect(secondPortfolioIssue?.id).not.toBe(standardIssue?.id);
     expect(alternativeIssue).toMatchObject({ status: "DONE", completed_at: "2026-08-12T10:00:00.000Z" });
     expect(secondPortfolioIssue).toMatchObject({ admin_note: "Enige portfolionotitie" });
+    expect(alternativeIssue?.thread_id).toBe(standardIssue?.thread_id);
+    expect(threads.find((thread) => thread.id === standardIssue?.thread_id)).toMatchObject({
+      status: "TODO",
+      pinned: 1,
+      created_at: "2026-08-01T10:00:00.000Z",
+      updated_at: "2026-08-12T10:00:00.000Z",
+      completed_at: null,
+    });
 
     const loaded = await getErrorReportIssue(String(secondPortfolioIssue?.id));
     expect(loaded).toMatchObject({
@@ -88,27 +104,83 @@ describe("grouped error report issue migration", () => {
     });
   });
 
+  it("consolidates issue workflow conservatively without losing distinct notes", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-error-threads-legacy-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 28)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-08T10:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.batch([
+      { sql: `INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, is_indexed, indexed_at)
+        VALUES ('thread-portfolio', 'space-5:thread', '9', 'space-5', 'Threadtest', 'Portfolio 9 - Threadtest', 1, '2026-09-08T10:00:00.000Z')`, args: [] },
+      { sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path)
+        VALUES ('thread-section', 'thread-portfolio', 1, 'Deel', 'Portfolio 9 - Threadtest/Uitwerkingen/1 - Deel')`, args: [] },
+      { sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix)
+        VALUES ('thread-exercise', 'thread-portfolio', 'thread-section', '12i', 12, 'i')`, args: [] },
+      { sql: `INSERT INTO error_report_issues
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind,
+          status, pinned, admin_note, created_at, completed_at, updated_at)
+        VALUES ('thread-assignment-issue', 'space-5', 'thread-portfolio', 'thread-exercise', '12i', 'assignment', NULL,
+          'DONE', 0, 'Notitie opgaven', '2026-09-01T10:00:00.000Z', '2026-09-02T10:00:00.000Z', '2026-09-02T10:00:00.000Z')`, args: [] },
+      { sql: `INSERT INTO error_report_issues
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind,
+          status, pinned, admin_note, created_at, completed_at, updated_at)
+        VALUES ('thread-hints-issue', 'space-5', 'thread-portfolio', 'thread-exercise', '12i', 'hints', NULL,
+          'TODO', 1, 'Notitie hints', '2026-09-03T10:00:00.000Z', NULL, '2026-09-04T10:00:00.000Z')`, args: [] },
+    ], "write");
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    const thread = (await upgraded.execute("SELECT * FROM error_report_threads WHERE portfolio_id = 'thread-portfolio'")).rows[0];
+    const issues = (await upgraded.execute("SELECT thread_id, admin_note FROM error_report_issues WHERE portfolio_id = 'thread-portfolio' ORDER BY id")).rows;
+
+    expect(thread).toMatchObject({
+      status: "TODO",
+      pinned: 1,
+      admin_note: "",
+      created_at: "2026-09-01T10:00:00.000Z",
+      completed_at: null,
+      updated_at: "2026-09-04T10:00:00.000Z",
+    });
+    expect(issues.map((issue) => issue.admin_note)).toEqual(["Notitie opgaven", "Notitie hints"]);
+    expect(new Set(issues.map((issue) => issue.thread_id)).size).toBe(1);
+  });
+
   it("enforces null-safe issue identity and one authenticated report per issue", async () => {
     const database = await upgradeLegacyFixture();
     const now = "2026-09-08T10:00:00.000Z";
-    const issueArgs = ["space-5", "issue-portfolio-1", "issue-exercise-1", "1", now, now];
+    const matchedThreadId = String((await database.execute("SELECT thread_id FROM error_report_issues WHERE exercise_id = 'issue-exercise-1' LIMIT 1")).rows[0]?.thread_id);
+    const issueArgs = [matchedThreadId, "space-5", "issue-portfolio-1", "issue-exercise-1", "1", now, now];
 
     await database.execute({
       sql: `INSERT INTO error_report_issues
-        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
-        VALUES ('assignment-issue', ?, ?, ?, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
+        (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('assignment-issue', ?, ?, ?, ?, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
       args: issueArgs,
     });
     await expect(database.execute({
       sql: `INSERT INTO error_report_issues
-        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
-        VALUES ('assignment-duplicate', ?, ?, ?, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
+        (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('assignment-duplicate', ?, ?, ?, ?, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
       args: issueArgs,
     })).rejects.toThrow();
     await database.execute({
       sql: `INSERT INTO error_report_issues
-        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
-        VALUES ('hints-issue', ?, ?, ?, ?, 'hints', NULL, 'TODO', 0, '', ?, ?)`,
+        (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('hints-issue', ?, ?, ?, ?, ?, 'hints', NULL, 'TODO', 0, '', ?, ?)`,
+      args: issueArgs,
+    });
+    await database.execute({
+      sql: `INSERT INTO error_report_issues
+        (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('exercise-solution-issue', ?, ?, ?, ?, ?, 'exercise_solution', 'standard', 'TODO', 0, '', ?, ?)`,
       args: issueArgs,
     });
 
@@ -118,17 +190,23 @@ describe("grouped error report issue migration", () => {
     await insertReport(database, "anonymous-b", "assignment-issue", null, now);
     expect((await database.execute("SELECT id FROM error_reports WHERE issue_id = 'assignment-issue'")).rows).toHaveLength(3);
 
-    const unmatchedArgs = ["space-5", "issue-portfolio-1", "11", now, now];
+    await database.execute({
+      sql: `INSERT INTO error_report_threads
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('unmatched-thread', 'space-5', 'issue-portfolio-1', NULL, '11', 'TODO', 0, '', ?, ?)`,
+      args: [now, now],
+    });
+    const unmatchedArgs = ["unmatched-thread", "space-5", "issue-portfolio-1", "11", now, now];
     await database.execute({
       sql: `INSERT INTO error_report_issues
-        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
-        VALUES ('unmatched-issue', ?, ?, NULL, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
+        (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('unmatched-issue', ?, ?, ?, NULL, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
       args: unmatchedArgs,
     });
     await expect(database.execute({
       sql: `INSERT INTO error_report_issues
-        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
-        VALUES ('unmatched-duplicate', ?, ?, NULL, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
+        (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+        VALUES ('unmatched-duplicate', ?, ?, ?, NULL, ?, 'assignment', NULL, 'TODO', 0, '', ?, ?)`,
       args: unmatchedArgs,
     })).rejects.toThrow();
   });

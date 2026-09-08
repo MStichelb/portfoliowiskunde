@@ -114,6 +114,7 @@ describe("grouped error report inbox", () => {
 function issue(overrides: Partial<GroupedErrorReportIssue> = {}): GroupedErrorReportIssue {
   return {
     id: "issue-main",
+    threadId: "thread-main",
     learningSpaceId: "space-5",
     portfolioId: "portfolio-1",
     portfolioCode: "1",

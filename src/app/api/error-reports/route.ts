@@ -9,7 +9,7 @@ export const runtime = "nodejs";
 export async function POST(request: Request) {
   const body = await request.json().catch(() => null) as { portfolioId?: unknown; exerciseId?: unknown; exerciseCode?: unknown; documentKind?: unknown; variant?: unknown; message?: unknown; website?: unknown } | null;
   if (!body || body.website) return Response.json({ ok: true });
-  const documentKind = body.documentKind ?? "final_solutions";
+  const documentKind = body.documentKind ?? (typeof body.portfolioId === "string" ? "final_solutions" : "exercise_solution");
   const portfolioFlow = typeof body.portfolioId === "string";
   if ((!portfolioFlow && typeof body.exerciseId !== "string")
     || (portfolioFlow && typeof body.exerciseCode !== "string")
@@ -49,5 +49,5 @@ export async function POST(request: Request) {
 }
 
 function isDocumentKind(value: unknown): value is ErrorReportDocumentKind {
-  return value === "assignment" || value === "final_solutions" || value === "hints";
+  return value === "assignment" || value === "final_solutions" || value === "hints" || value === "exercise_solution";
 }

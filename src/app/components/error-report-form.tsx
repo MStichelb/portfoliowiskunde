@@ -3,6 +3,8 @@
 import { Bell, ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 
+export const SOLUTION_ERROR_REPORT_DOCUMENT_KIND = "exercise_solution" as const;
+
 export function ErrorReportForm({ exerciseId, variants, initiallyOpen = false }: { exerciseId: string; variants: Array<"standard" | "alternative">; initiallyOpen?: boolean }) {
   const [open, setOpen] = useState(initiallyOpen);
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -13,7 +15,7 @@ export function ErrorReportForm({ exerciseId, variants, initiallyOpen = false }:
     const response = await fetch("/api/error-reports", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ exerciseId, documentKind: "final_solutions", variant: formData.get("variant"), message: formData.get("message"), website: formData.get("website") }),
+      body: JSON.stringify({ exerciseId, documentKind: SOLUTION_ERROR_REPORT_DOCUMENT_KIND, variant: formData.get("variant"), message: formData.get("message"), website: formData.get("website") }),
     });
     setStatus(response.ok ? "sent" : "error");
   }

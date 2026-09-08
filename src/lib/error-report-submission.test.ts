@@ -43,12 +43,17 @@ describe("error report v2 submission", () => {
     const repeated = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "11a", reporterUserId: "report-user-2", rateLimitKey: "unknown-repeat" }));
     const otherDocument = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "11a", documentKind: "hints", rateLimitKey: "unknown-document" }));
     const otherPortfolio = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "11a", portfolioId: "other-portfolio", rateLimitKey: "unknown-portfolio" }));
-    const issue = (await (await getDatabase()).execute({ sql: "SELECT exercise_id, exercise_code FROM error_report_issues WHERE id = ?", args: [first.issueId] })).rows[0];
+    const database = await getDatabase();
+    const issue = (await database.execute({ sql: "SELECT exercise_id, exercise_code, thread_id FROM error_report_issues WHERE id = ?", args: [first.issueId] })).rows[0];
+    const otherDocumentIssue = (await database.execute({ sql: "SELECT thread_id FROM error_report_issues WHERE id = ?", args: [otherDocument.issueId] })).rows[0];
+    const otherPortfolioIssue = (await database.execute({ sql: "SELECT thread_id FROM error_report_issues WHERE id = ?", args: [otherPortfolio.issueId] })).rows[0];
 
     expect(repeated.issueId).toBe(first.issueId);
     expect(otherDocument.issueId).not.toBe(first.issueId);
     expect(otherPortfolio.issueId).not.toBe(first.issueId);
     expect(issue).toMatchObject({ exercise_id: null, exercise_code: "11a" });
+    expect(otherDocumentIssue?.thread_id).toBe(issue?.thread_id);
+    expect(otherPortfolioIssue?.thread_id).not.toBe(issue?.thread_id);
   });
 
   it("allows unknown assignment and final-solution reports but never guesses an alternative", async () => {
@@ -99,10 +104,16 @@ describe("error report v2 submission", () => {
       sql: "UPDATE error_report_issues SET status = 'DONE', completed_at = '2026-09-08T12:00:00.000Z', pinned = 1, admin_note = 'Behouden notitie' WHERE id = ?",
       args: [first.issueId],
     });
+    await database.execute({
+      sql: `UPDATE error_report_threads SET status = 'DONE', completed_at = '2026-09-08T12:00:00.000Z'
+        WHERE id = (SELECT thread_id FROM error_report_issues WHERE id = ?)`,
+      args: [first.issueId],
+    });
 
     const updated = await createErrorReport(submission({ documentKind: "assignment", variant: null, reporterUserId: "report-user-1", message: "Bijgewerkte melding", rateLimitKey: "second" }));
     const secondUser = await createErrorReport(submission({ documentKind: "assignment", variant: null, reporterUserId: "report-user-2", message: "Andere leerling", rateLimitKey: "third" }));
     const issue = (await database.execute({ sql: "SELECT * FROM error_report_issues WHERE id = ?", args: [first.issueId] })).rows[0];
+    const thread = (await database.execute({ sql: "SELECT * FROM error_report_threads WHERE id = ?", args: [issue?.thread_id as string] })).rows[0];
     const reports = (await database.execute({ sql: "SELECT reporter_user_id, message FROM error_reports WHERE issue_id = ? ORDER BY reporter_user_id", args: [first.issueId] })).rows;
 
     expect(updated.issueId).toBe(first.issueId);
@@ -112,6 +123,24 @@ describe("error report v2 submission", () => {
       expect.objectContaining({ reporter_user_id: "report-user-2", message: "Andere leerling" }),
     ]);
     expect(issue).toMatchObject({ status: "TODO", completed_at: null, pinned: 1, admin_note: "Behouden notitie" });
+    expect(thread).toMatchObject({ status: "TODO", completed_at: null });
+  });
+
+  it("groups document issues for one exercise into one race-safe thread", async () => {
+    const [assignment, solutions] = await Promise.all([
+      createErrorReport(submission({ documentKind: "assignment", variant: null, rateLimitKey: "thread-assignment" })),
+      createErrorReport(submission({ documentKind: "final_solutions", variant: "standard", rateLimitKey: "thread-solutions" })),
+    ]);
+    const database = await getDatabase();
+    const issues = (await database.execute({
+      sql: "SELECT id, thread_id, document_kind FROM error_report_issues WHERE id IN (?, ?) ORDER BY document_kind",
+      args: [assignment.issueId, solutions.issueId],
+    })).rows;
+
+    expect(issues).toHaveLength(2);
+    expect(new Set(issues.map((issue) => issue.thread_id)).size).toBe(1);
+    expect(issues.map((issue) => issue.document_kind)).toEqual(["assignment", "final_solutions"]);
+    expect((await database.execute("SELECT id FROM error_report_threads WHERE portfolio_id = 'submission-portfolio' AND exercise_id = 'submission-exercise'")).rows).toHaveLength(1);
   });
 
   it("rejects hidden public content and retains the existing rate limit", async () => {
@@ -127,11 +156,11 @@ describe("error report v2 submission", () => {
     await expect(createErrorReport(submission({ documentKind: "assignment", variant: null, message: "Zesde melding", rateLimitKey: "limited" }))).rejects.toThrow("Probeer later opnieuw");
   });
 
-  it("keeps the legacy solution-page submission on the shared issue write path", async () => {
+  it("stores solution-page submissions as exercise solutions on the shared write path", async () => {
     const result = await createErrorReport({
       exerciseId: "submission-exercise",
       learningSpaceId: "space-5",
-      documentKind: "final_solutions",
+      documentKind: "exercise_solution",
       variant: "standard",
       message: "Fout in de getoonde uitwerking",
       reporterUserId: "report-user-1",
@@ -139,7 +168,7 @@ describe("error report v2 submission", () => {
     });
     const database = await getDatabase();
     expect((await database.execute({ sql: "SELECT document_kind, variant_kind FROM error_report_issues WHERE id = ?", args: [result.issueId] })).rows[0]).toMatchObject({
-      document_kind: "final_solutions",
+      document_kind: "exercise_solution",
       variant_kind: "standard",
     });
     expect((await database.execute({ sql: "SELECT issue_id, reporter_user_id FROM error_reports WHERE issue_id = ?", args: [result.issueId] })).rows[0]).toMatchObject({

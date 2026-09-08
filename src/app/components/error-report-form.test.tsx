@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ErrorReportForm } from "./error-report-form";
+import { ErrorReportForm, SOLUTION_ERROR_REPORT_DOCUMENT_KIND } from "./error-report-form";
 
 describe("ErrorReportForm", () => {
   it("starts as an accessible collapsed disclosure", () => {
@@ -19,5 +19,6 @@ describe("ErrorReportForm", () => {
     expect(markup).not.toContain('name="reporterName"');
     expect(markup).toContain('name="variant"');
     expect(markup).toContain("Wat heb je opgemerkt?");
+    expect(SOLUTION_ERROR_REPORT_DOCUMENT_KIND).toBe("exercise_solution");
   });
 });
