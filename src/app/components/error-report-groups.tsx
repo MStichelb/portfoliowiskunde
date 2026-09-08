@@ -1,10 +1,11 @@
 "use client";
 
-import { Check, Pin, PinOff, RotateCcw, Search, TriangleAlert } from "lucide-react";
+import { Check, Pin, PinOff, RotateCcw, Search, Trash2, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useReducer } from "react";
 
-import { errorReportThreadPinAction, errorReportThreadStatusAction, toggleReportedExerciseVisibilityAction } from "@/app/admin/actions";
+import { deleteErrorReportAction, deleteOldDoneErrorThreadsAction, errorReportThreadPinAction, errorReportThreadStatusAction, toggleReportedExerciseVisibilityAction } from "@/app/admin/actions";
+import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import { ErrorReportNoteForm } from "@/app/components/error-report-note-form";
 import { ErrorReportSortControls } from "@/app/components/error-report-sort-controls";
 import { PublicationStatus } from "@/app/components/publication-status";
@@ -18,9 +19,11 @@ import {
 } from "@/lib/error-report-sort";
 import type { ErrorReportDocumentKind, ErrorReportIssueDetail, ErrorReportThreadIssueDetail, GroupedErrorReportThread } from "@/lib/repositories";
 
-export function GroupedErrorReportThreadInbox({ threads, issuesByThread, spaceSlug }: {
+export function GroupedErrorReportThreadInbox({ threads, issuesByThread, learningSpaceId, oldDoneCount, spaceSlug }: {
   threads: GroupedErrorReportThread[];
   issuesByThread: Record<string, ErrorReportThreadIssueDetail[]>;
+  learningSpaceId: string;
+  oldDoneCount: number;
   spaceSlug: string;
 }) {
   const [state, dispatch] = useReducer(errorReportViewReducer, initialErrorReportViewState);
@@ -50,6 +53,14 @@ export function GroupedErrorReportThreadInbox({ threads, issuesByThread, spaceSl
     <GroupedErrorReportThreadGroup title="TO DO" threads={openGroups.todo} issuesByThread={issuesByThread} spaceSlug={spaceSlug} />
     <details className="report-group done-group">
       <summary><h2>DONE <span>{done.length}</span></h2></summary>
+      {oldDoneCount > 0 ? <div className="done-group-actions"><ConfirmActionButton
+        action={deleteOldDoneErrorThreadsAction}
+        fields={{ learningSpaceId }}
+        className="danger-button"
+        label={<><Trash2 size={16} aria-hidden />Verwijder DONE ouder dan 2 weken</>}
+        confirmTitle="Afgewerkte meldingen verwijderen"
+        confirmText={`${oldDoneCount} ${oldDoneCount === 1 ? "afgewerkte thread wordt" : "afgewerkte threads worden"} permanent verwijderd, inclusief alle onderliggende meldingen.`}
+      /></div> : null}
       <GroupedErrorReportThreadCards threads={done} issuesByThread={issuesByThread} spaceSlug={spaceSlug} />
     </details>
   </>;
@@ -152,7 +163,17 @@ function ThreadReportDetails({ thread, issues, reportLabel }: {
       <div className="issue-report-stack">{issue.reports.map((report) => {
         const treated = isErrorReportTreated(thread, report);
         return <article key={report.id} className={`issue-report-item ${treated ? "is-treated" : "is-unhandled"}`} aria-label={treated ? "Eerder afgehandelde melding" : "Onbehandelde melding"}>
-          <p className="report-message">{report.message}</p>
+          <div className="issue-report-item-heading">
+            <p className="report-message">{report.message}</p>
+            <ConfirmActionButton
+              action={deleteErrorReportAction}
+              fields={{ id: report.id }}
+              className="icon-button report-delete-button"
+              label={<Trash2 size={15} aria-hidden />}
+              confirmTitle="Melding verwijderen"
+              confirmText={errorReportDeleteConfirmText(thread)}
+            />
+          </div>
           <p className="report-reporter">{report.reporterDisplayName ?? report.reporterName ?? "Onbekende melder"} · {formatReportDate(report.createdAt)}</p>
         </article>;
       })}</div>
@@ -169,6 +190,12 @@ export function isErrorReportTreated(
   const completedAt = Date.parse(thread.completedAt);
   const createdAt = Date.parse(report.createdAt);
   return Number.isFinite(completedAt) && Number.isFinite(createdAt) && createdAt <= completedAt;
+}
+
+export function errorReportDeleteConfirmText(thread: Pick<GroupedErrorReportThread, "reportCount" | "adminNote">): string {
+  if (thread.reportCount !== 1) return "Deze individuele melding wordt permanent verwijderd.";
+  if (thread.adminNote.trim()) return "Deze individuele melding wordt permanent verwijderd. Dit is de laatste melding in de thread; ook de volledige thread en de bijbehorende adminnotitie verdwijnen permanent.";
+  return "Deze individuele melding wordt permanent verwijderd. Omdat dit de laatste melding is, verdwijnt ook de lege thread.";
 }
 
 function formatReportDate(value: string) {

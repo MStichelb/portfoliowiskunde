@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { adminExercisePortfolioHref } from "./admin-routes";
-import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, deleteErrorReport, deleteOldDoneErrorReports, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOldDoneErrorReportCount, getOpenErrorReportCount, getPublicAsset, getPublicPortfolioDocument, getStudentPortfolios, getThemes, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, saveErrorReportNote, setErrorReportStatus, setExerciseAlternativeVisibility, setExercisePublication, setLearningSpaceEditorsCanManageAccess, setPortfolioCardColor, setPortfolioPublication, setPortfolioTheme, toggleErrorReportPin, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getOpenErrorReportCount, getPublicAsset, getPublicPortfolioDocument, getStudentPortfolios, getThemes, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, setExerciseAlternativeVisibility, setExercisePublication, setLearningSpaceEditorsCanManageAccess, setPortfolioCardColor, setPortfolioPublication, setPortfolioTheme, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -212,33 +212,6 @@ describe("persistIndex", () => {
     expect(await getLatestWarnings("space-5")).toHaveLength(0);
   });
 
-  it("keeps error reports actionable with TODO, DONE, pinning and notes", async () => {
-    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-reports-"));
-    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
-    resetDatabaseForTests();
-    await persistIndex(await indexSource(createTwoPortfolioProvider()), "local");
-    await setPortfolioPublication("portfolio-3", "visible", false, null, null);
-    const database = await getDatabase();
-    const exerciseId = String((await database.execute("SELECT id FROM exercises WHERE portfolio_id = 'portfolio-3' ORDER BY id LIMIT 1")).rows[0].id);
-    await createErrorReport({ exerciseId, variant: "standard", message: "Stap twee bevat een fout.", rateLimitKey: "test-report" });
-    expect(await getOpenErrorReportCount()).toBe(1);
-    const report = (await getAdminErrorReports())[0];
-    expect(report.createdAt).toBeTruthy();
-    await toggleErrorReportPin(report.id);
-    await saveErrorReportNote(report.id, "Later nakijken.");
-    let updated = (await getAdminErrorReports())[0];
-    expect(updated).toMatchObject({ status: "TODO", pinned: true, adminNote: "Later nakijken.", completedAt: null });
-    await setErrorReportStatus(report.id, "DONE");
-    updated = (await getAdminErrorReports())[0];
-    expect(updated).toMatchObject({ status: "DONE", pinned: true, adminNote: "Later nakijken." });
-    expect(updated.completedAt).toBeTruthy();
-    expect(await getOpenErrorReportCount()).toBe(0);
-    await setErrorReportStatus(report.id, "TODO");
-    updated = (await getAdminErrorReports())[0];
-    expect(updated.completedAt).toBeNull();
-    expect(await getOpenErrorReportCount()).toBe(1);
-  });
-
   it("stores optional reporter names with trimming and a 100 character server limit", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-report-names-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
@@ -260,22 +233,6 @@ describe("persistIndex", () => {
     expect(reports.get("Lege naam")?.reporterName).toBeNull();
     expect(reports.get("Naam op grens")?.reporterName).toBe("A".repeat(100));
     expect(reports.has("Naam te lang")).toBe(false);
-  });
-
-  it("deletes individual reports and only old completed reports in bulk", async () => {
-    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-delete-")); process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db"); resetDatabaseForTests();
-    await persistIndex(await indexSource(createTwoPortfolioProvider()), "local"); await setPortfolioPublication("portfolio-3", "visible", false, null, null);
-    const database = await getDatabase(); const exercise = String((await database.execute("SELECT id FROM exercises WHERE portfolio_id = 'portfolio-3' LIMIT 1")).rows[0].id);
-    for (const key of ["old", "edge", "recent", "todo"]) await createErrorReport({ exerciseId: exercise, variant: "standard", message: `Melding ${key}`, rateLimitKey: key });
-    const reports = await getAdminErrorReports(); const byMessage = new Map(reports.map((report) => [report.message, report]));
-    await deleteErrorReport(byMessage.get("Melding recent")!.id); expect((await getAdminErrorReports()).some((report) => report.message === "Melding recent")).toBe(false);
-    const now = new Date("2026-08-20T12:00:00.000Z");
-    await database.batch([
-      { sql: "UPDATE error_reports SET status = 'DONE', completed_at = ? WHERE id = ?", args: ["2026-08-06T11:59:59.999Z", byMessage.get("Melding old")!.id] },
-      { sql: "UPDATE error_reports SET status = 'DONE', completed_at = ? WHERE id = ?", args: ["2026-08-06T12:00:00.000Z", byMessage.get("Melding edge")!.id] },
-    ]);
-    expect(await getOldDoneErrorReportCount(now)).toBe(1); await deleteOldDoneErrorReports(now);
-    const remaining = await getAdminErrorReports(); expect(remaining.map((report) => report.message)).toContain("Melding edge"); expect(remaining.map((report) => report.message)).toContain("Melding todo"); expect(remaining.map((report) => report.message)).not.toContain("Melding old");
   });
 
   it("only permits a solution asset when its full publication chain is effective", async () => {

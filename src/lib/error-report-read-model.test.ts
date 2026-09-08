@@ -5,23 +5,21 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests, type DatabaseClient } from "./database";
 import {
+  deleteErrorReport,
+  deleteOldDoneErrorThreads,
   getAdminErrorReports,
-  getErrorReportIssue,
   getGroupedErrorReportIssues,
   getGroupedErrorReportThreads,
-  getErrorReportIssueLearningSpaceId,
   getErrorReportThreadLearningSpaceId,
+  getOldDoneErrorThreadCount,
   getOpenErrorIssueCount,
   getOpenErrorReportCount,
   getOpenErrorThreadCount,
   listErrorReportIssuesForThreads,
   listErrorReportsForIssue,
   listErrorReportsForIssues,
-  saveErrorReportIssueNote,
   saveErrorReportThreadNote,
-  setErrorReportIssueStatus,
   setErrorReportThreadStatus,
-  toggleErrorReportIssuePin,
   toggleErrorReportThreadPin,
 } from "./repositories";
 
@@ -116,47 +114,6 @@ describe("grouped error report read model", () => {
       solutionConfiguredVisible: null,
       solutionStatus: null,
     });
-    expect(await getErrorReportIssueLearningSpaceId("issue-unmatched")).toBe("space-5");
-
-    await setErrorReportIssueStatus("issue-unmatched", "DONE");
-    await toggleErrorReportIssuePin("issue-unmatched");
-    await saveErrorReportIssueNote("issue-unmatched", "Onbekende oefening nakijken");
-    expect(await getErrorReportIssue("issue-unmatched")).toMatchObject({
-      exerciseId: null,
-      status: "DONE",
-      pinned: true,
-      adminNote: "Onbekende oefening nakijken",
-    });
-  });
-
-  it("manages canonical issue state without changing legacy report fields", async () => {
-    const database = await getDatabase();
-    const reportsBefore = (await database.execute({
-      sql: "SELECT id, status, pinned, admin_note FROM error_reports WHERE issue_id = ? ORDER BY id",
-      args: ["issue-main"],
-    })).rows;
-
-    await setErrorReportIssueStatus("issue-main", "DONE");
-    let issue = await getErrorReportIssue("issue-main");
-    expect(issue?.status).toBe("DONE");
-    expect(issue?.completedAt).toBeTruthy();
-
-    await setErrorReportIssueStatus("issue-main", "TODO");
-    issue = await getErrorReportIssue("issue-main");
-    expect(issue).toMatchObject({ status: "TODO", completedAt: null });
-
-    await toggleErrorReportIssuePin("issue-main");
-    expect((await getErrorReportIssue("issue-main"))?.pinned).toBe(false);
-    await saveErrorReportIssueNote("issue-main", "N".repeat(4_001));
-    expect((await getErrorReportIssue("issue-main"))?.adminNote).toHaveLength(4_000);
-
-    const reportsAfter = (await database.execute({
-      sql: "SELECT id, status, pinned, admin_note FROM error_reports WHERE issue_id = ? ORDER BY id",
-      args: ["issue-main"],
-    })).rows;
-    expect(reportsAfter).toEqual(reportsBefore);
-    expect(await getErrorReportIssueLearningSpaceId("issue-main")).toBe("space-5");
-    expect(await getErrorReportIssueLearningSpaceId("missing-issue")).toBeNull();
   });
 
   it("reads legacy report details newest-first and preserves reporter names", async () => {
@@ -266,6 +223,59 @@ describe("grouped error report read model", () => {
       reporterName: "Legacy leerling",
       message: "Melding 10",
     });
+  });
+
+  it("deletes one report without changing its surviving issue or thread lifecycle", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE error_report_threads SET completed_at = '2026-09-01T09:00:00.000Z' WHERE id = 'thread-exercise-1'");
+    const before = (await database.execute("SELECT status, completed_at, admin_note FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows[0];
+
+    await deleteErrorReport("main-report-09");
+
+    expect((await database.execute("SELECT id FROM error_reports WHERE id = 'main-report-09'")).rows).toHaveLength(0);
+    expect((await database.execute("SELECT id FROM error_report_issues WHERE id = 'issue-main'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT status, completed_at, admin_note FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows[0]).toEqual(before);
+  });
+
+  it("removes an empty issue while preserving a thread that still has other issues", async () => {
+    const database = await getDatabase();
+
+    await deleteErrorReport("hints-report");
+
+    expect((await database.execute("SELECT id FROM error_reports WHERE id = 'hints-report'")).rows).toHaveLength(0);
+    expect((await database.execute("SELECT id FROM error_report_issues WHERE id = 'issue-hints'")).rows).toHaveLength(0);
+    expect((await database.execute("SELECT id FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows).toHaveLength(1);
+  });
+
+  it("removes the empty thread and its admin note after its last report disappears", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE error_report_threads SET admin_note = 'Verdwijnt met de thread' WHERE id = 'thread-exercise-2'");
+
+    await deleteErrorReport("exercise-2-report");
+
+    expect((await database.execute("SELECT id FROM error_reports WHERE id = 'exercise-2-report'")).rows).toHaveLength(0);
+    expect((await database.execute("SELECT id FROM error_report_issues WHERE id = 'issue-exercise-2'")).rows).toHaveLength(0);
+    expect((await database.execute("SELECT id FROM error_report_threads WHERE id = 'thread-exercise-2'")).rows).toHaveLength(0);
+  });
+
+  it("cleans up only DONE threads completed more than fourteen days ago", async () => {
+    const database = await getDatabase();
+    const now = new Date("2026-09-22T12:00:00.000Z");
+    await database.batch([
+      { sql: "UPDATE error_report_threads SET completed_at = ? WHERE id = 'thread-exercise-2'", args: ["2026-09-08T11:59:59.999Z"] },
+      { sql: "UPDATE error_report_threads SET completed_at = ? WHERE id = 'thread-exercise-3'", args: ["2026-09-08T12:00:00.000Z"] },
+      { sql: "UPDATE error_report_threads SET completed_at = ? WHERE id = 'thread-exercise-1'", args: ["2000-01-01T00:00:00.000Z"] },
+    ]);
+
+    expect(await getOldDoneErrorThreadCount(now, "space-5")).toBe(1);
+    await deleteOldDoneErrorThreads(now, "space-5");
+
+    expect((await database.execute("SELECT id FROM error_report_threads WHERE id = 'thread-exercise-2'")).rows).toHaveLength(0);
+    expect((await database.execute("SELECT id FROM error_report_issues WHERE id = 'issue-exercise-2'")).rows).toHaveLength(0);
+    expect((await database.execute("SELECT id FROM error_reports WHERE id = 'exercise-2-report'")).rows).toHaveLength(0);
+    expect((await database.execute("SELECT id FROM error_report_threads WHERE id IN ('thread-exercise-1', 'thread-exercise-3') ORDER BY id")).rows.map((row) => row.id)).toEqual(["thread-exercise-1", "thread-exercise-3"]);
+    expect((await database.execute("SELECT id FROM error_reports WHERE id = 'portfolio-2-report'")).rows).toHaveLength(1);
+    expect(await getOldDoneErrorThreadCount(now, "space-5")).toBe(0);
   });
 });
 

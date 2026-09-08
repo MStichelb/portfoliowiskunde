@@ -42,24 +42,25 @@ De writeflow maakt of hergebruikt het issue via de unieke locatie-index. Een eer
 
 `reportCount` is het totale aantal individuele meldingen onder een issue. `reporterCount` telt uitsluitend unieke niet-lege interne user-IDs; anonieme legacyreports en `reporter_name` worden niet als unieke users geïnterpreteerd.
 
-Batch F is afgerond. Status, pin en beheernotitie worden voor nieuwe beheerfunctionaliteit uitsluitend op `error_report_issues` gewijzigd. De issue-actions autoriseren via de server-side issue- en portfoliorelatie naar de LearningSpace en werken daardoor ook voor onbekende oefeningen zonder `exercise_id`. De zichtbare LearningSpace-teller gebruikt `getOpenErrorIssueCount()` en telt dus TODO-issues in plaats van onderliggende meldingen.
-
-De bestaande report-level actions en redundante reportvelden blijven tijdelijk beschikbaar voor de oude admin-UI, maar zijn niet langer het doelmodel voor nieuwe beheerfunctionaliteit. Issue-delete en de definitieve bewaarlifecycle zijn nog bewust open; de volgende stap is de gegroepeerde admin-UI op het issue-readmodel en de nieuwe issue-actions aansluiten.
+Batch F vormde de tijdelijke issuegerichte beheerfase. De bijbehorende issue-readmodellen blijven beschikbaar voor migratie- en compatibiliteitstests, maar zijn niet langer het doelmodel voor beheerfunctionaliteit.
 
 Batch G1 is afgerond. De LearningSpace-inbox toont één kaart per grouped issue en gebruikt issue-level status, pin en beheernotitie. Individuele reports zijn alleen nog als ingeklapte detailhistoriek zichtbaar en worden voor het volledige overzicht in één bulkquery geladen. Ook onbekende oefeningcodes blijven als issues zonder previewlink bruikbaar.
 
 Batch G1.1 voegt de thread-readlaag toe. Het overzicht levert één rij per oefening met geaggregeerde issue- en reportaantallen; een afzonderlijke bulkquery levert alle onderliggende issuelocaties voor een verzameling threads. `getOpenErrorThreadCount()` telt open beheereenheden. De inbox en beheeracties worden pas in een volgende batch van issue- naar threadniveau omgezet.
 
-Batch G1.2 schakelt de LearningSpace-inbox om naar één adminkaart per oefeningthread. Issues zijn binnen die kaart de afzonderlijke foutlocaties en reports blijven de individuele leerlingmeldingen. Status, pin en beheernotitie worden uitsluitend op threadniveau beheerd; issue- en reportworkflowvelden blijven voorlopig alleen als compatibiliteitsdata bestaan. De inbox gebruikt één threadoverzichtsquery en één bulkquery voor alle onderliggende issues en reports. Delete en bewaarlifecycle blijven open.
+Batch G1.2 schakelt de LearningSpace-inbox om naar één adminkaart per oefeningthread. Issues zijn binnen die kaart de afzonderlijke foutlocaties en reports blijven de individuele leerlingmeldingen. Status, pin en beheernotitie worden uitsluitend op threadniveau beheerd; issue- en reportworkflowvelden blijven voorlopig alleen als compatibiliteitsdata bestaan. De inbox gebruikt één threadoverzichtsquery en één bulkquery voor alle onderliggende issues en reports.
 
 Batch G1.3 maakt de threadkaarten compacter met locatiechips, compacte reportmetadata en een beheernotitie die alleen tijdens bewerken als formulier verschijnt. Voor gematchte oefeningen is de bestaande visibilityactie opnieuw beschikbaar. Onbekende oefeningcodes krijgen een toegankelijk waarschuwingsicoon in plaats van een extra tekstregel.
 
 Batch G1.4 combineert aantal, laatste melding en eventuele afwerkdatum in de disclosuretrigger. Individuele reports verschijnen per locatie als compacte minikaarten. DONE-reports zijn behandeld; een automatisch heropende TODO-thread gebruikt de bewaarde `completed_at` als cutoff om oudere reports terughoudend en nieuwere reports als onbehandeld weer te geven. De interne beheernotitie heeft een afzonderlijk subtiel bordeaux accent.
 
-Thread-delete, de definitieve bewaarlifecycle en het opruimen van de tijdelijke issue-/report-level actions en redundante legacyvelden blijven open.
+Batch G2 rondt de lifecycle af. Een beheerder kan een individuele reportmelding na bevestiging permanent verwijderen. De server leidt de LearningSpace uitsluitend af uit de report-, issue- en threadrelatie. Blijven er andere reports in het issue, dan verandert verder niets. Een issue zonder reports wordt verwijderd; wanneer daardoor ook de thread geen issues meer heeft, verdwijnt de thread inclusief eventuele beheernotitie. Deze deletevolgorde gebeurt transactioneel en verandert status of `completed_at` van een niet-lege thread niet.
+
+De opruimactie voor DONE verwijdert complete threads waarvan `thread.completed_at` strikt ouder is dan veertien dagen. Eerst verdwijnen alle reports, daarna de issues en ten slotte de thread. De teller telt threads. Een TODO-thread wordt nooit door deze cleanup verwijderd, ook niet wanneer een automatische heropening een oude `completed_at` als behandelingsgrens heeft behouden.
+
+De canonieke beheeracties en teller zijn nu threadgericht; de zichtbare teller gebruikt `getOpenErrorThreadCount()`. De niet meer gebruikte report- en issue-level status-, pin- en notitieacties zijn verwijderd. De oude report-/issue-readmodellen, compatibiliteitstellers en redundante databasevelden blijven voorlopig behouden voor migratiecontrole, historische reads en backward-compatibilitytests. Foutmeldingen v2 is hiermee functioneel afgerond.
 
 ## Vervolg
 
-- **G2:** individuele report-delete met bevestiging en de lifecycle van lege issues/threads en bestaande beheernotities bepalen.
-- **G:** legacyvelden gecontroleerd opruimen nadat alle reads en writes issuegericht zijn.
+- **Legacy:** redundante workflowvelden gecontroleerd opruimen zodra migratie- en backward-compatibilityreads ze niet meer nodig hebben.
 - **Resources:** documentsoorten later uitbreidbaar maken via configureerbare resourcedefinities; migratie 029 beperkt zich bewust tot de vier huidige kinds.

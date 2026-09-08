@@ -326,7 +326,9 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .issue-report-location h3 { margin: 0; font-size: 15px; }
 .issue-report-stack { display: grid; gap: 6px; }
 .issue-report-item { padding: 9px 10px; border: 1px solid #d5ddda; border-radius: 4px; background: #fff; }
+.issue-report-item-heading { display: flex; align-items: start; justify-content: space-between; gap: 10px; }
 .issue-report-item .report-message { margin: 0; color: #17222b; }
+.report-delete-button { width: 30px; height: 30px; flex: 0 0 30px; color: #68767e; }
 .issue-report-item .report-reporter { margin: 4px 0 0; color: #52616a; font-size: 13px; font-weight: 400; }
 .issue-report-item.is-treated { background: #f2f4f3; }
 .issue-report-item.is-treated .report-message { color: #68767e; }

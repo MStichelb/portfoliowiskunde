@@ -1787,16 +1787,6 @@ export async function getErrorReportLearningSpaceId(id: string): Promise<string 
   return row ? text(row, "learning_space_id") : null;
 }
 
-export async function getErrorReportIssueLearningSpaceId(issueId: string): Promise<string | null> {
-  const row = (await (await getDatabase()).execute({
-    sql: `SELECT portfolios.learning_space_id FROM error_report_issues
-      INNER JOIN portfolios ON portfolios.id = error_report_issues.portfolio_id
-      WHERE error_report_issues.id = ?`,
-    args: [issueId],
-  })).rows[0];
-  return row ? text(row, "learning_space_id") : null;
-}
-
 export async function getErrorReportThreadLearningSpaceId(threadId: string): Promise<string | null> {
   const row = (await (await getDatabase()).execute({
     sql: `SELECT portfolios.learning_space_id FROM error_report_threads
@@ -1829,60 +1819,41 @@ export async function saveErrorReportThreadNote(threadId: string, note: string):
   });
 }
 
-export async function setErrorReportIssueStatus(issueId: string, status: "TODO" | "DONE"): Promise<void> {
-  const now = new Date().toISOString();
-  await (await getDatabase()).execute({
-    sql: "UPDATE error_report_issues SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
-    args: [status, status === "DONE" ? now : null, now, issueId],
-  });
-}
-
-export async function toggleErrorReportIssuePin(issueId: string): Promise<void> {
-  await (await getDatabase()).execute({
-    sql: "UPDATE error_report_issues SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END, updated_at = ? WHERE id = ?",
-    args: [new Date().toISOString(), issueId],
-  });
-}
-
-export async function saveErrorReportIssueNote(issueId: string, note: string): Promise<void> {
-  await (await getDatabase()).execute({
-    sql: "UPDATE error_report_issues SET admin_note = ?, updated_at = ? WHERE id = ?",
-    args: [note.slice(0, 4000), new Date().toISOString(), issueId],
-  });
-}
-
-export async function setErrorReportStatus(id: string, status: "TODO" | "DONE"): Promise<void> {
-  const database = await getDatabase();
-  const now = new Date().toISOString();
-  await database.execute({ sql: "UPDATE error_reports SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?", args: [status, status === "DONE" ? now : null, now, id] });
-}
-
-export async function toggleErrorReportPin(id: string): Promise<void> {
-  const database = await getDatabase();
-  await database.execute({ sql: "UPDATE error_reports SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END, updated_at = ? WHERE id = ?", args: [new Date().toISOString(), id] });
-}
-
-export async function saveErrorReportNote(id: string, note: string): Promise<void> {
-  const database = await getDatabase();
-  await database.execute({ sql: "UPDATE error_reports SET admin_note = ?, updated_at = ? WHERE id = ?", args: [note.slice(0, 4000), new Date().toISOString(), id] });
-}
-
 export async function deleteErrorReport(id: string): Promise<void> {
   const database = await getDatabase();
-  await database.execute({ sql: "DELETE FROM error_reports WHERE id = ?", args: [id] });
+  const context = (await database.execute({
+    sql: `SELECT error_reports.issue_id, error_report_issues.thread_id
+      FROM error_reports
+      INNER JOIN error_report_issues ON error_report_issues.id = error_reports.issue_id
+      WHERE error_reports.id = ?`,
+    args: [id],
+  })).rows[0];
+  if (!context) return;
+  const issueId = text(context, "issue_id");
+  const threadId = text(context, "thread_id");
+  await database.batch([
+    { sql: "DELETE FROM error_reports WHERE id = ? AND issue_id = ?", args: [id, issueId] },
+    { sql: "DELETE FROM error_report_issues WHERE id = ? AND NOT EXISTS (SELECT 1 FROM error_reports WHERE issue_id = ?)", args: [issueId, issueId] },
+    { sql: "DELETE FROM error_report_threads WHERE id = ? AND NOT EXISTS (SELECT 1 FROM error_report_issues WHERE thread_id = ?)", args: [threadId, threadId] },
+  ]);
 }
 
-export async function getOldDoneErrorReportCount(now = new Date(), learningSpaceId?: string): Promise<number> {
+export async function getOldDoneErrorThreadCount(now = new Date(), learningSpaceId?: string): Promise<number> {
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
-  const result = await database.execute({ sql: "SELECT COUNT(*) AS count FROM error_reports JOIN portfolios ON portfolios.id = error_reports.portfolio_id WHERE status = 'DONE' AND completed_at < ? AND portfolios.learning_space_id = ?", args: [cutoff, spaceId] });
+  const result = await database.execute({ sql: "SELECT COUNT(*) AS count FROM error_report_threads WHERE status = 'DONE' AND completed_at < ? AND learning_space_id = ?", args: [cutoff, spaceId] });
   return Number(result.rows[0]?.count ?? 0);
 }
 
-export async function deleteOldDoneErrorReports(now = new Date(), learningSpaceId?: string): Promise<void> {
+export async function deleteOldDoneErrorThreads(now = new Date(), learningSpaceId?: string): Promise<void> {
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
-  await database.execute({ sql: "DELETE FROM error_reports WHERE status = 'DONE' AND completed_at < ? AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [cutoff, spaceId] });
+  const targetThreads = "SELECT id FROM error_report_threads WHERE status = 'DONE' AND completed_at < ? AND learning_space_id = ?";
+  await database.batch([
+    { sql: `DELETE FROM error_reports WHERE issue_id IN (SELECT id FROM error_report_issues WHERE thread_id IN (${targetThreads}))`, args: [cutoff, spaceId] },
+    { sql: `DELETE FROM error_report_issues WHERE thread_id IN (${targetThreads})`, args: [cutoff, spaceId] },
+    { sql: `DELETE FROM error_report_threads WHERE id IN (${targetThreads})`, args: [cutoff, spaceId] },
+  ]);
 }

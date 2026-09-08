@@ -1,17 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
-  getErrorReportIssueLearningSpaceId: vi.fn(),
+  deleteErrorReport: vi.fn(),
+  deleteOldDoneErrorThreads: vi.fn(),
+  getErrorReportLearningSpaceId: vi.fn(),
   getErrorReportThreadLearningSpaceId: vi.fn(),
   getLearningSpace: vi.fn(),
   requireAdminUser: vi.fn(),
   requireLearningSpaceManagement: vi.fn(),
   revalidatePath: vi.fn(),
-  saveErrorReportIssueNote: vi.fn(),
   saveErrorReportThreadNote: vi.fn(),
-  setErrorReportIssueStatus: vi.fn(),
   setErrorReportThreadStatus: vi.fn(),
-  toggleErrorReportIssuePin: vi.fn(),
   toggleErrorReportThreadPin: vi.fn(),
 }));
 
@@ -24,22 +23,20 @@ vi.mock("@/lib/authorization", () => ({
   requireLearningSpaceManagement: mocks.requireLearningSpaceManagement,
 }));
 vi.mock("@/lib/repositories", () => ({
-  getErrorReportIssueLearningSpaceId: mocks.getErrorReportIssueLearningSpaceId,
+  deleteErrorReport: mocks.deleteErrorReport,
+  deleteOldDoneErrorThreads: mocks.deleteOldDoneErrorThreads,
+  getErrorReportLearningSpaceId: mocks.getErrorReportLearningSpaceId,
   getErrorReportThreadLearningSpaceId: mocks.getErrorReportThreadLearningSpaceId,
   getLearningSpace: mocks.getLearningSpace,
-  saveErrorReportIssueNote: mocks.saveErrorReportIssueNote,
   saveErrorReportThreadNote: mocks.saveErrorReportThreadNote,
-  setErrorReportIssueStatus: mocks.setErrorReportIssueStatus,
   setErrorReportThreadStatus: mocks.setErrorReportThreadStatus,
-  toggleErrorReportIssuePin: mocks.toggleErrorReportIssuePin,
   toggleErrorReportThreadPin: mocks.toggleErrorReportThreadPin,
 }));
 vi.mock("@/lib/storage-connections", () => ({ ensureStorageConnection: vi.fn() }));
 
 import {
-  errorReportIssueNoteAction,
-  errorReportIssuePinAction,
-  errorReportIssueStatusAction,
+  deleteErrorReportAction,
+  deleteOldDoneErrorThreadsAction,
   errorReportThreadNoteAction,
   errorReportThreadPinAction,
   errorReportThreadStatusAction,
@@ -47,7 +44,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.getErrorReportIssueLearningSpaceId.mockResolvedValue("space-5");
+  mocks.getErrorReportLearningSpaceId.mockResolvedValue("space-5");
   mocks.getErrorReportThreadLearningSpaceId.mockResolvedValue("space-5");
   mocks.getLearningSpace.mockResolvedValue({ id: "space-5", slug: "5wis" });
   mocks.requireLearningSpaceManagement.mockResolvedValue(undefined);
@@ -73,51 +70,44 @@ describe("error report thread management actions", () => {
   it("blocks missing, invalid and unauthorized thread mutations", async () => {
     mocks.getErrorReportThreadLearningSpaceId.mockResolvedValueOnce(null);
     await expect(errorReportThreadPinAction(form({ threadId: "missing" }))).rejects.toThrow("Foutmelding niet gevonden");
-
     await expect(errorReportThreadStatusAction(form({ threadId: "thread-1", status: "INVALID" }))).rejects.toThrow("Ongeldige meldingsstatus");
-
     mocks.requireLearningSpaceManagement.mockRejectedValueOnce(new Error("Geen beheerrechten."));
     await expect(errorReportThreadPinAction(form({ threadId: "thread-1" }))).rejects.toThrow("Geen beheerrechten");
   });
 });
 
-describe("error report issue management actions", () => {
+describe("error report lifecycle actions", () => {
   it.each([
     ["owner", { id: "owner-1", role: "teacher", status: "active" }],
     ["editor", { id: "editor-1", role: "teacher", status: "active" }],
     ["superadmin", { id: "superadmin-1", role: "superadmin", status: "active" }],
-  ] as const)("authorizes an %s through the existing LearningSpace policy", async (_membership, actor) => {
+  ] as const)("authorizes report delete for an %s through the trusted report lookup", async (_role, actor) => {
     mocks.requireAdminUser.mockResolvedValue(actor);
 
-    await errorReportIssueStatusAction(form({ issueId: "issue-1", status: "DONE" }));
+    await deleteErrorReportAction(form({ id: "report-1", threadId: "untrusted" }));
 
+    expect(mocks.getErrorReportLearningSpaceId).toHaveBeenCalledWith("report-1");
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(actor, "space-5");
-    expect(mocks.setErrorReportIssueStatus).toHaveBeenCalledWith("issue-1", "DONE");
+    expect(mocks.deleteErrorReport).toHaveBeenCalledWith("report-1");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin/5wis/foutmeldingen");
   });
 
-  it("blocks unauthorized users before mutation", async () => {
+  it("blocks unauthorized report delete before mutation", async () => {
     mocks.requireAdminUser.mockResolvedValue({ id: "student-1", role: "student", status: "active" });
-    mocks.requireLearningSpaceManagement.mockRejectedValue(new Error("Geen beheerrechten."));
+    mocks.requireLearningSpaceManagement.mockRejectedValueOnce(new Error("Geen beheerrechten."));
 
-    await expect(errorReportIssuePinAction(form({ issueId: "issue-1" }))).rejects.toThrow("Geen beheerrechten");
-    expect(mocks.toggleErrorReportIssuePin).not.toHaveBeenCalled();
+    await expect(deleteErrorReportAction(form({ id: "report-1" }))).rejects.toThrow("Geen beheerrechten");
+    expect(mocks.deleteErrorReport).not.toHaveBeenCalled();
   });
 
-  it("fails safely for missing issues and invalid status", async () => {
-    mocks.getErrorReportIssueLearningSpaceId.mockResolvedValueOnce(null);
-    await expect(errorReportIssuePinAction(form({ issueId: "missing" }))).rejects.toThrow("Foutmelding niet gevonden");
-    await expect(errorReportIssueStatusAction(form({ issueId: "issue-1", status: "INVALID" }))).rejects.toThrow("Ongeldige meldingsstatus");
-    expect(mocks.toggleErrorReportIssuePin).not.toHaveBeenCalled();
-    expect(mocks.setErrorReportIssueStatus).not.toHaveBeenCalled();
-  });
+  it("authorizes DONE cleanup for the selected LearningSpace", async () => {
+    const actor = { id: "editor-1", role: "teacher", status: "active" };
+    mocks.requireAdminUser.mockResolvedValue(actor);
 
-  it("saves the issue note without trusting a client LearningSpace id", async () => {
-    const result = await errorReportIssueNoteAction({ error: null }, form({ issueId: "issue-1", learningSpaceId: "space-other", note: "Nakijken" }));
+    await deleteOldDoneErrorThreadsAction(form({ learningSpaceId: "space-5" }));
 
-    expect(result).toEqual({ error: null, saved: true });
-    expect(mocks.saveErrorReportIssueNote).toHaveBeenCalledWith("issue-1", "Nakijken");
-    expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.anything(), "space-5");
+    expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(actor, "space-5");
+    expect(mocks.deleteOldDoneErrorThreads).toHaveBeenCalledWith(undefined, "space-5");
   });
 });
 

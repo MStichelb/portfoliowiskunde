@@ -4,6 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { ErrorReportIssueDetail, ErrorReportThreadIssueDetail, GroupedErrorReportThread } from "@/lib/repositories";
 
 vi.mock("@/app/admin/actions", () => ({
+  deleteErrorReportAction: vi.fn(),
+  deleteOldDoneErrorThreadsAction: vi.fn(),
   errorReportThreadNoteAction: vi.fn(),
   errorReportThreadPinAction: vi.fn(),
   errorReportThreadStatusAction: vi.fn(),
@@ -11,6 +13,7 @@ vi.mock("@/app/admin/actions", () => ({
 }));
 
 import {
+  errorReportDeleteConfirmText,
   errorReportDocumentLabel,
   errorReportLocationLabel,
   GroupedErrorReportThreadCards,
@@ -26,7 +29,7 @@ describe("grouped error report thread inbox", () => {
       issue({ issueId: "final", documentKind: "final_solutions", variant: "standard", reportCount: 1 }),
       issue({ issueId: "solution", documentKind: "exercise_solution", variant: "standard", reportCount: 3 }),
     ];
-    const markup = renderToStaticMarkup(<GroupedErrorReportThreadInbox threads={[current]} issuesByThread={{ "thread-main": issues }} spaceSlug="5wis" />);
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadInbox threads={[current]} issuesByThread={{ "thread-main": issues }} learningSpaceId="space-5" oldDoneCount={0} spaceSlug="5wis" />);
 
     expect(markup.match(/class="report-card"/g)).toHaveLength(1);
     expect(markup).toContain("6 meldingen");
@@ -86,6 +89,15 @@ describe("grouped error report thread inbox", () => {
     expect(markup).toContain("Melding pinnen");
     expect(markup).toContain("Markeren als afgewerkt");
     expect(markup).not.toContain("Foutmelding verwijderen");
+    expect(markup).toContain('aria-label="Melding verwijderen"');
+    expect(markup).toContain("report-delete-button");
+    expect(markup).not.toContain("Thread verwijderen");
+  });
+
+  it("warns when deleting the final report also removes a thread note", () => {
+    expect(errorReportDeleteConfirmText(thread())).toContain("adminnotitie verdwijnen permanent");
+    expect(errorReportDeleteConfirmText(thread({ adminNote: "" }))).toContain("verdwijnt ook de lege thread");
+    expect(errorReportDeleteConfirmText(thread({ reportCount: 2 }))).toBe("Deze individuele melding wordt permanent verwijderd.");
   });
 
   it("shows a completion date without time for DONE threads", () => {
@@ -162,12 +174,28 @@ describe("grouped error report thread inbox", () => {
         thread({ id: "done", portfolioTitle: "Done portfolio", status: "DONE" }),
       ]}
       issuesByThread={{}}
+      learningSpaceId="space-5"
+      oldDoneCount={0}
       spaceSlug="5wis"
     />);
 
     expect(markup).toMatch(/PINNED[\s\S]*?<span>1<\/span>[\s\S]*Pinned portfolio/);
     expect(markup).toMatch(/TO DO[\s\S]*?<span>1<\/span>[\s\S]*Todo portfolio/);
     expect(markup).toMatch(/DONE[\s\S]*?<span>1<\/span>[\s\S]*Done portfolio/);
+  });
+
+  it("shows thread-counted DONE cleanup behind confirmation", () => {
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadInbox
+      threads={[thread({ status: "DONE", completedAt: "2026-08-01T10:00:00.000Z" })]}
+      issuesByThread={{}}
+      learningSpaceId="space-5"
+      oldDoneCount={3}
+      spaceSlug="5wis"
+    />);
+
+    expect(markup).toContain("Verwijder DONE ouder dan 2 weken");
+    expect(markup).toContain('aria-label="Afgewerkte meldingen verwijderen"');
+    expect(markup).not.toContain("Verwijder thread");
   });
 });
 
