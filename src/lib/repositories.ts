@@ -1466,6 +1466,8 @@ export interface GroupedErrorReportThread {
   issueCount: number;
   reportCount: number;
   latestReportAt: string | null;
+  solutionConfiguredVisible: boolean | null;
+  solutionStatus: EffectivePublication | null;
 }
 
 export interface ErrorReportThreadIssueDetail {
@@ -1582,6 +1584,15 @@ export async function getGroupedErrorReportThreads(learningSpaceId?: string): Pr
   const result = await database.execute({
     sql: `SELECT error_report_threads.*, portfolios.portfolio_code, portfolios.title AS portfolio_title,
       portfolios.title_override, sections.title AS section_title,
+      exercises.visibility_mode AS exercise_visibility_mode,
+      sections.visibility_mode AS section_visibility_mode,
+      sections.publication_limited AS section_publication_limited,
+      sections.publish_from AS section_publish_from,
+      sections.publish_until AS section_publish_until,
+      portfolios.visible AS portfolio_visible,
+      portfolios.publication_limited,
+      portfolios.publish_from AS portfolio_publish_from,
+      portfolios.publish_until AS portfolio_publish_until,
       COALESCE(thread_summary.issue_count, 0) AS issue_count,
       COALESCE(thread_summary.report_count, 0) AS report_count,
       thread_summary.latest_report_at
@@ -1605,8 +1616,12 @@ export async function getGroupedErrorReportThreads(learningSpaceId?: string): Pr
         error_report_threads.id`,
     args: [spaceId],
   });
+  const now = new Date();
   return result.rows.map((row) => {
     const exerciseId = nullableText(row, "exercise_id");
+    const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
+    const sectionStatus = exerciseId ? resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now) : null;
+    const solutionStatus = sectionStatus ? resolveChildPublication({ mode: childMode({ visibility_mode: row.exercise_visibility_mode }), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now) : null;
     return {
       id: text(row, "id"),
       learningSpaceId: text(row, "learning_space_id"),
@@ -1626,6 +1641,8 @@ export async function getGroupedErrorReportThreads(learningSpaceId?: string): Pr
       issueCount: Number(row.issue_count),
       reportCount: Number(row.report_count),
       latestReportAt: nullableText(row, "latest_report_at"),
+      solutionConfiguredVisible: exerciseId ? childMode({ visibility_mode: row.exercise_visibility_mode }) === "visible" : null,
+      solutionStatus,
     };
   });
 }

@@ -307,10 +307,15 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .report-note textarea { min-height: 64px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; font: inherit; resize: vertical; }
 .report-content { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .9fr); gap: 20px; margin-top: 14px; }
 .report-content .report-note { margin-top: 0; }
+.report-note-compact { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px 12px; min-width: 0; }
+.report-note-compact p { min-width: 0; margin: 0; color: #52616a; font-size: 14px; white-space: pre-wrap; }
+.report-note-compact .secondary-button { min-height: 34px; padding: 6px 10px; }
 .report-issue-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; color: #52616a; font-size: 14px; }
 .report-issue-summary strong { color: #17222b; }
-.report-unmatched { color: #68767e !important; font-style: italic; }
-.report-location-summary { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; color: #33434c; font-size: 14px; }
+.report-exercise-context { display: flex !important; align-items: center; gap: 6px; }
+.report-card-heading .report-unmatched-warning { display: inline-flex; flex: 0 0 auto; margin: 0; color: #805700; }
+.report-location-summary { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; color: #33434c; font-size: 14px; }
+.report-location-chip { display: inline-flex; align-items: center; min-height: 26px; padding: 3px 8px; border-radius: 4px; background: #ecefed; color: #4f5c62; font-weight: 700; }
 .issue-report-details > summary { cursor: pointer; font-weight: 700; }
 .issue-report-list { display: grid; gap: 12px; margin-top: 12px; }
 .issue-report-location { display: grid; gap: 8px; }

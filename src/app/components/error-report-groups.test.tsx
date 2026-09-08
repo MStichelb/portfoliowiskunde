@@ -7,6 +7,7 @@ vi.mock("@/app/admin/actions", () => ({
   errorReportThreadNoteAction: vi.fn(),
   errorReportThreadPinAction: vi.fn(),
   errorReportThreadStatusAction: vi.fn(),
+  toggleReportedExerciseVisibilityAction: vi.fn(),
 }));
 
 import {
@@ -28,9 +29,9 @@ describe("grouped error report thread inbox", () => {
 
     expect(markup.match(/class="report-card"/g)).toHaveLength(1);
     expect(markup).toContain("6 meldingen");
-    expect(markup).toContain("Opgaven - 2 meldingen");
-    expect(markup).toContain("Eindoplossingen - 1 melding");
-    expect(markup).toContain("Uitwerking - 3 meldingen");
+    expect(markup).toContain("Opgaven · 2");
+    expect(markup).toContain("Eindoplossingen · 1");
+    expect(markup).toContain("Uitwerking · 3");
     expect(markup).toMatch(/TO DO[\s\S]*?<span>1<\/span>/);
   });
 
@@ -51,7 +52,7 @@ describe("grouped error report thread inbox", () => {
       reportCount: 2,
       reports: [report("new", "Nieuwste melding", "2026-09-08T12:00:00.000Z"), report("old", "Oudere melding", "2026-09-08T10:00:00.000Z")],
     });
-    const hints = issue({ issueId: "hints", documentKind: "hints", variant: null, reports: [report("hint", "Hintmelding", "2026-09-08T11:00:00.000Z")] });
+    const hints = issue({ issueId: "hints", documentKind: "hints", variant: null, reports: [{ ...report("hint", "Hintmelding", "2026-09-08T11:00:00.000Z"), reporterName: null }] });
     const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[thread({ reportCount: 3 })]} issuesByThread={{ "thread-main": [assignment, hints] }} spaceSlug="5wis" />);
 
     expect(markup.match(/<details class="issue-report-details">/g)).toHaveLength(1);
@@ -59,28 +60,57 @@ describe("grouped error report thread inbox", () => {
     expect(markup).toMatch(/<h3>Opgaven<\/h3>[\s\S]*Nieuwste melding[\s\S]*Oudere melding/);
     expect(markup).toMatch(/<h3>Hints<\/h3>[\s\S]*Hintmelding/);
     expect(markup.indexOf("Nieuwste melding")).toBeLessThan(markup.indexOf("Oudere melding"));
+    expect(markup).toContain("Leerling · 8 sep 2026, 14:00");
+    expect(markup).toContain("Onbekende melder · 8 sep 2026, 13:00");
+    expect(markup).not.toContain("Gemeld door:");
+    expect(markup).not.toContain("Gemeld op");
   });
 
-  it("uses only thread-level status, pin and note controls", () => {
+  it("uses only thread-level status, pin and compact note controls", () => {
     const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[thread()]} issuesByThread={{ "thread-main": [issue()] }} spaceSlug="5wis" />);
 
     expect(markup).toContain('name="threadId" value="thread-main"');
-    expect(markup).toContain('id="report-note-thread-main"');
+    expect(markup).toContain("Notitie:");
+    expect(markup).toContain("Threadnotitie");
+    expect(markup).toContain("Bewerken");
+    expect(markup).not.toContain("textarea");
     expect(markup).not.toContain('name="issueId"');
     expect(markup).not.toContain("Status: TO DO");
-    expect(markup).not.toContain("Zichtbaarheid wisselen");
+    expect(markup).toContain("Zichtbaarheid wisselen");
+    expect(markup).toContain('name="exerciseId" value="exercise-5b"');
+    expect(markup).toContain('name="visible" value="false"');
+    expect(markup).toContain("Melding pinnen");
+    expect(markup).toContain("Markeren als afgewerkt");
     expect(markup).not.toContain("Foutmelding verwijderen");
+  });
+
+  it("shows a compact add-note action when the thread note is empty", () => {
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[thread({ adminNote: "" })]} issuesByThread={{ "thread-main": [issue()] }} spaceSlug="5wis" />);
+
+    expect(markup).toContain("Notitie toevoegen");
+    expect(markup).not.toContain("textarea");
+  });
+
+  it("omits a redundant location count for one location with one report", () => {
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[thread()]} issuesByThread={{ "thread-main": [issue({ documentKind: "hints" })] }} spaceSlug="5wis" />);
+
+    expect(markup).toContain('<span class="report-location-chip">Hints</span>');
+    expect(markup).not.toContain("Hints · 1");
   });
 
   it("supports unmatched threads without preview and matched threads with preview", () => {
     const unmatched = thread({ id: "thread-unmatched", exerciseId: null, exerciseCode: "12", isMatchedExercise: false, sectionTitle: "Onbekende oefening" });
     const unmatchedMarkup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[unmatched]} issuesByThread={{}} spaceSlug="5wis" />);
     expect(unmatchedMarkup).toContain("Oefening 12");
-    expect(unmatchedMarkup).toContain("Niet automatisch gekoppeld");
+    expect(unmatchedMarkup).toContain('aria-label="Niet automatisch gekoppeld"');
+    expect(unmatchedMarkup).toContain('title="Niet automatisch gekoppeld"');
+    expect(unmatchedMarkup).not.toContain(">Niet automatisch gekoppeld<");
     expect(unmatchedMarkup).not.toContain("/oefening/");
+    expect(unmatchedMarkup).not.toContain("Zichtbaarheid wisselen");
 
     const matchedMarkup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[thread()]} issuesByThread={{}} spaceSlug="5 wis" />);
     expect(matchedMarkup).toContain("/admin/5%20wis/oefening/exercise-5b");
+    expect(matchedMarkup).toContain("Zichtbaarheid wisselen");
   });
 
   it("places pinned, TODO and DONE threads in thread-counted sections", () => {
@@ -120,6 +150,8 @@ function thread(overrides: Partial<GroupedErrorReportThread> = {}): GroupedError
     issueCount: 1,
     reportCount: 1,
     latestReportAt: "2026-09-08T11:00:00.000Z",
+    solutionConfiguredVisible: true,
+    solutionStatus: { configuredVisibility: "visible", state: "visible", reason: null, effectiveFrom: null, effectiveUntil: null },
     ...overrides,
   };
 }

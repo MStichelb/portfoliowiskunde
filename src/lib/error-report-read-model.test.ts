@@ -111,6 +111,11 @@ describe("grouped error report read model", () => {
       isMatchedExercise: false,
       sectionTitle: "Onbekende oefening",
     });
+    expect((await getGroupedErrorReportThreads("space-5")).find((item) => item.id === "thread-unmatched")).toMatchObject({
+      exerciseId: null,
+      solutionConfiguredVisible: null,
+      solutionStatus: null,
+    });
     expect(await getErrorReportIssueLearningSpaceId("issue-unmatched")).toBe("space-5");
 
     await setErrorReportIssueStatus("issue-unmatched", "DONE");
@@ -193,6 +198,8 @@ describe("grouped error report read model", () => {
       status: "TODO",
       pinned: true,
       isMatchedExercise: true,
+      solutionConfiguredVisible: true,
+      solutionStatus: { configuredVisibility: "visible", state: "will-remain-hidden", reason: "parent-hidden" },
     });
     const details = await listErrorReportIssuesForThreads(threads.map((thread) => thread.id), "space-5");
     expect(details.filter((detail) => detail.threadId === firstExercise?.id)).toHaveLength(4);
