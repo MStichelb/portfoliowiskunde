@@ -397,6 +397,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .admin-document-button { border-color: #8c4b57; background: #fff; color: #763b46; }
 .admin-document-button:hover, .admin-document-button:focus-visible { border-color: #763b46; background: #f8edef; }
 .document-actions-prominent { margin-top: 22px; }
+.portfolio-custom-message { max-width: 720px; margin: 16px 0; color: #314149; line-height: 1.55; white-space: pre-line; }
 .compact-back-button { display: inline-flex; align-items: center; gap: 7px; width: fit-content; margin-bottom: 26px; text-decoration: none; }
 .exercise-page-heading { margin-bottom: 22px; }
 .exercise-page-heading p:last-child { margin-bottom: 0; color: #52616a; font-size: 18px; }
