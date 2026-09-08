@@ -21,6 +21,17 @@ export async function getStorageProvider(spaceId?: string): Promise<StorageProvi
   return provider;
 }
 
+export async function hasConfiguredActiveSource(learningSpaceId: string): Promise<boolean> {
+  const source = await getActiveLearningSpaceSource(learningSpaceId);
+  if (!source) return false;
+  if (source.providerType === "onedrive") {
+    return hasValue(source.oneDriveDriveId) && hasValue(source.oneDriveFolderId) && hasValue(source.storageConnectionId);
+  }
+  if (source.providerType === "google_drive") return hasValue(source.googleDriveFolderId);
+  if (hasValue(source.localSourcePath)) return true;
+  return await getSetting("legacy_default_learning_space_id") === learningSpaceId && hasValue(DEFAULT_LOCAL_SOURCE_PATH);
+}
+
 export async function getStorageProviderWithType(spaceId?: string): Promise<{ provider: StorageProvider; type: LearningSpace["sourceType"]; space: LearningSpace; source: LearningSpaceSource }> {
   const resolvedSpaceId = spaceId ?? (await getLearningSpaces(true)).at(-1)?.id;
   const space = resolvedSpaceId ? await getLearningSpace(resolvedSpaceId) : null;
@@ -63,4 +74,8 @@ async function providerForSource(space: LearningSpace, source: LearningSpaceSour
   const root = source.localSourcePath || (legacyDefaultSpaceId === space.id ? DEFAULT_LOCAL_SOURCE_PATH : "");
   if (!root) throw new SourceConfigurationError("Stel eerst een geldige bronmap in.");
   return { provider: new LocalFilesystemProvider(root), type: "local" };
+}
+
+function hasValue(value: string | null | undefined): value is string {
+  return Boolean(value?.trim());
 }

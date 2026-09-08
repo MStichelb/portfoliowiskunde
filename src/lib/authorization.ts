@@ -13,7 +13,7 @@ export function canAccessAdmin(user: AppUser | null): boolean {
 }
 
 export function canCreateLearningSpace(user: AppUser | null): boolean {
-  return Boolean(user && user.status === "active" && user.role === "superadmin");
+  return canAccessAdmin(user);
 }
 
 export async function getAccessibleLearningSpaceIds(user: AppUser | null): Promise<string[]> {
@@ -94,14 +94,42 @@ export async function canConfigureLearningSpace(user: AppUser | null, learningSp
   return await getLearningSpaceMemberRole(user, learningSpaceId) === "owner";
 }
 
+export async function canManageLearningSpaceTeacherAccess(user: AppUser | null, learningSpaceId: string): Promise<boolean> {
+  return canConfigureLearningSpace(user, learningSpaceId);
+}
+
+export async function canManageLearningSpaceStudentAccess(user: AppUser | null, learningSpaceId: string): Promise<boolean> {
+  if (!canAccessAdmin(user)) return false;
+  const database = await getDatabase();
+  const space = (await database.execute({
+    sql: "SELECT is_active, archived_at, editors_can_manage_access FROM learning_spaces WHERE id = ?",
+    args: [learningSpaceId],
+  })).rows[0];
+  if (!space || Number(space.is_active) !== 1 || space.archived_at) return false;
+  if (user!.role === "superadmin") return true;
+  const membership = (await database.execute({
+    sql: "SELECT role FROM learning_space_members WHERE learning_space_id = ? AND user_id = ?",
+    args: [learningSpaceId, user!.id],
+  })).rows[0];
+  return membership?.role === "owner" || (membership?.role === "editor" && Number(space.editors_can_manage_access) === 1);
+}
+
 export async function requireLearningSpaceManagement(user: AppUser | null, learningSpaceId: string): Promise<void> {
   if (!await canManageLearningSpace(user, learningSpaceId)) throw new AuthorizationError();
 }
 
 export function requireLearningSpaceCreation(user: AppUser | null): void {
-  if (!canCreateLearningSpace(user)) throw new AuthorizationError("Nieuwe leeromgevingen kunnen momenteel alleen door de hoofdbeheerder worden aangemaakt.");
+  if (!canCreateLearningSpace(user)) throw new AuthorizationError("Alleen actieve leraren en hoofdbeheerders kunnen een leeromgeving aanmaken.");
 }
 
 export async function requireLearningSpaceConfiguration(user: AppUser | null, learningSpaceId: string): Promise<void> {
   if (!await canConfigureLearningSpace(user, learningSpaceId)) throw new AuthorizationError("Alleen een eigenaar of hoofdbeheerder kan de broninstellingen wijzigen.");
+}
+
+export async function requireLearningSpaceTeacherAccessManagement(user: AppUser | null, learningSpaceId: string): Promise<void> {
+  if (!await canManageLearningSpaceTeacherAccess(user, learningSpaceId)) throw new AuthorizationError("Alleen een eigenaar of hoofdbeheerder kan lerarentoegang wijzigen.");
+}
+
+export async function requireLearningSpaceStudentAccessManagement(user: AppUser | null, learningSpaceId: string): Promise<void> {
+  if (!await canManageLearningSpaceStudentAccess(user, learningSpaceId)) throw new AuthorizationError("Je mag de leerlingtoegang van deze leeromgeving niet wijzigen.");
 }

@@ -1,4 +1,4 @@
-import { Check, Crown, GraduationCap, KeyRound, Pencil, ShieldCheck, Star, Trash2, X } from "lucide-react";
+import { Check, Crown, Eye, GraduationCap, KeyRound, Pencil, ShieldCheck, Star, Trash2, X } from "lucide-react";
 import Link from "next/link";
 
 import {
@@ -6,7 +6,6 @@ import {
   resetClassStudentsAction,
   resetUserAction,
   updateTeacherGroupAction,
-  updateIndividualAccessAction,
   updateUserClassAction,
   updateUserRoleAction,
   updateUserStatusAction,
@@ -14,6 +13,7 @@ import {
 import type { LearningSpace } from "@/lib/repositories";
 import type {
   KnownExternalGroup,
+  ManagedGroupUser,
   ManagedMembership,
   ManagedStorageConnection,
   ManagedUser,
@@ -23,7 +23,7 @@ import type {
 import { AutoSubmitSelect } from "./auto-submit-select";
 import { ConfirmActionButton } from "./confirm-action-button";
 import { StudentResetControls } from "./student-reset-controls";
-import { UserAccessMenu } from "./user-access-menu";
+import { UserProfileButton, type UserProfileData } from "./user-profile-dialog";
 import { StudentListFilters, TeacherListFilters } from "./user-list-filters";
 
 export interface UserListSearchParams {
@@ -35,7 +35,8 @@ export interface UserListSearchParams {
   page?: string;
   size?: string;
   teacherStatus?: string;
-  teacherAccess?: string;
+  teacherSpace?: string;
+  teacherConnectionFirst?: string;
 }
 
 export function UserManagementView({
@@ -44,6 +45,7 @@ export function UserManagementView({
   memberships,
   access,
   storageConnections,
+  groupUsers = [],
   classGroups,
   teacherGroups,
   teacherGroupId,
@@ -54,6 +56,7 @@ export function UserManagementView({
   memberships: ManagedMembership[];
   access: ManagedUserAccess[];
   storageConnections: ManagedStorageConnection[];
+  groupUsers?: ManagedGroupUser[];
   classGroups: KnownExternalGroup[];
   teacherGroups: KnownExternalGroup[];
   teacherGroupId: string | null;
@@ -62,7 +65,7 @@ export function UserManagementView({
   const administrators = users.filter((user) => user.role === "superadmin");
   const teachers = users.filter((user) => user.role === "teacher");
   const students = users.filter((user) => user.role === "student");
-  const teacherFiltered = filterTeachers(teachers, params);
+  const teacherFiltered = filterTeachers(teachers, params, memberships, access, storageConnections);
   const studentFiltered = filterStudents(students, params);
   const size = parsePageSize(params.size);
   const totalPages = size === Infinity ? 1 : Math.max(1, Math.ceil(studentFiltered.length / size));
@@ -77,17 +80,17 @@ export function UserManagementView({
     </section>
 
     <section className="admin-card user-role-card" aria-labelledby="teachers-heading">
-      <div className="card-heading"><div><h2 id="teachers-heading" className="heading-with-icon"><Star size={20} aria-hidden />Leraren</h2><p>Publieke toegang en beheerrechten worden afzonderlijk weergegeven.</p></div><strong className="list-count">{countLabel(teacherFiltered.length, teachers.length, "leraren")}</strong></div>
+      <div className="card-heading"><div><h2 id="teachers-heading" className="heading-with-icon"><Star size={20} aria-hidden />Leraren</h2><p>Beheerrechten, kijkrechten en verbindingen worden afzonderlijk weergegeven.</p></div><strong className="list-count">{countLabel(teacherFiltered.length, teachers.length, "leraren")}</strong></div>
       <div className="teacher-detection-setting"><div><strong><ShieldCheck size={16} aria-hidden />Automatische lerarenherkenning</strong><small>Bepaalt alleen de startrol bij de eerste Smartschoolregistratie.</small></div><AutoSubmitSelect action={updateTeacherGroupAction} fields={{ returnTo: "/admin/gebruikers" }} name="groupId" value={teacherGroupId ?? ""} ariaLabel="Groep voor automatische lerarenherkenning" className="teacher-group-setting" options={[{ value: "", label: "Geen automatische herkenning" }, ...teacherGroups.map((group) => ({ value: group.externalGroupId, label: group.externalGroupName ?? group.externalGroupId }))]} /></div>
-      <TeacherListFilters params={params} />
-      <UserTableRegion label="Leraren"><table className="managed-user-table"><thead><tr><th>Naam</th><th>Voornaam</th><th>Beheerrechten</th><th>Verbinding</th><th>Publieke toegang</th><th>Status</th><th aria-label="Acties" /></tr></thead><tbody>{teacherFiltered.map((user) => <tr key={user.id}><NameCells user={user} /><td><ManagementBadges memberships={memberships.filter((item) => item.userId === user.id)} spaces={spaces} /></td><td><StorageBadges connections={storageConnections.filter((item) => item.userId === user.id)} /></td><td><AccessMenu user={user} spaces={spaces} access={access} /></td><td><StatusToggle user={user} /></td><td><div className="user-row-actions"><ConfirmActionButton action={updateUserRoleAction} fields={{ userId: user.id, role: "student" }} label={<GraduationCap size={17} aria-hidden />} confirmTitle="Maak deze leraar leerling?" confirmText="De rol wordt alleen gewijzigd als deze leraar geen beheerrechten of gekoppelde bronverbindingen meer heeft." confirmLabel="Rol wijzigen" confirmClassName="primary-button" /><ConfirmActionButton action={resetUserAction} fields={{ userId: user.id }} label={<Trash2 size={17} aria-hidden />} confirmTitle={`Verwijder ${user.displayName}?`} confirmText="Deze leraar wordt intern verwijderd en bij een volgende Smartschool-login opnieuw geregistreerd. Eigenaars en leraren met een gebruikte bronverbinding worden geweigerd." /></div></td></tr>)}</tbody></table></UserTableRegion>
+      <TeacherListFilters params={params} spaces={spaces.map((space) => ({ id: space.id, label: space.shortLabel || space.name }))} />
+      <UserTableRegion label="Leraren"><table className="managed-user-table"><thead><tr><th>Naam</th><th>Voornaam</th><th>Beheerrechten</th><th>Kijkrechten</th><th>Verbinding</th><th>Status</th><th>Acties</th></tr></thead><tbody>{teacherFiltered.map((user) => { const userMemberships = memberships.filter((item) => item.userId === user.id); return <tr key={user.id}><NameCells user={user} /><td><ManagementBadges memberships={userMemberships} spaces={spaces} /></td><td><ViewAccessBadges userId={user.id} memberships={userMemberships} access={access} spaces={spaces} /></td><td><StorageBadges connections={storageConnections.filter((item) => item.userId === user.id)} /></td><td><StatusToggle user={user} /></td><td><div className="user-row-actions"><UserProfileButton profile={buildUserProfile(user, spaces, userMemberships, access, storageConnections, groupUsers)} /><ConfirmActionButton action={updateUserRoleAction} fields={{ userId: user.id, role: "student" }} label={<GraduationCap size={17} aria-hidden />} confirmTitle="Maak deze leraar leerling?" confirmText="De rol wordt alleen gewijzigd als deze leraar geen beheerrechten of gekoppelde bronverbindingen meer heeft." confirmLabel="Rol wijzigen" confirmClassName="primary-button" /><ConfirmActionButton action={resetUserAction} fields={{ userId: user.id }} label={<Trash2 size={17} aria-hidden />} confirmTitle={`Verwijder ${user.displayName}?`} confirmText="Deze leraar wordt intern verwijderd en bij een volgende Smartschool-login opnieuw geregistreerd. Eigenaars en leraren met een gebruikte bronverbinding worden geweigerd." /></div></td></tr>; })}</tbody></table></UserTableRegion>
     </section>
 
     <section className="admin-card user-role-card" aria-labelledby="students-heading">
       <div className="card-heading"><div><h2 id="students-heading" className="heading-with-icon"><GraduationCap size={20} aria-hidden />Leerlingen</h2><p>Zoek, filter en beheer klas, toegang en accountstatus.</p></div><strong className="list-count">{countLabel(studentFiltered.length, students.length, "leerlingen")}</strong></div>
       <StudentListFilters params={params} classes={classGroups.map((group) => ({ id: group.externalGroupId, label: group.externalGroupName ?? group.externalGroupId }))} />
       <StudentResetControls classes={resettableClasses} totalStudents={students.length} resetClassAction={resetClassStudentsAction} resetAllAction={resetAllStudentsAction} />
-      <UserTableRegion label="Leerlingen"><table className="managed-user-table student-user-table"><thead><tr><th>Naam</th><th>Voornaam</th><th>Klas</th><th>Publieke toegang</th><th>Status</th><th aria-label="Acties" /></tr></thead><tbody>{shownStudents.map((user) => <tr key={user.id}><NameCells user={user} /><td><AutoSubmitSelect action={updateUserClassAction} fields={{ userId: user.id }} name="classGroupId" value={user.classGroupOverrideId ?? ""} ariaLabel={`Klas van ${user.displayName}`} options={[{ value: "", label: user.automaticClassName ? `Automatisch (${user.automaticClassName})` : "Automatisch (Smartschool)" }, ...classGroups.map((group) => ({ value: group.externalGroupId, label: group.externalGroupName ?? group.externalGroupId }))]} /></td><td><AccessMenu user={user} spaces={spaces} access={access} /></td><td><StatusToggle user={user} /></td><td><div className="user-row-actions"><ConfirmActionButton action={updateUserRoleAction} fields={{ userId: user.id, role: "teacher" }} label={<Star size={17} aria-hidden />} confirmTitle="Maak deze leerling leraar?" confirmText="De lokale rol wordt leraar. Beheerrechten worden niet automatisch toegekend." confirmLabel="Rol wijzigen" confirmClassName="primary-button" /><ConfirmActionButton action={resetUserAction} fields={{ userId: user.id }} label={<Trash2 size={17} aria-hidden />} confirmTitle={`Verwijder ${user.displayName}?`} confirmText="Deze leerling en de lokale Smartschool-, klas- en toegangsgegevens worden intern verwijderd. Bij een volgende Smartschool-login wordt de leerling opnieuw geregistreerd." /></div></td></tr>)}</tbody></table></UserTableRegion>
+      <UserTableRegion label="Leerlingen"><table className="managed-user-table student-user-table"><thead><tr><th>Naam</th><th>Voornaam</th><th>Klas</th><th>Kijkrechten</th><th>Status</th><th>Acties</th></tr></thead><tbody>{shownStudents.map((user) => <tr key={user.id}><NameCells user={user} /><td><AutoSubmitSelect action={updateUserClassAction} fields={{ userId: user.id }} name="classGroupId" value={user.classGroupOverrideId ?? ""} ariaLabel={`Klas van ${user.displayName}`} options={[{ value: "", label: user.automaticClassName ? `Automatisch (${user.automaticClassName})` : "Automatisch (Smartschool)" }, ...classGroups.map((group) => ({ value: group.externalGroupId, label: group.externalGroupName ?? group.externalGroupId }))]} /></td><td><StudentViewAccessBadges userId={user.id} access={access} spaces={spaces} /></td><td><StatusToggle user={user} /></td><td><div className="user-row-actions"><UserProfileButton profile={buildUserProfile(user, spaces, [], access, storageConnections, groupUsers)} /><ConfirmActionButton action={updateUserRoleAction} fields={{ userId: user.id, role: "teacher" }} label={<Star size={17} aria-hidden />} confirmTitle="Maak deze leerling leraar?" confirmText="De lokale rol wordt leraar. Beheerrechten worden niet automatisch toegekend." confirmLabel="Rol wijzigen" confirmClassName="primary-button" /><ConfirmActionButton action={resetUserAction} fields={{ userId: user.id }} label={<Trash2 size={17} aria-hidden />} confirmTitle={`Verwijder ${user.displayName}?`} confirmText="Deze leerling en de lokale Smartschool-, klas- en toegangsgegevens worden intern verwijderd. Bij een volgende Smartschool-login wordt de leerling opnieuw geregistreerd." /></div></td></tr>)}</tbody></table></UserTableRegion>
       {studentFiltered.length === 0 ? <p className="empty-state compact-empty">Geen leerlingen gevonden met deze filters.</p> : null}
       <Pagination page={page} totalPages={totalPages} params={params} />
     </section>
@@ -106,12 +109,32 @@ export function filterStudents(users: ManagedUser[], params: UserListSearchParam
   }).sort(userComparator(params.sort));
 }
 
-function filterTeachers(users: ManagedUser[], params: UserListSearchParams): ManagedUser[] {
+export function filterTeachers(
+  users: ManagedUser[],
+  params: UserListSearchParams,
+  memberships: ManagedMembership[],
+  access: ManagedUserAccess[],
+  storageConnections: ManagedStorageConnection[],
+): ManagedUser[] {
+  const selectedSpaceId = params.teacherSpace;
+  const connectedUserIds = new Set(storageConnections.map((connection) => connection.userId));
+  const compareUsers = userComparator("last-asc");
+
   return users.filter((user) => {
     if (params.teacherStatus === "disabled" && user.status !== "disabled") return false;
-    if (params.teacherAccess === "with" && !user.hasIndividualAccess) return false;
+    if (selectedSpaceId) {
+      const hasManagementAccess = memberships.some((item) => item.userId === user.id && item.learningSpaceId === selectedSpaceId);
+      const hasIndividualViewAccess = access.some((item) => item.userId === user.id && item.learningSpaceId === selectedSpaceId && item.individual);
+      if (!hasManagementAccess && !hasIndividualViewAccess) return false;
+    }
     return true;
-  }).sort(userComparator("last-asc"));
+  }).sort((left, right) => {
+    if (params.teacherConnectionFirst === "1") {
+      const connectionOrder = Number(connectedUserIds.has(right.id)) - Number(connectedUserIds.has(left.id));
+      if (connectionOrder) return connectionOrder;
+    }
+    return compareUsers(left, right);
+  });
 }
 
 function userComparator(sort = "last-asc") {
@@ -138,27 +161,116 @@ function StatusToggle({ user }: { user: ManagedUser }) {
 }
 
 function ManagementBadges({ memberships, spaces }: { memberships: ManagedMembership[]; spaces: LearningSpace[] }) {
-  if (!memberships.length) return <span className="muted-value">-</span>;
-  return <div className="management-badges">{memberships.map((membership) => {
+  const ordered = [...memberships].sort((left, right) => {
+    const roleOrder = Number(left.role === "editor") - Number(right.role === "editor");
+    return roleOrder || compareSpaceOrder(left.learningSpaceId, right.learningSpaceId, spaces);
+  });
+  return <SpaceBadges items={ordered.map((membership) => {
     const space = spaces.find((item) => item.id === membership.learningSpaceId);
-    const label = membership.role === "owner" ? "Eigenaar" : "Editor";
-    return <span key={membership.learningSpaceId} title={`${label} van ${space?.name ?? membership.learningSpaceId}`}>{membership.role === "owner" ? <KeyRound size={14} aria-hidden /> : <Pencil size={14} aria-hidden />}{space?.shortLabel ?? space?.name ?? membership.learningSpaceId}<span className="sr-only">, {label}</span></span>;
-  })}</div>;
+    const label = membership.role === "owner" ? "Eigenaar" : "Bewerker";
+    return {
+      id: membership.learningSpaceId,
+      className: `teacher-role-badge teacher-role-badge-${membership.role}`,
+      label: space?.shortLabel ?? space?.name ?? membership.learningSpaceId,
+      title: `${label} van ${space?.name ?? membership.learningSpaceId}`,
+      icon: membership.role === "owner" ? <KeyRound size={14} aria-hidden /> : <Pencil size={14} aria-hidden />,
+      screenReaderLabel: label,
+    };
+  })} />;
 }
 
+function ViewAccessBadges({ userId, memberships, access, spaces }: { userId: string; memberships: ManagedMembership[]; access: ManagedUserAccess[]; spaces: LearningSpace[] }) {
+  const managedSpaceIds = new Set(memberships.map((membership) => membership.learningSpaceId));
+  const items = access
+    .filter((item) => item.userId === userId && item.individual && !managedSpaceIds.has(item.learningSpaceId))
+    .sort((left, right) => compareSpaceOrder(left.learningSpaceId, right.learningSpaceId, spaces))
+    .map((item) => {
+      const space = spaces.find((candidate) => candidate.id === item.learningSpaceId);
+      return {
+        id: item.learningSpaceId,
+        className: "teacher-role-badge teacher-role-badge-viewer",
+        label: space?.shortLabel ?? space?.name ?? item.learningSpaceId,
+        title: `Kijker van ${space?.name ?? item.learningSpaceId}`,
+        icon: <Eye size={14} aria-hidden />,
+        screenReaderLabel: "Kijker",
+      };
+    });
+  return <SpaceBadges items={items} />;
+}
+function StudentViewAccessBadges({ userId, access, spaces }: { userId: string; access: ManagedUserAccess[]; spaces: LearningSpace[] }) {
+  const spaceIds = new Set(access
+    .filter((item) => item.userId === userId && (item.individual || item.groupDerived))
+    .map((item) => item.learningSpaceId));
+  const items = [...spaceIds]
+    .sort((left, right) => compareSpaceOrder(left, right, spaces))
+    .map((spaceId) => {
+      const space = spaces.find((candidate) => candidate.id === spaceId);
+      return {
+        id: spaceId,
+        className: "teacher-role-badge teacher-role-badge-viewer",
+        label: space?.shortLabel ?? space?.name ?? spaceId,
+        title: `Kijkrecht voor ${space?.name ?? spaceId}`,
+        icon: <Eye size={14} aria-hidden />,
+        screenReaderLabel: "Kijkrecht",
+      };
+    });
+  return <SpaceBadges items={items} />;
+}
+
+function SpaceBadges({ items }: { items: Array<{ id: string; className: string; label: string; title: string; icon: React.ReactNode; screenReaderLabel: string }> }) {
+  if (!items.length) return <span className="muted-value">-</span>;
+  const visible = items.slice(0, 3);
+  const remaining = items.length - visible.length;
+  return <div className="management-badges">{visible.map((item) => <span key={item.id} className={item.className} title={item.title}>{item.icon}{item.label}<span className="sr-only">, {item.screenReaderLabel}</span></span>)}{remaining > 0 ? <span className="management-space-badge-overflow" title={`${remaining} extra leeromgevingen`}>+ {remaining}</span> : null}</div>;
+}
+
+function compareSpaceOrder(leftId: string, rightId: string, spaces: LearningSpace[]): number {
+  const leftIndex = spaces.findIndex((space) => space.id === leftId);
+  const rightIndex = spaces.findIndex((space) => space.id === rightId);
+  if (leftIndex !== rightIndex) return (leftIndex < 0 ? Number.MAX_SAFE_INTEGER : leftIndex) - (rightIndex < 0 ? Number.MAX_SAFE_INTEGER : rightIndex);
+  return leftId.localeCompare(rightId, "nl-BE", { sensitivity: "base" });
+}
 function StorageBadges({ connections }: { connections: ManagedStorageConnection[] }) {
   const active = connections.filter((connection) => connection.status === "active");
   if (!active.length) return <span className="connection-badge connection-none"><X size={14} aria-hidden />Geen verbinding</span>;
   return <div className="connection-badges">{active.map((connection, index) => <span className={`connection-badge connection-${connection.provider}`} key={`${connection.provider}-${index}`}><Check size={14} aria-hidden />{connection.provider === "onedrive" ? "OneDrive" : "Google Drive"}</span>)}</div>;
 }
 
-function AccessMenu({ user, spaces, access }: { user: ManagedUser; spaces: LearningSpace[]; access: ManagedUserAccess[] }) {
-  return <UserAccessMenu userId={user.id} userName={user.displayName} userRole={user.role === "teacher" ? "teacher" : "student"} action={updateIndividualAccessAction} spaces={spaces.filter((space) => space.isActive).map((space) => {
-    const item = access.find((entry) => entry.userId === user.id && entry.learningSpaceId === space.id);
-    return { id: space.id, name: space.name, shortLabel: space.shortLabel, groupDerived: item?.groupDerived ?? false, individual: item?.individual ?? false, managementRole: item?.managementRole ?? null };
-  })} />;
-}
+export function buildUserProfile(
+  user: ManagedUser,
+  spaces: LearningSpace[],
+  memberships: ManagedMembership[],
+  access: ManagedUserAccess[],
+  storageConnections: ManagedStorageConnection[],
+  groupUsers: ManagedGroupUser[],
+): UserProfileData {
+  const managedSpaceIds = new Set(memberships.map((membership) => membership.learningSpaceId));
+  const viewerSpaceIds = new Set(access
+    .filter((item) => item.userId === user.id
+      && (user.role === "teacher" ? item.individual && !managedSpaceIds.has(item.learningSpaceId) : item.individual || item.groupDerived))
+    .map((item) => item.learningSpaceId));
+  const profileSpaces = (ids: string[]) => ids
+    .sort((left, right) => compareSpaceOrder(left, right, spaces))
+    .map((id) => spaces.find((space) => space.id === id))
+    .filter((space): space is LearningSpace => Boolean(space))
+    .map((space) => ({ id: space.id, name: space.name, shortLabel: space.shortLabel }));
+  const groups = new Map(groupUsers
+    .filter((group) => group.userId === user.id && group.provider === "smartschool")
+    .map((group) => [group.externalGroupId, group.externalGroupName ?? group.externalGroupId]));
 
+  return {
+    userId: user.id,
+    role: user.role === "teacher" ? "teacher" : "student",
+    firstName: user.firstName,
+    lastName: user.lastName,
+    className: user.effectiveClassName,
+    groups: [...groups.values()].sort((left, right) => left.localeCompare(right, "nl-BE", { sensitivity: "base" })),
+    connections: storageConnections.filter((connection) => connection.userId === user.id),
+    ownerSpaces: profileSpaces(memberships.filter((membership) => membership.role === "owner").map((membership) => membership.learningSpaceId)),
+    editorSpaces: profileSpaces(memberships.filter((membership) => membership.role === "editor").map((membership) => membership.learningSpaceId)),
+    viewerSpaces: profileSpaces([...viewerSpaceIds]),
+  };
+}
 function UserTableRegion({ label, children }: { label: string; children: React.ReactNode }) {
   return <div className="admin-summary-table managed-user-table-region" role="region" aria-label={label} tabIndex={0}>{children}</div>;
 }

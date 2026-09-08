@@ -13,27 +13,25 @@ export async function setPublicEmergencyAccessAction(formData: FormData) {
   await setPublicEmergencyAccess(enabled);
   revalidatePath("/");
   revalidatePath("/admin", "layout");
-  redirect(`/admin/instellingen?emergency=${enabled ? "enabled" : "disabled"}`);
+  redirect(`/admin/verbindingen?emergency=${enabled ? "enabled" : "disabled"}`);
 }
 
 export async function saveSourcePathAction(formData: FormData) {
   await requireAdmin();
   const sourcePath = String(formData.get("sourcePath") ?? "").trim();
-  if (!sourcePath) redirect("/admin/instellingen?error=empty");
+  if (!sourcePath) redirect("/admin?error=empty-source-path");
   try {
     await setLocalSourcePath(sourcePath);
   } catch {
-    redirect("/admin/instellingen?error=invalid-path");
+    redirect("/admin?error=invalid-source-path");
   }
   revalidatePath("/admin");
-  revalidatePath("/admin/instellingen");
-  redirect("/admin/instellingen?saved=1");
+  redirect("/admin");
 }
 
 export async function resetSourcePathAction() {
   await requireAdmin();
   await resetLocalSourcePath();
   revalidatePath("/admin");
-  revalidatePath("/admin/instellingen");
-  redirect("/admin/instellingen?reset=1");
+  redirect("/admin");
 }

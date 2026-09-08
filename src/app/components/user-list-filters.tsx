@@ -11,23 +11,32 @@ interface ClassOption {
   label: string;
 }
 
+interface LearningSpaceOption {
+  id: string;
+  label: string;
+}
+
 export type FilterUpdate = Record<string, string | string[] | null>;
 
-export function TeacherListFilters({ params }: { params: UserListSearchParams }) {
+export function TeacherListFilters({ params, spaces }: { params: UserListSearchParams; spaces: LearningSpaceOption[] }) {
   const update = useImmediateFilters();
   return <div className="user-filter-bar teacher-filter-bar" aria-label="Leraren filteren">
+    <label className="filter-control teacher-space-filter"><select value={params.teacherSpace ?? ""} onChange={(event) => update({ teacherSpace: event.target.value || null })}><option value="">Alle leeromgevingen</option>{spaces.map((space) => <option key={space.id} value={space.id}>{space.label}</option>)}</select></label>
     <label className="user-filter-checkbox"><input type="checkbox" checked={params.teacherStatus === "disabled"} onChange={(event) => update({ teacherStatus: event.target.checked ? "disabled" : null })} />Uitgeschakeld</label>
-    <label className="user-filter-checkbox"><input type="checkbox" checked={params.teacherAccess === "with"} onChange={(event) => update({ teacherAccess: event.target.checked ? "with" : null })} />Individuele toegang</label>
+    <label className="user-filter-checkbox"><input type="checkbox" checked={params.teacherConnectionFirst === "1"} onChange={(event) => update({ teacherConnectionFirst: event.target.checked ? "1" : null })} />Verbinding eerst</label>
   </div>;
 }
 
 export function StudentListFilters({ params, classes }: { params: UserListSearchParams; classes: ClassOption[] }) {
+  const selectedClasses = stringValues(params.class);
+  return <StudentListFilterFields key={JSON.stringify([params.q ?? "", selectedClasses])} params={params} classes={classes} />;
+}
+
+function StudentListFilterFields({ params, classes }: { params: UserListSearchParams; classes: ClassOption[] }) {
   const update = useImmediateFilters();
   const [query, setQuery] = useState(params.q ?? "");
   const [selectedClasses, setSelectedClasses] = useState(stringValues(params.class));
 
-  useEffect(() => setQuery(params.q ?? ""), [params.q]);
-  useEffect(() => setSelectedClasses(stringValues(params.class)), [params.class]);
   useEffect(() => {
     if (query === (params.q ?? "")) return;
     const timeout = window.setTimeout(() => update({ q: query.trim() || null }), 400);

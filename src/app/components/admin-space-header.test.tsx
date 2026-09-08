@@ -9,10 +9,10 @@ vi.mock("@/app/components/sync-space-form", () => ({
 
 vi.mock("@/lib/repositories", () => ({
   getLatestSyncSummary: vi.fn(),
-  getOpenErrorReportCount: vi.fn(),
+  getOpenErrorThreadCount: vi.fn(),
 }));
 
-import { getLatestSyncSummary, getOpenErrorReportCount } from "@/lib/repositories";
+import { getLatestSyncSummary, getOpenErrorThreadCount } from "@/lib/repositories";
 import { AdminSpaceHeader } from "./admin-space-header";
 
 const mirror: LearningSpaceSource = {
@@ -23,7 +23,7 @@ const mirror: LearningSpaceSource = {
 };
 const space: LearningSpace = {
   id: "space-6", name: "Zesde jaar wiskunde", slug: "6", shortLabel: "6WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
-  sortOrder: 60, isActive: true, archivedAt: null, sourceType: "google_drive", localSourcePath: null,
+  sortOrder: 60, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "google_drive", localSourcePath: null,
   oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: "folder",
   googleDriveFolderLabel: "Mirror 6", sources: [mirror], activeSourceId: mirror.id, primarySource: null, mirrorSource: mirror,
 };
@@ -34,7 +34,7 @@ describe("shared LearningSpace admin header", () => {
       startedAt: "2026-08-20T12:00:00.000Z", finishedAt: "2026-08-20T12:01:00.000Z", portfolioCount: 3,
       warningCount: 0, status: "completed", providerType: "google_drive", addedCount: 0, updatedCount: 0, missingCount: 0, failureMessage: null,
     });
-    vi.mocked(getOpenErrorReportCount).mockResolvedValue(4);
+    vi.mocked(getOpenErrorThreadCount).mockResolvedValue(4);
 
     const markup = renderToStaticMarkup(await AdminSpaceHeader({ current: space, section: "settings", user: { id: "admin", displayName: "Admin", firstName: null, lastName: null, email: null, role: "superadmin", status: "active", classGroupOverrideId: null } }));
     expect(markup).toContain("Beheer");

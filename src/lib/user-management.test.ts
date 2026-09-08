@@ -8,10 +8,15 @@ import { createLearningSpaceGroupMapping, createUser, findOrCreateExternalUser, 
 import { getAccessibleLearningSpaceIds } from "./authorization";
 import { ensureStorageConnection, saveStorageCredentials } from "./storage-connections";
 import {
+  addLearningSpaceIndividualStudentAccess,
+  deleteLearningSpaceGroupMapping,
   deleteManagedGroupMapping,
   isClassGroupName,
   listKnownClassGroups,
   listKnownExternalGroups,
+  listLearningSpaceGroupMappings,
+  listLearningSpaceIndividualStudentAccess,
+  listLearningSpaceIndividualStudentCandidates,
   listManagedGroupUsers,
   listManagedGroupMappings,
   listManagedMemberships,
@@ -19,6 +24,7 @@ import {
   listManagedUserAccess,
   listManagedUsers,
   removeManagedMembership,
+  removeLearningSpaceIndividualStudentAccess,
   setIndividualLearningSpaceAccess,
   updateManagedUserClassOverride,
   updateManagedUserRole,
@@ -46,12 +52,16 @@ describe("superadmin user and access management", () => {
     await expect(updateManagedUserRole("user-legacy-superadmin", "teacher")).rejects.toThrow("hoofdbeheerderrol");
   });
 
-  it("blokkeert het uitschakelen van de laatste actieve superadmin", async () => {
+  it("blokkeert het uitschakelen van iedere superadmin en behoudt gewone statuswijzigingen", async () => {
     await useTemporaryDatabase();
-    await expect(updateManagedUserStatus("user-legacy-superadmin", "disabled")).rejects.toThrow("laatste actieve hoofdbeheerder");
+    await expect(updateManagedUserStatus("user-legacy-superadmin", "disabled")).rejects.toThrow("Hoofdbeheerders kunnen niet");
     const second = await createUser({ displayName: "Tweede beheerder", role: "superadmin" });
-    await updateManagedUserStatus(second.id, "disabled");
-    expect((await listManagedUsers()).find((user) => user.id === second.id)?.status).toBe("disabled");
+    await expect(updateManagedUserStatus(second.id, "disabled")).rejects.toThrow("Hoofdbeheerders kunnen niet");
+    const teacher = await createUser({ displayName: "Leraar", role: "teacher" });
+    const student = await createUser({ displayName: "Leerling", role: "student" });
+    await updateManagedUserStatus(teacher.id, "disabled");
+    await updateManagedUserStatus(student.id, "disabled");
+    expect((await listManagedUsers()).filter((user) => user.id === teacher.id || user.id === student.id).every((user) => user.status === "disabled")).toBe(true);
   });
 
   it("beheert owner/editor memberships en blokkeert een rolwijziging zonder cleanup", async () => {
@@ -79,9 +89,16 @@ describe("superadmin user and access management", () => {
     await replaceExternalIdentityGroups(login.identity.id, [{ provider: "smartschool", externalGroupId: "group-6wis", externalGroupName: "6WIS", membershipType: "direct" }]);
     expect(await listKnownExternalGroups()).toEqual([expect.objectContaining({ provider: "smartschool", externalGroupId: "group-6wis", externalGroupName: "6WIS" })]);
     const id = await createLearningSpaceGroupMapping({ learningSpaceId: "space-6", provider: "smartschool", externalGroupId: "group-6wis", externalGroupName: "6WIS" });
-    expect(await listManagedGroupMappings()).toEqual([expect.objectContaining({ id, learningSpaceId: "space-6", externalGroupId: "group-6wis" })]);
+    const otherId = await createLearningSpaceGroupMapping({ learningSpaceId: "space-5", provider: "smartschool", externalGroupId: "group-6wis", externalGroupName: "6WIS" });
+    expect(await listLearningSpaceGroupMappings("space-6")).toEqual([
+      expect.objectContaining({ id, learningSpaceId: "space-6", externalGroupId: "group-6wis" }),
+    ]);
     await expect(createLearningSpaceGroupMapping({ learningSpaceId: "space-6", provider: "smartschool", externalGroupId: "group-6wis" })).rejects.toThrow();
-    await deleteManagedGroupMapping(id);
+    await deleteLearningSpaceGroupMapping(id, "space-5");
+    expect(await listLearningSpaceGroupMappings("space-6")).toHaveLength(1);
+    await deleteLearningSpaceGroupMapping(id, "space-6");
+    expect(await listLearningSpaceGroupMappings("space-6")).toEqual([]);
+    await deleteManagedGroupMapping(otherId);
     expect(await listManagedGroupMappings()).toEqual([]);
   });
 
@@ -97,8 +114,8 @@ describe("superadmin user and access management", () => {
     ]);
     const groupUsers = await listManagedGroupUsers();
     expect(groupUsers.filter((entry) => entry.externalGroupId === "group-5")).toEqual([
-      expect.objectContaining({ userId: first.user.id, displayName: "Eerste leerling" }),
-      expect.objectContaining({ userId: second.user.id, displayName: "Tweede leerling" }),
+      expect.objectContaining({ userId: first.user.id, displayName: "Eerste leerling", externalGroupName: "5EWI" }),
+      expect.objectContaining({ userId: second.user.id, displayName: "Tweede leerling", externalGroupName: "5EWI" }),
     ]);
     expect((await listKnownExternalGroups()).filter((entry) => entry.externalGroupId === "group-5")).toHaveLength(1);
     expect(groupUsers.some((entry) => entry.displayName === "Nog niet aangemeld")).toBe(false);
@@ -157,6 +174,47 @@ describe("superadmin user and access management", () => {
     ]));
     await setIndividualLearningSpaceAccess(login.user.id, "space-6", false);
     expect(await getAccessibleLearningSpaceIds(current)).toEqual(["space-5", "space-6"]);
+  });
+
+  it("beheert individuele leerlingen per LearningSpace zonder group-only toegang in de lijst op te nemen", async () => {
+    await useTemporaryDatabase();
+    const individual = await findOrCreateExternalUser(
+      { provider: "smartschool", providerSubject: "individual-student", providerPlatform: "https://school.smartschool.be", displayName: "Anna Individueel", firstName: "Anna", lastName: "Individueel" },
+      [{ provider: "smartschool", externalGroupId: "class-5", externalGroupName: "5WEWI" }],
+    );
+    const groupOnly = await findOrCreateExternalUser(
+      { provider: "smartschool", providerSubject: "group-student", providerPlatform: "https://school.smartschool.be", displayName: "Bram Groep", firstName: "Bram", lastName: "Groep" },
+      [{ provider: "smartschool", externalGroupId: "class-6", externalGroupName: "6WIS" }],
+    );
+    await replaceExternalIdentityGroups(individual.identity.id, [
+      { provider: "smartschool", externalGroupId: "class-5", externalGroupName: "5WEWI" },
+    ]);
+    await replaceExternalIdentityGroups(groupOnly.identity.id, [
+      { provider: "smartschool", externalGroupId: "class-6", externalGroupName: "6WIS" },
+    ]);
+    const disabled = await createUser({ displayName: "Dina Disabled", role: "student", status: "disabled" });
+    const teacher = await createUser({ displayName: "Theo Teacher", role: "teacher" });
+    await createLearningSpaceGroupMapping({ learningSpaceId: "space-5", provider: "smartschool", externalGroupId: "class-6", externalGroupName: "6WIS" });
+    await addLearningSpaceIndividualStudentAccess(individual.user.id, "space-5");
+
+    expect(await listLearningSpaceIndividualStudentAccess("space-5")).toEqual([
+      expect.objectContaining({ userId: individual.user.id, firstName: "Anna", lastName: "Individueel", className: "5WEWI" }),
+    ]);
+    const candidates = await listLearningSpaceIndividualStudentCandidates("space-5");
+    expect(candidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ userId: groupOnly.user.id, className: "6WIS", status: "active" }),
+      expect.objectContaining({ userId: disabled.id, status: "disabled" }),
+    ]));
+    expect(candidates.some((candidate) => candidate.userId === individual.user.id)).toBe(false);
+    expect(candidates.some((candidate) => candidate.userId === teacher.id)).toBe(false);
+    await expect(addLearningSpaceIndividualStudentAccess(disabled.id, "space-5")).rejects.toThrow("uitgeschakeld");
+    await expect(addLearningSpaceIndividualStudentAccess(teacher.id, "space-5")).rejects.toThrow("Alleen een leerling");
+    await expect(addLearningSpaceIndividualStudentAccess(individual.user.id, "space-5")).rejects.toThrow("al individuele toegang");
+
+    await addLearningSpaceIndividualStudentAccess(groupOnly.user.id, "space-5");
+    await removeLearningSpaceIndividualStudentAccess(groupOnly.user.id, "space-5");
+    expect(await getAccessibleLearningSpaceIds(groupOnly.user)).toContain("space-5");
+    expect((await listLearningSpaceIndividualStudentAccess("space-5")).map((student) => student.userId)).toEqual([individual.user.id]);
   });
 
   it("detecteert een Smartschoolklas en laat een geldige lokale override toe", async () => {

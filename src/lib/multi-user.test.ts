@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { canAccessAdmin, canAccessLearningSpace, canConfigureLearningSpace, canCreateLearningSpace, canManageLearningSpace, getAccessibleLearningSpaceIds, requireLearningSpaceCreation, requireLearningSpaceManagement } from "./authorization";
+import { canAccessAdmin, canAccessLearningSpace, canConfigureLearningSpace, canCreateLearningSpace, canManageLearningSpace, canManageLearningSpaceStudentAccess, canManageLearningSpaceTeacherAccess, getAccessibleLearningSpaceIds, requireLearningSpaceCreation, requireLearningSpaceManagement } from "./authorization";
 import { getDatabase, resetDatabaseForTests } from "./database";
 import type { ExternalAuthProvider } from "./external-auth-provider";
 import {
@@ -55,8 +55,11 @@ describe("multi-user authorization foundation", () => {
     expect(await canManageLearningSpace(disabledTeacher, "space-5")).toBe(false);
     expect(canAccessAdmin(student)).toBe(false);
     expect(canCreateLearningSpace(superadmin)).toBe(true);
-    expect(canCreateLearningSpace(teacher)).toBe(false);
-    expect(() => requireLearningSpaceCreation(teacher)).toThrow("hoofdbeheerder");
+    expect(canCreateLearningSpace(teacher)).toBe(true);
+    expect(canCreateLearningSpace(student)).toBe(false);
+    expect(canCreateLearningSpace(disabledTeacher)).toBe(false);
+    expect(() => requireLearningSpaceCreation(teacher)).not.toThrow();
+    expect(() => requireLearningSpaceCreation(student)).toThrow("actieve leraren en hoofdbeheerders");
     await expect(requireLearningSpaceManagement(teacher, "space-6")).rejects.toThrow("geen beheerrechten");
   });
 
@@ -78,6 +81,35 @@ describe("multi-user authorization foundation", () => {
     expect(await canConfigureLearningSpace(editor, "space-6")).toBe(false);
     expect((await listManagedSourceOwners()).find((source) => source.learningSpaceId === "space-6" && source.sourceRole === "primary")).toMatchObject({ ownerName: "Mathias" });
     expect(await getOwnedStorageConnection(editor.id, connection.id)).toBeNull();
+  });
+
+  it("separates teacher access management from delegated student access management", async () => {
+    await useTemporaryDatabase();
+    const owner = await createUser({ displayName: "Owner", role: "teacher" });
+    const editor = await createUser({ displayName: "Editor", role: "teacher" });
+    const viewer = await createUser({ displayName: "Viewer", role: "teacher" });
+    const student = await createUser({ displayName: "Student", role: "student" });
+    const superadmin = await createUser({ displayName: "Superadmin", role: "superadmin" });
+    await setLearningSpaceMember("space-5", owner.id, "owner");
+    await setLearningSpaceMember("space-5", editor.id, "editor");
+
+    expect(await canManageLearningSpaceTeacherAccess(owner, "space-5")).toBe(true);
+    expect(await canManageLearningSpaceTeacherAccess(superadmin, "space-5")).toBe(true);
+    expect(await canManageLearningSpaceTeacherAccess(editor, "space-5")).toBe(false);
+    expect(await canManageLearningSpaceStudentAccess(owner, "space-5")).toBe(true);
+    expect(await canManageLearningSpaceStudentAccess(superadmin, "space-5")).toBe(true);
+    expect(await canManageLearningSpaceStudentAccess(editor, "space-5")).toBe(false);
+    expect(await canManageLearningSpaceStudentAccess(viewer, "space-5")).toBe(false);
+    expect(await canManageLearningSpaceStudentAccess(student, "space-5")).toBe(false);
+
+    await (await getDatabase()).execute("UPDATE learning_spaces SET editors_can_manage_access = 1 WHERE id = 'space-5'");
+    expect(await canManageLearningSpaceStudentAccess(editor, "space-5")).toBe(true);
+    expect(await canManageLearningSpaceTeacherAccess(editor, "space-5")).toBe(false);
+
+    await (await getDatabase()).execute("UPDATE learning_spaces SET is_active = 0, archived_at = '2026-09-07T00:00:00.000Z' WHERE id = 'space-5'");
+    expect(await canManageLearningSpaceStudentAccess(owner, "space-5")).toBe(false);
+    expect(await canManageLearningSpaceStudentAccess(superadmin, "space-5")).toBe(false);
+    expect(await canManageLearningSpaceStudentAccess(editor, "space-5")).toBe(false);
   });
 
   it("dwingt een unieke externe provideridentiteit af zonder providerrollen te vertrouwen", async () => {

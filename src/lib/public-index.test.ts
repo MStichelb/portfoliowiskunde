@@ -7,6 +7,7 @@ const staleSummary = {
   portfolioCount: 1, warningCount: 0, status: "completed", providerType: "google_drive",
   addedCount: 0, updatedCount: 0, missingCount: 0, failureMessage: null,
 };
+const hasConfiguredSource = async () => true;
 
 describe("public index preparation", () => {
   it("does not wait for a stale provider sync when a valid index exists", async () => {
@@ -16,6 +17,7 @@ describe("public index preparation", () => {
     const result = await preparePublicIndex("space-5", {
       getLatestSyncSummary: async () => staleSummary,
       hasValidIndex: async () => true,
+      hasConfiguredSource,
       autoSynchronize,
       defer: (task) => { deferredTask = task; },
     });
@@ -36,6 +38,7 @@ describe("public index preparation", () => {
     const preparation = preparePublicIndex("space-5", {
       getLatestSyncSummary: async () => null,
       hasValidIndex: async () => false,
+      hasConfiguredSource,
       autoSynchronize,
       defer: () => { throw new Error("Een eerste sync mag niet worden uitgesteld."); },
     }).then((result) => { settled = true; return result; });
@@ -51,6 +54,7 @@ describe("public index preparation", () => {
     await expect(preparePublicIndex("space-5", {
       getLatestSyncSummary: async () => staleSummary,
       hasValidIndex: async () => true,
+      hasConfiguredSource,
       autoSynchronize: async () => { throw new Error("Provider tijdelijk niet bereikbaar"); },
       defer: (task) => { deferredTask = task; },
     })).resolves.toBe("deferred");
@@ -63,6 +67,7 @@ describe("public index preparation", () => {
     await expect(preparePublicIndex("space-5", {
       getLatestSyncSummary: async () => ({ ...staleSummary, startedAt: new Date().toISOString(), finishedAt: new Date().toISOString() }),
       hasValidIndex: async () => true,
+      hasConfiguredSource,
       autoSynchronize,
       defer,
     })).resolves.toBe("fresh");
@@ -80,6 +85,31 @@ describe("public index preparation", () => {
     expect(hasValidIndex).not.toHaveBeenCalled();
     expect(autoSynchronize).not.toHaveBeenCalled();
     expect(defer).not.toHaveBeenCalled();
+  });
+
+  it("returns an empty unconfigured preparation without attempting synchronization", async () => {
+    const getLatestSyncSummary = vi.fn();
+    const hasValidIndex = vi.fn();
+    const autoSynchronize = vi.fn();
+
+    await expect(preparePublicIndex("new-space", {
+      hasConfiguredSource: async () => false,
+      getLatestSyncSummary,
+      hasValidIndex,
+      autoSynchronize,
+    })).resolves.toBe("unconfigured");
+    expect(getLatestSyncSummary).not.toHaveBeenCalled();
+    expect(hasValidIndex).not.toHaveBeenCalled();
+    expect(autoSynchronize).not.toHaveBeenCalled();
+  });
+
+  it("still exposes a first-sync failure for a configured source", async () => {
+    await expect(preparePublicIndex("configured-space", {
+      hasConfiguredSource,
+      getLatestSyncSummary: async () => null,
+      hasValidIndex: async () => false,
+      autoSynchronize: async () => { throw new Error("Providerverbinding mislukt"); },
+    })).rejects.toThrow("Providerverbinding mislukt");
   });
 
   it("recognizes both Next and browser prefetch headers", () => {

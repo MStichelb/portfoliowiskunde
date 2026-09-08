@@ -1,4 +1,4 @@
-import { getDatabase } from "@/lib/database";
+import { executeBatch, getDatabase } from "@/lib/database";
 import type { AppUser, LearningSpaceMemberRole, UserRole, UserStatus } from "@/lib/identity";
 
 export interface ManagedUser extends AppUser {
@@ -12,10 +12,113 @@ export interface ManagedUser extends AppUser {
 export interface ManagedMembership { learningSpaceId: string; userId: string; displayName: string; role: LearningSpaceMemberRole; }
 export interface ManagedGroupMapping { id: string; learningSpaceId: string; provider: string; externalGroupId: string; externalGroupName: string | null; }
 export interface KnownExternalGroup { provider: string; externalGroupId: string; externalGroupName: string | null; }
-export interface ManagedGroupUser { provider: string; externalGroupId: string; userId: string; displayName: string; role: UserRole; status: UserStatus; }
+export interface ManagedGroupUser { provider: string; externalGroupId: string; externalGroupName: string | null; userId: string; displayName: string; role: UserRole; status: UserStatus; }
 export interface ManagedSourceOwner { learningSpaceId: string; sourceRole: "primary" | "mirror"; isActive: boolean; provider: string; connectionName: string | null; ownerName: string | null; }
 export interface ManagedUserAccess { userId: string; learningSpaceId: string; groupDerived: boolean; individual: boolean; managementRole: LearningSpaceMemberRole | null; }
 export interface ManagedStorageConnection { userId: string; provider: "onedrive" | "google_drive"; status: "active" | "disconnected"; }
+export interface LearningSpaceTeacher { userId: string; firstName: string | null; lastName: string | null; role: LearningSpaceMemberRole | "viewer"; isSuperadmin: boolean; }
+export type LearningSpaceTeacherAccessRole = "viewer" | "editor";
+export interface LearningSpaceTeacherCandidate { userId: string; displayName: string; firstName: string | null; lastName: string | null; }
+export interface LearningSpaceIndividualStudent { userId: string; displayName: string; firstName: string | null; lastName: string | null; className: string | null; status: UserStatus; }
+
+export async function listLearningSpaceTeachers(learningSpaceId: string): Promise<LearningSpaceTeacher[]> {
+  const rows = (await (await getDatabase()).execute({
+    sql: `SELECT users.id AS user_id, users.first_name, users.last_name, users.role AS user_role,
+      CASE learning_space_members.role WHEN 'owner' THEN 'owner' WHEN 'editor' THEN 'editor' ELSE 'viewer' END AS access_role
+      FROM users
+      LEFT JOIN learning_space_members ON learning_space_members.user_id = users.id
+        AND learning_space_members.learning_space_id = ?
+      LEFT JOIN individual_learning_space_access ON individual_learning_space_access.user_id = users.id
+        AND individual_learning_space_access.learning_space_id = ?
+      WHERE users.role IN ('teacher', 'superadmin')
+        AND (learning_space_members.user_id IS NOT NULL OR individual_learning_space_access.user_id IS NOT NULL)
+      ORDER BY CASE learning_space_members.role WHEN 'owner' THEN 0 WHEN 'editor' THEN 1 ELSE 2 END,
+        users.last_name, users.first_name, users.display_name`,
+    args: [learningSpaceId, learningSpaceId],
+  })).rows;
+  return rows.map((row) => ({
+    userId: String(row.user_id),
+    firstName: textOrNull(row.first_name),
+    lastName: textOrNull(row.last_name),
+    role: row.access_role === "owner" ? "owner" : row.access_role === "editor" ? "editor" : "viewer",
+    isSuperadmin: row.user_role === "superadmin",
+  }));
+}
+
+export async function listLearningSpaceTeacherCandidates(learningSpaceId: string): Promise<LearningSpaceTeacherCandidate[]> {
+  const rows = (await (await getDatabase()).execute({
+    sql: `SELECT users.id AS user_id, users.display_name, users.first_name, users.last_name
+      FROM users
+      WHERE users.role IN ('teacher', 'superadmin') AND users.status = 'active'
+        AND NOT EXISTS (
+          SELECT 1 FROM learning_space_members
+          WHERE learning_space_members.learning_space_id = ?
+            AND learning_space_members.user_id = users.id
+            AND learning_space_members.role = 'owner'
+        )
+      ORDER BY users.last_name, users.first_name, users.display_name`,
+    args: [learningSpaceId],
+  })).rows;
+  return rows.map((row) => ({
+    userId: String(row.user_id), displayName: String(row.display_name),
+    firstName: textOrNull(row.first_name), lastName: textOrNull(row.last_name),
+  }));
+}
+
+export async function setLearningSpaceTeacherAccess(
+  learningSpaceId: string,
+  userId: string,
+  role: LearningSpaceTeacherAccessRole,
+): Promise<void> {
+  await assertMutableLearningSpaceTeacher(learningSpaceId, userId);
+  const now = new Date().toISOString();
+  if (role === "editor") {
+    await executeBatch([
+      { sql: "DELETE FROM individual_learning_space_access WHERE learning_space_id = ? AND user_id = ?", args: [learningSpaceId, userId] },
+      { sql: "DELETE FROM learning_space_members WHERE learning_space_id = ? AND user_id = ? AND role = 'editor'", args: [learningSpaceId, userId] },
+      {
+        sql: `INSERT INTO learning_space_members (learning_space_id, user_id, role, created_at, updated_at)
+          VALUES (?, ?, 'editor', ?, ?) ON CONFLICT(learning_space_id, user_id) DO NOTHING`,
+        args: [learningSpaceId, userId, now, now],
+      },
+    ]);
+    return;
+  }
+  await executeBatch([
+    { sql: "DELETE FROM learning_space_members WHERE learning_space_id = ? AND user_id = ? AND role = 'editor'", args: [learningSpaceId, userId] },
+    {
+      sql: `INSERT INTO individual_learning_space_access (user_id, learning_space_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?) ON CONFLICT(user_id, learning_space_id) DO UPDATE SET updated_at = excluded.updated_at`,
+      args: [userId, learningSpaceId, now, now],
+    },
+  ]);
+}
+
+export async function removeLearningSpaceTeacherAccess(learningSpaceId: string, userId: string): Promise<void> {
+  await assertMutableLearningSpaceTeacher(learningSpaceId, userId);
+  await executeBatch([
+    { sql: "DELETE FROM learning_space_members WHERE learning_space_id = ? AND user_id = ? AND role = 'editor'", args: [learningSpaceId, userId] },
+    { sql: "DELETE FROM individual_learning_space_access WHERE learning_space_id = ? AND user_id = ?", args: [learningSpaceId, userId] },
+  ]);
+}
+
+async function assertMutableLearningSpaceTeacher(learningSpaceId: string, userId: string): Promise<void> {
+  const database = await getDatabase();
+  const [user, space, membership] = await Promise.all([
+    database.execute({ sql: "SELECT role, status FROM users WHERE id = ?", args: [userId] }),
+    database.execute({ sql: "SELECT is_active, archived_at FROM learning_spaces WHERE id = ?", args: [learningSpaceId] }),
+    database.execute({ sql: "SELECT role FROM learning_space_members WHERE learning_space_id = ? AND user_id = ?", args: [learningSpaceId, userId] }),
+  ]);
+  if (!user.rows[0] || !["teacher", "superadmin"].includes(String(user.rows[0].role)) || user.rows[0].status !== "active") {
+    throw new Error("Alleen een actieve leraar kan toegang krijgen tot deze leeromgeving.");
+  }
+  if (!space.rows[0] || Number(space.rows[0].is_active) !== 1 || space.rows[0].archived_at) {
+    throw new Error("Deze leeromgeving is niet actief.");
+  }
+  if (membership.rows[0]?.role === "owner") {
+    throw new Error("Een eigenaar kan via deze toegangspagina niet worden gewijzigd of verwijderd.");
+  }
+}
 
 export async function listManagedUsers(): Promise<ManagedUser[]> {
   const database = await getDatabase();
@@ -79,10 +182,7 @@ export async function updateManagedUserStatus(userId: string, status: UserStatus
   const database = await getDatabase();
   const target = (await database.execute({ sql: "SELECT role, status FROM users WHERE id = ?", args: [userId] })).rows[0];
   if (!target) throw new Error("Gebruiker niet gevonden.");
-  if (target.role === "superadmin" && target.status === "active" && status === "disabled") {
-    const active = Number((await database.execute("SELECT COUNT(*) AS count FROM users WHERE role = 'superadmin' AND status = 'active'")).rows[0]?.count ?? 0);
-    if (active <= 1) throw new Error("De laatste actieve hoofdbeheerder kan niet worden uitgeschakeld.");
-  }
+  if (target.role === "superadmin" && status === "disabled") throw new Error("Hoofdbeheerders kunnen niet worden uitgeschakeld.");
   await database.execute({ sql: "UPDATE users SET status = ?, updated_at = ? WHERE id = ?", args: [status, new Date().toISOString(), userId] });
 }
 
@@ -113,6 +213,96 @@ export async function setIndividualLearningSpaceAccess(userId: string, learningS
     sql: `INSERT INTO individual_learning_space_access (user_id, learning_space_id, created_at, updated_at) VALUES (?, ?, ?, ?)
       ON CONFLICT(user_id, learning_space_id) DO UPDATE SET updated_at = excluded.updated_at`,
     args: [userId, learningSpaceId, now, now],
+  });
+}
+
+export async function listLearningSpaceIndividualStudentAccess(learningSpaceId: string): Promise<LearningSpaceIndividualStudent[]> {
+  return listLearningSpaceIndividualStudents(learningSpaceId, true);
+}
+
+export async function listLearningSpaceIndividualStudentCandidates(learningSpaceId: string): Promise<LearningSpaceIndividualStudent[]> {
+  return listLearningSpaceIndividualStudents(learningSpaceId, false);
+}
+
+export async function addLearningSpaceIndividualStudentAccess(userId: string, learningSpaceId: string): Promise<void> {
+  const database = await getDatabase();
+  const [user, existing] = await Promise.all([
+    database.execute({ sql: "SELECT role, status FROM users WHERE id = ?", args: [userId] }),
+    database.execute({ sql: "SELECT 1 FROM individual_learning_space_access WHERE user_id = ? AND learning_space_id = ?", args: [userId, learningSpaceId] }),
+  ]);
+  if (!user.rows[0] || user.rows[0].role !== "student") throw new Error("Alleen een leerling kan individueel worden toegevoegd.");
+  if (user.rows[0].status !== "active") throw new Error("Deze leerling is uitgeschakeld en kan niet worden toegevoegd.");
+  if (existing.rows[0]) throw new Error("Deze leerling heeft al individuele toegang tot deze leeromgeving.");
+  await setIndividualLearningSpaceAccess(userId, learningSpaceId, true);
+}
+
+export async function removeLearningSpaceIndividualStudentAccess(userId: string, learningSpaceId: string): Promise<void> {
+  const existing = await (await getDatabase()).execute({
+    sql: `SELECT 1 FROM individual_learning_space_access
+      JOIN users ON users.id = individual_learning_space_access.user_id
+      WHERE individual_learning_space_access.user_id = ?
+        AND individual_learning_space_access.learning_space_id = ?
+        AND users.role = 'student'`,
+    args: [userId, learningSpaceId],
+  });
+  if (!existing.rows[0]) throw new Error("Deze leerling heeft geen individuele toegang tot deze leeromgeving.");
+  await setIndividualLearningSpaceAccess(userId, learningSpaceId, false);
+}
+
+async function listLearningSpaceIndividualStudents(
+  learningSpaceId: string,
+  linked: boolean,
+): Promise<LearningSpaceIndividualStudent[]> {
+  const database = await getDatabase();
+  const accessCondition = linked ? "EXISTS" : "NOT EXISTS";
+  const accessQuery = `${accessCondition} (
+    SELECT 1 FROM individual_learning_space_access
+    WHERE individual_learning_space_access.user_id = users.id
+      AND individual_learning_space_access.learning_space_id = ?
+  )`;
+  const [userRows, groupRows, knownGroupRows] = await Promise.all([
+    database.execute({
+      sql: `SELECT users.id, users.display_name, users.first_name, users.last_name, users.status, users.class_group_override_id
+        FROM users WHERE users.role = 'student' AND ${accessQuery}
+        ORDER BY users.last_name, users.first_name, users.display_name`,
+      args: [learningSpaceId],
+    }),
+    database.execute({
+      sql: `SELECT external_identities.user_id, external_identity_groups.external_group_id, external_identity_groups.external_group_name
+        FROM external_identity_groups
+        JOIN external_identities ON external_identities.id = external_identity_groups.identity_id
+        JOIN users ON users.id = external_identities.user_id
+        WHERE external_identities.provider = 'smartschool' AND users.role = 'student' AND ${accessQuery}`,
+      args: [learningSpaceId],
+    }),
+    database.execute(`SELECT external_group_id, MAX(external_group_name) AS external_group_name
+      FROM external_identity_groups GROUP BY external_group_id`),
+  ]);
+  const classGroupsByUser = new Map<string, KnownExternalGroup[]>();
+  for (const row of groupRows.rows) {
+    const name = textOrNull(row.external_group_name);
+    if (!name || !isClassGroupName(name)) continue;
+    const userId = String(row.user_id);
+    const groups = classGroupsByUser.get(userId) ?? [];
+    if (!groups.some((group) => group.externalGroupId === String(row.external_group_id))) {
+      groups.push({ provider: "smartschool", externalGroupId: String(row.external_group_id), externalGroupName: name });
+      classGroupsByUser.set(userId, groups);
+    }
+  }
+  const knownNames = new Map(knownGroupRows.rows.map((row) => [String(row.external_group_id), textOrNull(row.external_group_name)]));
+  return userRows.rows.map((row) => {
+    const userId = String(row.id);
+    const classGroupOverrideId = textOrNull(row.class_group_override_id);
+    const classGroups = classGroupsByUser.get(userId) ?? [];
+    const automaticClass = classGroups.length === 1 ? classGroups[0]?.externalGroupName ?? null : null;
+    return {
+      userId,
+      displayName: String(row.display_name),
+      firstName: textOrNull(row.first_name),
+      lastName: textOrNull(row.last_name),
+      className: classGroupOverrideId ? knownNames.get(classGroupOverrideId) ?? classGroupOverrideId : automaticClass,
+      status: row.status === "disabled" ? "disabled" : "active",
+    };
   });
 }
 
@@ -159,7 +349,7 @@ export async function listManagedMemberships(): Promise<ManagedMembership[]> {
 export async function upsertManagedMembership(learningSpaceId: string, userId: string, role: LearningSpaceMemberRole): Promise<void> {
   const database = await getDatabase();
   const user = (await database.execute({ sql: "SELECT role, status FROM users WHERE id = ?", args: [userId] })).rows[0];
-  if (!user || user.role !== "teacher" || user.status !== "active") throw new Error("Alleen een actieve leraar kan als beheerder worden toegevoegd.");
+  if (!user || (user.role !== "teacher" && user.role !== "superadmin") || user.status !== "active") throw new Error("Alleen een actieve leraar kan als beheerder worden toegevoegd.");
   const now = new Date().toISOString();
   await database.execute({
     sql: `INSERT INTO learning_space_members (learning_space_id, user_id, role, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
@@ -174,6 +364,16 @@ export async function removeManagedMembership(learningSpaceId: string, userId: s
 
 export async function listManagedGroupMappings(): Promise<ManagedGroupMapping[]> {
   const rows = (await (await getDatabase()).execute("SELECT * FROM learning_space_group_mappings ORDER BY learning_space_id, external_group_name, external_group_id")).rows;
+  return rows.map((row) => ({ id: String(row.id), learningSpaceId: String(row.learning_space_id), provider: String(row.provider), externalGroupId: String(row.external_group_id), externalGroupName: typeof row.external_group_name === "string" && row.external_group_name ? row.external_group_name : null }));
+}
+
+export async function listLearningSpaceGroupMappings(learningSpaceId: string): Promise<ManagedGroupMapping[]> {
+  const rows = (await (await getDatabase()).execute({
+    sql: `SELECT * FROM learning_space_group_mappings
+      WHERE learning_space_id = ?
+      ORDER BY external_group_name, external_group_id`,
+    args: [learningSpaceId],
+  })).rows;
   return rows.map((row) => ({ id: String(row.id), learningSpaceId: String(row.learning_space_id), provider: String(row.provider), externalGroupId: String(row.external_group_id), externalGroupName: typeof row.external_group_name === "string" && row.external_group_name ? row.external_group_name : null }));
 }
 
@@ -197,19 +397,26 @@ export function isClassGroupName(name: string): boolean {
 
 export async function listManagedGroupUsers(): Promise<ManagedGroupUser[]> {
   const rows = (await (await getDatabase()).execute(`SELECT DISTINCT external_identities.provider, external_identity_groups.external_group_id,
-      users.id AS user_id, users.display_name, users.role, users.status
+      external_identity_groups.external_group_name, users.id AS user_id, users.display_name, users.role, users.status
     FROM external_identity_groups
     JOIN external_identities ON external_identities.id = external_identity_groups.identity_id
     JOIN users ON users.id = external_identities.user_id
     ORDER BY external_identities.provider, external_identity_groups.external_group_id, users.display_name`)).rows;
   return rows.map((row) => ({
-    provider: String(row.provider), externalGroupId: String(row.external_group_id), userId: String(row.user_id),
-    displayName: String(row.display_name), role: roleFromValue(row.role), status: row.status === "disabled" ? "disabled" : "active",
+    provider: String(row.provider), externalGroupId: String(row.external_group_id), externalGroupName: textOrNull(row.external_group_name),
+    userId: String(row.user_id), displayName: String(row.display_name), role: roleFromValue(row.role), status: row.status === "disabled" ? "disabled" : "active",
   }));
 }
 
 export async function deleteManagedGroupMapping(id: string): Promise<void> {
   await (await getDatabase()).execute({ sql: "DELETE FROM learning_space_group_mappings WHERE id = ?", args: [id] });
+}
+
+export async function deleteLearningSpaceGroupMapping(id: string, learningSpaceId: string): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "DELETE FROM learning_space_group_mappings WHERE id = ? AND learning_space_id = ?",
+    args: [id, learningSpaceId],
+  });
 }
 
 export async function listManagedSourceOwners(): Promise<ManagedSourceOwner[]> {

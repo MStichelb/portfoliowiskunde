@@ -4,14 +4,18 @@ import { useActionState, useState } from "react";
 import { CircleHelp } from "lucide-react";
 import Link from "next/link";
 
-import type { AdminActionState } from "@/app/admin/actions";
+import { saveLearningSpaceEditorPermissionsAction, type AdminActionState } from "@/app/admin/actions";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
+import { LearningSpaceLifecycleActions } from "./learning-space-lifecycle-actions";
+import { EditorPermissionsToggle } from "./editor-permissions-toggle";
 
 export function LearningSpaceSettingsForm({
   space,
+  canPermanentlyDelete,
   action,
 }: {
   space: LearningSpace;
+  canPermanentlyDelete: boolean;
   action: (previousState: AdminActionState, formData: FormData) => AdminActionState | Promise<AdminActionState>;
 }) {
   const primary = space.primarySource ?? legacyPrimarySource(space);
@@ -27,14 +31,33 @@ export function LearningSpaceSettingsForm({
     <section className="settings-card" aria-labelledby="general-settings-heading">
       <h2 id="general-settings-heading">Algemeen</h2>
       <div className="settings-grid">
-        <label>Naam<input name="name" defaultValue={space.name} required maxLength={100} /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
-        <label>Publieke slug<input name="slug" defaultValue={space.slug} required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" /><small>Dit wordt gebruikt in de URL.</small></label>
-        <label>Kort label<input name="shortLabel" defaultValue={space.shortLabel} required maxLength={20} /><small>Compacte naam voor de navigatie in de adminomgeving.</small></label>
-        <label>Sortering<input name="sortOrder" type="number" defaultValue={space.sortOrder} required /><small>Bepaalt de volgorde van leeromgevingen in de navigatie.</small></label>
+        <label>Weergavenaam<input name="name" defaultValue={space.name} required maxLength={100} /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
+        <label>URL<input name="slug" defaultValue={space.slug} required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" /><small>Dit wordt gebruikt in het webadres van deze leeromgeving.</small></label>
+        <label>Kort label<input name="shortLabel" defaultValue={space.shortLabel} required maxLength={6} /><small>Compacte naam voor de navigatie, maximaal 6 tekens.</small></label>
+        <label>Sortering<input name="sortOrder" type="number" defaultValue={space.sortOrder} required /><small>Dit bepaalt de volgorde van leeromgevingen in de navigatie.</small></label>
         <label className="field-full">Beschrijving<textarea name="description" defaultValue={space.description} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
         <label className="color-field">Kleur<span><input name="cardColor" type="color" value={cardColor} onChange={(event) => setCardColor(event.target.value.toUpperCase())} /><code>{cardColor.toUpperCase()}</code></span><small>Accentkleur van het kaartje.</small></label>
       </div>
+      <div className="settings-card-actions settings-card-lifecycle-actions">
+        <LearningSpaceLifecycleActions
+          space={space}
+          showManage={false}
+          showDelete={canPermanentlyDelete}
+          embeddedInForm
+          deleteLabel="Leeromgeving verwijderen"
+          deleteConfirmTitle="Leeromgeving permanent verwijderen?"
+          deleteConfirmText="Deze actie kan niet ongedaan worden gemaakt. De leeromgeving en bijhorende configuratie worden permanent verwijderd."
+        />
+        <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
+      </div>
     </section>
+
+    <EditorPermissionsToggle
+      learningSpaceId={space.id}
+      initialEnabled={space.editorsCanManageAccess}
+      canChange
+      action={saveLearningSpaceEditorPermissionsAction}
+    />
 
     <section className="settings-card source-settings-card" aria-labelledby="source-settings-heading">
       <div className="source-settings-heading">
@@ -46,7 +69,7 @@ export function LearningSpaceSettingsForm({
         <fieldset className={`source-role-card${primary.isActive ? " active-source-card" : ""}`}>
           <legend>Primaire bron</legend>
           <SourceStatus source={primary} />
-          <label>Provider<select name="primaryProviderType" value={primaryProvider} onChange={(event) => setPrimaryProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
+          <label>Brontype<select name="primaryProviderType" value={primaryProvider} onChange={(event) => setPrimaryProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
           <SourceFields prefix="primary" provider={primaryProvider} source={primary} />
         </fieldset>
 
@@ -56,15 +79,17 @@ export function LearningSpaceSettingsForm({
           {space.mirrorSource?.isActive ? <input type="hidden" name="mirrorEnabled" value="true" /> : null}
           {mirrorEnabled ? <>
             <SourceStatus source={space.mirrorSource} />
-            <label>Provider<select name="mirrorProviderType" value={mirrorProvider} onChange={(event) => setMirrorProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
+            <label>Brontype<select name="mirrorProviderType" value={mirrorProvider} onChange={(event) => setMirrorProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
             <SourceFields prefix="mirror" provider={mirrorProvider} source={space.mirrorSource} />
           </> : <p className="source-connection-status">Nog geen mirror geconfigureerd.</p>}
         </fieldset>
       </div>
+      <div className="settings-card-actions">
+        <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
+      </div>
     </section>
 
     {state.error ? <p className="form-message" role="alert">{state.error}</p> : null}
-    <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
   </form>;
 }
 
@@ -74,12 +99,12 @@ function SourceFields({ prefix, provider, source }: { prefix: "primary" | "mirro
     <label>OneDrive drive-ID<input name={`${prefix}OneDriveDriveId`} defaultValue={source?.oneDriveDriveId ?? ""} required /></label>
     <label>OneDrive map-ID<input name={`${prefix}OneDriveFolderId`} defaultValue={source?.oneDriveFolderId ?? ""} required /></label>
     <label className="field-full">OneDrive mapnaam of pad<input name={`${prefix}OneDriveFolderPath`} defaultValue={source?.oneDriveFolderPath ?? ""} /></label>
-    <p className="source-context-help">Een nieuwe OneDrive-bron gebruikt jouw persoonlijke verbinding. Controleer die eerst bij <Link href="/admin/verbindingen">Mijn verbindingen</Link>.</p>
+    <p className="source-context-help">Een nieuwe OneDrive-bron gebruikt jouw persoonlijke verbinding. Controleer die eerst bij <Link href="/admin/verbindingen">Verbindingen</Link>.</p>
   </div>;
   return <div className="settings-grid google-drive-fields">
     <label>Google Drive folder-ID<input name={`${prefix}GoogleDriveFolderId`} defaultValue={source?.googleDriveFolderId ?? ""} required pattern="[A-Za-z0-9_-]+" /></label>
     <label>Herkenbaar label of pad<input name={`${prefix}GoogleDriveFolderLabel`} defaultValue={source?.googleDriveFolderLabel ?? ""} maxLength={240} placeholder="Mirror leeromgeving" /></label>
-    <p className="source-connection-status">De map moet gedeeld zijn met het geconfigureerde service account als Viewer.</p>
+    <p className="source-connection-status">De map moet met de ingestelde Google Drive-lezer gedeeld zijn als Kijker.</p>
   </div>;
 }
 

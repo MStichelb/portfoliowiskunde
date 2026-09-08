@@ -20,7 +20,7 @@ export async function GET(request: Request) {
   const codeVerifier = cookieStore.get(OAUTH_VERIFIER_COOKIE)?.value;
   const expectedOwner = cookieStore.get(OAUTH_OWNER_COOKIE)?.value;
   const user = await getAuthenticatedUser();
-  const response = (status: string) => NextResponse.redirect(new URL(`${user?.role === "superadmin" ? "/admin/instellingen" : "/admin/verbindingen"}?onedrive=${encodeURIComponent(status)}`, request.url));
+  const response = (status: string) => NextResponse.redirect(new URL(`/admin/verbindingen?onedrive=${encodeURIComponent(status)}`, request.url));
 
   if (!canAccessAdmin(user) || !code || !state || !expectedState || !codeVerifier || !expectedOwner
     || user!.id !== expectedOwner || !sameValue(state, expectedState)) {

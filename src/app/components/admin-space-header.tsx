@@ -5,10 +5,10 @@ import { LearningSpaceNav, type AdminSpaceSection } from "@/app/components/learn
 import { SyncSpaceForm } from "@/app/components/sync-space-form";
 import { canConfigureLearningSpace } from "@/lib/authorization";
 import type { AppUser } from "@/lib/identity";
-import { getLatestSyncSummary, getOpenErrorReportCount, type LearningSpace } from "@/lib/repositories";
+import { getLatestSyncSummary, getOpenErrorThreadCount, type LearningSpace } from "@/lib/repositories";
 
 export async function AdminSpaceHeader({ current, section, user }: { current: LearningSpace; section: AdminSpaceSection; user: AppUser }) {
-  const [sync, reportCount] = await Promise.all([getLatestSyncSummary(current.id), getOpenErrorReportCount(current.id)]);
+  const [sync, reportCount] = await Promise.all([getLatestSyncSummary(current.id), getOpenErrorThreadCount(current.id)]);
   const showSettings = await canConfigureLearningSpace(user, current.id);
   const syncedAt = sync?.finishedAt ?? sync?.startedAt;
   return <>

@@ -8,6 +8,7 @@ import { getLearningSpaces } from "@/lib/repositories";
 import {
   listKnownClassGroups,
   listKnownExternalGroups,
+  listManagedGroupUsers,
   listManagedMemberships,
   listManagedStorageConnections,
   listManagedUserAccess,
@@ -18,7 +19,7 @@ export const dynamic = "force-dynamic";
 
 export default async function UserManagementPage({ searchParams }: { searchParams: Promise<UserListSearchParams & { error?: string; saved?: string }> }) {
   await requireAdmin();
-  const [params, users, spaces, memberships, access, storageConnections, classGroups, externalGroups, teacherGroupId] = await Promise.all([
+  const [params, users, spaces, memberships, access, storageConnections, classGroups, externalGroups, groupUsers, teacherGroupId] = await Promise.all([
     searchParams,
     listManagedUsers(),
     getLearningSpaces(),
@@ -27,6 +28,7 @@ export default async function UserManagementPage({ searchParams }: { searchParam
     listManagedStorageConnections(),
     listKnownClassGroups(),
     listKnownExternalGroups(),
+    listManagedGroupUsers(),
     getConfiguredTeacherGroupId(),
   ]);
   const teacherGroups = externalGroups.filter((group) => group.provider === "smartschool");
@@ -35,6 +37,6 @@ export default async function UserManagementPage({ searchParams }: { searchParam
     <header className="page-header"><p className="eyebrow">Globaal beheer</p><h1>Gebruikers</h1><p>Beheer lokale rollen, klas, publieke toegang en accountstatus. Smartschool kent nooit zelf applicatierollen toe.</p></header>
     {params.saved ? <p className="success-message" role="status">Wijziging opgeslagen.</p> : null}
     {params.error ? <p className="form-message" role="alert">{params.error}</p> : null}
-    <UserManagementView users={users} spaces={spaces} memberships={memberships} access={access} storageConnections={storageConnections} classGroups={classGroups} teacherGroups={teacherGroups} teacherGroupId={teacherGroupId} params={params} />
+    <UserManagementView users={users} spaces={spaces} memberships={memberships} access={access} storageConnections={storageConnections} groupUsers={groupUsers} classGroups={classGroups} teacherGroups={teacherGroups} teacherGroupId={teacherGroupId} params={params} />
   </main>;
 }

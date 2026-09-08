@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { errorReportViewReducer, initialErrorReportViewState, openErrorReportGroups, portfolioFilterOptions, sortErrorReports } from "./error-report-sort";
+import {
+  errorReportViewReducer,
+  filterGroupedErrorReportIssues,
+  groupedErrorReportPortfolioFilterOptions,
+  groupedErrorReportThreadPortfolioFilterOptions,
+  initialErrorReportViewState,
+  openErrorReportGroups,
+  openGroupedErrorReportIssueGroups,
+  openGroupedErrorReportThreadGroups,
+  portfolioFilterOptions,
+  sortErrorReports,
+  sortGroupedErrorReportIssues,
+  sortGroupedErrorReportThreads,
+  filterGroupedErrorReportThreads,
+  type SortableGroupedErrorReportIssue,
+} from "./error-report-sort";
 
 type Report = {
   id: string;
@@ -19,6 +34,23 @@ function report(id: string, portfolioCode: string, day: number, options: Partial
     portfolioCode,
     portfolioTitle: options.portfolioTitle ?? `Titel ${portfolioCode}`,
     createdAt: `2026-08-${String(day).padStart(2, "0")}T12:00:00.000Z`,
+    status: options.status ?? "TODO",
+    pinned: options.pinned ?? false,
+  };
+}
+
+type Issue = SortableGroupedErrorReportIssue & { id: string; exerciseCode: string };
+
+function issue(id: string, portfolioCode: string, updatedDay: number, options: Partial<Pick<Issue, "portfolioId" | "portfolioTitle" | "status" | "pinned" | "exerciseId" | "latestReportAt">> = {}): Issue {
+  return {
+    id,
+    portfolioId: options.portfolioId ?? `portfolio-${portfolioCode}`,
+    portfolioCode,
+    portfolioTitle: options.portfolioTitle ?? `Titel ${portfolioCode}`,
+    exerciseId: options.exerciseId === undefined ? `exercise-${id}` : options.exerciseId,
+    exerciseCode: "11",
+    latestReportAt: options.latestReportAt ?? null,
+    updatedAt: `2026-08-${String(updatedDay).padStart(2, "0")}T12:00:00.000Z`,
     status: options.status ?? "TODO",
     pinned: options.pinned ?? false,
   };
@@ -101,5 +133,78 @@ describe("error report sorting", () => {
     const filtered = errorReportViewReducer(initialErrorReportViewState, { type: "filter", portfolioId: "portfolio-5" });
     const sorted = errorReportViewReducer(filtered, { type: "sort", sortMode: "portfolio" });
     expect(errorReportViewReducer(sorted, { type: "reset-filter" })).toEqual({ sortMode: "portfolio", selectedPortfolio: null });
+  });
+});
+
+describe("grouped error report issue sorting", () => {
+  it("sorts by latest report date and falls back to updatedAt", () => {
+    const issues = [
+      issue("updated-new", "1", 9),
+      issue("report-newest", "2", 1, { latestReportAt: "2026-08-12T12:00:00.000Z" }),
+      issue("report-middle", "3", 2, { latestReportAt: "2026-08-10T12:00:00.000Z" }),
+    ];
+
+    expect(sortGroupedErrorReportIssues(issues, "date").map(({ id }) => id)).toEqual(["report-newest", "report-middle", "updated-new"]);
+  });
+
+  it("uses the existing natural portfolio order for grouped issues", () => {
+    const issues = ["12", "2B", "X", "10", "2", "A", "2A"].map((code, index) => issue(code, code, index + 1));
+    expect(sortGroupedErrorReportIssues(issues, "portfolio").map(({ portfolioCode }) => portfolioCode)).toEqual(["2", "2A", "2B", "10", "12", "A", "X"]);
+  });
+
+  it("filters by portfolio and keeps unmatched exercises", () => {
+    const unmatched = issue("unmatched", "5", 4, { exerciseId: null });
+    const issues = [unmatched, issue("other", "6", 5)];
+
+    expect(filterGroupedErrorReportIssues(issues, "portfolio-5")).toEqual([unmatched]);
+    expect(sortGroupedErrorReportIssues([unmatched], "date")).toEqual([unmatched]);
+  });
+
+  it("splits pinned and unpinned TODO issues and excludes DONE", () => {
+    const groups = openGroupedErrorReportIssueGroups([
+      issue("todo", "1", 2),
+      issue("pinned", "1", 3, { pinned: true }),
+      issue("done", "1", 4, { status: "DONE", pinned: true }),
+      issue("other-portfolio", "2", 5),
+    ], "date", "portfolio-1");
+
+    expect(groups.pinned.map(({ id }) => id)).toEqual(["pinned"]);
+    expect(groups.todo.map(({ id }) => id)).toEqual(["todo"]);
+  });
+
+  it("builds one portfolio option per portfolio with the existing ordering", () => {
+    const options = groupedErrorReportPortfolioFilterOptions([
+      issue("two-old", "2", 1),
+      issue("two-new", "2", 2),
+      issue("twelve", "12", 3),
+      issue("x", "X", 4),
+    ]);
+
+    expect(options.map(({ code }) => code)).toEqual(["2", "12", "X"]);
+    expect(options).toHaveLength(3);
+  });
+});
+
+describe("grouped error report thread sorting", () => {
+  it("uses latest report recency with updatedAt fallback", () => {
+    const threads = [
+      issue("fallback", "1", 9),
+      issue("latest", "2", 1, { latestReportAt: "2026-08-12T12:00:00.000Z" }),
+    ];
+    expect(sortGroupedErrorReportThreads(threads, "date").map(({ id }) => id)).toEqual(["latest", "fallback"]);
+  });
+
+  it("filters, groups and builds portfolio options at thread level", () => {
+    const threads = [
+      issue("todo", "2", 2),
+      issue("pinned", "2", 3, { pinned: true }),
+      issue("done", "2", 4, { status: "DONE" }),
+      issue("other", "12", 5),
+    ];
+    expect(filterGroupedErrorReportThreads(threads, "portfolio-2")).toHaveLength(3);
+    const groups = openGroupedErrorReportThreadGroups(threads, "date", "portfolio-2");
+    expect(groups.pinned.map(({ id }) => id)).toEqual(["pinned"]);
+    expect(groups.todo.map(({ id }) => id)).toEqual(["todo"]);
+    expect(groupedErrorReportThreadPortfolioFilterOptions(threads).map(({ code }) => code)).toEqual(["2", "12"]);
   });
 });

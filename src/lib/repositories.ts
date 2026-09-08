@@ -6,8 +6,10 @@ import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { executeBatch, getDatabase } from "@/lib/database";
 import type { IndexedPortfolio } from "@/lib/domain";
+import { normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRelativePath } from "@/lib/parser";
+import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { SourceManifestEntry } from "@/lib/source-comparison";
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
 import {
@@ -78,6 +80,8 @@ export interface AdminPortfolio {
   themeId: string | null;
   themeName: string | null;
   cardColor: string;
+  customText: string | null;
+  customTextPosition: PortfolioCustomTextPosition;
   sections: AdminSection[];
 }
 
@@ -88,12 +92,16 @@ export interface StudentPortfolio {
   themeId: string | null;
   themeName: string | null;
   cardColor: string;
+  customText: string | null;
+  customTextPosition: PortfolioCustomTextPosition;
+  assignmentPdfPath: string | null;
   hintsDocumentPath: string | null;
+  finalSolutionsPdfPath: string | null;
   sections: Array<{
     id: string;
     title: string;
     order: number;
-    exercises: Array<{ id: string; code: string; visible: boolean }>;
+    exercises: Array<{ id: string; code: string; visible: boolean; hasAlternativeSolution: boolean }>;
   }>;
 }
 
@@ -125,6 +133,7 @@ export interface LearningSpace {
   sortOrder: number;
   isActive: boolean;
   archivedAt: string | null;
+  editorsCanManageAccess: boolean;
   sourceType: StorageSourceType;
   localSourcePath: string | null;
   oneDriveDriveId: string | null;
@@ -242,7 +251,8 @@ function learningSpaceFromRow(row: DatabaseRow, sources: LearningSpaceSource[]):
   return {
     id: text(row, "id"), name: text(row, "name"), slug: text(row, "slug"), shortLabel: text(row, "short_label"),
     description: text(row, "description"), cardColor: text(row, "card_color"),
-    sortOrder: Number(row.sort_order), isActive: bool(row.is_active) && archivedAt === null, archivedAt, sourceType,
+    sortOrder: Number(row.sort_order), isActive: bool(row.is_active) && archivedAt === null, archivedAt,
+    editorsCanManageAccess: bool(row.editors_can_manage_access), sourceType,
     localSourcePath: localSource?.localSourcePath ?? nullableText(row, "local_source_path"),
     oneDriveDriveId: oneDriveSource?.oneDriveDriveId ?? nullableText(row, "onedrive_drive_id"),
     oneDriveFolderId: oneDriveSource?.oneDriveFolderId ?? nullableText(row, "onedrive_folder_id"),
@@ -312,6 +322,14 @@ async function defaultLearningSpaceId(): Promise<string> {
 }
 
 export async function createLearningSpace(input: LearningSpaceInput): Promise<LearningSpace> {
+  return createLearningSpaceWithOwner(input, null);
+}
+
+export async function createLearningSpaceForOwner(input: LearningSpaceInput, ownerUserId: string): Promise<LearningSpace> {
+  return createLearningSpaceWithOwner(input, ownerUserId);
+}
+
+async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUserId: string | null): Promise<LearningSpace> {
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
@@ -323,6 +341,12 @@ export async function createLearningSpace(input: LearningSpaceInput): Promise<Le
       primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now] }];
   statements.push(sourceUpsertStatement(id, "primary", primary, true, now));
   if (mirror) statements.push(sourceUpsertStatement(id, "mirror", mirror, false, now));
+  if (ownerUserId) {
+    statements.push({
+      sql: "INSERT INTO learning_space_members (learning_space_id, user_id, role, created_at, updated_at) VALUES (?, ?, 'owner', ?, ?)",
+      args: [id, ownerUserId, now, now],
+    });
+  }
   await executeBatch(statements);
   return (await getLearningSpace(id))!;
 }
@@ -341,7 +365,8 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
   const now = new Date().toISOString();
   const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
     local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, google_drive_folder_id = ?, google_drive_folder_label = ?, updated_at = ? WHERE id = ?`,
-    args: [input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder, legacyStorageProvider(active.providerType), active.providerType,
+    args: [input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder,
+      legacyStorageProvider(active.providerType), active.providerType,
       local?.localSourcePath ?? existing.localSourcePath,
       oneDrive?.oneDriveDriveId ?? existing.oneDriveDriveId, oneDrive?.oneDriveFolderId ?? existing.oneDriveFolderId,
       oneDrive?.oneDriveFolderPath ?? existing.oneDriveFolderPath, googleDrive?.googleDriveFolderId ?? existing.googleDriveFolderId,
@@ -350,6 +375,13 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
   if (mirror) statements.push(sourceUpsertStatement(id, "mirror", mirror, existing.mirrorSource?.isActive ?? false, now));
   else statements.push({ sql: "DELETE FROM learning_space_sources WHERE learning_space_id = ? AND role = 'mirror' AND is_active = 0", args: [id] });
   await executeBatch(statements);
+}
+
+export async function setLearningSpaceEditorsCanManageAccess(id: string, enabled: boolean): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE learning_spaces SET editors_can_manage_access = ?, updated_at = ? WHERE id = ?",
+    args: [enabled ? 1 : 0, new Date().toISOString(), id],
+  });
 }
 
 function sourceFromLegacyInput(input: LearningSpaceInput): LearningSpaceSourceInput {
@@ -437,6 +469,7 @@ export async function permanentlyDeleteLearningSpace(id: string): Promise<boolea
   const syncRunIds = "SELECT id FROM sync_runs WHERE learning_space_id = ?";
   await executeBatch([
     { sql: `DELETE FROM error_reports WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
+    { sql: "DELETE FROM error_report_issues WHERE learning_space_id = ?", args: [id] },
     { sql: `DELETE FROM solution_assets WHERE variant_id IN (${variantIds})`, args: [id] },
     { sql: `DELETE FROM solution_variants WHERE exercise_id IN (${exerciseIds})`, args: [id] },
     { sql: `DELETE FROM exercises WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
@@ -874,6 +907,8 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
       finalSolutionsPdfPath: nullableText(portfolio, "final_solutions_pdf_path"),
       learningSpaceId: text(portfolio, "learning_space_id"), themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
       cardColor: text(portfolio, "card_color"),
+      customText: nullableText(portfolio, "custom_text"),
+      customTextPosition: text(portfolio, "custom_text_position") as PortfolioCustomTextPosition,
       sections: sections.rows.filter((section) => text(section, "portfolio_id") === portfolioId).map((section) => {
         const sectionId = text(section, "id");
         const sectionPublication = { mode: childMode(section), limited: bool(section.publication_limited), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
@@ -976,6 +1011,11 @@ export async function setPortfolioCardColor(id: string, cardColor: string): Prom
   await database.execute({ sql: "UPDATE portfolios SET card_color = ? WHERE id = ?", args: [cardColor, id] });
 }
 
+export async function setPortfolioCustomMessage(id: string, customText: string | null, customTextPosition: PortfolioCustomTextPosition): Promise<void> {
+  const database = await getDatabase();
+  await database.execute({ sql: "UPDATE portfolios SET custom_text = ?, custom_text_position = ? WHERE id = ?", args: [customText, customTextPosition, id] });
+}
+
 export async function setSectionPublication(id: string, mode: ChildVisibilityMode, limited: boolean, publishFrom: string | null, publishUntil: string | null): Promise<void> {
   const database = await getDatabase();
   await database.execute({ sql: "UPDATE sections SET visibility_mode = ?, publication_limited = ?, publish_from = ?, publish_until = ? WHERE id = ?", args: [mode, limited ? 1 : 0, publishFrom, publishUntil, id] });
@@ -1017,7 +1057,16 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
     database.execute({ sql: `SELECT portfolios.*, themes.name AS theme_name FROM portfolios LEFT JOIN themes ON themes.id = portfolios.theme_id
       WHERE portfolios.is_indexed = 1 AND portfolios.learning_space_id = ?`, args: [spaceId] }),
     database.execute({ sql: "SELECT * FROM sections WHERE is_indexed = 1 AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY portfolio_id, sort_order", args: [spaceId] }),
-    database.execute({ sql: "SELECT * FROM exercises WHERE is_indexed = 1 AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY section_id, exercise_number, exercise_suffix", args: [spaceId] }),
+    database.execute({ sql: `SELECT exercises.*,
+      CASE WHEN exercises.show_alternative_to_students = 1 AND EXISTS (
+        SELECT 1 FROM solution_variants
+        INNER JOIN solution_assets ON solution_assets.variant_id = solution_variants.id
+        WHERE solution_variants.exercise_id = exercises.id AND solution_variants.kind = 'alternative'
+          AND solution_variants.is_indexed = 1 AND solution_assets.is_indexed = 1
+      ) THEN 1 ELSE 0 END AS has_alternative_solution
+      FROM exercises WHERE exercises.is_indexed = 1
+        AND exercises.portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)
+      ORDER BY exercises.section_id, exercises.exercise_number, exercises.exercise_suffix`, args: [spaceId] }),
   ]);
   const now = new Date();
   const result: StudentPortfolio[] = [];
@@ -1032,7 +1081,11 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
       title: nullableText(portfolio, "title_override") ?? text(portfolio, "title"),
       themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
       cardColor: text(portfolio, "card_color"),
+      customText: nullableText(portfolio, "custom_text"),
+      customTextPosition: text(portfolio, "custom_text_position") as PortfolioCustomTextPosition,
+      assignmentPdfPath: nullableText(portfolio, "assignment_pdf_path"),
       hintsDocumentPath: nullableText(portfolio, "hints_document_path"),
+      finalSolutionsPdfPath: nullableText(portfolio, "final_solutions_pdf_path"),
       sections: [],
     };
     for (const section of sections.rows.filter((row) => text(row, "portfolio_id") === portfolioId)) {
@@ -1046,6 +1099,7 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
           return {
             id: text(exercise, "id"), code: text(exercise, "exercise_code"),
             visible: resolveChildPublication(exercisePublication, sectionStatus, now).state === "visible",
+            hasAlternativeSolution: bool(exercise.has_alternative_solution),
           };
         }),
       });
@@ -1174,29 +1228,159 @@ function portfolioDocumentColumns(kind: PortfolioDocumentKind) {
 }
 
 
-export async function createErrorReport(input: { exerciseId: string; variant: "standard" | "alternative"; message: string; reporterName?: string; rateLimitKey: string }): Promise<void> {
-  const exercise = await getVisibleExercise(input.exerciseId);
-  if (!exercise || input.message.trim().length < 3 || input.message.trim().length > 2_000) throw new Error("De melding is ongeldig of de oplossing is niet beschikbaar.");
+export interface CreateErrorReportInput {
+  exerciseId?: string;
+  exerciseCode?: string;
+  learningSpaceId?: string;
+  portfolioId?: string;
+  documentKind?: ErrorReportDocumentKind;
+  variant?: "standard" | "alternative" | null;
+  message: string;
+  reporterUserId?: string;
+  reporterName?: string;
+  rateLimitKey: string;
+}
+
+export async function getVisiblePortfolioContext(portfolioId: string): Promise<{ id: string; learningSpaceId: string } | null> {
+  const result = await (await getDatabase()).execute({
+    sql: "SELECT * FROM portfolios WHERE id = ? AND is_indexed = 1",
+    args: [portfolioId],
+  });
+  const portfolio = result.rows[0];
+  if (!portfolio || resolvePortfolioPublication({
+    visible: bool(portfolio.visible),
+    limited: bool(portfolio.publication_limited),
+    publishFrom: nullableText(portfolio, "publish_from"),
+    publishUntil: nullableText(portfolio, "publish_until"),
+  }).state !== "visible") return null;
+  return { id: text(portfolio, "id"), learningSpaceId: text(portfolio, "learning_space_id") };
+}
+
+export async function createErrorReport(input: CreateErrorReportInput): Promise<{ issueId: string }> {
+  if (input.message.trim().length < 3 || input.message.trim().length > 2_000) throw new Error("De melding is ongeldig of de oplossing is niet beschikbaar.");
+  const isPortfolioFlow = Boolean(input.portfolioId);
+  const initialExercise = input.exerciseId ? await getVisibleExercise(input.exerciseId, input.learningSpaceId) : null;
+  if (!isPortfolioFlow && !initialExercise) throw new Error("De melding is ongeldig of de oplossing is niet beschikbaar.");
+  const learningSpaceId = input.learningSpaceId ?? initialExercise?.learningSpaceId;
+  const portfolioId = input.portfolioId ?? initialExercise?.portfolioId;
+  if (!learningSpaceId || !portfolioId) throw new Error("De portfolio is niet beschikbaar.");
+  const portfolio = await getStudentPortfolio(portfolioId, learningSpaceId);
+  if (!portfolio) throw new Error("De portfolio is niet beschikbaar.");
+  const requestedExerciseCode = normalizeErrorReportExerciseCode(input.exerciseCode ?? initialExercise?.code ?? "");
+  if (!requestedExerciseCode) throw new Error("Vul een geldige oefening in, bijvoorbeeld 5 of 5a.");
+  const portfolioExercise = portfolio.sections.flatMap((section) => section.exercises)
+    .find((item) => item.visible && normalizeErrorReportExerciseCode(item.code) === requestedExerciseCode);
+  const exerciseId = portfolioExercise?.id ?? null;
+  const exercise = exerciseId === initialExercise?.id ? initialExercise : exerciseId ? await getVisibleExercise(exerciseId, learningSpaceId) : null;
+  if (initialExercise && (initialExercise.learningSpaceId !== learningSpaceId || initialExercise.portfolioId !== portfolioId)) throw new Error("De gekozen oefening hoort niet bij deze portfolio.");
+
+  const documentKind = input.documentKind ?? (isPortfolioFlow ? "final_solutions" : "exercise_solution");
+  let variant: "standard" | "alternative" | null;
+  let assetSnapshot: string;
+  let sourceLastModifiedAt: string | null = null;
+  if (documentKind === "assignment" || documentKind === "hints") {
+    if (!isPortfolioFlow || input.variant != null) throw new Error("De gekozen documentvariant is ongeldig.");
+    const documentPath = documentKind === "assignment" ? portfolio.assignmentPdfPath : portfolio.hintsDocumentPath;
+    if (!documentPath) throw new Error("Het gekozen document is niet beschikbaar.");
+    variant = null;
+    assetSnapshot = JSON.stringify([{ documentKind, relativePath: documentPath }]);
+  } else if (documentKind === "final_solutions" || documentKind === "exercise_solution") {
+    variant = input.variant ?? "standard";
+    if (variant !== "standard" && variant !== "alternative") throw new Error("De gekozen documentvariant is ongeldig.");
+    if (documentKind === "final_solutions") {
+      if (!isPortfolioFlow) throw new Error("De gekozen documentvariant is ongeldig.");
+      if (!portfolio.finalSolutionsPdfPath) throw new Error("Het gekozen document is niet beschikbaar.");
+      if (!exerciseId && variant === "alternative") throw new Error("Voor een onbekende oefening is alleen de standaarduitwerking beschikbaar.");
+      if (variant === "alternative" && !portfolioExercise?.hasAlternativeSolution) throw new Error("Deze alternatieve uitwerking bestaat niet.");
+      assetSnapshot = JSON.stringify([{ documentKind, relativePath: portfolio.finalSolutionsPdfPath, variant }]);
+    } else {
+      if (isPortfolioFlow || !exercise) throw new Error("De gekozen documentvariant is ongeldig.");
+      const matchingAssets = exercise!.assets.filter((asset) => asset.kind === variant);
+      if (matchingAssets.length === 0) throw new Error("Deze oplossingsvariant bestaat niet.");
+      assetSnapshot = JSON.stringify(matchingAssets.map((asset) => ({ id: asset.id, fileName: asset.fileName, lastModifiedAt: asset.lastModifiedAt })));
+      sourceLastModifiedAt = matchingAssets.map((asset) => asset.lastModifiedAt).filter(Boolean).sort().at(-1) ?? null;
+    }
+  } else {
+    throw new Error("Het gekozen document is ongeldig.");
+  }
+
   const reporterName = input.reporterName?.trim() || null;
   if (reporterName && reporterName.length > 100) throw new Error("De naam mag maximaal 100 tekens bevatten.");
-  const matchingAssets = exercise.assets.filter((asset) => asset.kind === input.variant);
-  if (matchingAssets.length === 0) throw new Error("Deze oplossingsvariant bestaat niet.");
   const database = await getDatabase();
-  const identifiers = await database.execute({ sql: "SELECT portfolio_id, section_id FROM exercises WHERE id = ?", args: [input.exerciseId] });
-  const row = identifiers.rows[0];
-  if (!row) throw new Error("Oefening niet gevonden.");
+  const sectionId = exerciseId
+    ? nullableText((await database.execute({ sql: "SELECT section_id FROM exercises WHERE id = ?", args: [exerciseId] })).rows[0] ?? {}, "section_id")
+    : null;
   const now = new Date();
   const windowStartedAt = new Date(Math.floor(now.getTime() / 600_000) * 600_000).toISOString();
   const current = await database.execute({ sql: "SELECT attempts FROM error_report_rate_limits WHERE key = ?", args: [input.rateLimitKey] });
   if (Number(current.rows[0]?.attempts ?? 0) >= 5) throw new Error("Probeer later opnieuw.");
-  const snapshot = matchingAssets.map((asset) => ({ id: asset.id, fileName: asset.fileName, lastModifiedAt: asset.lastModifiedAt }));
+  const exerciseIdentity = exerciseId ?? `code:${requestedExerciseCode}`;
+  const threadId = stableId("error-thread", learningSpaceId, portfolioId, exerciseIdentity);
+  await database.execute({
+    sql: `INSERT INTO error_report_threads
+      (id, learning_space_id, portfolio_id, exercise_id, exercise_code, status, pinned, admin_note, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 'TODO', 0, '', ?, ?)
+      ON CONFLICT DO NOTHING`,
+    args: [threadId, learningSpaceId, portfolioId, exerciseId, requestedExerciseCode, now.toISOString(), now.toISOString()],
+  });
+  const resolvedThread = (await database.execute({
+    sql: `SELECT id FROM error_report_threads
+      WHERE learning_space_id = ? AND portfolio_id = ?
+        AND COALESCE(exercise_id, 'code:' || LOWER(exercise_code)) = ?`,
+    args: [learningSpaceId, portfolioId, exerciseIdentity],
+  })).rows[0];
+  if (!resolvedThread) throw new Error("De foutmelding kon niet worden gegroepeerd.");
+  const resolvedThreadId = text(resolvedThread, "id");
+  const issueId = stableId("error-issue", learningSpaceId, portfolioId, documentKind, exerciseIdentity, variant ?? "");
+  await database.execute({
+    sql: `INSERT INTO error_report_issues
+      (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, variant_kind, status, pinned, admin_note, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, ?)
+      ON CONFLICT DO NOTHING`,
+    args: [issueId, resolvedThreadId, learningSpaceId, portfolioId, exerciseId, requestedExerciseCode, documentKind, variant, now.toISOString(), now.toISOString()],
+  });
+  const resolvedIssue = (await database.execute({
+    sql: `SELECT id FROM error_report_issues
+      WHERE learning_space_id = ? AND portfolio_id = ? AND document_kind = ?
+        AND COALESCE(exercise_id, 'code:' || LOWER(exercise_code)) = ?
+        AND COALESCE(variant_kind, '') = COALESCE(?, '')`,
+    args: [learningSpaceId, portfolioId, documentKind, exerciseIdentity, variant],
+  })).rows[0];
+  if (!resolvedIssue) throw new Error("De foutlocatie kon niet worden opgeslagen.");
+  const resolvedIssueId = text(resolvedIssue, "id");
+  const reporterUserId = input.reporterUserId ?? null;
+  const reportStatement: InStatement = reporterUserId ? {
+    sql: `INSERT INTO error_reports
+      (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message,
+        reporter_name, status, pinned, admin_note, created_at, completed_at, updated_at, issue_id, reporter_user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'TODO', 0, '', ?, NULL, ?, ?, ?)
+      ON CONFLICT(issue_id, reporter_user_id) WHERE reporter_user_id IS NOT NULL DO UPDATE SET
+        asset_snapshot = excluded.asset_snapshot,
+        source_last_modified_at = excluded.source_last_modified_at,
+        message = excluded.message,
+        reporter_name = NULL,
+        status = 'TODO',
+        completed_at = NULL,
+        updated_at = excluded.updated_at`,
+    args: [randomUUID(), portfolioId, sectionId, exerciseId, variant ?? "standard", assetSnapshot,
+      sourceLastModifiedAt, input.message.trim(), now.toISOString(), now.toISOString(), resolvedIssueId, reporterUserId],
+  } : {
+    sql: `INSERT INTO error_reports
+      (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message,
+        reporter_name, status, pinned, admin_note, created_at, completed_at, updated_at, issue_id, reporter_user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, NULL, ?, ?, NULL)`,
+    args: [randomUUID(), portfolioId, sectionId, exerciseId, variant ?? "standard", assetSnapshot,
+      sourceLastModifiedAt, input.message.trim(), reporterName, now.toISOString(), now.toISOString(), resolvedIssueId],
+  };
   await database.batch([
     { sql: "DELETE FROM error_report_rate_limits WHERE window_started_at < ?", args: [new Date(now.getTime() - 3_600_000).toISOString()] },
     { sql: `INSERT INTO error_report_rate_limits (key, window_started_at, attempts) VALUES (?, ?, 1)
       ON CONFLICT(key) DO UPDATE SET attempts = error_report_rate_limits.attempts + 1, window_started_at = excluded.window_started_at`, args: [input.rateLimitKey, windowStartedAt] },
-    { sql: `INSERT INTO error_reports (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message, reporter_name, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'TODO', ?, ?)`, args: [randomUUID(), text(row, "portfolio_id"), text(row, "section_id"), input.exerciseId, input.variant, JSON.stringify(snapshot), matchingAssets.map((asset) => asset.lastModifiedAt).filter(Boolean).sort().at(-1) ?? null, input.message.trim(), reporterName, now.toISOString(), now.toISOString()] },
+    reportStatement,
+    { sql: `UPDATE error_report_issues SET status = 'TODO', completed_at = NULL, updated_at = ? WHERE id = ?`, args: [now.toISOString(), resolvedIssueId] },
+    { sql: `UPDATE error_report_threads SET status = 'TODO', updated_at = ? WHERE id = ?`, args: [now.toISOString(), resolvedThreadId] },
   ]);
+  return { issueId: resolvedIssueId };
 }
 
 export interface AdminErrorReport {
@@ -1218,6 +1402,354 @@ export interface AdminErrorReport {
   solutionConfiguredVisible: boolean;
   solutionStatus: EffectivePublication;
   solutionVisible: boolean;
+}
+
+export type ErrorReportDocumentKind = "assignment" | "final_solutions" | "hints" | "exercise_solution";
+
+export interface ErrorReportIssue {
+  id: string;
+  threadId: string;
+  learningSpaceId: string;
+  portfolioId: string;
+  exerciseId: string | null;
+  exerciseCode: string;
+  documentKind: ErrorReportDocumentKind;
+  variantKind: "standard" | "alternative" | null;
+  status: "TODO" | "DONE";
+  pinned: boolean;
+  adminNote: string;
+  createdAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+}
+
+export interface GroupedErrorReportIssue extends Omit<ErrorReportIssue, "variantKind"> {
+  portfolioCode: string;
+  portfolioTitle: string;
+  sectionTitle: string;
+  isMatchedExercise: boolean;
+  variant: "standard" | "alternative" | null;
+  reportCount: number;
+  reporterCount: number;
+  latestReportAt: string | null;
+  hasLegacyAnonymousReports: boolean;
+  solutionConfiguredVisible: boolean | null;
+  solutionStatus: EffectivePublication | null;
+}
+
+export interface ErrorReportIssueDetail {
+  id: string;
+  issueId: string;
+  reporterUserId: string | null;
+  reporterName: string | null;
+  reporterDisplayName: string | null;
+  message: string;
+  createdAt: string;
+}
+
+export interface GroupedErrorReportThread {
+  id: string;
+  learningSpaceId: string;
+  portfolioId: string;
+  portfolioCode: string;
+  portfolioTitle: string;
+  exerciseId: string | null;
+  exerciseCode: string;
+  sectionTitle: string;
+  isMatchedExercise: boolean;
+  status: "TODO" | "DONE";
+  pinned: boolean;
+  adminNote: string;
+  createdAt: string;
+  completedAt: string | null;
+  updatedAt: string;
+  issueCount: number;
+  reportCount: number;
+  latestReportAt: string | null;
+  solutionConfiguredVisible: boolean | null;
+  solutionStatus: EffectivePublication | null;
+}
+
+export interface ErrorReportThreadIssueDetail {
+  threadId: string;
+  issueId: string;
+  documentKind: ErrorReportDocumentKind;
+  variant: "standard" | "alternative" | null;
+  reportCount: number;
+  latestReportAt: string | null;
+  reports: ErrorReportIssueDetail[];
+}
+
+export async function getErrorReportIssue(id: string): Promise<ErrorReportIssue | null> {
+  const row = (await (await getDatabase()).execute({
+    sql: "SELECT * FROM error_report_issues WHERE id = ?",
+    args: [id],
+  })).rows[0];
+  if (!row) return null;
+  return {
+    id: text(row, "id"),
+    threadId: text(row, "thread_id"),
+    learningSpaceId: text(row, "learning_space_id"),
+    portfolioId: text(row, "portfolio_id"),
+    exerciseId: nullableText(row, "exercise_id"),
+    exerciseCode: text(row, "exercise_code"),
+    documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
+    variantKind: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
+    status: text(row, "status") === "DONE" ? "DONE" : "TODO",
+    pinned: bool(row.pinned),
+    adminNote: nullableText(row, "admin_note") ?? "",
+    createdAt: text(row, "created_at"),
+    completedAt: nullableText(row, "completed_at"),
+    updatedAt: text(row, "updated_at"),
+  };
+}
+
+export async function getGroupedErrorReportIssues(learningSpaceId?: string): Promise<GroupedErrorReportIssue[]> {
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({
+    sql: `SELECT error_report_issues.*, portfolios.portfolio_code, portfolios.title AS portfolio_title,
+      portfolios.title_override, sections.title AS section_title,
+      exercises.visibility_mode AS exercise_visibility_mode,
+      sections.visibility_mode AS section_visibility_mode,
+      sections.publication_limited AS section_publication_limited,
+      sections.publish_from AS section_publish_from,
+      sections.publish_until AS section_publish_until,
+      portfolios.visible AS portfolio_visible,
+      portfolios.publication_limited,
+      portfolios.publish_from AS portfolio_publish_from,
+      portfolios.publish_until AS portfolio_publish_until,
+      COALESCE(report_summary.report_count, 0) AS report_count,
+      COALESCE(report_summary.reporter_count, 0) AS reporter_count,
+      report_summary.latest_report_at,
+      COALESCE(report_summary.has_legacy_anonymous_reports, 0) AS has_legacy_anonymous_reports
+      FROM error_report_issues
+      INNER JOIN portfolios ON portfolios.id = error_report_issues.portfolio_id
+      LEFT JOIN exercises ON exercises.id = error_report_issues.exercise_id
+      LEFT JOIN sections ON sections.id = exercises.section_id
+      LEFT JOIN (
+        SELECT issue_id, COUNT(*) AS report_count,
+          COUNT(DISTINCT reporter_user_id) AS reporter_count,
+          MAX(created_at) AS latest_report_at,
+          MAX(CASE WHEN reporter_user_id IS NULL THEN 1 ELSE 0 END) AS has_legacy_anonymous_reports
+        FROM error_reports
+        WHERE issue_id IS NOT NULL
+        GROUP BY issue_id
+      ) report_summary ON report_summary.issue_id = error_report_issues.id
+      WHERE error_report_issues.learning_space_id = ?
+      ORDER BY error_report_issues.pinned DESC,
+        CASE error_report_issues.status WHEN 'TODO' THEN 0 ELSE 1 END,
+        error_report_issues.updated_at DESC,
+        error_report_issues.id`,
+    args: [spaceId],
+  });
+  const now = new Date();
+  return result.rows.map((row) => {
+    const exerciseId = nullableText(row, "exercise_id");
+    const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
+    const sectionStatus = exerciseId ? resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now) : null;
+    const solutionStatus = sectionStatus ? resolveChildPublication({ mode: childMode({ visibility_mode: row.exercise_visibility_mode }), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now) : null;
+    return {
+      id: text(row, "id"),
+      threadId: text(row, "thread_id"),
+      learningSpaceId: text(row, "learning_space_id"),
+      portfolioId: text(row, "portfolio_id"),
+      portfolioCode: text(row, "portfolio_code"),
+      portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"),
+      sectionTitle: nullableText(row, "section_title") ?? "Onbekende oefening",
+      exerciseId,
+      exerciseCode: text(row, "exercise_code"),
+      isMatchedExercise: exerciseId !== null,
+      documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
+      variant: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
+      status: text(row, "status") === "DONE" ? "DONE" : "TODO",
+      pinned: bool(row.pinned),
+      adminNote: nullableText(row, "admin_note") ?? "",
+      createdAt: text(row, "created_at"),
+      completedAt: nullableText(row, "completed_at"),
+      updatedAt: text(row, "updated_at"),
+      reportCount: Number(row.report_count),
+      reporterCount: Number(row.reporter_count),
+      latestReportAt: nullableText(row, "latest_report_at"),
+      hasLegacyAnonymousReports: bool(row.has_legacy_anonymous_reports),
+      solutionConfiguredVisible: exerciseId ? childMode({ visibility_mode: row.exercise_visibility_mode }) === "visible" : null,
+      solutionStatus,
+    };
+  });
+}
+
+export async function getGroupedErrorReportThreads(learningSpaceId?: string): Promise<GroupedErrorReportThread[]> {
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({
+    sql: `SELECT error_report_threads.*, portfolios.portfolio_code, portfolios.title AS portfolio_title,
+      portfolios.title_override, sections.title AS section_title,
+      exercises.visibility_mode AS exercise_visibility_mode,
+      sections.visibility_mode AS section_visibility_mode,
+      sections.publication_limited AS section_publication_limited,
+      sections.publish_from AS section_publish_from,
+      sections.publish_until AS section_publish_until,
+      portfolios.visible AS portfolio_visible,
+      portfolios.publication_limited,
+      portfolios.publish_from AS portfolio_publish_from,
+      portfolios.publish_until AS portfolio_publish_until,
+      COALESCE(thread_summary.issue_count, 0) AS issue_count,
+      COALESCE(thread_summary.report_count, 0) AS report_count,
+      thread_summary.latest_report_at
+      FROM error_report_threads
+      INNER JOIN portfolios ON portfolios.id = error_report_threads.portfolio_id
+      LEFT JOIN exercises ON exercises.id = error_report_threads.exercise_id
+      LEFT JOIN sections ON sections.id = exercises.section_id
+      LEFT JOIN (
+        SELECT error_report_issues.thread_id,
+          COUNT(DISTINCT error_report_issues.id) AS issue_count,
+          COUNT(error_reports.id) AS report_count,
+          MAX(error_reports.created_at) AS latest_report_at
+        FROM error_report_issues
+        LEFT JOIN error_reports ON error_reports.issue_id = error_report_issues.id
+        GROUP BY error_report_issues.thread_id
+      ) thread_summary ON thread_summary.thread_id = error_report_threads.id
+      WHERE error_report_threads.learning_space_id = ?
+      ORDER BY error_report_threads.pinned DESC,
+        CASE error_report_threads.status WHEN 'TODO' THEN 0 ELSE 1 END,
+        error_report_threads.updated_at DESC,
+        error_report_threads.id`,
+    args: [spaceId],
+  });
+  const now = new Date();
+  return result.rows.map((row) => {
+    const exerciseId = nullableText(row, "exercise_id");
+    const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
+    const sectionStatus = exerciseId ? resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now) : null;
+    const solutionStatus = sectionStatus ? resolveChildPublication({ mode: childMode({ visibility_mode: row.exercise_visibility_mode }), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now) : null;
+    return {
+      id: text(row, "id"),
+      learningSpaceId: text(row, "learning_space_id"),
+      portfolioId: text(row, "portfolio_id"),
+      portfolioCode: text(row, "portfolio_code"),
+      portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"),
+      exerciseId,
+      exerciseCode: text(row, "exercise_code"),
+      sectionTitle: nullableText(row, "section_title") ?? "Onbekende oefening",
+      isMatchedExercise: exerciseId !== null,
+      status: text(row, "status") === "DONE" ? "DONE" : "TODO",
+      pinned: bool(row.pinned),
+      adminNote: nullableText(row, "admin_note") ?? "",
+      createdAt: text(row, "created_at"),
+      completedAt: nullableText(row, "completed_at"),
+      updatedAt: text(row, "updated_at"),
+      issueCount: Number(row.issue_count),
+      reportCount: Number(row.report_count),
+      latestReportAt: nullableText(row, "latest_report_at"),
+      solutionConfiguredVisible: exerciseId ? childMode({ visibility_mode: row.exercise_visibility_mode }) === "visible" : null,
+      solutionStatus,
+    };
+  });
+}
+
+export async function listErrorReportIssuesForThreads(threadIds: string[], learningSpaceId?: string): Promise<ErrorReportThreadIssueDetail[]> {
+  if (threadIds.length === 0) return [];
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const placeholders = threadIds.map(() => "?").join(", ");
+  const result = await database.execute({
+    sql: `SELECT error_report_issues.thread_id, error_report_issues.id AS issue_id,
+      error_report_issues.document_kind, error_report_issues.variant_kind,
+      error_reports.id AS report_id, error_reports.reporter_user_id, error_reports.reporter_name,
+      users.display_name AS reporter_display_name, error_reports.message, error_reports.created_at AS report_created_at,
+      COUNT(error_reports.id) OVER (PARTITION BY error_report_issues.id) AS report_count,
+      MAX(error_reports.created_at) OVER (PARTITION BY error_report_issues.id) AS latest_report_at
+      FROM error_report_issues
+      INNER JOIN error_report_threads ON error_report_threads.id = error_report_issues.thread_id
+      LEFT JOIN error_reports ON error_reports.issue_id = error_report_issues.id
+      LEFT JOIN users ON users.id = error_reports.reporter_user_id
+      WHERE error_report_issues.thread_id IN (${placeholders})
+        AND error_report_threads.learning_space_id = ?
+      ORDER BY latest_report_at DESC, error_report_issues.id,
+        error_reports.created_at DESC, error_reports.id DESC`,
+    args: [...threadIds, spaceId],
+  });
+  const issues = new Map<string, ErrorReportThreadIssueDetail>();
+  for (const row of result.rows) {
+    const issueId = text(row, "issue_id");
+    let issue = issues.get(issueId);
+    if (!issue) {
+      issue = {
+        threadId: text(row, "thread_id"),
+        issueId,
+        documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
+        variant: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
+        reportCount: Number(row.report_count),
+        latestReportAt: nullableText(row, "latest_report_at"),
+        reports: [],
+      };
+      issues.set(issueId, issue);
+    }
+    const reportId = nullableText(row, "report_id");
+    if (reportId) {
+      issue.reports.push({
+        id: reportId,
+        issueId,
+        reporterUserId: nullableText(row, "reporter_user_id"),
+        reporterName: nullableText(row, "reporter_name"),
+        reporterDisplayName: nullableText(row, "reporter_display_name"),
+        message: text(row, "message"),
+        createdAt: text(row, "report_created_at"),
+      });
+    }
+  }
+  return [...issues.values()];
+}
+
+export async function listErrorReportsForIssue(issueId: string, learningSpaceId?: string): Promise<ErrorReportIssueDetail[]> {
+  return (await listErrorReportsForIssues([issueId], learningSpaceId)).filter((report) => report.issueId === issueId);
+}
+
+export async function listErrorReportsForIssues(issueIds: string[], learningSpaceId?: string): Promise<ErrorReportIssueDetail[]> {
+  if (issueIds.length === 0) return [];
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const placeholders = issueIds.map(() => "?").join(", ");
+  const result = await database.execute({
+    sql: `SELECT error_reports.id, error_reports.issue_id, error_reports.reporter_user_id,
+      error_reports.reporter_name, users.display_name AS reporter_display_name,
+      error_reports.message, error_reports.created_at
+      FROM error_reports
+      INNER JOIN error_report_issues ON error_report_issues.id = error_reports.issue_id
+      LEFT JOIN users ON users.id = error_reports.reporter_user_id
+      WHERE error_reports.issue_id IN (${placeholders}) AND error_report_issues.learning_space_id = ?
+      ORDER BY error_reports.created_at DESC, error_reports.id DESC`,
+    args: [...issueIds, spaceId],
+  });
+  return result.rows.map((row) => ({
+    id: text(row, "id"),
+    issueId: text(row, "issue_id"),
+    reporterUserId: nullableText(row, "reporter_user_id"),
+    reporterName: nullableText(row, "reporter_name"),
+    reporterDisplayName: nullableText(row, "reporter_display_name"),
+    message: text(row, "message"),
+    createdAt: text(row, "created_at"),
+  }));
+}
+
+export async function getOpenErrorIssueCount(learningSpaceId?: string): Promise<number> {
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({
+    sql: "SELECT COUNT(*) AS count FROM error_report_issues WHERE status = 'TODO' AND learning_space_id = ?",
+    args: [spaceId],
+  });
+  return Number(result.rows[0]?.count ?? 0);
+}
+
+export async function getOpenErrorThreadCount(learningSpaceId?: string): Promise<number> {
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({
+    sql: "SELECT COUNT(*) AS count FROM error_report_threads WHERE status = 'TODO' AND learning_space_id = ?",
+    args: [spaceId],
+  });
+  return Number(result.rows[0]?.count ?? 0);
 }
 
 export async function getOpenErrorReportCount(learningSpaceId?: string): Promise<number> {
@@ -1255,38 +1787,73 @@ export async function getErrorReportLearningSpaceId(id: string): Promise<string 
   return row ? text(row, "learning_space_id") : null;
 }
 
-export async function setErrorReportStatus(id: string, status: "TODO" | "DONE"): Promise<void> {
-  const database = await getDatabase();
+export async function getErrorReportThreadLearningSpaceId(threadId: string): Promise<string | null> {
+  const row = (await (await getDatabase()).execute({
+    sql: `SELECT portfolios.learning_space_id FROM error_report_threads
+      INNER JOIN portfolios ON portfolios.id = error_report_threads.portfolio_id
+      WHERE error_report_threads.id = ?`,
+    args: [threadId],
+  })).rows[0];
+  return row ? text(row, "learning_space_id") : null;
+}
+
+export async function setErrorReportThreadStatus(threadId: string, status: "TODO" | "DONE"): Promise<void> {
   const now = new Date().toISOString();
-  await database.execute({ sql: "UPDATE error_reports SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?", args: [status, status === "DONE" ? now : null, now, id] });
+  await (await getDatabase()).execute({
+    sql: "UPDATE error_report_threads SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
+    args: [status, status === "DONE" ? now : null, now, threadId],
+  });
 }
 
-export async function toggleErrorReportPin(id: string): Promise<void> {
-  const database = await getDatabase();
-  await database.execute({ sql: "UPDATE error_reports SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END, updated_at = ? WHERE id = ?", args: [new Date().toISOString(), id] });
+export async function toggleErrorReportThreadPin(threadId: string): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE error_report_threads SET pinned = CASE WHEN pinned = 1 THEN 0 ELSE 1 END, updated_at = ? WHERE id = ?",
+    args: [new Date().toISOString(), threadId],
+  });
 }
 
-export async function saveErrorReportNote(id: string, note: string): Promise<void> {
-  const database = await getDatabase();
-  await database.execute({ sql: "UPDATE error_reports SET admin_note = ?, updated_at = ? WHERE id = ?", args: [note.slice(0, 4000), new Date().toISOString(), id] });
+export async function saveErrorReportThreadNote(threadId: string, note: string): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE error_report_threads SET admin_note = ?, updated_at = ? WHERE id = ?",
+    args: [note.slice(0, 4000), new Date().toISOString(), threadId],
+  });
 }
 
 export async function deleteErrorReport(id: string): Promise<void> {
   const database = await getDatabase();
-  await database.execute({ sql: "DELETE FROM error_reports WHERE id = ?", args: [id] });
+  const context = (await database.execute({
+    sql: `SELECT error_reports.issue_id, error_report_issues.thread_id
+      FROM error_reports
+      INNER JOIN error_report_issues ON error_report_issues.id = error_reports.issue_id
+      WHERE error_reports.id = ?`,
+    args: [id],
+  })).rows[0];
+  if (!context) return;
+  const issueId = text(context, "issue_id");
+  const threadId = text(context, "thread_id");
+  await database.batch([
+    { sql: "DELETE FROM error_reports WHERE id = ? AND issue_id = ?", args: [id, issueId] },
+    { sql: "DELETE FROM error_report_issues WHERE id = ? AND NOT EXISTS (SELECT 1 FROM error_reports WHERE issue_id = ?)", args: [issueId, issueId] },
+    { sql: "DELETE FROM error_report_threads WHERE id = ? AND NOT EXISTS (SELECT 1 FROM error_report_issues WHERE thread_id = ?)", args: [threadId, threadId] },
+  ]);
 }
 
-export async function getOldDoneErrorReportCount(now = new Date(), learningSpaceId?: string): Promise<number> {
+export async function getOldDoneErrorThreadCount(now = new Date(), learningSpaceId?: string): Promise<number> {
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
-  const result = await database.execute({ sql: "SELECT COUNT(*) AS count FROM error_reports JOIN portfolios ON portfolios.id = error_reports.portfolio_id WHERE status = 'DONE' AND completed_at < ? AND portfolios.learning_space_id = ?", args: [cutoff, spaceId] });
+  const result = await database.execute({ sql: "SELECT COUNT(*) AS count FROM error_report_threads WHERE status = 'DONE' AND completed_at < ? AND learning_space_id = ?", args: [cutoff, spaceId] });
   return Number(result.rows[0]?.count ?? 0);
 }
 
-export async function deleteOldDoneErrorReports(now = new Date(), learningSpaceId?: string): Promise<void> {
+export async function deleteOldDoneErrorThreads(now = new Date(), learningSpaceId?: string): Promise<void> {
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
-  await database.execute({ sql: "DELETE FROM error_reports WHERE status = 'DONE' AND completed_at < ? AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [cutoff, spaceId] });
+  const targetThreads = "SELECT id FROM error_report_threads WHERE status = 'DONE' AND completed_at < ? AND learning_space_id = ?";
+  await database.batch([
+    { sql: `DELETE FROM error_reports WHERE issue_id IN (SELECT id FROM error_report_issues WHERE thread_id IN (${targetThreads}))`, args: [cutoff, spaceId] },
+    { sql: `DELETE FROM error_report_issues WHERE thread_id IN (${targetThreads})`, args: [cutoff, spaceId] },
+    { sql: `DELETE FROM error_report_threads WHERE id IN (${targetThreads})`, args: [cutoff, spaceId] },
+  ]);
 }

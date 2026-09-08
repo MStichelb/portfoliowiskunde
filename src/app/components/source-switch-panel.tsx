@@ -33,7 +33,7 @@ export function SourceSwitchPanel({ space }: { space: LearningSpace }) {
     <div className="active-source-summary">
       <div><span>Nu actief</span><strong>{sourceName(active)}</strong></div>
       <ArrowLeftRight size={20} aria-hidden />
-      <div><span>Switchdoel</span><strong>{sourceName(target)}</strong></div>
+      <div><span>Andere bron</span><strong>{sourceName(target)}</strong></div>
     </div>
     {completedAt ? <p className="mirror-completed-at">Laatste volledige mirror: <strong>{formatBrussels(completedAt)}</strong></p> : null}
 
@@ -68,14 +68,14 @@ function SourceComparisonView({ state }: { state: SourceSwitchActionState }) {
     {comparison.hasDifferences ? <p className="comparison-warning"><TriangleAlert size={17} aria-hidden />{comparison.differenceCount} verschillen of waarschuwingen</p> : <p>Geen inhoudsverschillen gevonden.</p>}
     {comparison.fileOverlap.suggestsWrongSource ? <div className="source-mismatch-warning" role="alert">
       <h4><TriangleAlert size={18} aria-hidden />De bronnen lijken niet bij elkaar te horen</h4>
-      <p>Er is zeer weinig overlap tussen de bestanden in de huidige bron en het switchdoel. Controleer of de juiste mirror-map is gekoppeld voordat je overschakelt.</p>
+      <p>Er is zeer weinig overlap tussen de bestanden in de huidige en de andere bron. Controleer of de juiste mirror-map is gekoppeld voordat je overschakelt.</p>
       <p><strong>{comparison.fileOverlap.matchingFileCount} van {comparison.fileOverlap.uniqueFileCount} unieke bestandspaden komen in beide bronnen voor.</strong></p>
     </div> : null}
     <DifferenceList title="Alleen in huidige bron" paths={comparison.onlyInCurrent.map((entry) => entry.relativePath)} />
-    <DifferenceList title="Alleen in switchdoel" paths={comparison.onlyInTarget.map((entry) => entry.relativePath)} />
+    <DifferenceList title="Alleen in andere bron" paths={comparison.onlyInTarget.map((entry) => entry.relativePath)} />
     <DifferenceList title="Afwijkend type" paths={comparison.changed.map((entry) => entry.relativePath)} />
     <WarningList title="Parserwaarschuwingen alleen in huidige bron" warnings={comparison.currentWarnings} />
-    <WarningList title="Parserwaarschuwingen alleen in switchdoel" warnings={comparison.targetWarnings} />
+    <WarningList title="Parserwaarschuwingen alleen in andere bron" warnings={comparison.targetWarnings} />
   </div>;
 }
 

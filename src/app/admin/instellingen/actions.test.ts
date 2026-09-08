@@ -29,7 +29,7 @@ describe("public emergency access action", () => {
   });
 
   it("persists enabling and revalidates the complete admin layout", async () => {
-    await expect(setPublicEmergencyAccessAction(form("true"))).rejects.toThrow("REDIRECT:/admin/instellingen?emergency=enabled");
+    await expect(setPublicEmergencyAccessAction(form("true"))).rejects.toThrow("REDIRECT:/admin/verbindingen?emergency=enabled");
     expect(mocks.setPublicEmergencyAccess).toHaveBeenCalledWith(true);
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin", "layout");
   });
