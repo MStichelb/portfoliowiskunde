@@ -1276,6 +1276,27 @@ export interface ErrorReportIssue {
   updatedAt: string;
 }
 
+export interface GroupedErrorReportIssue extends Omit<ErrorReportIssue, "variantKind"> {
+  portfolioCode: string;
+  portfolioTitle: string;
+  sectionTitle: string;
+  exerciseCode: string;
+  variant: "standard" | "alternative" | null;
+  reportCount: number;
+  reporterCount: number;
+  latestReportAt: string | null;
+  hasLegacyAnonymousReports: boolean;
+}
+
+export interface ErrorReportIssueDetail {
+  id: string;
+  issueId: string;
+  reporterUserId: string | null;
+  reporterName: string | null;
+  message: string;
+  createdAt: string;
+}
+
 export async function getErrorReportIssue(id: string): Promise<ErrorReportIssue | null> {
   const row = (await (await getDatabase()).execute({
     sql: "SELECT * FROM error_report_issues WHERE id = ?",
@@ -1296,6 +1317,92 @@ export async function getErrorReportIssue(id: string): Promise<ErrorReportIssue 
     completedAt: nullableText(row, "completed_at"),
     updatedAt: text(row, "updated_at"),
   };
+}
+
+export async function getGroupedErrorReportIssues(learningSpaceId?: string): Promise<GroupedErrorReportIssue[]> {
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({
+    sql: `SELECT error_report_issues.*, portfolios.portfolio_code, portfolios.title AS portfolio_title,
+      portfolios.title_override, sections.title AS section_title, exercises.exercise_code,
+      COALESCE(report_summary.report_count, 0) AS report_count,
+      COALESCE(report_summary.reporter_count, 0) AS reporter_count,
+      report_summary.latest_report_at,
+      COALESCE(report_summary.has_legacy_anonymous_reports, 0) AS has_legacy_anonymous_reports
+      FROM error_report_issues
+      INNER JOIN portfolios ON portfolios.id = error_report_issues.portfolio_id
+      INNER JOIN exercises ON exercises.id = error_report_issues.exercise_id
+      INNER JOIN sections ON sections.id = exercises.section_id
+      LEFT JOIN (
+        SELECT issue_id, COUNT(*) AS report_count,
+          COUNT(DISTINCT reporter_user_id) AS reporter_count,
+          MAX(created_at) AS latest_report_at,
+          MAX(CASE WHEN reporter_user_id IS NULL THEN 1 ELSE 0 END) AS has_legacy_anonymous_reports
+        FROM error_reports
+        WHERE issue_id IS NOT NULL
+        GROUP BY issue_id
+      ) report_summary ON report_summary.issue_id = error_report_issues.id
+      WHERE error_report_issues.learning_space_id = ?
+      ORDER BY error_report_issues.pinned DESC,
+        CASE error_report_issues.status WHEN 'TODO' THEN 0 ELSE 1 END,
+        error_report_issues.updated_at DESC,
+        error_report_issues.id`,
+    args: [spaceId],
+  });
+  return result.rows.map((row) => ({
+    id: text(row, "id"),
+    learningSpaceId: text(row, "learning_space_id"),
+    portfolioId: text(row, "portfolio_id"),
+    portfolioCode: text(row, "portfolio_code"),
+    portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"),
+    sectionTitle: text(row, "section_title"),
+    exerciseId: text(row, "exercise_id"),
+    exerciseCode: text(row, "exercise_code"),
+    documentKind: text(row, "document_kind") as ErrorReportDocumentKind,
+    variant: nullableText(row, "variant_kind") as "standard" | "alternative" | null,
+    status: text(row, "status") === "DONE" ? "DONE" : "TODO",
+    pinned: bool(row.pinned),
+    adminNote: nullableText(row, "admin_note") ?? "",
+    createdAt: text(row, "created_at"),
+    completedAt: nullableText(row, "completed_at"),
+    updatedAt: text(row, "updated_at"),
+    reportCount: Number(row.report_count),
+    reporterCount: Number(row.reporter_count),
+    latestReportAt: nullableText(row, "latest_report_at"),
+    hasLegacyAnonymousReports: bool(row.has_legacy_anonymous_reports),
+  }));
+}
+
+export async function listErrorReportsForIssue(issueId: string, learningSpaceId?: string): Promise<ErrorReportIssueDetail[]> {
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({
+    sql: `SELECT error_reports.id, error_reports.issue_id, error_reports.reporter_user_id,
+      error_reports.reporter_name, error_reports.message, error_reports.created_at
+      FROM error_reports
+      INNER JOIN error_report_issues ON error_report_issues.id = error_reports.issue_id
+      WHERE error_reports.issue_id = ? AND error_report_issues.learning_space_id = ?
+      ORDER BY error_reports.created_at DESC, error_reports.id DESC`,
+    args: [issueId, spaceId],
+  });
+  return result.rows.map((row) => ({
+    id: text(row, "id"),
+    issueId: text(row, "issue_id"),
+    reporterUserId: nullableText(row, "reporter_user_id"),
+    reporterName: nullableText(row, "reporter_name"),
+    message: text(row, "message"),
+    createdAt: text(row, "created_at"),
+  }));
+}
+
+export async function getOpenErrorIssueCount(learningSpaceId?: string): Promise<number> {
+  const database = await getDatabase();
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  const result = await database.execute({
+    sql: "SELECT COUNT(*) AS count FROM error_report_issues WHERE status = 'TODO' AND learning_space_id = ?",
+    args: [spaceId],
+  });
+  return Number(result.rows[0]?.count ?? 0);
 }
 
 export async function getOpenErrorReportCount(learningSpaceId?: string): Promise<number> {

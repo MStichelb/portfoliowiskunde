@@ -4,6 +4,8 @@
 
 `error_report_issues` bevat één inhoudelijke foutlocatie en bewaart de workflowstatus, pin en beheernotitie. `error_reports` blijft de onveranderde geschiedenis van individuele leerlingmeldingen en verwijst additief via `issue_id` naar het issue. De nieuwe nullable `reporter_user_id` verwijst naar de interne user en wordt bij een userreset op `NULL` gezet; `reporter_name` blijft als historische snapshot bestaan.
 
+D1 met migratie 027 is afgerond. D2 voegt het server-side grouped readmodel toe: één issue per resultaat, aangevuld met portfolio-, sectie- en oefeningscontext en geaggregeerde reportgegevens. De overzichtsquery gebruikt één vaste SQL-query met een gegroepeerde reportsubquery; issue-detail gebruikt één afzonderlijke expliciete query.
+
 De locatie-identiteit is:
 
 `learning_space_id + portfolio_id + document_kind + exercise_id + variant_kind`
@@ -22,9 +24,12 @@ De bestaande reportkolommen voor locatie, status, pin en notitie blijven bewust 
 
 Een partial unique index op `(issue_id, reporter_user_id)` geldt alleen wanneer `reporter_user_id IS NOT NULL`. Een ingelogde user kan daardoor later maximaal één melding per issue hebben, terwijl meerdere anonieme legacyreports met `NULL` behouden blijven.
 
+`reportCount` is het totale aantal individuele meldingen onder een issue. `reporterCount` telt uitsluitend unieke niet-lege interne user-IDs; anonieme legacyreports en `reporter_name` worden niet als unieke users geïnterpreteerd.
+
+De canonieke v2-teller `getOpenErrorIssueCount()` telt TODO-issues. De bestaande `getOpenErrorReportCount()` blijft tijdelijk beschikbaar voor de nog niet gemigreerde UI en API, omdat nieuwe D2-reports nog niet issuegericht worden geschreven. Batch F schakelt de zichtbare teller om zodra de writeflow issues garandeert.
+
 ## Vervolg
 
-- **D2:** grouped admin-readmodel en issuegerichte beheeracties.
 - **E:** ingelogde leerlingmeldingen aan issues en users koppelen, inclusief duplicate UX.
 - **F:** meldingen voor opgaven, eindoplossingen en hints uitbreiden.
 - **G:** legacyvelden gecontroleerd opruimen nadat alle reads en writes issuegericht zijn.
