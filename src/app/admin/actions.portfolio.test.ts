@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   setPortfolioCardColor: vi.fn(),
   setPortfolioCustomMessage: vi.fn(),
   setPortfolioPublication: vi.fn(),
+  setPortfolioTheme: vi.fn(),
   setPortfolioTitle: vi.fn(),
 }));
 
@@ -26,6 +27,7 @@ vi.mock("@/lib/repositories", async (importOriginal) => ({
   setPortfolioCardColor: mocks.setPortfolioCardColor,
   setPortfolioCustomMessage: mocks.setPortfolioCustomMessage,
   setPortfolioPublication: mocks.setPortfolioPublication,
+  setPortfolioTheme: mocks.setPortfolioTheme,
   setPortfolioTitle: mocks.setPortfolioTitle,
 }));
 
@@ -46,19 +48,30 @@ describe("savePortfolioAction custom message", () => {
     expect(mocks.setPortfolioCardColor).toHaveBeenCalledWith("portfolio-1", "#AABBCC");
     expect(mocks.setPortfolioPublication).toHaveBeenCalledWith("portfolio-1", "visible", false, null, null);
     expect(mocks.setPortfolioCustomMessage).toHaveBeenCalledWith("portfolio-1", "Eerste regel\nTweede regel", "below_documents");
+    expect(mocks.setPortfolioTheme).toHaveBeenCalledWith("portfolio-1", "space-5", "theme-analysis");
   });
 
   it("normaliseert whitespace naar null en weigert een ongeldige positie", async () => {
-    await savePortfolioAction(portfolioForm("   ", "above_documents"));
+    await savePortfolioAction(portfolioForm("   ", "above_documents", ""));
     expect(mocks.setPortfolioCustomMessage).toHaveBeenCalledWith("portfolio-1", null, "above_documents");
+    expect(mocks.setPortfolioTheme).toHaveBeenCalledWith("portfolio-1", "space-5", null);
 
     vi.clearAllMocks();
     await expect(savePortfolioAction(portfolioForm("Bericht", "between_documents"))).rejects.toThrow("Ongeldige portfolio-invoer");
     expect(mocks.setPortfolioCustomMessage).not.toHaveBeenCalled();
   });
+
+  it("weigert een onbekend of verkeerd gekoppeld thema voor andere settings worden opgeslagen", async () => {
+    mocks.setPortfolioTheme.mockRejectedValueOnce(new Error("Thema niet gevonden."));
+
+    await expect(savePortfolioAction(portfolioForm("Bericht", "above_documents", "theme-other-space"))).rejects.toThrow("Thema niet gevonden");
+    expect(mocks.setPortfolioTheme).toHaveBeenCalledWith("portfolio-1", "space-5", "theme-other-space");
+    expect(mocks.setPortfolioTitle).not.toHaveBeenCalled();
+    expect(mocks.setPortfolioCustomMessage).not.toHaveBeenCalled();
+  });
 });
 
-function portfolioForm(customText: string, customTextPosition: string): FormData {
+function portfolioForm(customText: string, customTextPosition: string, themeId = "theme-analysis"): FormData {
   const formData = new FormData();
   formData.set("id", "portfolio-1");
   formData.set("title", "Goniometrie");
@@ -67,5 +80,6 @@ function portfolioForm(customText: string, customTextPosition: string): FormData
   formData.set("cardColor", "#aabbcc");
   formData.set("customText", customText);
   formData.set("customTextPosition", customTextPosition);
+  formData.set("themeId", themeId);
   return formData;
 }

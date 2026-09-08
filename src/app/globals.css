@@ -187,6 +187,11 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .portfolio-settings-form textarea { min-height: 104px; resize: vertical; }
 .portfolio-settings-form small { color: #52616a; font-size: 14px; font-weight: 400; line-height: 1.4; }
 .portfolio-settings-actions { display: flex; justify-content: flex-end; }
+.portfolio-metadata-row { display: grid; grid-template-columns: minmax(180px, 260px) minmax(240px, 1fr); align-items: start; gap: 16px; }
+.portfolio-theme-field { min-width: 0; }
+.message-position-control div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: min(100%, 520px); }
+.message-position-control button { justify-content: center; color: #405058; }
+.message-position-control button.selected { background: #5e686d; color: #fff; }
 .field-wide { width: 100%; }
 .document-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .document-item { display: flex; gap: 16px; justify-content: space-between; align-items: center; padding: 16px; border: 1px solid #d9dfdb; border-radius: 4px; background: #fbfcfb; }
@@ -727,6 +732,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
   .group-mapping-form { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
   .group-mapping-form button { grid-column: 1 / -1; justify-self: start; }
   .theme-form-row, .theme-editor-card { grid-template-columns: 1fr; }
+  .portfolio-metadata-row { grid-template-columns: 1fr; }
   .theme-form-row .sort-field { max-width: 120px; }
   .theme-editor-card > .danger-button { width: 100%; }
   .connection-row { align-items: flex-start; flex-direction: column; }

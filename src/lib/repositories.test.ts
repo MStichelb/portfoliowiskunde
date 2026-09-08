@@ -355,6 +355,10 @@ describe("persistIndex", () => {
     await createTheme("space-5", "Analyse", 1);
     const theme = (await getThemes("space-5"))[0];
     await setPortfolioTheme(fifthPortfolio.id, "space-5", theme.id);
+    await createTheme("space-6", "Meetkunde", 1);
+    const foreignTheme = (await getThemes("space-6"))[0];
+    await expect(setPortfolioTheme(fifthPortfolio.id, "space-5", "theme-does-not-exist")).rejects.toThrow("Thema niet gevonden");
+    await expect(setPortfolioTheme(fifthPortfolio.id, "space-5", foreignTheme.id)).rejects.toThrow("Thema niet gevonden");
     expect((await getAdminPortfolios("space-5")).find((portfolio) => portfolio.id === fifthPortfolio.id)?.themeName).toBe("Analyse");
     expect((await getAdminPortfolios("space-6")).find((portfolio) => portfolio.id === sixthPortfolio.id)?.themeName).toBeNull();
     const database = await getDatabase();

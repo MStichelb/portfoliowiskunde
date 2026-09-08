@@ -260,6 +260,7 @@ export async function savePortfolioAction(formData: FormData) {
     customText: String(formData.get("customText") ?? ""),
     customTextPosition: stringValue(formData, "customTextPosition"),
   });
+  const themeId = stringValue(formData, "themeId") || null;
   const limited = stringValue(formData, "publicationMode") === "limited";
   const cardColorInput = stringValue(formData, "cardColor");
   if (!id || !mode.success || !customMessage.success || title.length > 180 || !isHexColor(cardColorInput)) throw new Error("Ongeldige portfolio-invoer.");
@@ -267,6 +268,7 @@ export async function savePortfolioAction(formData: FormData) {
   if (!existing) throw new Error("Portfolio niet gevonden.");
   await requireSpaceManagement(existing.learningSpaceId);
   const window = limited ? parsePublicationWindow(formData) : { publishFrom: existing.publishFrom, publishUntil: existing.publishUntil };
+  await setPortfolioTheme(id, existing.learningSpaceId, themeId);
   await Promise.all([
     setPortfolioTitle(id, title),
     setPortfolioCardColor(id, normalizeHexColor(cardColorInput, DEFAULT_PORTFOLIO_COLOR)),
