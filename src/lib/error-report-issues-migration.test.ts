@@ -153,7 +153,7 @@ describe("grouped error report issue migration", () => {
     expect(new Set(issues.map((issue) => issue.thread_id)).size).toBe(1);
   });
 
-  it("enforces null-safe issue identity and one authenticated report per issue", async () => {
+  it("enforces null-safe issue identity while allowing distinct authenticated reports", async () => {
     const database = await upgradeLegacyFixture();
     const now = "2026-09-08T10:00:00.000Z";
     const matchedThreadId = String((await database.execute("SELECT thread_id FROM error_report_issues WHERE exercise_id = 'issue-exercise-1' LIMIT 1")).rows[0]?.thread_id);
@@ -185,10 +185,10 @@ describe("grouped error report issue migration", () => {
     });
 
     await insertReport(database, "authenticated-report", "assignment-issue", "user-legacy-superadmin", now);
-    await expect(insertReport(database, "authenticated-duplicate", "assignment-issue", "user-legacy-superadmin", now)).rejects.toThrow();
+    await insertReport(database, "authenticated-duplicate", "assignment-issue", "user-legacy-superadmin", now);
     await insertReport(database, "anonymous-a", "assignment-issue", null, now);
     await insertReport(database, "anonymous-b", "assignment-issue", null, now);
-    expect((await database.execute("SELECT id FROM error_reports WHERE issue_id = 'assignment-issue'")).rows).toHaveLength(3);
+    expect((await database.execute("SELECT id FROM error_reports WHERE issue_id = 'assignment-issue'")).rows).toHaveLength(4);
 
     await database.execute({
       sql: `INSERT INTO error_report_threads

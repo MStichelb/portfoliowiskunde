@@ -63,6 +63,51 @@ describe("error report student lifecycle migration", () => {
   });
 });
 
+describe("distinct student error report migration", () => {
+  it("drops only the reporter-per-issue uniqueness in a fresh database", async () => {
+    const database = await createFreshDatabase("portfolio-distinct-reports-fresh-");
+
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '033_distinct_student_error_reports'")).rows).toHaveLength(1);
+    const indexes = (await database.execute("PRAGMA index_list(error_reports)")).rows;
+    expect(indexes.some((index) => index.name === "error_reports_issue_reporter_unique")).toBe(false);
+    expect(indexes.some((index) => index.name === "error_reports_issue_index" && index.unique === 0)).toBe(true);
+    expect(indexes.some((index) => index.name === "error_reports_reporter_user_index" && index.unique === 0)).toBe(true);
+  });
+
+  it("preserves existing reports and permits a second row for the same reporter and issue", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-distinct-reports-upgrade-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 32)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-09T08:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.execute("PRAGMA foreign_keys = OFF");
+    await legacy.execute(`INSERT INTO error_reports
+      (id, portfolio_id, variant_kind, asset_snapshot, message, status, created_at, updated_at, issue_id, reporter_user_id)
+      VALUES ('existing-report', 'portfolio', 'standard', '[]', 'Eerste melding', 'TODO',
+        '2026-09-09T08:00:00.000Z', '2026-09-09T08:00:00.000Z', 'issue', 'student')`);
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    await upgraded.execute("PRAGMA foreign_keys = OFF");
+    await upgraded.execute(`INSERT INTO error_reports
+      (id, portfolio_id, variant_kind, asset_snapshot, message, status, created_at, updated_at, issue_id, reporter_user_id)
+      VALUES ('second-report', 'portfolio', 'standard', '[]', 'Tweede melding', 'TODO',
+        '2026-09-09T09:00:00.000Z', '2026-09-09T09:00:00.000Z', 'issue', 'student')`);
+
+    expect((await upgraded.execute("SELECT id, message FROM error_reports ORDER BY id")).rows).toEqual([
+      expect.objectContaining({ id: "existing-report", message: "Eerste melding" }),
+      expect.objectContaining({ id: "second-report", message: "Tweede melding" }),
+    ]);
+  });
+});
+
 async function createFreshDatabase(prefix: string) {
   temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), prefix));
   process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");

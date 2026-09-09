@@ -3,8 +3,9 @@ import { describe, expect, it } from "vitest";
 
 import { PortfolioErrorReportForm, shouldShowErrorReportVariant } from "./portfolio-error-report-form";
 
-const standardExercise = { id: "exercise-5", code: "5", hasAlternativeSolution: false };
-const alternativeExercise = { id: "exercise-5a", code: "5a", hasAlternativeSolution: true };
+const standardExercise = { id: "exercise-5", code: "5", hasAlternativeSolution: false, visible: true };
+const alternativeExercise = { id: "exercise-5a", code: "5a", hasAlternativeSolution: true, visible: true };
+const hiddenExercise = { id: "exercise-6", code: "6", hasAlternativeSolution: false, visible: false };
 
 describe("PortfolioErrorReportForm", () => {
   it("starts collapsed and renders only supplied document types", () => {
@@ -20,12 +21,13 @@ describe("PortfolioErrorReportForm", () => {
   });
 
   it("uses a free exercise-code input with indexed suggestions and only offers eligible variants", () => {
-    const markup = renderToStaticMarkup(<PortfolioErrorReportForm portfolioId="portfolio-1" documents={["final_solutions"]} exercises={[alternativeExercise, standardExercise]} initiallyOpen />);
+    const markup = renderToStaticMarkup(<PortfolioErrorReportForm portfolioId="portfolio-1" documents={["final_solutions"]} exercises={[alternativeExercise, standardExercise, hiddenExercise]} initiallyOpen />);
 
     expect(markup).toContain('name="exerciseCode"');
     expect(markup).toContain('value="5a"');
     expect(markup).toContain('<option value="5a">Oefening 5a</option>');
     expect(markup).toContain('<option value="5">Oefening 5</option>');
+    expect(markup).toContain('<option value="6">Oefening 6</option>');
     expect(markup).toContain("Alternatieve uitwerking");
     expect(shouldShowErrorReportVariant("final_solutions", alternativeExercise)).toBe(true);
     expect(shouldShowErrorReportVariant("final_solutions", standardExercise)).toBe(false);

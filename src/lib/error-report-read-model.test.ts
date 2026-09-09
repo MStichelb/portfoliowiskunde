@@ -424,7 +424,7 @@ async function seedReadModelFixture(database: DatabaseClient): Promise<void> {
 
   // The production partial index prevents this shape. Dropping it here simulates imported legacy/test data
   // and proves reporterCount remains a distinct-user count if duplicates nevertheless exist.
-  await database.execute("DROP INDEX error_reports_issue_reporter_unique");
+  await database.execute("DROP INDEX IF EXISTS error_reports_issue_reporter_unique");
   const mainReports = Array.from({ length: 10 }, (_, index) => report({
     id: `main-report-${String(index).padStart(2, "0")}`,
     issueId: "issue-main",

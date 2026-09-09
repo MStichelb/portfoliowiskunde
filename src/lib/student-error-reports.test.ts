@@ -58,6 +58,26 @@ describe("student error report visibility", () => {
 });
 
 describe("getMyErrorReports", () => {
+  it("returns every distinct submission from the same student and issue", async () => {
+    const database = await getDatabase();
+    await database.execute(`INSERT INTO error_reports (
+      id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at,
+      message, status, pinned, admin_note, created_at, completed_at, updated_at, reporter_name,
+      issue_id, reporter_user_id, handled_at, student_dismissed_at, teacher_response
+    ) SELECT
+      'open-second', portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at,
+      'Tweede afzonderlijke melding', 'TODO', pinned, admin_note, '2026-09-21T13:00:00.000Z', NULL,
+      '2026-09-21T13:00:00.000Z', reporter_name, issue_id, reporter_user_id, NULL, NULL, NULL
+    FROM error_reports WHERE id = 'open-new'`);
+
+    const reports = await getMyErrorReports(now);
+    expect(reports?.filter((report) => report.reportId === "open-new" || report.reportId === "open-second")).toHaveLength(2);
+    expect(reports?.find((report) => report.reportId === "open-second")).toMatchObject({
+      message: "Tweede afzonderlijke melding",
+      status: "IN_PROGRESS",
+    });
+  });
+
   it("uses the authenticated student, excludes other users and supports matched and unmatched exercise context", async () => {
     const reports = await getMyErrorReports(now);
 

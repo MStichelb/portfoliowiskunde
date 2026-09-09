@@ -3,14 +3,10 @@
 import { Bell, ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 
-import { normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
+import { normalizeErrorReportExerciseCode, type ErrorReportExerciseIdentity } from "@/lib/error-report-exercise-code";
 import type { ErrorReportDocumentKind } from "@/lib/repositories";
 
-export interface PortfolioErrorReportExerciseOption {
-  id: string;
-  code: string;
-  hasAlternativeSolution: boolean;
-}
+export type PortfolioErrorReportExerciseOption = ErrorReportExerciseIdentity;
 
 export function shouldShowErrorReportVariant(documentKind: ErrorReportDocumentKind, exercise: PortfolioErrorReportExerciseOption | undefined): boolean {
   return documentKind === "final_solutions" && Boolean(exercise?.hasAlternativeSolution);

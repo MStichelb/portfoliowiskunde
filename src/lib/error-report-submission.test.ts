@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests, type DatabaseClient } from "./database";
 import { normalizeErrorReportExerciseCode } from "./error-report-exercise-code";
-import { createErrorReport } from "./repositories";
+import { createErrorReport, getGroupedErrorReportThreads, getVisibleExercise, listErrorReportIssuesForThreads } from "./repositories";
 
 let temporaryDirectory: string | undefined;
 
@@ -36,6 +36,17 @@ describe("error report v2 submission", () => {
     const issue = (await (await getDatabase()).execute({ sql: "SELECT exercise_id, exercise_code FROM error_report_issues WHERE id = ?", args: [result.issueId] })).rows[0];
 
     expect(issue).toMatchObject({ exercise_id: "submission-exercise", exercise_code: "5b" });
+  });
+
+  it("matches an indexed hidden exercise identity without exposing its content", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE exercises SET visibility_mode = 'hidden', visible = 0 WHERE id = 'submission-exercise'");
+
+    const result = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "5b", documentKind: "final_solutions", rateLimitKey: "hidden-code" }));
+    const issue = (await database.execute({ sql: "SELECT exercise_id, exercise_code FROM error_report_issues WHERE id = ?", args: [result.issueId] })).rows[0];
+
+    expect(issue).toMatchObject({ exercise_id: "submission-exercise", exercise_code: "5b" });
+    await expect(getVisibleExercise("submission-exercise", "space-5")).resolves.toBeNull();
   });
 
   it("groups unknown codes by normalized code, document and portfolio", async () => {
@@ -97,7 +108,7 @@ describe("error report v2 submission", () => {
     expect((await (await getDatabase()).execute({ sql: "SELECT variant_kind FROM error_report_issues WHERE id = ?", args: [validAlternative.issueId] })).rows[0]?.variant_kind).toBe("alternative");
   });
 
-  it("updates the same user's report, shares the issue with other users and safely reopens DONE", async () => {
+  it("preserves distinct reports from the same user and safely reopens DONE", async () => {
     const first = await createErrorReport(submission({ documentKind: "assignment", variant: null, reporterUserId: "report-user-1", message: "Eerste melding", rateLimitKey: "first" }));
     const database = await getDatabase();
     await database.execute({
@@ -116,24 +127,36 @@ describe("error report v2 submission", () => {
       args: [first.issueId],
     });
 
-    const updated = await createErrorReport(submission({ documentKind: "assignment", variant: null, reporterUserId: "report-user-1", message: "Bijgewerkte melding", rateLimitKey: "second" }));
+    const repeated = await createErrorReport(submission({ documentKind: "assignment", variant: null, reporterUserId: "report-user-1", message: "Tweede melding", rateLimitKey: "second" }));
     const secondUser = await createErrorReport(submission({ documentKind: "assignment", variant: null, reporterUserId: "report-user-2", message: "Andere leerling", rateLimitKey: "third" }));
     const issue = (await database.execute({ sql: "SELECT * FROM error_report_issues WHERE id = ?", args: [first.issueId] })).rows[0];
     const thread = (await database.execute({ sql: "SELECT * FROM error_report_threads WHERE id = ?", args: [issue?.thread_id as string] })).rows[0];
     const reports = (await database.execute({
       sql: `SELECT reporter_user_id, message, handled_at, student_dismissed_at, teacher_response
-        FROM error_reports WHERE issue_id = ? ORDER BY reporter_user_id`,
+        FROM error_reports WHERE issue_id = ? ORDER BY message`,
       args: [first.issueId],
     })).rows;
 
-    expect(updated.issueId).toBe(first.issueId);
+    expect(repeated.issueId).toBe(first.issueId);
     expect(secondUser.issueId).toBe(first.issueId);
-    expect(reports).toEqual([
-      expect.objectContaining({ reporter_user_id: "report-user-1", message: "Bijgewerkte melding", handled_at: null, student_dismissed_at: null, teacher_response: null }),
-      expect.objectContaining({ reporter_user_id: "report-user-2", message: "Andere leerling", handled_at: null, student_dismissed_at: null, teacher_response: null }),
-    ]);
+    expect(reports).toHaveLength(3);
+    expect(reports.find((report) => report.message === "Eerste melding")).toMatchObject({
+      reporter_user_id: "report-user-1", handled_at: "2026-09-08T12:00:00.000Z",
+      student_dismissed_at: "2026-09-08T13:00:00.000Z", teacher_response: "Oude reactie",
+    });
+    expect(reports.find((report) => report.message === "Tweede melding")).toMatchObject({
+      reporter_user_id: "report-user-1", handled_at: null, student_dismissed_at: null, teacher_response: null,
+    });
+    expect(reports.find((report) => report.message === "Andere leerling")).toMatchObject({
+      reporter_user_id: "report-user-2", handled_at: null, student_dismissed_at: null, teacher_response: null,
+    });
     expect(issue).toMatchObject({ status: "TODO", completed_at: null, pinned: 1, admin_note: "Behouden notitie" });
     expect(thread).toMatchObject({ status: "TODO", completed_at: "2026-09-08T12:00:00.000Z" });
+
+    const groupedThread = (await getGroupedErrorReportThreads("space-5")).find((item) => item.id === thread.id);
+    const adminReports = (await listErrorReportIssuesForThreads([String(thread.id)], "space-5")).flatMap((item) => item.reports);
+    expect(groupedThread?.reportCount).toBe(3);
+    expect(adminReports.map((report) => report.message)).toEqual(expect.arrayContaining(["Eerste melding", "Tweede melding", "Andere leerling"]));
   });
 
   it("automatically reopens the thread without changing existing reports and creates the new report open", async () => {

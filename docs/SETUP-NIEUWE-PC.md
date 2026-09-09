@@ -912,7 +912,7 @@ GRAPH_TOKEN_ENCRYPTION_KEY                  (optionele OneDrive-route)
 
 Markeer secrets in Vercel waar mogelijk als **Sensitive** en selecteer **Production**. Een environmentwijziging vereist een nieuwe deployment.
 
-De webapp voert database-migrations bij de eerste databaseaanroep automatisch en onder lock uit. De actuele release verwacht `schema_migrations` tot en met `032_error_report_student_lifecycle`; controleer deze versie na deployment. Bestaande foutmeldingen worden zonder verlies in de thread-, issue- en reportstructuur opgenomen; de nieuwe per-report leerling-lifecyclevelden starten voor historische data op `NULL`. Hints-metadata en oefeningsnotities blijven optioneel en de huidige beheerder wordt als compatibility-superadmin gemigreerd.
+De webapp voert database-migrations bij de eerste databaseaanroep automatisch en onder lock uit. De actuele release verwacht `schema_migrations` tot en met `033_distinct_student_error_reports`; controleer deze versie na deployment. Bestaande foutmeldingen worden zonder verlies in de thread-, issue- en reportstructuur opgenomen; de per-report leerling-lifecyclevelden starten voor historische data op `NULL` en migration 033 laat meerdere afzonderlijke submissions van dezelfde leerling op hetzelfde issue toe. Hints-metadata en oefeningsnotities blijven optioneel en de huidige beheerder wordt als compatibility-superadmin gemigreerd.
 
 ### Bekende regiovalkuil
 

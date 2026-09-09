@@ -6,7 +6,7 @@ import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { executeBatch, getDatabase } from "@/lib/database";
 import type { IndexedPortfolio } from "@/lib/domain";
-import { normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
+import { listErrorReportExerciseIdentities, normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRelativePath } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
@@ -1285,8 +1285,8 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
   if (!portfolio) throw new Error("De portfolio is niet beschikbaar.");
   const requestedExerciseCode = normalizeErrorReportExerciseCode(input.exerciseCode ?? initialExercise?.code ?? "");
   if (!requestedExerciseCode) throw new Error("Vul een geldige oefening in, bijvoorbeeld 5 of 5a.");
-  const portfolioExercise = portfolio.sections.flatMap((section) => section.exercises)
-    .find((item) => item.visible && normalizeErrorReportExerciseCode(item.code) === requestedExerciseCode);
+  const portfolioExercise = listErrorReportExerciseIdentities(portfolio.sections)
+    .find((item) => normalizeErrorReportExerciseCode(item.code) === requestedExerciseCode);
   const exerciseId = portfolioExercise?.id ?? null;
   const exercise = exerciseId === initialExercise?.id ? initialExercise : exerciseId ? await getVisibleExercise(exerciseId, learningSpaceId) : null;
   if (initialExercise && (initialExercise.learningSpaceId !== learningSpaceId || initialExercise.portfolioId !== portfolioId)) throw new Error("De gekozen oefening hoort niet bij deze portfolio.");
@@ -1366,33 +1366,15 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
   if (!resolvedIssue) throw new Error("De foutlocatie kon niet worden opgeslagen.");
   const resolvedIssueId = text(resolvedIssue, "id");
   const reporterUserId = input.reporterUserId ?? null;
-  const reportStatement: InStatement = reporterUserId ? {
+  const reportStatement: InStatement = {
     sql: `INSERT INTO error_reports
       (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message,
         reporter_name, status, pinned, admin_note, created_at, completed_at, updated_at, issue_id, reporter_user_id,
         handled_at, student_dismissed_at, teacher_response)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'TODO', 0, '', ?, NULL, ?, ?, ?, NULL, NULL, NULL)
-      ON CONFLICT(issue_id, reporter_user_id) WHERE reporter_user_id IS NOT NULL DO UPDATE SET
-        asset_snapshot = excluded.asset_snapshot,
-        source_last_modified_at = excluded.source_last_modified_at,
-        message = excluded.message,
-        reporter_name = NULL,
-        status = 'TODO',
-        completed_at = NULL,
-        handled_at = NULL,
-        student_dismissed_at = NULL,
-        teacher_response = NULL,
-        updated_at = excluded.updated_at`,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, NULL, ?, ?, ?, NULL, NULL, NULL)`,
     args: [randomUUID(), portfolioId, sectionId, exerciseId, variant ?? "standard", assetSnapshot,
-      sourceLastModifiedAt, input.message.trim(), now.toISOString(), now.toISOString(), resolvedIssueId, reporterUserId],
-  } : {
-    sql: `INSERT INTO error_reports
-      (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message,
-        reporter_name, status, pinned, admin_note, created_at, completed_at, updated_at, issue_id, reporter_user_id,
-        handled_at, student_dismissed_at, teacher_response)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, NULL, ?, ?, NULL, NULL, NULL, NULL)`,
-    args: [randomUUID(), portfolioId, sectionId, exerciseId, variant ?? "standard", assetSnapshot,
-      sourceLastModifiedAt, input.message.trim(), reporterName, now.toISOString(), now.toISOString(), resolvedIssueId],
+      sourceLastModifiedAt, input.message.trim(), reporterUserId ? null : reporterName,
+      now.toISOString(), now.toISOString(), resolvedIssueId, reporterUserId],
   };
   await database.batch([
     { sql: "DELETE FROM error_report_rate_limits WHERE window_started_at < ?", args: [new Date(now.getTime() - 3_600_000).toISOString()] },

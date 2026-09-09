@@ -798,4 +798,10 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE error_reports ADD COLUMN teacher_response TEXT",
     ],
   },
+  {
+    version: "033_distinct_student_error_reports",
+    statements: [
+      "DROP INDEX IF EXISTS error_reports_issue_reporter_unique",
+    ],
+  },
 ];
