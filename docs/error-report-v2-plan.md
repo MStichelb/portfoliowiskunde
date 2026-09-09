@@ -68,7 +68,7 @@ De canonieke threadactie naar DONE zet `thread.completed_at` en `thread.updated_
 
 De twee tijdstippen hebben verschillende verantwoordelijkheden: `thread.completed_at` stuurt de threadhistoriek en de bestaande admincleanup na veertien dagen; `report.handled_at` legt de eerste actuele afhandeling van één concrete leerlingmelding vast. Daarom blijft een automatisch heropende TODO-thread met een oude `completed_at` beschermd tegen cleanup en verandert die cleanup niet naar reportniveau. `student_dismissed_at` bewaart later persistent of de leerling de behandelingsnotificatie heeft weggeklikt, zonder het report zelf te verwijderen.
 
-Batch A2 gebruikt `teacher_response` als optioneel plain-textbericht van maximaal 500 tekens op één individueel report. Een owner, editor of superadmin kan het bericht vanuit de bestaande reportdetails toevoegen, aanpassen of verwijderen; de server leidt de LearningSpace altijd via report → issue → thread → portfolio af. De response verschijnt nog niet bij de leerling: die readroute en weergave volgen pas in A3.
+Batch A2 gebruikt `teacher_response` als optioneel plain-textbericht van maximaal 500 tekens op één individueel report. Een owner, editor of superadmin kan het bericht vanuit de bestaande reportdetails toevoegen, aanpassen of verwijderen; de server leidt de LearningSpace altijd via report → issue → thread → portfolio af. Batch A3 toont deze response uitsluitend aan de eigenaar en uitsluitend nadat het report is afgewerkt.
 
 Een response opslaan of verwijderen wijzigt `handled_at`, `student_dismissed_at` en de report-, issue- of threadstatus niet. DONE zetten behoudt een eerder geschreven response. Wanneer dezelfde leerling hetzelfde issue opnieuw indient, wist de bestaande resubmitflow de oude response samen met de eerdere afhandelings- en dismissmetadata, zodat die tekst niet ten onrechte bij de nieuwe submission blijft staan.
 
@@ -77,6 +77,8 @@ Batch A3 voegt `/mijn-meldingen` toe voor ingelogde leerlingen. Het server-side 
 De leerlingstatus is uitsluitend per report: `handled_at IS NULL` betekent **In behandeling** en een ingevulde `handled_at` betekent **Afgewerkt**, onafhankelijk van de actuele threadstatus. Open reports blijven zichtbaar; afgewerkte reports blijven tot en met exact veertien dagen na `handled_at` in het overzicht en worden daarna alleen uit deze readweergave gefilterd. De fysieke threadcleanup blijft ongewijzigd. Een `teacher_response` verschijnt alleen bij een afgewerkt eigen report; een technisch aanwezige response op een nog open report blijft verborgen.
 
 Batch A4 toont op de leerling-home maximaal één compacte behandelingsbanner voor eigen, recent afgewerkte reports zonder `student_dismissed_at`. Eén report gebruikt een oefeningsspecifieke tekst wanneer de koppeling betrouwbaar is; meerdere reports worden in dezelfde banner geaggregeerd. Dismiss zet voor precies de nog geldige eigen pending set `student_dismissed_at`, maar verwijdert geen report en wijzigt `handled_at` of `teacher_response` niet. Een resubmit reset deze drie lifecyclevelden volgens A1, zodat een later opnieuw afgewerkt report een nieuwe feedbackcyclus en banner kan starten.
+
+Met batches A1 tot en met A4 is Foutmeldingen v2.1 functioneel en technisch afgerond.
 
 ## Vervolg
 
