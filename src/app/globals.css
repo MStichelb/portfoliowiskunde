@@ -270,24 +270,24 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .learning-space-create-dialog .learning-space-create-form { margin-top: 20px; }
 .learning-space-create-dialog .create-general-grid > label:not(.field-full):not(.color-field) > small { grid-row: 3; }
 .learning-space-create-dialog .create-space-actions { justify-content: flex-end; }
-.exercise-note-dialog { width: min(560px, 100%); max-height: calc(100vh - 40px); overflow-y: auto; padding: 22px; border: 1px solid var(--admin-border); border-radius: 6px; background: var(--admin-surface); box-shadow: 0 12px 36px rgba(0,0,0,.22); }
+.exercise-note-dialog { width: min(500px, 100%); padding: 18px; border: 1px solid var(--admin-border); border-radius: 6px; background: var(--admin-surface); box-shadow: 0 12px 36px rgba(0,0,0,.22); }
 .exercise-note-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .exercise-note-dialog-heading h2 { margin: 0; font-size: 21px; }
-.exercise-note-form { display: grid; gap: 18px; margin-top: 18px; }
+.exercise-note-form { display: grid; gap: 12px; margin-top: 14px; }
 .exercise-note-form > label { display: grid; gap: 6px; color: #314149; font-size: 14px; font-weight: 700; }
 .exercise-note-form input, .exercise-note-form textarea { width: 100%; min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; color: #17222b; }
-.exercise-note-form textarea { resize: vertical; }
+.exercise-note-form textarea { min-height: 88px; resize: vertical; }
 .exercise-note-position { margin: 0; padding: 0; border: 0; }
 .exercise-note-position legend { margin-bottom: 6px; color: #314149; font-size: 14px; font-weight: 700; }
-.exercise-note-position > div { display: inline-flex; overflow: hidden; border: 1px solid #9ab0ad; border-radius: 4px; }
+.exercise-note-position > div { display: grid; width: min(100%, 340px); grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; border: 1px solid #9ab0ad; border-radius: 4px; }
 .exercise-note-position label { position: relative; }
 .exercise-note-position input { position: absolute; opacity: 0; pointer-events: none; }
-.exercise-note-position span { display: inline-flex; min-height: 40px; align-items: center; padding: 8px 12px; background: #fff; color: #314149; font-weight: 700; cursor: pointer; }
+.exercise-note-position span { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; padding: 6px 10px; background: #fff; color: #314149; font-size: 14px; font-weight: 700; text-align: center; cursor: pointer; }
 .exercise-note-position label + label span { border-left: 1px solid #9ab0ad; }
 .exercise-note-position input:checked + span { background: #075c75; color: #fff; }
 .exercise-note-position input:focus-visible + span { outline: 2px solid #075c75; outline-offset: -3px; }
 .exercise-note-dialog-actions, .exercise-note-dialog-actions > div { display: flex; align-items: center; gap: 8px; }
-.exercise-note-dialog-actions { justify-content: space-between; margin-top: 22px; }
+.exercise-note-dialog-actions { flex-wrap: wrap; justify-content: space-between; margin-top: 16px; }
 .exercise-note-trigger { white-space: nowrap; }
 .exercise-note-trigger.has-note { border-color: #8db8cb; background: #e7f3f8; color: #075c75; }
 .archived-message { margin: 14px 0; padding: 11px 13px; border-left: 4px solid #8a6d35; background: #f5f0e4; color: #55451f; font-weight: 700; }
@@ -363,8 +363,9 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .report-response-form > label { display: grid; gap: 6px; color: #314149; font-size: 14px; font-weight: 700; }
 .report-response-form textarea { width: 100%; min-height: 110px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; color: #17222b; resize: vertical; }
 .report-response-form > small { color: #52616a; }
-.report-response-dialog-actions, .report-response-dialog-actions > div { display: flex; align-items: center; gap: 8px; }
+.report-response-dialog-actions, .report-response-dialog-actions > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .report-response-dialog-actions { justify-content: space-between; margin-top: 10px; }
+.report-response-dialog-actions > div:last-child { justify-content: flex-end; }
 .issue-report-item .report-reporter { margin: 4px 0 0; color: #52616a; font-size: 13px; font-weight: 400; }
 .issue-report-item.is-treated { background: #f2f4f3; }
 .issue-report-item.is-treated .report-message { color: #68767e; text-decoration: line-through; text-decoration-color: #9aa4a8; text-decoration-thickness: 1px; }
@@ -876,6 +877,9 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 }
 
 @media (max-width: 640px) {
+  .exercise-note-dialog { width: 100%; max-height: calc(100vh - 24px); overflow-y: auto; padding: 16px; }
+  .exercise-note-position > div { width: 100%; }
+  .exercise-note-dialog-actions > div:last-child { margin-left: auto; }
   .admin-preview-toolbar { display: grid; align-items: stretch; }
   .admin-preview-toolbar .admin-preview-back-button { width: fit-content; }
   .admin-preview-toolbar .admin-preview-banner { width: 100%; }

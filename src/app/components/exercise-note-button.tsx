@@ -50,7 +50,7 @@ export function ExerciseNoteButton({ exerciseId, exerciseCode, noteLabel, custom
           <input type="hidden" name="id" value={exerciseId} />
           <input type="hidden" name="returnContext" value={returnContext} />
           <label>Label (optioneel)<input type="text" name="noteLabel" defaultValue={noteLabel ?? ""} maxLength={EXERCISE_NOTE_LABEL_MAX_LENGTH} placeholder="Bijv. Hint, Opmerking, Instructie..." /></label>
-          <label>Notitie<textarea name="customNote" defaultValue={customNote ?? ""} maxLength={EXERCISE_NOTE_MAX_LENGTH} rows={6} /></label>
+          <label>Notitie<textarea name="customNote" defaultValue={customNote ?? ""} maxLength={EXERCISE_NOTE_MAX_LENGTH} rows={4} /></label>
           <fieldset className="exercise-note-position"><legend>Positie</legend><div>
             <label><input type="radio" name="notePosition" value="above_solution" defaultChecked={notePosition === "above_solution"} /><span>Boven uitwerking</span></label>
             <label><input type="radio" name="notePosition" value="below_solution" defaultChecked={notePosition === "below_solution"} /><span>Onder uitwerking</span></label>

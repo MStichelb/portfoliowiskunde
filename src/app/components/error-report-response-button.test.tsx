@@ -48,6 +48,18 @@ describe("ErrorReportResponseButton", () => {
     expect(markup.match(/<form/g)).toHaveLength(1);
   });
 
+  it("uses only the close icon and keeps the response actions aligned in the footer", () => {
+    const existing = renderToStaticMarkup(<ErrorReportResponseButton reportId="report-1" exerciseCode="12a" locationLabel="Hints" reporterLabel="Ada" teacherResponse="Bestaand" initiallyOpen />);
+    const fresh = renderToStaticMarkup(<ErrorReportResponseButton reportId="report-2" exerciseCode="12a" locationLabel="Hints" reporterLabel="Ada" teacherResponse={null} initiallyOpen />);
+
+    expect(existing).toContain('aria-label="Sluiten"');
+    expect(existing).toContain("Bericht verwijderen");
+    expect(existing).not.toContain("Annuleren");
+    expect(fresh).not.toContain("Bericht verwijderen");
+    expect(fresh).not.toContain("Annuleren");
+    expect(fresh).toContain("Opslaan en afwerken");
+  });
+
   it("closes only after a successful save, completion or delete action state", () => {
     expect(shouldCloseResponseDialog(0, 0)).toBe(false);
     expect(shouldCloseResponseDialog(0, 1)).toBe(true);

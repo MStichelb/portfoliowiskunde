@@ -33,6 +33,7 @@ describe("ExerciseNoteButton", () => {
     expect(markup).toContain('maxLength="40"');
     expect(markup).toMatch(/checked="" value="below_solution"/);
     expect(markup).toContain('maxLength="2000"');
+    expect(markup).toContain('rows="4"');
     expect(markup).toContain("Notitie verwijderen");
     expect(markup).not.toContain("Annuleren");
     expect(markup).toContain('aria-label="Sluiten"');

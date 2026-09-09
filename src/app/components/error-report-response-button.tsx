@@ -87,7 +87,7 @@ export function ErrorReportResponseButton({ reportId, exerciseCode, locationLabe
               submitWithinParentForm
               initiallyOpen={initiallyDeleteConfirmOpen}
             /> : null}</div>
-            <div><button className="secondary-button" type="button" onClick={close}>Annuleren</button><SubmitButton className="secondary-button" pendingLabel="Opslaan...">Opslaan</SubmitButton><SubmitButton name="markHandled" value="true" pendingLabel="Opslaan...">Opslaan en afwerken</SubmitButton></div>
+            <div><SubmitButton className="secondary-button" pendingLabel="Opslaan...">Opslaan</SubmitButton><SubmitButton name="markHandled" value="true" pendingLabel="Opslaan...">Opslaan en afwerken</SubmitButton></div>
           </div>
         </form>
       </div>
