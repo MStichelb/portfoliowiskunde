@@ -50,8 +50,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .solution-variant { margin-top: 28px; padding-top: 20px; border-top: 1px solid #c9d0cc; }
 .solution-variant li { margin: 10px 0; overflow-wrap: anywhere; }
 .exercise-note { margin: 22px 0; padding: 13px 15px; border: 1px solid #b8cfd8; border-radius: 5px; background: #f2f8fa; color: #263b45; }
-.exercise-note strong { display: block; margin-bottom: 4px; color: #075c75; font-size: 14px; }
-.exercise-note p { margin: 0; line-height: 1.55; white-space: pre-line; }
+.exercise-note-label { display: block; margin-bottom: 4px; color: #075c75; font-size: 14px; }
+.exercise-note-text { margin: 0; font-size: 17px; line-height: 1.55; white-space: pre-line; }
 .empty-state { color: #52616a; padding: 24px 0; }
 .narrow-page { max-width: 660px; }
 .login-form, .settings-form { display: grid; gap: 10px; max-width: 540px; }
@@ -275,7 +275,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .exercise-note-dialog-heading h2 { margin: 0; font-size: 21px; }
 .exercise-note-form { display: grid; gap: 18px; margin-top: 18px; }
 .exercise-note-form > label { display: grid; gap: 6px; color: #314149; font-size: 14px; font-weight: 700; }
-.exercise-note-form textarea { width: 100%; resize: vertical; }
+.exercise-note-form input, .exercise-note-form textarea { width: 100%; min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; background: #fff; color: #17222b; }
+.exercise-note-form textarea { resize: vertical; }
 .exercise-note-position { margin: 0; padding: 0; border: 0; }
 .exercise-note-position legend { margin-bottom: 6px; color: #314149; font-size: 14px; font-weight: 700; }
 .exercise-note-position > div { display: inline-flex; overflow: hidden; border: 1px solid #9ab0ad; border-radius: 4px; }
@@ -288,6 +289,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .exercise-note-dialog-actions, .exercise-note-dialog-actions > div { display: flex; align-items: center; gap: 8px; }
 .exercise-note-dialog-actions { justify-content: space-between; margin-top: 22px; }
 .exercise-note-trigger { white-space: nowrap; }
+.exercise-note-trigger.has-note { border-color: #8db8cb; background: #e7f3f8; color: #075c75; }
 .archived-message { margin: 14px 0; padding: 11px 13px; border-left: 4px solid #8a6d35; background: #f5f0e4; color: #55451f; font-weight: 700; }
 .archived-nav-status { display: inline-flex; align-items: center; padding: 6px 8px; color: #5c6265; font-weight: 700; }
 .theme-editor { display: grid; grid-template-columns: minmax(0, 1fr) 130px auto auto; }

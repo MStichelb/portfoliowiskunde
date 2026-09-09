@@ -128,7 +128,7 @@ describe("Google Drive LearningSpace migration", () => {
     const userColumns = (await database.execute("PRAGMA table_info(users)")).rows.map((row) => row.name);
     expect(userColumns).toEqual(expect.arrayContaining(["first_name", "last_name", "class_group_override_id"]));
     const exerciseColumns = (await database.execute("PRAGMA table_info(exercises)")).rows.map((row) => row.name);
-    expect(exerciseColumns).toEqual(expect.arrayContaining(["custom_note", "note_position"]));
+    expect(exerciseColumns).toEqual(expect.arrayContaining(["custom_note", "note_position", "note_label"]));
     expect((await database.execute("PRAGMA table_info(individual_learning_space_access)")).rows.map((row) => row.name))
       .toEqual(expect.arrayContaining(["user_id", "learning_space_id", "created_at", "updated_at"]));
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '021_multi_user_foundation'")).rows).toHaveLength(1);
@@ -137,6 +137,7 @@ describe("Google Drive LearningSpace migration", () => {
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '025_editor_student_access_delegation'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '026_portfolio_custom_message'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '030_exercise_notes'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '031_exercise_note_labels'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT id, role, status FROM users WHERE id = 'user-legacy-superadmin'")).rows[0]).toMatchObject({
       role: "superadmin", status: "active",
     });
@@ -201,6 +202,37 @@ describe("Google Drive LearningSpace migration", () => {
       exercise_code: "1",
       custom_note: null,
       note_position: "above_solution",
+    });
+  });
+
+  it("adds a nullable label without changing existing exercise notes", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-exercise-note-label-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 30)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-09T10:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.batch([
+      { sql: `INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, is_indexed, indexed_at)
+        VALUES ('label-portfolio', 'space-5:1', '1', 'space-5', 'Bestaand', 'Portfolio 1 - Bestaand', 1, '2026-09-09T10:00:00.000Z')`, args: [] },
+      { sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path)
+        VALUES ('label-section', 'label-portfolio', 1, 'Deel', 'Portfolio 1 - Bestaand/Uitwerkingen/1 - Deel')`, args: [] },
+      { sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, custom_note, note_position)
+        VALUES ('label-exercise', 'label-portfolio', 'label-section', '1', 1, '', 'Bestaande notitie', 'below_solution')`, args: [] },
+    ], "write");
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT custom_note, note_label, note_position FROM exercises WHERE id = 'label-exercise'")).rows[0]).toMatchObject({
+      custom_note: "Bestaande notitie",
+      note_label: null,
+      note_position: "below_solution",
     });
   });
 

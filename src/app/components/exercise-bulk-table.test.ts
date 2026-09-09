@@ -37,13 +37,14 @@ describe("exercise section selection", () => {
       sections: [{ id: "section-1", title: "Deel", order: 1, exercises: [{
         id: "exercise-1", code: "1", configuredVisible: true, status: { configuredVisibility: "visible", state: "visible", reason: null, effectiveFrom: null, effectiveUntil: null },
         standardAssets: 1, alternativeAssets: 0, missingAssets: 0, showAlternativeToStudents: false,
-        isIndexed: true, customNote: "Geheime notitie-inhoud", notePosition: "above_solution",
+        isIndexed: true, noteLabel: "Hint", customNote: "Geheime notitie-inhoud", notePosition: "above_solution",
       }] }],
     }));
 
     expect(markup).toContain(">Notitie<");
     expect(markup).toContain('aria-label="Notitie voor oefening 1 bewerken"');
     expect(markup).not.toContain("Geheime notitie-inhoud");
+    expect(markup).not.toContain(">Hint<");
     expect(markup).toContain('colSpan="6"');
   });
 });

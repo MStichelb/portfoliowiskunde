@@ -38,22 +38,23 @@ describe("exercise note actions", () => {
   });
 
   it("authorizes through the exercise and stores normalized multiline content", async () => {
-    await saveExerciseNoteAction(noteForm("  Eerste regel\nTweede regel  ", "below_solution"));
+    await saveExerciseNoteAction(noteForm("  Eerste regel\nTweede regel  ", "below_solution", "  Hint  "));
 
     expect(mocks.getAdminExercise).toHaveBeenCalledWith("exercise-1");
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.objectContaining({ id: "teacher-1" }), "space-5");
-    expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", "Eerste regel\nTweede regel", "below_solution");
+    expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", "Eerste regel\nTweede regel", "Hint", "below_solution");
     expect(mocks.redirect).toHaveBeenCalledWith("/admin/5wis/portfolio/portfolio-1#exercise-exercise-1");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/5wis/oefening/exercise-1");
   });
 
   it("normalizes an empty note and accepts the default position", async () => {
     await saveExerciseNoteAction(noteForm("   ", "above_solution"));
-    expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", null, "above_solution");
+    expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", null, null, "above_solution");
   });
 
   it("rejects invalid note content or position before mutation", async () => {
     await expect(saveExerciseNoteAction(noteForm("A".repeat(2_001), "above_solution"))).rejects.toThrow("Ongeldige oefeningnotitie");
+    await expect(saveExerciseNoteAction(noteForm("Notitie", "above_solution", "A".repeat(41)))).rejects.toThrow("Ongeldige oefeningnotitie");
     await expect(saveExerciseNoteAction(noteForm("Notitie", "between_assets"))).rejects.toThrow("Ongeldige oefeningnotitie");
     expect(mocks.setExerciseNote).not.toHaveBeenCalled();
   });
@@ -73,15 +74,16 @@ describe("exercise note actions", () => {
     formData.set("id", "exercise-1");
     await deleteExerciseNoteAction(formData);
 
-    expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", null, "above_solution");
+    expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", null, null, "above_solution");
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.anything(), "space-5");
   });
 });
 
-function noteForm(customNote: string, notePosition: string) {
+function noteForm(customNote: string, notePosition: string, noteLabel = "") {
   const formData = new FormData();
   formData.set("id", "exercise-1");
   formData.set("customNote", customNote);
+  formData.set("noteLabel", noteLabel);
   formData.set("notePosition", notePosition);
   return formData;
 }

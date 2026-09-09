@@ -403,15 +403,17 @@ describe("persistIndex", () => {
     await persistIndex(index, "local", "space-5");
     const portfolio = (await getAdminPortfolios("space-5"))[0];
     const exercise = portfolio.sections[0].exercises[0];
-    await setExerciseNote(exercise.id, "Eerste regel\nTweede regel", "below_solution");
+    await setExerciseNote(exercise.id, "Eerste regel\nTweede regel", "Hint", "below_solution");
     await setPortfolioPublication(portfolio.id, "visible", false, null, null);
 
     expect((await getAdminPortfolios("space-5"))[0].sections[0].exercises[0]).toMatchObject({
       hasNote: true,
+      noteLabel: "Hint",
       customNote: "Eerste regel\nTweede regel",
       notePosition: "below_solution",
     });
     expect(await getVisibleExercise(exercise.id, "space-5")).toMatchObject({
+      noteLabel: "Hint",
       customNote: "Eerste regel\nTweede regel",
       notePosition: "below_solution",
     });
@@ -419,6 +421,7 @@ describe("persistIndex", () => {
     await persistIndex(index, "local", "space-5");
     expect((await getAdminPortfolios("space-5"))[0].sections[0].exercises[0]).toMatchObject({
       hasNote: true,
+      noteLabel: "Hint",
       customNote: "Eerste regel\nTweede regel",
       notePosition: "below_solution",
     });

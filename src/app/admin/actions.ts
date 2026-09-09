@@ -373,12 +373,13 @@ export async function toggleExerciseAlternativeVisibilityAction(formData: FormDa
 export async function saveExerciseNoteAction(formData: FormData) {
   const id = stringValue(formData, "id");
   const note = exerciseNoteSchema.safeParse({
+    noteLabel: String(formData.get("noteLabel") ?? ""),
     customNote: String(formData.get("customNote") ?? ""),
     notePosition: stringValue(formData, "notePosition"),
   });
   if (!id || !note.success) throw new Error("Ongeldige oefeningnotitie.");
   const { exercise, space } = await requireExerciseNoteManagement(id);
-  await setExerciseNote(id, note.data.customNote, note.data.notePosition);
+  await setExerciseNote(id, note.data.customNote, note.data.noteLabel, note.data.notePosition);
   refreshExerciseNotePaths(exercise, space.slug);
   redirect(adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id));
 }
@@ -387,7 +388,7 @@ export async function deleteExerciseNoteAction(formData: FormData) {
   const id = stringValue(formData, "id");
   if (!id) throw new Error("Oefening niet gevonden.");
   const { exercise, space } = await requireExerciseNoteManagement(id);
-  await setExerciseNote(id, null, "above_solution");
+  await setExerciseNote(id, null, null, "above_solution");
   refreshExerciseNotePaths(exercise, space.slug);
   redirect(adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id));
 }

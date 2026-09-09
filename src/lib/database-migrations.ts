@@ -784,4 +784,10 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE exercises ADD COLUMN note_position TEXT NOT NULL DEFAULT 'above_solution' CHECK(note_position IN ('above_solution', 'below_solution'))",
     ],
   },
+  {
+    version: "031_exercise_note_labels",
+    statements: [
+      "ALTER TABLE exercises ADD COLUMN note_label TEXT",
+    ],
+  },
 ];

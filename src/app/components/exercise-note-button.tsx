@@ -5,11 +5,12 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { deleteExerciseNoteAction, saveExerciseNoteAction } from "@/app/admin/actions";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
-import { EXERCISE_NOTE_MAX_LENGTH, type ExerciseNotePosition } from "@/lib/exercise-note";
+import { EXERCISE_NOTE_LABEL_MAX_LENGTH, EXERCISE_NOTE_MAX_LENGTH, type ExerciseNotePosition } from "@/lib/exercise-note";
 
-export function ExerciseNoteButton({ exerciseId, exerciseCode, customNote, notePosition, initiallyOpen = false }: {
+export function ExerciseNoteButton({ exerciseId, exerciseCode, noteLabel, customNote, notePosition, initiallyOpen = false }: {
   exerciseId: string;
   exerciseCode: string;
+  noteLabel: string | null;
   customNote: string | null;
   notePosition: ExerciseNotePosition;
   initiallyOpen?: boolean;
@@ -34,7 +35,7 @@ export function ExerciseNoteButton({ exerciseId, exerciseCode, customNote, noteP
   }, [close, open]);
 
   return <>
-    <button ref={triggerRef} className="visibility-toggle exercise-note-trigger" type="button" onClick={() => setOpen(true)} aria-label={`Notitie voor oefening ${exerciseCode} ${hasNote ? "bewerken" : "toevoegen"}`}>
+    <button ref={triggerRef} className={`visibility-toggle exercise-note-trigger${hasNote ? " has-note" : ""}`} type="button" onClick={() => setOpen(true)} aria-label={`Notitie voor oefening ${exerciseCode} ${hasNote ? "bewerken" : "toevoegen"}`}>
       {hasNote ? <SquareCheckBig size={16} aria-hidden /> : <Square size={16} aria-hidden />}Notitie
     </button>
     {open ? <div className="confirm-backdrop" role="presentation">
@@ -45,6 +46,7 @@ export function ExerciseNoteButton({ exerciseId, exerciseCode, customNote, noteP
         </div>
         <form id={formId} action={saveExerciseNoteAction} className="exercise-note-form">
           <input type="hidden" name="id" value={exerciseId} />
+          <label>Label (optioneel)<input type="text" name="noteLabel" defaultValue={noteLabel ?? ""} maxLength={EXERCISE_NOTE_LABEL_MAX_LENGTH} placeholder="Bijv. Hint, Opmerking, Instructie..." /></label>
           <label>Notitie<textarea name="customNote" defaultValue={customNote ?? ""} maxLength={EXERCISE_NOTE_MAX_LENGTH} rows={6} /></label>
           <fieldset className="exercise-note-position"><legend>Positie</legend><div>
             <label><input type="radio" name="notePosition" value="above_solution" defaultChecked={notePosition === "above_solution"} /><span>Boven uitwerking</span></label>
