@@ -280,9 +280,9 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .exercise-note-position { margin: 0; padding: 0; border: 0; }
 .exercise-note-position legend { margin-bottom: 6px; color: #314149; font-size: 14px; font-weight: 700; }
 .exercise-note-position > div { display: grid; width: min(100%, 340px); grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; border: 1px solid #9ab0ad; border-radius: 4px; }
-.exercise-note-position label { position: relative; }
+.exercise-note-position label { position: relative; display: flex; min-width: 0; }
 .exercise-note-position input { position: absolute; opacity: 0; pointer-events: none; }
-.exercise-note-position span { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; padding: 6px 10px; background: #fff; color: #314149; font-size: 14px; font-weight: 700; text-align: center; cursor: pointer; }
+.exercise-note-position span { display: inline-flex; width: 100%; height: 36px; box-sizing: border-box; align-items: center; justify-content: center; padding: 6px 10px; background: #fff; color: #314149; font-size: 14px; font-weight: 700; line-height: 1.2; text-align: center; white-space: nowrap; cursor: pointer; }
 .exercise-note-position label + label span { border-left: 1px solid #9ab0ad; }
 .exercise-note-position input:checked + span { background: #075c75; color: #fff; }
 .exercise-note-position input:focus-visible + span { outline: 2px solid #075c75; outline-offset: -3px; }
@@ -366,6 +366,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .report-response-dialog-actions, .report-response-dialog-actions > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .report-response-dialog-actions { justify-content: space-between; margin-top: 10px; }
 .report-response-dialog-actions > div:last-child { justify-content: flex-end; }
+.report-response-dialog-actions > div > button { display: inline-flex; height: 40px; min-height: 40px; box-sizing: border-box; align-items: center; justify-content: center; padding-block: 8px; line-height: 1.25; }
 .issue-report-item .report-reporter { margin: 4px 0 0; color: #52616a; font-size: 13px; font-weight: 400; }
 .issue-report-item.is-treated { background: #f2f4f3; }
 .issue-report-item.is-treated .report-message { color: #68767e; text-decoration: line-through; text-decoration-color: #9aa4a8; text-decoration-thickness: 1px; }
