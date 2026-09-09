@@ -1817,7 +1817,11 @@ export async function getAdminErrorReports(learningSpaceId?: string): Promise<Ad
 export async function getErrorReportLearningSpaceId(id: string): Promise<string | null> {
   const row = (await (await getDatabase()).execute({
     sql: `SELECT portfolios.learning_space_id FROM error_reports
-      JOIN portfolios ON portfolios.id = error_reports.portfolio_id WHERE error_reports.id = ?`,
+      INNER JOIN error_report_issues ON error_report_issues.id = error_reports.issue_id
+      INNER JOIN error_report_threads ON error_report_threads.id = error_report_issues.thread_id
+      INNER JOIN portfolios ON portfolios.id = error_report_threads.portfolio_id
+        AND portfolios.learning_space_id = error_report_threads.learning_space_id
+      WHERE error_reports.id = ?`,
     args: [id],
   })).rows[0];
   return row ? text(row, "learning_space_id") : null;
@@ -1859,6 +1863,13 @@ export async function saveErrorReportThreadNote(threadId: string, note: string):
   await (await getDatabase()).execute({
     sql: "UPDATE error_report_threads SET admin_note = ?, updated_at = ? WHERE id = ?",
     args: [note.slice(0, 4000), new Date().toISOString(), threadId],
+  });
+}
+
+export async function setErrorReportTeacherResponse(id: string, response: string | null): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE error_reports SET teacher_response = ? WHERE id = ?",
+    args: [response, id],
   });
 }
 

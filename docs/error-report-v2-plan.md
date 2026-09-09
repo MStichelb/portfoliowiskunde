@@ -68,6 +68,10 @@ De canonieke threadactie naar DONE zet `thread.completed_at` en `thread.updated_
 
 De twee tijdstippen hebben verschillende verantwoordelijkheden: `thread.completed_at` stuurt de threadhistoriek en de bestaande admincleanup na veertien dagen; `report.handled_at` legt de eerste actuele afhandeling van één concrete leerlingmelding vast. Daarom blijft een automatisch heropende TODO-thread met een oude `completed_at` beschermd tegen cleanup en verandert die cleanup niet naar reportniveau. `student_dismissed_at` bewaart later persistent of de leerling de behandelingsnotificatie heeft weggeklikt, zonder het report zelf te verwijderen.
 
+Batch A2 gebruikt `teacher_response` als optioneel plain-textbericht van maximaal 500 tekens op één individueel report. Een owner, editor of superadmin kan het bericht vanuit de bestaande reportdetails toevoegen, aanpassen of verwijderen; de server leidt de LearningSpace altijd via report → issue → thread → portfolio af. De response verschijnt nog niet bij de leerling: die readroute en weergave volgen pas in A3.
+
+Een response opslaan of verwijderen wijzigt `handled_at`, `student_dismissed_at` en de report-, issue- of threadstatus niet. DONE zetten behoudt een eerder geschreven response. Wanneer dezelfde leerling hetzelfde issue opnieuw indient, wist de bestaande resubmitflow de oude response samen met de eerdere afhandelings- en dismissmetadata, zodat die tekst niet ten onrechte bij de nieuwe submission blijft staan.
+
 ## Vervolg
 
 - **Legacy:** redundante workflowvelden gecontroleerd opruimen zodra migratie- en backward-compatibilityreads ze niet meer nodig hebben.

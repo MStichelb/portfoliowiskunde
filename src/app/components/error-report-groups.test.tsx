@@ -6,9 +6,11 @@ import type { ErrorReportIssueDetail, ErrorReportThreadIssueDetail, GroupedError
 vi.mock("@/app/admin/actions", () => ({
   deleteErrorReportAction: vi.fn(),
   deleteOldDoneErrorThreadsAction: vi.fn(),
+  deleteErrorReportTeacherResponseAction: vi.fn(),
   errorReportThreadNoteAction: vi.fn(),
   errorReportThreadPinAction: vi.fn(),
   errorReportThreadStatusAction: vi.fn(),
+  saveErrorReportTeacherResponseAction: vi.fn(),
   toggleReportedExerciseVisibilityAction: vi.fn(),
 }));
 
@@ -90,6 +92,8 @@ describe("grouped error report thread inbox", () => {
     expect(markup).toContain("Markeren als afgewerkt");
     expect(markup).not.toContain("Foutmelding verwijderen");
     expect(markup).toContain('aria-label="Melding verwijderen"');
+    expect(markup).toContain('aria-label="Bericht aan leerling"');
+    expect(markup.indexOf('aria-label="Bericht aan leerling"')).toBeGreaterThan(markup.indexOf('<details class="issue-report-details">'));
     expect(markup).toContain("report-delete-button");
     expect(markup).not.toContain("Thread verwijderen");
   });

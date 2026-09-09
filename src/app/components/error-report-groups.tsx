@@ -7,6 +7,7 @@ import { useMemo, useReducer } from "react";
 import { deleteErrorReportAction, deleteOldDoneErrorThreadsAction, errorReportThreadPinAction, errorReportThreadStatusAction, toggleReportedExerciseVisibilityAction } from "@/app/admin/actions";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import { ErrorReportNoteForm } from "@/app/components/error-report-note-form";
+import { ErrorReportResponseButton } from "@/app/components/error-report-response-button";
 import { ErrorReportSortControls } from "@/app/components/error-report-sort-controls";
 import { PublicationStatus } from "@/app/components/publication-status";
 import {
@@ -162,19 +163,23 @@ function ThreadReportDetails({ thread, issues, reportLabel }: {
       <h3>{errorReportLocationLabel(issue)}</h3>
       <div className="issue-report-stack">{issue.reports.map((report) => {
         const treated = isErrorReportTreated(thread, report);
+        const reporterLabel = report.reporterDisplayName ?? report.reporterName ?? "Onbekende melder";
         return <article key={report.id} className={`issue-report-item ${treated ? "is-treated" : "is-unhandled"}`} aria-label={treated ? "Eerder afgehandelde melding" : "Onbehandelde melding"}>
           <div className="issue-report-item-heading">
             <p className="report-message">{report.message}</p>
-            <ConfirmActionButton
-              action={deleteErrorReportAction}
-              fields={{ id: report.id }}
-              className="icon-button report-delete-button"
-              label={<Trash2 size={15} aria-hidden />}
-              confirmTitle="Melding verwijderen"
-              confirmText={errorReportDeleteConfirmText(thread)}
-            />
+            <div className="issue-report-actions">
+              <ErrorReportResponseButton reportId={report.id} exerciseCode={thread.exerciseCode} locationLabel={errorReportLocationLabel(issue)} reporterLabel={reporterLabel} teacherResponse={report.teacherResponse} />
+              <ConfirmActionButton
+                action={deleteErrorReportAction}
+                fields={{ id: report.id }}
+                className="icon-button report-delete-button"
+                label={<Trash2 size={15} aria-hidden />}
+                confirmTitle="Melding verwijderen"
+                confirmText={errorReportDeleteConfirmText(thread)}
+              />
+            </div>
           </div>
-          <p className="report-reporter">{report.reporterDisplayName ?? report.reporterName ?? "Onbekende melder"} · {formatReportDate(report.createdAt)}</p>
+          <p className="report-reporter">{reporterLabel} · {formatReportDate(report.createdAt)}</p>
         </article>;
       })}</div>
     </section>)}</div>

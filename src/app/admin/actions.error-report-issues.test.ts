@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   requireLearningSpaceManagement: vi.fn(),
   revalidatePath: vi.fn(),
   saveErrorReportThreadNote: vi.fn(),
+  setErrorReportTeacherResponse: vi.fn(),
   setErrorReportThreadStatus: vi.fn(),
   toggleErrorReportThreadPin: vi.fn(),
 }));
@@ -29,6 +30,7 @@ vi.mock("@/lib/repositories", () => ({
   getErrorReportThreadLearningSpaceId: mocks.getErrorReportThreadLearningSpaceId,
   getLearningSpace: mocks.getLearningSpace,
   saveErrorReportThreadNote: mocks.saveErrorReportThreadNote,
+  setErrorReportTeacherResponse: mocks.setErrorReportTeacherResponse,
   setErrorReportThreadStatus: mocks.setErrorReportThreadStatus,
   toggleErrorReportThreadPin: mocks.toggleErrorReportThreadPin,
 }));
@@ -36,10 +38,12 @@ vi.mock("@/lib/storage-connections", () => ({ ensureStorageConnection: vi.fn() }
 
 import {
   deleteErrorReportAction,
+  deleteErrorReportTeacherResponseAction,
   deleteOldDoneErrorThreadsAction,
   errorReportThreadNoteAction,
   errorReportThreadPinAction,
   errorReportThreadStatusAction,
+  saveErrorReportTeacherResponseAction,
 } from "./actions";
 
 beforeEach(() => {
@@ -77,6 +81,53 @@ describe("error report thread management actions", () => {
 });
 
 describe("error report lifecycle actions", () => {
+  it.each([
+    ["owner", { id: "owner-1", role: "teacher", status: "active" }],
+    ["editor", { id: "editor-1", role: "teacher", status: "active" }],
+    ["superadmin", { id: "superadmin-1", role: "superadmin", status: "active" }],
+  ] as const)("authorizes teacher response save for an %s through the trusted report lookup", async (_role, actor) => {
+    mocks.requireAdminUser.mockResolvedValue(actor);
+
+    const result = await saveErrorReportTeacherResponseAction({ error: null }, form({
+      id: "report-1",
+      learningSpaceId: "untrusted-space",
+      teacherResponse: "  Eerste regel\nTweede regel  ",
+    }));
+
+    expect(mocks.getErrorReportLearningSpaceId).toHaveBeenCalledWith("report-1");
+    expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(actor, "space-5");
+    expect(mocks.setErrorReportTeacherResponse).toHaveBeenCalledWith("report-1", "Eerste regel\nTweede regel");
+    expect(result).toEqual({ error: null, saved: true });
+  });
+
+  it("blocks unauthorized response saves before mutation", async () => {
+    mocks.requireAdminUser.mockResolvedValue({ id: "student-1", role: "student", status: "active" });
+    mocks.requireLearningSpaceManagement.mockRejectedValueOnce(new Error("Geen beheerrechten."));
+
+    await expect(saveErrorReportTeacherResponseAction({ error: null }, form({ id: "report-1", teacherResponse: "Bedankt" }))).rejects.toThrow("Geen beheerrechten");
+    expect(mocks.setErrorReportTeacherResponse).not.toHaveBeenCalled();
+  });
+
+  it("normalizes whitespace-only saves and explicit removal to null", async () => {
+    mocks.requireAdminUser.mockResolvedValue({ id: "owner-1", role: "teacher", status: "active" });
+
+    await saveErrorReportTeacherResponseAction({ error: null }, form({ id: "report-1", teacherResponse: " \n\t " }));
+    await deleteErrorReportTeacherResponseAction(form({ id: "report-1" }));
+
+    expect(mocks.setErrorReportTeacherResponse).toHaveBeenNthCalledWith(1, "report-1", null);
+    expect(mocks.setErrorReportTeacherResponse).toHaveBeenNthCalledWith(2, "report-1", null);
+  });
+
+  it("rejects invalid response content after authorization and before mutation", async () => {
+    mocks.requireAdminUser.mockResolvedValue({ id: "owner-1", role: "teacher", status: "active" });
+    const result = await saveErrorReportTeacherResponseAction({ error: null }, form({ id: "report-1", teacherResponse: "A".repeat(501) }));
+
+    expect(result.error).toContain("maximaal 500 tekens platte tekst");
+    expect(mocks.getErrorReportLearningSpaceId).toHaveBeenCalledWith("report-1");
+    expect(mocks.requireLearningSpaceManagement).toHaveBeenCalled();
+    expect(mocks.setErrorReportTeacherResponse).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["owner", { id: "owner-1", role: "teacher", status: "active" }],
     ["editor", { id: "editor-1", role: "teacher", status: "active" }],

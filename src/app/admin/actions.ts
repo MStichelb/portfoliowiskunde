@@ -10,6 +10,7 @@ import { bulkSelectionError } from "@/lib/admin-validation";
 import { adminExercisePortfolioHref } from "@/lib/admin-routes";
 import { requireLearningSpaceConfiguration, requireLearningSpaceCreation, requireLearningSpaceManagement } from "@/lib/authorization";
 import { exerciseNoteSchema } from "@/lib/exercise-note";
+import { errorReportTeacherResponseSchema } from "@/lib/error-report-teacher-response";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { parseBrusselsDateTime, type ChildVisibilityMode, type PortfolioVisibilityMode } from "@/lib/publication";
 import { portfolioCustomMessageSchema } from "@/lib/portfolio-custom-message";
@@ -36,6 +37,7 @@ import {
   setPortfolioCustomMessage,
   setPortfolioTheme,
   saveErrorReportThreadNote,
+  setErrorReportTeacherResponse,
   deleteErrorReport,
   deleteOldDoneErrorThreads,
   setSectionPublication,
@@ -420,6 +422,23 @@ export async function errorReportThreadNoteAction(_previousState: AdminActionSta
   await saveErrorReportThreadNote(threadId, stringValue(formData, "note"));
   await refreshErrorReportIssuePaths(learningSpaceId);
   return { error: null, saved: true };
+}
+
+export async function saveErrorReportTeacherResponseAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState & { saved?: boolean }> {
+  const id = stringValue(formData, "id");
+  const learningSpaceId = await requireErrorReportManagement(id);
+  const response = errorReportTeacherResponseSchema.safeParse(String(formData.get("teacherResponse") ?? ""));
+  if (!response.success) return { error: "Gebruik maximaal 500 tekens platte tekst." };
+  await setErrorReportTeacherResponse(id, response.data);
+  await refreshErrorReportIssuePaths(learningSpaceId);
+  return { error: null, saved: true };
+}
+
+export async function deleteErrorReportTeacherResponseAction(formData: FormData) {
+  const id = stringValue(formData, "id");
+  const learningSpaceId = await requireErrorReportManagement(id);
+  await setErrorReportTeacherResponse(id, null);
+  await refreshErrorReportIssuePaths(learningSpaceId);
 }
 
 export async function deleteErrorReportAction(formData: FormData) {
