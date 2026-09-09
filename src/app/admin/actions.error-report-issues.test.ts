@@ -10,7 +10,9 @@ const mocks = vi.hoisted(() => ({
   requireLearningSpaceManagement: vi.fn(),
   revalidatePath: vi.fn(),
   saveErrorReportThreadNote: vi.fn(),
+  setErrorReportHandled: vi.fn(),
   setErrorReportTeacherResponse: vi.fn(),
+  setErrorReportTeacherResponseAndHandled: vi.fn(),
   setErrorReportThreadStatus: vi.fn(),
   toggleErrorReportThreadPin: vi.fn(),
 }));
@@ -30,7 +32,9 @@ vi.mock("@/lib/repositories", () => ({
   getErrorReportThreadLearningSpaceId: mocks.getErrorReportThreadLearningSpaceId,
   getLearningSpace: mocks.getLearningSpace,
   saveErrorReportThreadNote: mocks.saveErrorReportThreadNote,
+  setErrorReportHandled: mocks.setErrorReportHandled,
   setErrorReportTeacherResponse: mocks.setErrorReportTeacherResponse,
+  setErrorReportTeacherResponseAndHandled: mocks.setErrorReportTeacherResponseAndHandled,
   setErrorReportThreadStatus: mocks.setErrorReportThreadStatus,
   toggleErrorReportThreadPin: mocks.toggleErrorReportThreadPin,
 }));
@@ -40,6 +44,7 @@ import {
   deleteErrorReportAction,
   deleteErrorReportTeacherResponseAction,
   deleteOldDoneErrorThreadsAction,
+  errorReportStatusAction,
   errorReportThreadNoteAction,
   errorReportThreadPinAction,
   errorReportThreadStatusAction,
@@ -106,6 +111,55 @@ describe("error report lifecycle actions", () => {
 
     await expect(saveErrorReportTeacherResponseAction({ error: null }, form({ id: "report-1", teacherResponse: "Bedankt" }))).rejects.toThrow("Geen beheerrechten");
     expect(mocks.setErrorReportTeacherResponse).not.toHaveBeenCalled();
+  });
+
+  it("saves a response and completes the report through one authorized transactional write", async () => {
+    const actor = { id: "owner-1", role: "teacher", status: "active" };
+    mocks.requireAdminUser.mockResolvedValue(actor);
+
+    const result = await saveErrorReportTeacherResponseAction({ error: null }, form({
+      id: "report-1",
+      teacherResponse: " Goed gezien. ",
+      markHandled: "true",
+    }));
+
+    expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(actor, "space-5");
+    expect(mocks.setErrorReportTeacherResponseAndHandled).toHaveBeenCalledWith("report-1", "Goed gezien.");
+    expect(mocks.setErrorReportTeacherResponse).not.toHaveBeenCalled();
+    expect(result).toEqual({ error: null, saved: true });
+  });
+
+  it("can complete a report through the response modal with an empty response", async () => {
+    mocks.requireAdminUser.mockResolvedValue({ id: "owner-1", role: "teacher", status: "active" });
+
+    await saveErrorReportTeacherResponseAction({ error: null }, form({
+      id: "report-1",
+      teacherResponse: " \n\t ",
+      markHandled: "true",
+    }));
+
+    expect(mocks.setErrorReportTeacherResponseAndHandled).toHaveBeenCalledWith("report-1", null);
+  });
+
+  it("authorizes individual report completion and reopen through the trusted report lookup", async () => {
+    const actor = { id: "editor-1", role: "teacher", status: "active" };
+    mocks.requireAdminUser.mockResolvedValue(actor);
+
+    await errorReportStatusAction(form({ id: "report-1", status: "DONE", threadId: "untrusted" }));
+    await errorReportStatusAction(form({ id: "report-1", status: "OPEN" }));
+
+    expect(mocks.getErrorReportLearningSpaceId).toHaveBeenCalledWith("report-1");
+    expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(actor, "space-5");
+    expect(mocks.setErrorReportHandled).toHaveBeenNthCalledWith(1, "report-1", true);
+    expect(mocks.setErrorReportHandled).toHaveBeenNthCalledWith(2, "report-1", false);
+  });
+
+  it("blocks unauthorized individual report status changes before mutation", async () => {
+    mocks.requireAdminUser.mockResolvedValue({ id: "student-1", role: "student", status: "active" });
+    mocks.requireLearningSpaceManagement.mockRejectedValueOnce(new Error("Geen beheerrechten."));
+
+    await expect(errorReportStatusAction(form({ id: "report-1", status: "DONE" }))).rejects.toThrow("Geen beheerrechten");
+    expect(mocks.setErrorReportHandled).not.toHaveBeenCalled();
   });
 
   it("normalizes whitespace-only saves and explicit removal to null", async () => {

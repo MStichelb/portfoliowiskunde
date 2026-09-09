@@ -38,7 +38,9 @@ describe("ErrorReportResponseButton", () => {
     expect(markup).toContain("Eerste regel\nTweede regel");
     expect(markup).toContain("Dit bericht wordt zichtbaar voor de leerling zodra de melding is afgewerkt.");
     expect(markup).toContain("Opslaan");
+    expect(markup).toContain("Opslaan &amp; markeren als afgewerkt");
+    expect(markup).toContain('name="markHandled"');
+    expect(markup).toContain('value="true"');
     expect(markup).toContain("Bericht verwijderen");
   });
 });
-

@@ -15,6 +15,7 @@ import {
   getMyErrorReports,
   isStudentErrorReportVisible,
   listPendingHandledReportNotificationsForCurrentUser,
+  studentErrorReportEffectiveHandledAt,
   studentErrorReportStatus,
 } from "./student-error-reports";
 
@@ -39,15 +40,20 @@ afterEach(async () => {
 });
 
 describe("student error report visibility", () => {
-  it("derives status only from handledAt", () => {
-    expect(studentErrorReportStatus({ handledAt: null })).toBe("IN_PROGRESS");
-    expect(studentErrorReportStatus({ handledAt: "2026-09-20T10:00:00.000Z" })).toBe("HANDLED");
+  it("prefers individual handling and otherwise derives effective completion from a DONE thread", () => {
+    expect(studentErrorReportEffectiveHandledAt({ handledAt: "2026-09-20T10:00:00.000Z", threadStatus: "DONE", threadCompletedAt: "2026-09-21T10:00:00.000Z" })).toBe("2026-09-20T10:00:00.000Z");
+    expect(studentErrorReportEffectiveHandledAt({ handledAt: null, threadStatus: "DONE", threadCompletedAt: "2026-09-21T10:00:00.000Z" })).toBe("2026-09-21T10:00:00.000Z");
+    expect(studentErrorReportEffectiveHandledAt({ handledAt: null, threadStatus: "TODO", threadCompletedAt: "2026-09-21T10:00:00.000Z" })).toBeNull();
+    expect(studentErrorReportStatus({ handledAt: null, threadStatus: "TODO" })).toBe("IN_PROGRESS");
+    expect(studentErrorReportStatus({ handledAt: null, threadStatus: "DONE" })).toBe("HANDLED");
+    expect(studentErrorReportStatus({ handledAt: "2026-09-20T10:00:00.000Z", threadStatus: "TODO" })).toBe("HANDLED");
   });
 
   it("keeps open reports regardless of age and includes handled reports through the exact fourteen-day boundary", () => {
-    expect(isStudentErrorReportVisible({ handledAt: null }, new Date("2030-01-01T00:00:00.000Z"))).toBe(true);
-    expect(isStudentErrorReportVisible({ handledAt: "2026-09-08T12:00:00.000Z" }, now)).toBe(true);
-    expect(isStudentErrorReportVisible({ handledAt: "2026-09-08T11:59:59.999Z" }, now)).toBe(false);
+    expect(isStudentErrorReportVisible({ status: "IN_PROGRESS", effectiveHandledAt: null }, new Date("2030-01-01T00:00:00.000Z"))).toBe(true);
+    expect(isStudentErrorReportVisible({ status: "HANDLED", effectiveHandledAt: "2026-09-08T12:00:00.000Z" }, now)).toBe(true);
+    expect(isStudentErrorReportVisible({ status: "HANDLED", effectiveHandledAt: "2026-09-08T11:59:59.999Z" }, now)).toBe(false);
+    expect(isStudentErrorReportVisible({ status: "HANDLED", effectiveHandledAt: null }, now)).toBe(false);
   });
 });
 
@@ -96,6 +102,27 @@ describe("getMyErrorReports", () => {
     expect(ids).toContain("open-old");
     expect(ids?.slice(0, 2)).toEqual(["open-new", "unmatched-report"]);
     expect(ids?.indexOf("handled-recent")).toBeLessThan(ids?.indexOf("handled-boundary") ?? -1);
+  });
+
+  it("uses thread completion only while an individually open report belongs to a DONE thread", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE error_reports SET handled_at = NULL WHERE id = 'handled-recent'");
+
+    let report = (await getMyErrorReports(now))?.find((item) => item.reportId === "handled-recent");
+    expect(report).toMatchObject({ status: "HANDLED", handledAt: null, effectiveHandledAt: "2026-09-20T10:00:00.000Z" });
+
+    await database.execute("UPDATE error_report_threads SET status = 'TODO', completed_at = NULL WHERE id = 'thread-handled-recent'");
+    report = (await getMyErrorReports(now))?.find((item) => item.reportId === "handled-recent");
+    expect(report).toMatchObject({ status: "IN_PROGRESS", handledAt: null, effectiveHandledAt: null });
+  });
+
+  it("keeps an individually handled report completed when its thread reopens", async () => {
+    await (await getDatabase()).execute("UPDATE error_report_threads SET status = 'TODO', completed_at = NULL WHERE id = 'thread-handled-recent'");
+    expect((await getMyErrorReports(now))?.find((item) => item.reportId === "handled-recent")).toMatchObject({
+      status: "HANDLED",
+      handledAt: "2026-09-20T10:00:00.000Z",
+      effectiveHandledAt: "2026-09-20T10:00:00.000Z",
+    });
   });
 
   it("returns teacher responses only from the current user's reports with a fixed query count", async () => {

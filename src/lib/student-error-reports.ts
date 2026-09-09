@@ -14,6 +14,7 @@ export interface StudentErrorReport {
   reportId: string;
   createdAt: string;
   handledAt: string | null;
+  effectiveHandledAt: string | null;
   teacherResponse: string | null;
   message: string;
   status: StudentErrorReportStatus;
@@ -98,6 +99,7 @@ async function getCurrentStudentErrorReportContext(now: Date): Promise<CurrentSt
       error_reports.teacher_response, error_reports.message,
       error_report_issues.exercise_id, error_report_issues.exercise_code,
       error_report_issues.document_kind, error_report_issues.variant_kind,
+      error_report_threads.status AS thread_status, error_report_threads.completed_at AS thread_completed_at,
       portfolios.portfolio_code, COALESCE(portfolios.title_override, portfolios.title) AS portfolio_title,
       portfolios.visible AS portfolio_visible, portfolios.publication_limited,
       portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until,
@@ -132,29 +134,45 @@ function isCurrentlyAccessiblePortfolio(row: DatabaseRow, now: Date): boolean {
   }, now);
 }
 
-export function studentErrorReportStatus(report: Pick<StudentErrorReport, "handledAt">): StudentErrorReportStatus {
-  return report.handledAt === null ? "IN_PROGRESS" : "HANDLED";
+export function studentErrorReportEffectiveHandledAt(report: {
+  handledAt: string | null;
+  threadStatus: "TODO" | "DONE";
+  threadCompletedAt: string | null;
+}): string | null {
+  if (report.handledAt !== null) return report.handledAt;
+  return report.threadStatus === "DONE" ? report.threadCompletedAt : null;
 }
 
-export function isStudentErrorReportVisible(report: Pick<StudentErrorReport, "handledAt">, now = new Date()): boolean {
-  if (report.handledAt === null) return true;
-  const handledAt = Date.parse(report.handledAt);
+export function studentErrorReportStatus(report: { handledAt: string | null; threadStatus: "TODO" | "DONE" }): StudentErrorReportStatus {
+  return report.handledAt !== null || report.threadStatus === "DONE" ? "HANDLED" : "IN_PROGRESS";
+}
+
+export function isStudentErrorReportVisible(report: Pick<StudentErrorReport, "status" | "effectiveHandledAt">, now = new Date()): boolean {
+  if (report.status === "IN_PROGRESS") return true;
+  if (report.effectiveHandledAt === null) return false;
+  const handledAt = Date.parse(report.effectiveHandledAt);
   if (!Number.isFinite(handledAt)) return false;
   const visibleUntil = handledAt + HANDLED_ERROR_REPORT_VISIBILITY_DAYS * 24 * 60 * 60 * 1000;
   return now.getTime() <= visibleUntil;
 }
 
 export function compareStudentErrorReports(left: StudentErrorReport, right: StudentErrorReport): number {
-  const leftHandled = left.handledAt !== null;
-  const rightHandled = right.handledAt !== null;
+  const leftHandled = left.status === "HANDLED";
+  const rightHandled = right.status === "HANDLED";
   if (leftHandled !== rightHandled) return leftHandled ? 1 : -1;
-  const leftDate = Date.parse(leftHandled ? left.handledAt! : left.createdAt);
-  const rightDate = Date.parse(rightHandled ? right.handledAt! : right.createdAt);
+  const leftDate = Date.parse(leftHandled ? left.effectiveHandledAt ?? "" : left.createdAt);
+  const rightDate = Date.parse(rightHandled ? right.effectiveHandledAt ?? "" : right.createdAt);
   return (Number.isFinite(rightDate) ? rightDate : 0) - (Number.isFinite(leftDate) ? leftDate : 0);
 }
 
 function studentErrorReportFromRow(row: DatabaseRow): CurrentStudentErrorReport {
   const handledAt = nullableText(row, "handled_at");
+  const threadStatus = text(row, "thread_status") === "DONE" ? "DONE" : "TODO";
+  const effectiveHandledAt = studentErrorReportEffectiveHandledAt({
+    handledAt,
+    threadStatus,
+    threadCompletedAt: nullableText(row, "thread_completed_at"),
+  });
   const documentKind = text(row, "document_kind") as ErrorReportDocumentKind;
   const variant = nullableText(row, "variant_kind") as "standard" | "alternative" | null;
   return {
@@ -163,9 +181,10 @@ function studentErrorReportFromRow(row: DatabaseRow): CurrentStudentErrorReport 
       reportId: text(row, "report_id"),
       createdAt: text(row, "created_at"),
       handledAt,
+      effectiveHandledAt,
       teacherResponse: nullableText(row, "teacher_response"),
       message: text(row, "message"),
-      status: studentErrorReportStatus({ handledAt }),
+      status: studentErrorReportStatus({ handledAt, threadStatus }),
       exerciseCode: text(row, "exercise_code"),
       isMatchedExercise: nullableText(row, "exercise_id") !== null,
       portfolioCode: text(row, "portfolio_code"),

@@ -20,7 +20,9 @@ import {
   listErrorReportsForIssue,
   listErrorReportsForIssues,
   saveErrorReportThreadNote,
+  setErrorReportHandled,
   setErrorReportTeacherResponse,
+  setErrorReportTeacherResponseAndHandled,
   setErrorReportThreadStatus,
   toggleErrorReportThreadPin,
 } from "./repositories";
@@ -193,12 +195,13 @@ describe("grouped error report read model", () => {
     expect(await listErrorReportIssuesForThreads([], "space-5")).toEqual([]);
   });
 
-  it("marks every unhandled report in a DONE thread once and preserves report compatibility fields", async () => {
+  it("changes only thread workflow fields when a thread is completed or reopened", async () => {
     const database = await getDatabase();
     const issueBefore = (await database.execute("SELECT status, pinned, admin_note FROM error_report_issues WHERE id = 'issue-main'")).rows[0];
     const reportsBefore = (await database.execute("SELECT id, status, pinned, admin_note FROM error_reports WHERE issue_id = 'issue-main' ORDER BY id")).rows;
     const alreadyHandledAt = "2026-09-08T09:30:00.000Z";
-    await database.execute({ sql: "UPDATE error_reports SET handled_at = ?, teacher_response = 'Goed gezien.' WHERE id = 'main-report-00'", args: [alreadyHandledAt] });
+    await database.execute({ sql: "UPDATE error_reports SET handled_at = ?, student_dismissed_at = '2026-09-08T10:00:00.000Z', teacher_response = 'Goed gezien.' WHERE id = 'main-report-00'", args: [alreadyHandledAt] });
+    const reportLifecycleBefore = (await database.execute("SELECT id, handled_at, student_dismissed_at, teacher_response FROM error_reports WHERE issue_id = 'issue-main' ORDER BY id")).rows;
 
     await setErrorReportThreadStatus("thread-exercise-1", "DONE");
     await toggleErrorReportThreadPin("thread-exercise-1");
@@ -209,22 +212,13 @@ describe("grouped error report read model", () => {
     expect(current?.pinned).toBe(0);
     expect(String(current?.admin_note)).toHaveLength(4_000);
     const firstCompletedAt = String(current?.completed_at);
-    const handledReports = (await database.execute({
-      sql: `SELECT error_reports.id, error_reports.handled_at FROM error_reports
-        INNER JOIN error_report_issues ON error_report_issues.id = error_reports.issue_id
-        WHERE error_report_issues.thread_id = 'thread-exercise-1' ORDER BY error_reports.id`,
-      args: [],
-    })).rows;
-    expect(handledReports).toHaveLength(13);
-    expect(handledReports.find((report) => report.id === "main-report-00")?.handled_at).toBe(alreadyHandledAt);
-    expect(handledReports.filter((report) => report.id !== "main-report-00").every((report) => report.handled_at === firstCompletedAt)).toBe(true);
-    expect((await database.execute("SELECT teacher_response FROM error_reports WHERE id = 'main-report-00'")).rows[0]?.teacher_response).toBe("Goed gezien.");
+    expect((await database.execute("SELECT id, handled_at, student_dismissed_at, teacher_response FROM error_reports WHERE issue_id = 'issue-main' ORDER BY id")).rows).toEqual(reportLifecycleBefore);
     expect((await database.execute("SELECT handled_at FROM error_reports WHERE id = 'exercise-2-report'")).rows[0]?.handled_at).toBeNull();
 
     await setErrorReportThreadStatus("thread-exercise-1", "TODO");
     current = (await database.execute("SELECT * FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows[0];
     expect(current).toMatchObject({ status: "TODO", completed_at: null });
-    expect((await database.execute("SELECT handled_at FROM error_reports WHERE id = 'main-report-01'")).rows[0]?.handled_at).toBe(firstCompletedAt);
+    expect((await database.execute("SELECT id, handled_at, student_dismissed_at, teacher_response FROM error_reports WHERE issue_id = 'issue-main' ORDER BY id")).rows).toEqual(reportLifecycleBefore);
 
     await database.execute("UPDATE error_report_threads SET completed_at = '2000-01-01T00:00:00.000Z' WHERE id = 'thread-exercise-1'");
     await setErrorReportThreadStatus("thread-exercise-1", "DONE");
@@ -232,7 +226,8 @@ describe("grouped error report read model", () => {
     expect(current?.status).toBe("DONE");
     expect(current?.completed_at).not.toBe("2000-01-01T00:00:00.000Z");
     expect(current?.updated_at).toBe(current?.completed_at);
-    expect((await database.execute("SELECT handled_at FROM error_reports WHERE id = 'main-report-01'")).rows[0]?.handled_at).toBe(firstCompletedAt);
+    expect(firstCompletedAt).toBeTruthy();
+    expect((await database.execute("SELECT id, handled_at, student_dismissed_at, teacher_response FROM error_reports WHERE issue_id = 'issue-main' ORDER BY id")).rows).toEqual(reportLifecycleBefore);
     expect((await database.execute("SELECT status, pinned, admin_note FROM error_report_issues WHERE id = 'issue-main'")).rows[0]).toEqual(issueBefore);
     expect((await database.execute("SELECT id, status, pinned, admin_note FROM error_reports WHERE issue_id = 'issue-main' ORDER BY id")).rows).toEqual(reportsBefore);
   });
@@ -260,20 +255,41 @@ describe("grouped error report read model", () => {
     });
   });
 
-  it("rolls back the thread DONE transition when report handling fails", async () => {
+  it("completes and reopens one report without changing its thread or teacher response", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE error_reports SET student_dismissed_at = '2026-09-08T13:00:00.000Z', teacher_response = 'Blijvende reactie' WHERE id = 'main-report-09'");
+    const threadBefore = (await database.execute("SELECT status, completed_at, updated_at FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows[0];
+
+    await setErrorReportHandled("main-report-09", true);
+    let report = (await database.execute("SELECT handled_at, student_dismissed_at, teacher_response FROM error_reports WHERE id = 'main-report-09'")).rows[0];
+    expect(report?.handled_at).toBeTruthy();
+    expect(report).toMatchObject({ student_dismissed_at: null, teacher_response: "Blijvende reactie" });
+    expect((await database.execute("SELECT status, completed_at, updated_at FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows[0]).toEqual(threadBefore);
+
+    await setErrorReportHandled("main-report-09", false);
+    report = (await database.execute("SELECT handled_at, student_dismissed_at, teacher_response FROM error_reports WHERE id = 'main-report-09'")).rows[0];
+    expect(report).toEqual({ handled_at: null, student_dismissed_at: null, teacher_response: "Blijvende reactie" });
+    expect((await database.execute("SELECT status, completed_at, updated_at FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows[0]).toEqual(threadBefore);
+  });
+
+  it("saves a teacher response and completes the report transactionally", async () => {
     const database = await getDatabase();
     await database.execute(`CREATE TRIGGER reject_report_handling
       BEFORE UPDATE OF handled_at ON error_reports
       WHEN NEW.handled_at IS NOT NULL
       BEGIN SELECT RAISE(ABORT, 'forced report handling failure'); END`);
 
-    await expect(setErrorReportThreadStatus("thread-exercise-1", "DONE")).rejects.toThrow("forced report handling failure");
+    await expect(setErrorReportTeacherResponseAndHandled("main-report-09", "Nieuwe reactie")).rejects.toThrow("forced report handling failure");
+    expect((await database.execute("SELECT handled_at, teacher_response FROM error_reports WHERE id = 'main-report-09'")).rows[0]).toEqual({ handled_at: null, teacher_response: null });
 
-    expect((await database.execute("SELECT status, completed_at FROM error_report_threads WHERE id = 'thread-exercise-1'")).rows[0]).toMatchObject({
-      status: "TODO",
-      completed_at: null,
+    await database.execute("DROP TRIGGER reject_report_handling");
+    await setErrorReportTeacherResponseAndHandled("main-report-09", null);
+
+    expect((await database.execute("SELECT handled_at, student_dismissed_at, teacher_response FROM error_reports WHERE id = 'main-report-09'")).rows[0]).toMatchObject({
+      student_dismissed_at: null,
+      teacher_response: null,
     });
-    expect((await database.execute("SELECT COUNT(*) AS count FROM error_reports WHERE handled_at IS NOT NULL")).rows[0]?.count).toBe(0);
+    expect((await database.execute("SELECT handled_at FROM error_reports WHERE id = 'main-report-09'")).rows[0]?.handled_at).toBeTruthy();
   });
 
   it("counts and resolves threads, including an unmatched exercise", async () => {

@@ -28,7 +28,7 @@ describe("StudentErrorReportCenter", () => {
   it("derives clear report status and hides a response until the report is handled", () => {
     const markup = renderToStaticMarkup(<StudentErrorReportCenter reports={[
       report({ reportId: "open", status: "IN_PROGRESS", handledAt: null, teacherResponse: "Nog verborgen", createdAt: "2026-09-09T08:42:00.000Z" }),
-      report({ reportId: "done", status: "HANDLED", handledAt: "2026-09-10T08:42:00.000Z", teacherResponse: "Eerste regel\nTweede regel" }),
+      report({ reportId: "done", status: "HANDLED", handledAt: "2026-09-10T08:42:00.000Z", effectiveHandledAt: "2026-09-10T08:42:00.000Z", teacherResponse: "Eerste regel\nTweede regel" }),
     ]} />);
 
     expect(markup).toContain("In behandeling");
@@ -39,6 +39,17 @@ describe("StudentErrorReportCenter", () => {
     expect(markup).toContain("Eerste regel\nTweede regel");
     expect(markup).not.toContain("Nog verborgen");
   });
+
+  it("shows a response for thread-only effective completion and hides it again when effectively open", () => {
+    const markup = renderToStaticMarkup(<StudentErrorReportCenter reports={[
+      report({ reportId: "thread-done", handledAt: null, effectiveHandledAt: "2026-09-10T08:42:00.000Z", status: "HANDLED", teacherResponse: "Tijdelijk zichtbaar" }),
+      report({ reportId: "thread-reopened", handledAt: null, effectiveHandledAt: null, status: "IN_PROGRESS", teacherResponse: "Opnieuw verborgen" }),
+    ]} />);
+
+    expect(markup).toContain("Tijdelijk zichtbaar");
+    expect(markup).toContain("10 sep 2026, 10:42");
+    expect(markup).not.toContain("Opnieuw verborgen");
+  });
 });
 
 function report(overrides: Partial<StudentErrorReport> = {}): StudentErrorReport {
@@ -46,6 +57,7 @@ function report(overrides: Partial<StudentErrorReport> = {}): StudentErrorReport
     reportId: "report-1",
     createdAt: "2026-09-09T08:42:00.000Z",
     handledAt: null,
+    effectiveHandledAt: null,
     teacherResponse: null,
     message: "Volgens mij ontbreekt hier een minteken.",
     status: "IN_PROGRESS",

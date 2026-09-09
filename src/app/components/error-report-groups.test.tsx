@@ -7,6 +7,7 @@ vi.mock("@/app/admin/actions", () => ({
   deleteErrorReportAction: vi.fn(),
   deleteOldDoneErrorThreadsAction: vi.fn(),
   deleteErrorReportTeacherResponseAction: vi.fn(),
+  errorReportStatusAction: vi.fn(),
   errorReportThreadNoteAction: vi.fn(),
   errorReportThreadPinAction: vi.fn(),
   errorReportThreadStatusAction: vi.fn(),
@@ -74,7 +75,7 @@ describe("grouped error report thread inbox", () => {
     expect(markup).not.toContain("Gemeld op");
   });
 
-  it("uses only thread-level status, pin and compact note controls", () => {
+  it("keeps thread controls separate and adds an individual report completion control", () => {
     const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[thread()]} issuesByThread={{ "thread-main": [issue()] }} spaceSlug="5wis" />);
 
     expect(markup).toContain('name="threadId" value="thread-main"');
@@ -93,6 +94,9 @@ describe("grouped error report thread inbox", () => {
     expect(markup).not.toContain("Foutmelding verwijderen");
     expect(markup).toContain('aria-label="Melding verwijderen"');
     expect(markup).toContain('aria-label="Bericht aan leerling"');
+    expect(markup).toContain('name="id" value="report-main"');
+    expect(markup).toContain('name="status" value="DONE"');
+    expect(markup).toContain('aria-label="Markeer als afgewerkt"');
     expect(markup.indexOf('aria-label="Bericht aan leerling"')).toBeGreaterThan(markup.indexOf('<details class="issue-report-details">'));
     expect(markup).toContain("report-delete-button");
     expect(markup).not.toContain("Thread verwijderen");
@@ -113,12 +117,12 @@ describe("grouped error report thread inbox", () => {
 
     expect(markup).toContain("2 meldingen • laatste: 8 sep 2026, 13:00 • afgewerkt: 22 sep 2026");
     expect(markup).not.toContain("afgewerkt: 22 sep 2026,");
-    expect(markup).toContain('class="issue-report-item is-treated"');
+    expect(markup).toContain('class="issue-report-item is-unhandled"');
   });
 
   it("distinguishes treated and new reports after automatic reopen", () => {
     const reopened = thread({ completedAt: "2026-09-08T11:00:00.000Z" });
-    const oldReport = report("old", "Eerder behandeld", "2026-09-08T10:00:00.000Z");
+    const oldReport = { ...report("old", "Eerder behandeld", "2026-09-08T10:00:00.000Z"), handledAt: "2026-09-08T11:00:00.000Z" };
     const newReport = report("new", "Nieuwe melding", "2026-09-08T12:00:00.000Z");
     const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards
       threads={[reopened]}
@@ -128,17 +132,17 @@ describe("grouped error report thread inbox", () => {
 
     expect(markup).toMatch(/is-unhandled[^>]*aria-label="Onbehandelde melding"[\s\S]*Nieuwe melding/);
     expect(markup).toMatch(/is-treated[^>]*aria-label="Eerder afgehandelde melding"[\s\S]*Eerder behandeld/);
+    expect(markup).toContain('name="status" value="OPEN"');
+    expect(markup).toContain('aria-label="Heropen melding"');
     expect(markup).not.toContain("afgewerkt:");
   });
 
-  it("applies the documented treated-report cutoff semantics", () => {
-    const reportBeforeCutoff = report("old", "Oud", "2026-09-08T10:00:00.000Z");
-    const reportAfterCutoff = report("new", "Nieuw", "2026-09-08T12:00:00.000Z");
+  it("derives the individual admin visual state only from report handledAt", () => {
+    const openReport = report("open", "Open", "2026-09-08T10:00:00.000Z");
+    const doneReport = { ...openReport, handledAt: "2026-09-08T11:00:00.000Z" };
 
-    expect(isErrorReportTreated(thread(), reportBeforeCutoff)).toBe(false);
-    expect(isErrorReportTreated(thread({ status: "DONE" }), reportAfterCutoff)).toBe(true);
-    expect(isErrorReportTreated(thread({ completedAt: "2026-09-08T11:00:00.000Z" }), reportBeforeCutoff)).toBe(true);
-    expect(isErrorReportTreated(thread({ completedAt: "2026-09-08T11:00:00.000Z" }), reportAfterCutoff)).toBe(false);
+    expect(isErrorReportTreated(openReport)).toBe(false);
+    expect(isErrorReportTreated(doneReport)).toBe(true);
   });
 
   it("shows a compact add-note action when the thread note is empty", () => {

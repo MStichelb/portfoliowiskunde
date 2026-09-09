@@ -1839,17 +1839,10 @@ export async function getErrorReportThreadLearningSpaceId(threadId: string): Pro
 
 export async function setErrorReportThreadStatus(threadId: string, status: "TODO" | "DONE"): Promise<void> {
   const now = new Date().toISOString();
-  const database = await getDatabase();
-  const statements: InStatement[] = [{
+  await (await getDatabase()).execute({
     sql: "UPDATE error_report_threads SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
     args: [status, status === "DONE" ? now : null, now, threadId],
-  }];
-  if (status === "DONE") statements.push({
-    sql: `UPDATE error_reports SET handled_at = ?
-      WHERE handled_at IS NULL AND issue_id IN (SELECT id FROM error_report_issues WHERE thread_id = ?)`,
-    args: [now, threadId],
   });
-  await database.batch(statements);
 }
 
 export async function toggleErrorReportThreadPin(threadId: string): Promise<void> {
@@ -1871,6 +1864,21 @@ export async function setErrorReportTeacherResponse(id: string, response: string
     sql: "UPDATE error_reports SET teacher_response = ? WHERE id = ?",
     args: [response, id],
   });
+}
+
+export async function setErrorReportHandled(id: string, handled: boolean): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE error_reports SET handled_at = ?, student_dismissed_at = NULL WHERE id = ?",
+    args: [handled ? new Date().toISOString() : null, id],
+  });
+}
+
+export async function setErrorReportTeacherResponseAndHandled(id: string, response: string | null): Promise<void> {
+  const now = new Date().toISOString();
+  await (await getDatabase()).batch([
+    { sql: "UPDATE error_reports SET teacher_response = ? WHERE id = ?", args: [response, id] },
+    { sql: "UPDATE error_reports SET handled_at = ?, student_dismissed_at = NULL WHERE id = ?", args: [now, id] },
+  ]);
 }
 
 export async function deleteErrorReport(id: string): Promise<void> {

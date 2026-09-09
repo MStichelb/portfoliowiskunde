@@ -76,7 +76,7 @@ export function ErrorReportResponseButton({ reportId, exerciseCode, locationLabe
               confirmTitle="Bericht verwijderen?"
               confirmText="Het bericht aan deze leerling wordt verwijderd. De melding en haar lifecycle blijven behouden."
             /> : null}</div>
-            <div><button className="secondary-button" type="button" onClick={close}>Annuleren</button><SubmitButton pendingLabel="Opslaan...">Opslaan</SubmitButton></div>
+            <div><button className="secondary-button" type="button" onClick={close}>Annuleren</button><SubmitButton className="secondary-button" pendingLabel="Opslaan...">Opslaan</SubmitButton><SubmitButton name="markHandled" value="true" pendingLabel="Opslaan...">Opslaan &amp; markeren als afgewerkt</SubmitButton></div>
           </div>
         </form>
       </div>

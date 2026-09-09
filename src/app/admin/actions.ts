@@ -37,7 +37,9 @@ import {
   setPortfolioCustomMessage,
   setPortfolioTheme,
   saveErrorReportThreadNote,
+  setErrorReportHandled,
   setErrorReportTeacherResponse,
+  setErrorReportTeacherResponseAndHandled,
   deleteErrorReport,
   deleteOldDoneErrorThreads,
   setSectionPublication,
@@ -429,9 +431,19 @@ export async function saveErrorReportTeacherResponseAction(_previousState: Admin
   const learningSpaceId = await requireErrorReportManagement(id);
   const response = errorReportTeacherResponseSchema.safeParse(String(formData.get("teacherResponse") ?? ""));
   if (!response.success) return { error: "Gebruik maximaal 500 tekens platte tekst." };
-  await setErrorReportTeacherResponse(id, response.data);
+  if (stringValue(formData, "markHandled") === "true") await setErrorReportTeacherResponseAndHandled(id, response.data);
+  else await setErrorReportTeacherResponse(id, response.data);
   await refreshErrorReportIssuePaths(learningSpaceId);
   return { error: null, saved: true };
+}
+
+export async function errorReportStatusAction(formData: FormData) {
+  const id = stringValue(formData, "id");
+  const learningSpaceId = await requireErrorReportManagement(id);
+  const status = stringValue(formData, "status");
+  if (status !== "OPEN" && status !== "DONE") throw new Error("Ongeldige meldingsstatus.");
+  await setErrorReportHandled(id, status === "DONE");
+  await refreshErrorReportIssuePaths(learningSpaceId);
 }
 
 export async function deleteErrorReportTeacherResponseAction(formData: FormData) {

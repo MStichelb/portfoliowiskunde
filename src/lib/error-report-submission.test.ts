@@ -136,6 +136,41 @@ describe("error report v2 submission", () => {
     expect(thread).toMatchObject({ status: "TODO", completed_at: "2026-09-08T12:00:00.000Z" });
   });
 
+  it("automatically reopens the thread without changing existing reports and creates the new report open", async () => {
+    const first = await createErrorReport(submission({ reporterUserId: "report-user-1", rateLimitKey: "auto-first" }));
+    await createErrorReport(submission({ reporterUserId: "report-user-2", rateLimitKey: "auto-second" }));
+    const database = await getDatabase();
+    await database.execute("INSERT INTO users (id, display_name, role, status, created_at, updated_at) VALUES ('report-user-3', 'Derde leerling', 'student', 'active', '2026-09-08T10:00:00.000Z', '2026-09-08T10:00:00.000Z')");
+    await database.execute({
+      sql: `UPDATE error_reports SET handled_at = '2026-09-08T12:00:00.000Z',
+        student_dismissed_at = '2026-09-08T13:00:00.000Z', teacher_response = 'Bestaande reactie'
+        WHERE issue_id = ?`,
+      args: [first.issueId],
+    });
+    await database.execute({
+      sql: `UPDATE error_report_threads SET status = 'DONE', completed_at = '2026-09-08T12:00:00.000Z'
+        WHERE id = (SELECT thread_id FROM error_report_issues WHERE id = ?)`,
+      args: [first.issueId],
+    });
+
+    await createErrorReport(submission({ reporterUserId: "report-user-3", rateLimitKey: "auto-third" }));
+
+    const reports = (await database.execute({
+      sql: `SELECT reporter_user_id, handled_at, student_dismissed_at, teacher_response
+        FROM error_reports WHERE issue_id = ? ORDER BY reporter_user_id`,
+      args: [first.issueId],
+    })).rows;
+    expect(reports.slice(0, 2)).toEqual([
+      expect.objectContaining({ reporter_user_id: "report-user-1", handled_at: "2026-09-08T12:00:00.000Z", student_dismissed_at: "2026-09-08T13:00:00.000Z", teacher_response: "Bestaande reactie" }),
+      expect.objectContaining({ reporter_user_id: "report-user-2", handled_at: "2026-09-08T12:00:00.000Z", student_dismissed_at: "2026-09-08T13:00:00.000Z", teacher_response: "Bestaande reactie" }),
+    ]);
+    expect(reports[2]).toMatchObject({ reporter_user_id: "report-user-3", handled_at: null, student_dismissed_at: null, teacher_response: null });
+    expect((await database.execute({ sql: "SELECT status, completed_at FROM error_report_threads WHERE id = (SELECT thread_id FROM error_report_issues WHERE id = ?)", args: [first.issueId] })).rows[0]).toMatchObject({
+      status: "TODO",
+      completed_at: "2026-09-08T12:00:00.000Z",
+    });
+  });
+
   it("groups document issues for one exercise into one race-safe thread", async () => {
     const [assignment, solutions] = await Promise.all([
       createErrorReport(submission({ documentKind: "assignment", variant: null, rateLimitKey: "thread-assignment" })),

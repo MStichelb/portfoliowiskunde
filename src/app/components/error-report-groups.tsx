@@ -4,7 +4,7 @@ import { Check, Pin, PinOff, RotateCcw, Search, Trash2, TriangleAlert } from "lu
 import Link from "next/link";
 import { useMemo, useReducer } from "react";
 
-import { deleteErrorReportAction, deleteOldDoneErrorThreadsAction, errorReportThreadPinAction, errorReportThreadStatusAction, toggleReportedExerciseVisibilityAction } from "@/app/admin/actions";
+import { deleteErrorReportAction, deleteOldDoneErrorThreadsAction, errorReportStatusAction, errorReportThreadPinAction, errorReportThreadStatusAction, toggleReportedExerciseVisibilityAction } from "@/app/admin/actions";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import { ErrorReportNoteForm } from "@/app/components/error-report-note-form";
 import { ErrorReportResponseButton } from "@/app/components/error-report-response-button";
@@ -162,13 +162,18 @@ function ThreadReportDetails({ thread, issues, reportLabel }: {
     <div className="issue-report-list">{issues.map((issue) => <section key={issue.issueId} className="issue-report-location">
       <h3>{errorReportLocationLabel(issue)}</h3>
       <div className="issue-report-stack">{issue.reports.map((report) => {
-        const treated = isErrorReportTreated(thread, report);
+        const treated = isErrorReportTreated(report);
         const reporterLabel = report.reporterDisplayName ?? report.reporterName ?? "Onbekende melder";
         return <article key={report.id} className={`issue-report-item ${treated ? "is-treated" : "is-unhandled"}`} aria-label={treated ? "Eerder afgehandelde melding" : "Onbehandelde melding"}>
           <div className="issue-report-item-heading">
             <p className="report-message">{report.message}</p>
             <div className="issue-report-actions">
               <ErrorReportResponseButton reportId={report.id} exerciseCode={thread.exerciseCode} locationLabel={errorReportLocationLabel(issue)} reporterLabel={reporterLabel} teacherResponse={report.teacherResponse} />
+              <form action={errorReportStatusAction}>
+                <input type="hidden" name="id" value={report.id} />
+                <input type="hidden" name="status" value={treated ? "OPEN" : "DONE"} />
+                <button className="icon-button report-status-button" title={treated ? "Heropen melding" : "Markeer als afgewerkt"} aria-label={treated ? "Heropen melding" : "Markeer als afgewerkt"}>{treated ? <RotateCcw size={15} aria-hidden /> : <Check size={15} aria-hidden />}</button>
+              </form>
               <ConfirmActionButton
                 action={deleteErrorReportAction}
                 fields={{ id: report.id }}
@@ -187,14 +192,9 @@ function ThreadReportDetails({ thread, issues, reportLabel }: {
 }
 
 export function isErrorReportTreated(
-  thread: Pick<GroupedErrorReportThread, "status" | "completedAt">,
-  report: Pick<ErrorReportIssueDetail, "createdAt">,
+  report: Pick<ErrorReportIssueDetail, "handledAt">,
 ): boolean {
-  if (thread.status === "DONE") return true;
-  if (!thread.completedAt) return false;
-  const completedAt = Date.parse(thread.completedAt);
-  const createdAt = Date.parse(report.createdAt);
-  return Number.isFinite(completedAt) && Number.isFinite(createdAt) && createdAt <= completedAt;
+  return report.handledAt !== null;
 }
 
 export function errorReportDeleteConfirmText(thread: Pick<GroupedErrorReportThread, "reportCount" | "adminNote">): string {
