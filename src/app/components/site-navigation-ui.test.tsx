@@ -55,6 +55,18 @@ describe("SiteNavigation admin context", () => {
     expect(student).not.toContain('aria-label="Beheer"');
   });
 
+  it("shows Mijn meldingen only in authenticated student navigation", () => {
+    navigation.pathname = "/";
+    const student = renderToStaticMarkup(<SiteNavigation spaces={[]} user={{ firstName: "Leerling", role: "student" }} />);
+    const teacher = renderToStaticMarkup(<SiteNavigation spaces={[]} user={{ firstName: "Leraar", role: "teacher" }} />);
+    const superadmin = renderToStaticMarkup(<SiteNavigation spaces={[]} user={{ firstName: "Beheer", role: "superadmin" }} />);
+
+    expect(student).toMatch(/<a[^>]*aria-label="Mijn meldingen"[^>]*href="\/mijn-meldingen"/);
+    expect(student).toContain("lucide-message-square-text");
+    expect(teacher).not.toContain("/mijn-meldingen");
+    expect(superadmin).not.toContain("/mijn-meldingen");
+  });
+
   it.each(["teacher", "superadmin"] as const)("renders Settings for a %s", (role) => {
     const markup = renderToStaticMarkup(<SiteNavigation spaces={[]} user={{ firstName: "Leraar", role }} />);
     expect(markup).toContain('aria-label="Beheer"');

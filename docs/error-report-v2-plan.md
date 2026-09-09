@@ -72,6 +72,10 @@ Batch A2 gebruikt `teacher_response` als optioneel plain-textbericht van maximaa
 
 Een response opslaan of verwijderen wijzigt `handled_at`, `student_dismissed_at` en de report-, issue- of threadstatus niet. DONE zetten behoudt een eerder geschreven response. Wanneer dezelfde leerling hetzelfde issue opnieuw indient, wist de bestaande resubmitflow de oude response samen met de eerdere afhandelings- en dismissmetadata, zodat die tekst niet ten onrechte bij de nieuwe submission blijft staan.
 
+Batch A3 voegt `/mijn-meldingen` toe voor ingelogde leerlingen. Het server-side readmodel resolveert de actuele sessiegebruiker zelf, filtert strikt op diens `reporter_user_id` en beperkt resultaten tot LearningSpaces waarvoor die leerling volgens de huidige groeps-, individuele of membershipregels nog toegang heeft én portfolios die volgens hun actuele publicatie-, index- en archiefstatus beschikbaar zijn. De route accepteert geen user-ID en toont geen reports van andere leerlingen of van ingetrokken toegangen.
+
+De leerlingstatus is uitsluitend per report: `handled_at IS NULL` betekent **In behandeling** en een ingevulde `handled_at` betekent **Afgewerkt**, onafhankelijk van de actuele threadstatus. Open reports blijven zichtbaar; afgewerkte reports blijven tot en met exact veertien dagen na `handled_at` in het overzicht en worden daarna alleen uit deze readweergave gefilterd. De fysieke threadcleanup blijft ongewijzigd. Een `teacher_response` verschijnt alleen bij een afgewerkt eigen report; een technisch aanwezige response op een nog open report blijft verborgen.
+
 ## Vervolg
 
 - **Legacy:** redundante workflowvelden gecontroleerd opruimen zodra migratie- en backward-compatibilityreads ze niet meer nodig hebben.

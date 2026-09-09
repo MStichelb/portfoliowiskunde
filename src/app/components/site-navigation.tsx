@@ -1,6 +1,6 @@
 "use client";
 
-import { Crown, Eye, Folder, FolderCog, GraduationCap, Home, LogOut, Plus, Settings, Star } from "lucide-react";
+import { Crown, Eye, Folder, FolderCog, GraduationCap, Home, LogOut, MessageSquareText, Plus, Settings, Star } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
@@ -36,6 +36,7 @@ export function SiteNavigation({ spaces, adminSpaces = spaces, directSpaces = ad
   return <><nav className={`site-nav${adminRoute ? " admin-site-nav" : ""}`} aria-label="Hoofdnavigatie">
     <div className="site-nav-primary">
       <Link className="site-nav-icon" href={homeHref} aria-label="Startpagina" title="Startpagina"><Home size={20} aria-hidden /></Link>
+      {user.role === "student" ? <Link className="site-nav-icon" href="/mijn-meldingen" aria-label="Mijn meldingen" title="Mijn meldingen"><MessageSquareText size={19} aria-hidden /></Link> : null}
       {canOpenAdmin ? <Link className="site-nav-icon" href="/admin" aria-label="Beheer" title="Beheer"><Settings size={20} aria-hidden /></Link> : null}
       {showSpaceNavigation ? <><span className="site-nav-divider site-nav-space-divider" aria-hidden /><div className="site-nav-space-zone"><SpaceNavigation spaces={contextSpaces} directSpaces={directContextSpaces} extraSpaces={extraContextSpaces} current={current} adminRoute={adminRoute} role={user.role} /></div></> : null}
     </div>
