@@ -4,10 +4,12 @@ import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { bulkExercisePublicationAction, toggleExerciseAlternativeVisibilityAction, toggleExerciseVisibilityAction } from "@/app/admin/actions";
 import { SubmitButton } from "@/app/components/submit-button";
 import { PublicationStatus } from "@/app/components/publication-status";
+import { ExerciseNoteButton } from "@/app/components/exercise-note-button";
 import { bulkSelectionError } from "@/lib/admin-validation";
+import type { ExerciseNotePosition } from "@/lib/exercise-note";
 import type { EffectivePublication } from "@/lib/publication";
 
-export interface BulkSection { id: string; title: string; order: number; exercises: Array<{ id: string; code: string; configuredVisible: boolean; status: EffectivePublication; standardAssets: number; alternativeAssets: number; missingAssets: number; showAlternativeToStudents: boolean; isIndexed: boolean }>; }
+export interface BulkSection { id: string; title: string; order: number; exercises: Array<{ id: string; code: string; configuredVisible: boolean; status: EffectivePublication; standardAssets: number; alternativeAssets: number; missingAssets: number; showAlternativeToStudents: boolean; isIndexed: boolean; noteLabel: string | null; customNote: string | null; notePosition: ExerciseNotePosition }>; }
 
 export function sectionSelectionState(ids: string[], selected: Set<string>): { checked: boolean; indeterminate: boolean } {
   const selectedCount = ids.filter((id) => selected.has(id)).length;
@@ -49,13 +51,14 @@ export function ExerciseBulkTable({ portfolioId, spaceSlug, sections }: { portfo
     </form>
     <div className="admin-summary-table" role="region" aria-label="Oefeningen per onderdeel" tabIndex={0}>
       <table>
-        <thead><tr><th><span className="sr-only">Selecteren</span></th><th>Oefening</th><th>Eigen status</th><th>Effectieve status</th><th>Alternatieve uitwerking tonen</th><th title="Uitwerking, alternatieve uitwerking">Aantal bestanden</th></tr></thead>
+        <thead><tr><th><span className="sr-only">Selecteren</span></th><th>Oefening</th><th>Eigen status</th><th>Notitie</th><th>Effectieve status</th><th>Alternatieve uitwerking tonen</th><th title="Uitwerking, alternatieve uitwerking">Aantal bestanden</th></tr></thead>
         <tbody>{sections.flatMap((section) => [
-          <tr className="section-table-row" key={section.id}><td><SectionCheckbox section={section} selected={selected} onChange={() => setSelected((current) => toggleSectionSelection(current, section.exercises.map((exercise) => exercise.id)))} /></td><th colSpan={5}>{section.order}. {section.title}</th></tr>,
+          <tr className="section-table-row" key={section.id}><td><SectionCheckbox section={section} selected={selected} onChange={() => setSelected((current) => toggleSectionSelection(current, section.exercises.map((exercise) => exercise.id)))} /></td><th colSpan={6}>{section.order}. {section.title}</th></tr>,
           ...section.exercises.map((exercise) => <tr key={exercise.id} id={`exercise-${exercise.id}`}>
             <td><input aria-label={`Oefening ${exercise.code} selecteren`} type="checkbox" checked={selected.has(exercise.id)} onChange={() => flip(exercise.id)} /></td>
             <td><a href={spaceSlug ? `/admin/${encodeURIComponent(spaceSlug)}/oefening/${encodeURIComponent(exercise.id)}` : `/admin/oefening/${encodeURIComponent(exercise.id)}`}>Oefening {exercise.code}</a>{!exercise.isIndexed ? <span className="missing-source" role="status"><TriangleAlert size={15} aria-hidden />Bron ontbreekt</span> : exercise.missingAssets > 0 ? <span className="missing-source" role="status"><TriangleAlert size={15} aria-hidden />Uitwerking onvolledig</span> : null}</td>
             <td><form action={toggleExerciseVisibilityAction}><input type="hidden" name="id" value={exercise.id} /><input type="hidden" name="portfolioId" value={portfolioId} /><input type="hidden" name="visible" value={String(!exercise.configuredVisible)} /><button className="visibility-toggle">{exercise.configuredVisible ? <Eye size={16} /> : <EyeOff size={16} />}{exercise.configuredVisible ? "Zichtbaar" : "Verborgen"}</button></form></td>
+            <td><ExerciseNoteButton exerciseId={exercise.id} exerciseCode={exercise.code} noteLabel={exercise.noteLabel} customNote={exercise.customNote} notePosition={exercise.notePosition} /></td>
             <td><PublicationStatus status={exercise.status} /></td>
             <td>{exercise.alternativeAssets > 0 ? <form action={toggleExerciseAlternativeVisibilityAction} className="alternative-toggle"><input type="hidden" name="id" value={exercise.id} /><input type="hidden" name="portfolioId" value={portfolioId} /><input type="hidden" name="visible" value={String(!exercise.showAlternativeToStudents)} /><input aria-label={`Alternatieve uitwerking voor oefening ${exercise.code} tonen`} title="Alternatieve uitwerking voor leerlingen tonen" type="checkbox" checked={exercise.showAlternativeToStudents} onChange={(event) => event.currentTarget.form?.requestSubmit()} /></form> : "-"}</td>
             <td>{exercise.alternativeAssets > 0 ? `${exercise.standardAssets}, ${exercise.alternativeAssets}` : exercise.standardAssets}</td>

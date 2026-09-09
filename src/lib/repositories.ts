@@ -10,6 +10,7 @@ import { normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-co
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRelativePath } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
+import type { ExerciseNotePosition } from "@/lib/exercise-note";
 import type { SourceManifestEntry } from "@/lib/source-comparison";
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
 import {
@@ -44,6 +45,10 @@ export interface AdminExercise {
   standardAssets: number;
   alternativeAssets: number;
   missingAssets: number;
+  hasNote: boolean;
+  noteLabel: string | null;
+  customNote: string | null;
+  notePosition: ExerciseNotePosition;
   assets: AdminAsset[];
 }
 
@@ -942,6 +947,10 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
               standardAssets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
               alternativeAssets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
               missingAssets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && !bool(asset.is_indexed)).length,
+              hasNote: Boolean(nullableText(exercise, "custom_note")),
+              noteLabel: nullableText(exercise, "note_label"),
+              customNote: nullableText(exercise, "custom_note"),
+              notePosition: text(exercise, "note_position") as ExerciseNotePosition,
               assets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId).map((asset) => ({
                 id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"),
                 step: Number(asset.step), variant: text(asset, "kind") as AdminAsset["variant"],
@@ -1050,6 +1059,13 @@ export async function setExerciseAlternativeVisibility(id: string, showAlternati
   await database.execute({ sql: "UPDATE exercises SET show_alternative_to_students = ? WHERE id = ?", args: [showAlternativeToStudents ? 1 : 0, id] });
 }
 
+export async function setExerciseNote(id: string, customNote: string | null, noteLabel: string | null, notePosition: ExerciseNotePosition): Promise<void> {
+  await (await getDatabase()).execute({
+    sql: "UPDATE exercises SET custom_note = ?, note_label = ?, note_position = ? WHERE id = ?",
+    args: [customNote, noteLabel, notePosition, id],
+  });
+}
+
 export async function getStudentPortfolios(learningSpaceId?: string): Promise<StudentPortfolio[]> {
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
@@ -1143,13 +1159,14 @@ export async function getVisibleExercise(id: string, learningSpaceId?: string) {
   return {
     id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"),
     portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
+    customNote: nullableText(exercise, "custom_note"), noteLabel: nullableText(exercise, "note_label"), notePosition: text(exercise, "note_position") as ExerciseNotePosition,
     assets: assets.rows.filter((asset) => text(asset, "kind") !== "alternative" || bool(exercise.show_alternative_to_students)).map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label"), lastModifiedAt: nullableText(asset, "last_modified_at") })),
   };
 }
 
 export async function getAdminExercise(id: string, learningSpaceId?: string) {
   const database = await getDatabase();
-  const result = await database.execute({ sql: `SELECT exercises.exercise_code, exercises.is_indexed AS exercise_is_indexed, exercises.archived_at AS exercise_archived_at,
+  const result = await database.execute({ sql: `SELECT exercises.exercise_code, exercises.custom_note, exercises.note_label, exercises.note_position, exercises.is_indexed AS exercise_is_indexed, exercises.archived_at AS exercise_archived_at,
     sections.title AS section_title, sections.is_indexed AS section_is_indexed, portfolios.id AS portfolio_id, portfolios.portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override, portfolios.learning_space_id, portfolios.is_indexed AS portfolio_is_indexed
     FROM exercises JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
     WHERE exercises.id = ? AND exercises.archived_at IS NULL${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`, args: learningSpaceId ? [id, learningSpaceId] : [id] });
@@ -1160,7 +1177,7 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     WHERE solution_variants.exercise_id = ? AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1
     ORDER BY CASE solution_variants.kind WHEN 'standard' THEN 0 ELSE 1 END, solution_assets.step, solution_assets.file_name`, args: [id] });
   const isIndexed = bool(exercise.exercise_is_indexed) && bool(exercise.section_is_indexed) && bool(exercise.portfolio_is_indexed);
-  return { id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"), portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"), isIndexed, assets: assets.rows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label") })) };
+  return { id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"), portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"), isIndexed, customNote: nullableText(exercise, "custom_note"), noteLabel: nullableText(exercise, "note_label"), notePosition: text(exercise, "note_position") as ExerciseNotePosition, assets: assets.rows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label") })) };
 }
 
 export async function getAdminAsset(id: string, learningSpaceId?: string) {

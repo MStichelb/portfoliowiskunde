@@ -7,12 +7,15 @@ import { z } from "zod";
 
 import { endAdminSession, requireAdmin, requireAdminUser } from "@/lib/auth";
 import { bulkSelectionError } from "@/lib/admin-validation";
+import { adminExercisePortfolioHref } from "@/lib/admin-routes";
 import { requireLearningSpaceConfiguration, requireLearningSpaceCreation, requireLearningSpaceManagement } from "@/lib/authorization";
+import { exerciseNoteSchema } from "@/lib/exercise-note";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { parseBrusselsDateTime, type ChildVisibilityMode, type PortfolioVisibilityMode } from "@/lib/publication";
 import { portfolioCustomMessageSchema } from "@/lib/portfolio-custom-message";
 import {
   getAdminPortfolioAny,
+  getAdminExercise,
   getErrorReportThreadLearningSpaceId,
   getErrorReportLearningSpaceId,
   getAdminLearningSpaceBySlug,
@@ -26,6 +29,7 @@ import {
   setExercisePublication,
   setExerciseVisibility,
   setExerciseAlternativeVisibility,
+  setExerciseNote,
   setPortfolioPublication,
   setPortfolioTitle,
   setPortfolioCardColor,
@@ -366,6 +370,29 @@ export async function toggleExerciseAlternativeVisibilityAction(formData: FormDa
   refreshPublicationPaths(portfolioId);
 }
 
+export async function saveExerciseNoteAction(formData: FormData) {
+  const id = stringValue(formData, "id");
+  const note = exerciseNoteSchema.safeParse({
+    noteLabel: String(formData.get("noteLabel") ?? ""),
+    customNote: String(formData.get("customNote") ?? ""),
+    notePosition: stringValue(formData, "notePosition"),
+  });
+  if (!id || !note.success) throw new Error("Ongeldige oefeningnotitie.");
+  const { exercise, space } = await requireExerciseNoteManagement(id);
+  await setExerciseNote(id, note.data.customNote, note.data.noteLabel, note.data.notePosition);
+  refreshExerciseNotePaths(exercise, space.slug);
+  redirect(adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id));
+}
+
+export async function deleteExerciseNoteAction(formData: FormData) {
+  const id = stringValue(formData, "id");
+  if (!id) throw new Error("Oefening niet gevonden.");
+  const { exercise, space } = await requireExerciseNoteManagement(id);
+  await setExerciseNote(id, null, null, "above_solution");
+  refreshExerciseNotePaths(exercise, space.slug);
+  redirect(adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id));
+}
+
 export async function logoutAction() {
   await endAdminSession();
   redirect("/admin/login");
@@ -462,6 +489,15 @@ async function requirePortfolioManagement(portfolioId: string) {
   if (!portfolio) throw new Error("Portfolio niet gevonden.");
   await requireSpaceManagement(portfolio.learningSpaceId);
   return portfolio;
+}
+
+async function requireExerciseNoteManagement(id: string) {
+  const exercise = await getAdminExercise(id);
+  if (!exercise) throw new Error("Oefening niet gevonden.");
+  await requireSpaceManagement(exercise.learningSpaceId);
+  const space = await getLearningSpace(exercise.learningSpaceId);
+  if (!space) throw new Error("Leeromgeving niet gevonden.");
+  return { exercise, space };
 }
 
 async function requireErrorReportManagement(id: string) {
@@ -592,6 +628,13 @@ function refreshPublicationPaths(portfolioId: string) {
   revalidatePath(`/portfolio/${portfolioId}`);
   revalidatePath("/admin");
   revalidatePath(`/admin/portfolio/${portfolioId}`);
+}
+
+function refreshExerciseNotePaths(exercise: { id: string; portfolioId: string }, spaceSlug: string) {
+  refreshPublicationPaths(exercise.portfolioId);
+  revalidatePath(`/admin/${encodeURIComponent(spaceSlug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}`);
+  revalidatePath(`/admin/${encodeURIComponent(spaceSlug)}/oefening/${encodeURIComponent(exercise.id)}`);
+  revalidatePath(`/${encodeURIComponent(spaceSlug)}/oefening/${encodeURIComponent(exercise.id)}`);
 }
 
 export type { ChildVisibilityMode, PortfolioVisibilityMode };

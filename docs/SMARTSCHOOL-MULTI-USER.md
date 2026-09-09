@@ -50,7 +50,7 @@ https://portfoliowiskunde.vercel.app/api/auth/smartschool/callback
 
 ## Identiteit, groepen en rollen
 
-Migration `021_multi_user_foundation` bevat users, externe identiteiten, teacher-memberships, groepsmappings en persoonlijke storageconnections. Migration `022_smartschool_oauth` maakt externe identiteit platformgebonden en voegt vervangbare groepssnapshots toe. Migration `025_editor_student_access_delegation` legt de optionele delegatie van leerlingtoegang aan bewerkers vast. De volledige actuele databaseketen loopt tot `029_error_report_threads`.
+Migration `021_multi_user_foundation` bevat users, externe identiteiten, teacher-memberships, groepsmappings en persoonlijke storageconnections. Migration `022_smartschool_oauth` maakt externe identiteit platformgebonden en voegt vervangbare groepssnapshots toe. Migration `025_editor_student_access_delegation` legt de optionele delegatie van leerlingtoegang aan bewerkers vast. De volledige actuele databaseketen loopt tot `031_exercise_note_labels`.
 
 De identity key bestaat uit:
 
