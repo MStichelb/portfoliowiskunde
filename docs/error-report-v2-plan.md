@@ -76,6 +76,8 @@ Batch A3 voegt `/mijn-meldingen` toe voor ingelogde leerlingen. Het server-side 
 
 De leerlingstatus is uitsluitend per report: `handled_at IS NULL` betekent **In behandeling** en een ingevulde `handled_at` betekent **Afgewerkt**, onafhankelijk van de actuele threadstatus. Open reports blijven zichtbaar; afgewerkte reports blijven tot en met exact veertien dagen na `handled_at` in het overzicht en worden daarna alleen uit deze readweergave gefilterd. De fysieke threadcleanup blijft ongewijzigd. Een `teacher_response` verschijnt alleen bij een afgewerkt eigen report; een technisch aanwezige response op een nog open report blijft verborgen.
 
+Batch A4 toont op de leerling-home maximaal één compacte behandelingsbanner voor eigen, recent afgewerkte reports zonder `student_dismissed_at`. Eén report gebruikt een oefeningsspecifieke tekst wanneer de koppeling betrouwbaar is; meerdere reports worden in dezelfde banner geaggregeerd. Dismiss zet voor precies de nog geldige eigen pending set `student_dismissed_at`, maar verwijdert geen report en wijzigt `handled_at` of `teacher_response` niet. Een resubmit reset deze drie lifecyclevelden volgens A1, zodat een later opnieuw afgewerkt report een nieuwe feedbackcyclus en banner kan starten.
+
 ## Vervolg
 
 - **Legacy:** redundante workflowvelden gecontroleerd opruimen zodra migratie- en backward-compatibilityreads ze niet meer nodig hebben.

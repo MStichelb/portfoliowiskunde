@@ -25,15 +25,76 @@ export interface StudentErrorReport {
   locationLabel: string;
 }
 
+export interface StudentHandledReportNotification {
+  reportIds: string[];
+  count: number;
+  exerciseCode: string | null;
+  singleLearningSpaceId: string | null;
+}
+
+interface CurrentStudentErrorReportContext {
+  userId: string;
+  accessibleLearningSpaceIds: string[];
+  reports: CurrentStudentErrorReport[];
+}
+
+interface CurrentStudentErrorReport {
+  report: StudentErrorReport;
+  studentDismissedAt: string | null;
+}
+
 export async function getMyErrorReports(now = new Date()): Promise<StudentErrorReport[] | null> {
+  const context = await getCurrentStudentErrorReportContext(now);
+  if (!context) return null;
+  return context.reports.map(({ report }) => report);
+}
+
+export async function listPendingHandledReportNotificationsForCurrentUser(now = new Date()): Promise<StudentHandledReportNotification | null> {
+  const context = await getCurrentStudentErrorReportContext(now);
+  if (!context) return null;
+  const reports = context.reports.filter(({ report, studentDismissedAt }) => report.handledAt !== null && studentDismissedAt === null);
+  if (reports.length === 0) return null;
+  return {
+    reportIds: reports.map(({ report }) => report.reportId),
+    count: reports.length,
+    exerciseCode: reports.length === 1 && reports[0].report.isMatchedExercise ? reports[0].report.exerciseCode : null,
+    singleLearningSpaceId: context.accessibleLearningSpaceIds.length === 1 ? context.accessibleLearningSpaceIds[0] : null,
+  };
+}
+
+export async function dismissPendingHandledReportNotificationsForCurrentUser(candidateReportIds: unknown[], now = new Date()): Promise<number> {
+  const requestedIds = [...new Set(candidateReportIds
+    .filter((value): value is string => typeof value === "string" && value.length > 0 && value.length <= 200))];
+  if (requestedIds.length === 0) return 0;
+
+  const context = await getCurrentStudentErrorReportContext(now);
+  if (!context) return 0;
+  const currentPendingIds = new Set(context.reports
+    .filter(({ report, studentDismissedAt }) => report.handledAt !== null && studentDismissedAt === null)
+    .map(({ report }) => report.reportId));
+  const reportIds = requestedIds.filter((id) => currentPendingIds.has(id));
+  if (reportIds.length === 0) return 0;
+
+  const statements = chunk(reportIds, 400).map((ids) => ({
+    sql: `UPDATE error_reports SET student_dismissed_at = ?
+      WHERE id IN (${ids.map(() => "?").join(", ")}) AND reporter_user_id = ?
+        AND handled_at IS NOT NULL AND student_dismissed_at IS NULL`,
+    args: [now.toISOString(), ...ids, context.userId],
+  }));
+  await (await getDatabase()).batch(statements);
+  return reportIds.length;
+}
+
+async function getCurrentStudentErrorReportContext(now: Date): Promise<CurrentStudentErrorReportContext | null> {
   const user = await requireAuthenticatedUser();
   if (user.role !== "student") return null;
   const accessibleLearningSpaceIds = await getAccessibleLearningSpaceIds(user);
-  if (accessibleLearningSpaceIds.length === 0) return [];
+  if (accessibleLearningSpaceIds.length === 0) return { userId: user.id, accessibleLearningSpaceIds, reports: [] };
 
   const placeholders = accessibleLearningSpaceIds.map(() => "?").join(", ");
   const result = await (await getDatabase()).execute({
     sql: `SELECT error_reports.id AS report_id, error_reports.created_at, error_reports.handled_at,
+      error_reports.student_dismissed_at,
       error_reports.teacher_response, error_reports.message,
       error_report_issues.exercise_id, error_report_issues.exercise_code,
       error_report_issues.document_kind, error_report_issues.variant_kind,
@@ -53,11 +114,12 @@ export async function getMyErrorReports(now = new Date()): Promise<StudentErrorR
     args: [user.id, ...accessibleLearningSpaceIds],
   });
 
-  return result.rows
+  const reports = result.rows
     .filter((row) => isCurrentlyAccessiblePortfolio(row, now))
     .map(studentErrorReportFromRow)
-    .filter((report) => isStudentErrorReportVisible(report, now))
-    .sort(compareStudentErrorReports);
+    .filter(({ report }) => isStudentErrorReportVisible(report, now))
+    .sort((left, right) => compareStudentErrorReports(left.report, right.report));
+  return { userId: user.id, accessibleLearningSpaceIds, reports };
 }
 
 function isCurrentlyAccessiblePortfolio(row: DatabaseRow, now: Date): boolean {
@@ -91,23 +153,26 @@ export function compareStudentErrorReports(left: StudentErrorReport, right: Stud
   return (Number.isFinite(rightDate) ? rightDate : 0) - (Number.isFinite(leftDate) ? leftDate : 0);
 }
 
-function studentErrorReportFromRow(row: DatabaseRow): StudentErrorReport {
+function studentErrorReportFromRow(row: DatabaseRow): CurrentStudentErrorReport {
   const handledAt = nullableText(row, "handled_at");
   const documentKind = text(row, "document_kind") as ErrorReportDocumentKind;
   const variant = nullableText(row, "variant_kind") as "standard" | "alternative" | null;
   return {
-    reportId: text(row, "report_id"),
-    createdAt: text(row, "created_at"),
-    handledAt,
-    teacherResponse: nullableText(row, "teacher_response"),
-    message: text(row, "message"),
-    status: studentErrorReportStatus({ handledAt }),
-    exerciseCode: text(row, "exercise_code"),
-    isMatchedExercise: nullableText(row, "exercise_id") !== null,
-    portfolioCode: text(row, "portfolio_code"),
-    portfolioTitle: text(row, "portfolio_title"),
-    learningSpaceName: text(row, "learning_space_name"),
-    locationLabel: studentErrorReportLocationLabel(documentKind, variant),
+    studentDismissedAt: nullableText(row, "student_dismissed_at"),
+    report: {
+      reportId: text(row, "report_id"),
+      createdAt: text(row, "created_at"),
+      handledAt,
+      teacherResponse: nullableText(row, "teacher_response"),
+      message: text(row, "message"),
+      status: studentErrorReportStatus({ handledAt }),
+      exerciseCode: text(row, "exercise_code"),
+      isMatchedExercise: nullableText(row, "exercise_id") !== null,
+      portfolioCode: text(row, "portfolio_code"),
+      portfolioTitle: text(row, "portfolio_title"),
+      learningSpaceName: text(row, "learning_space_name"),
+      locationLabel: studentErrorReportLocationLabel(documentKind, variant),
+    },
   };
 }
 
@@ -128,4 +193,10 @@ function text(row: DatabaseRow, key: string): string {
 
 function nullableText(row: DatabaseRow, key: string): string | null {
   return row[key] == null ? null : String(row[key]);
+}
+
+function chunk<T>(values: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) chunks.push(values.slice(index, index + size));
+  return chunks;
 }

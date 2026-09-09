@@ -11,8 +11,10 @@ vi.mock("@/lib/auth", () => ({ requireAuthenticatedUser: mocks.requireAuthentica
 import { getDatabase, resetDatabaseForTests, type DatabaseClient } from "./database";
 import type { AppUser } from "./identity";
 import {
+  dismissPendingHandledReportNotificationsForCurrentUser,
   getMyErrorReports,
   isStudentErrorReportVisible,
+  listPendingHandledReportNotificationsForCurrentUser,
   studentErrorReportStatus,
 } from "./student-error-reports";
 
@@ -110,6 +112,86 @@ describe("getMyErrorReports", () => {
   it("rejects non-student contexts", async () => {
     mocks.requireAuthenticatedUser.mockResolvedValue({ ...studentA, role: "teacher" });
     expect(await getMyErrorReports(now)).toBeNull();
+  });
+});
+
+describe("handled report notifications", () => {
+  it("returns no notification when the student's reports are all open", async () => {
+    await (await getDatabase()).execute("UPDATE error_reports SET handled_at = NULL WHERE reporter_user_id = 'student-a'");
+    expect(await listPendingHandledReportNotificationsForCurrentUser(now)).toBeNull();
+  });
+
+  it("lists only recent handled, undismissed reports in one fixed-query aggregate", async () => {
+    const database = await getDatabase();
+    const execute = vi.spyOn(database, "execute");
+
+    const notification = await listPendingHandledReportNotificationsForCurrentUser(now);
+
+    expect(notification).toMatchObject({ count: 2, reportIds: ["handled-recent", "handled-boundary"], exerciseCode: null, singleLearningSpaceId: "space-5" });
+    expect(execute).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns no notification for open, dismissed or expired reports", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE error_reports SET student_dismissed_at = '2026-09-21T12:00:00.000Z' WHERE handled_at IS NOT NULL AND reporter_user_id = 'student-a'");
+    expect(await listPendingHandledReportNotificationsForCurrentUser(now)).toBeNull();
+
+    await database.execute("UPDATE error_reports SET student_dismissed_at = NULL, handled_at = '2026-09-01T12:00:00.000Z' WHERE handled_at IS NOT NULL AND reporter_user_id = 'student-a'");
+    expect(await listPendingHandledReportNotificationsForCurrentUser(now)).toBeNull();
+  });
+
+  it("uses a safe singular fallback for an unmatched exercise", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE error_reports SET student_dismissed_at = '2026-09-21T12:00:00.000Z' WHERE handled_at IS NOT NULL AND reporter_user_id = 'student-a'");
+    await database.execute("UPDATE error_reports SET handled_at = '2026-09-21T12:00:00.000Z' WHERE id = 'unmatched-report'");
+
+    expect(await listPendingHandledReportNotificationsForCurrentUser(now)).toMatchObject({
+      count: 1,
+      reportIds: ["unmatched-report"],
+      exerciseCode: null,
+    });
+  });
+
+  it("dismisses one report without changing its handling or teacher response and keeps it in Mijn meldingen", async () => {
+    expect(await dismissPendingHandledReportNotificationsForCurrentUser(["handled-recent"], now)).toBe(1);
+    const report = (await (await getDatabase()).execute("SELECT handled_at, student_dismissed_at, teacher_response FROM error_reports WHERE id = 'handled-recent'")).rows[0];
+
+    expect(report).toEqual({
+      handled_at: "2026-09-20T10:00:00.000Z",
+      student_dismissed_at: now.toISOString(),
+      teacher_response: "Eerste regel\nTweede regel",
+    });
+    expect((await getMyErrorReports(now))?.some((item) => item.reportId === "handled-recent")).toBe(true);
+  });
+
+  it("dismisses only submitted reports that are currently pending and owned by the current user", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE error_reports SET handled_at = '2026-09-21T12:00:00.000Z' WHERE id = 'other-user-report'");
+
+    expect(await dismissPendingHandledReportNotificationsForCurrentUser([
+      "handled-recent", "handled-boundary", "other-user-report", "open-new", "handled-expired",
+    ], now)).toBe(2);
+
+    const rows = (await database.execute("SELECT id, student_dismissed_at FROM error_reports WHERE id IN ('handled-recent', 'handled-boundary', 'other-user-report', 'open-new', 'handled-expired') ORDER BY id")).rows;
+    expect(rows.filter((row) => row.student_dismissed_at !== null).map((row) => row.id)).toEqual(["handled-boundary", "handled-recent"]);
+  });
+
+  it("cannot dismiss after access is revoked", async () => {
+    const database = await getDatabase();
+    await database.execute("DELETE FROM individual_learning_space_access WHERE user_id = 'student-a' AND learning_space_id = 'space-5'");
+
+    expect(await dismissPendingHandledReportNotificationsForCurrentUser(["handled-recent"], now)).toBe(0);
+    expect((await database.execute("SELECT student_dismissed_at FROM error_reports WHERE id = 'handled-recent'")).rows[0]?.student_dismissed_at).toBeNull();
+  });
+
+  it("allows a newly handled resubmission cycle to notify again", async () => {
+    const database = await getDatabase();
+    await dismissPendingHandledReportNotificationsForCurrentUser(["handled-recent"], now);
+    await database.execute("UPDATE error_reports SET handled_at = NULL, student_dismissed_at = NULL, teacher_response = NULL WHERE id = 'handled-recent'");
+    expect((await listPendingHandledReportNotificationsForCurrentUser(now))?.reportIds).not.toContain("handled-recent");
+
+    await database.execute("UPDATE error_reports SET handled_at = '2026-09-22T11:00:00.000Z' WHERE id = 'handled-recent'");
+    expect((await listPendingHandledReportNotificationsForCurrentUser(now))?.reportIds).toContain("handled-recent");
   });
 });
 
