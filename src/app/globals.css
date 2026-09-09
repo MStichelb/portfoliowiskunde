@@ -281,11 +281,11 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .exercise-note-position legend { margin-bottom: 6px; color: #314149; font-size: 14px; font-weight: 700; }
 .exercise-note-position > div { display: grid; width: min(100%, 340px); grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: hidden; border: 1px solid #9ab0ad; border-radius: 4px; }
 .exercise-note-position label { position: relative; display: flex; min-width: 0; }
-.exercise-note-position input { position: absolute; opacity: 0; pointer-events: none; }
+.exercise-note-position input { position: absolute; width: 1px; height: 1px; min-height: 0; margin: 0; padding: 0; overflow: hidden; border: 0; opacity: 0; pointer-events: none; appearance: none; }
 .exercise-note-position span { display: inline-flex; width: 100%; height: 36px; box-sizing: border-box; align-items: center; justify-content: center; padding: 6px 10px; background: #fff; color: #314149; font-size: 14px; font-weight: 700; line-height: 1.2; text-align: center; white-space: nowrap; cursor: pointer; }
 .exercise-note-position label + label span { border-left: 1px solid #9ab0ad; }
 .exercise-note-position input:checked + span { background: #075c75; color: #fff; }
-.exercise-note-position input:focus-visible + span { outline: 2px solid #075c75; outline-offset: -3px; }
+.exercise-note-position input:focus-visible + span { outline: none; box-shadow: inset 0 0 0 2px #e6a23c; }
 .exercise-note-dialog-actions, .exercise-note-dialog-actions > div { display: flex; align-items: center; gap: 8px; }
 .exercise-note-dialog-actions { flex-wrap: wrap; justify-content: space-between; margin-top: 16px; }
 .exercise-note-trigger { white-space: nowrap; }
@@ -308,7 +308,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .report-card { padding: 18px; border: 1px solid #d5ddda; border-radius: 6px; background: #fff; }
 .report-card-heading, .report-footer, .report-actions { display: flex; gap: 10px; justify-content: space-between; align-items: start; }
 .report-card-heading a { color: #17222b; }
-.report-card-heading span { display: block; margin-top: 4px; color: #52616a; font-size: 14px; }
+.report-card-heading > div:first-child > .report-exercise-context { display: block; margin-top: 4px; color: #52616a; font-size: 14px; }
 .report-actions { align-items: center; justify-content: end; gap: 6px; }
 .icon-button { display: inline-grid; place-items: center; width: 34px; height: 34px; border: 1px solid #9ab0ad; border-radius: 4px; background: #fff; cursor: pointer; }
 .icon-button:hover { background: #eff7f4; border-color: #075c75; }
