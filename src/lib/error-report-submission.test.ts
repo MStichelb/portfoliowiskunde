@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests, type DatabaseClient } from "./database";
 import { normalizeErrorReportExerciseCode } from "./error-report-exercise-code";
+import { authenticatedErrorReportRateLimitKey, ErrorReportRateLimitError } from "./error-report-rate-limit";
 import { createErrorReport, getGroupedErrorReportThreads, getVisibleExercise, listErrorReportIssuesForThreads } from "./repositories";
 
 let temporaryDirectory: string | undefined;
@@ -221,7 +222,20 @@ describe("error report v2 submission", () => {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       await createErrorReport(submission({ documentKind: "assignment", variant: null, message: `Melding ${attempt}`, rateLimitKey: "limited" }));
     }
-    await expect(createErrorReport(submission({ documentKind: "assignment", variant: null, message: "Zesde melding", rateLimitKey: "limited" }))).rejects.toThrow("Probeer later opnieuw");
+    await expect(createErrorReport(submission({ documentKind: "assignment", variant: null, message: "Zesde melding", rateLimitKey: "limited" }))).rejects.toBeInstanceOf(ErrorReportRateLimitError);
+  });
+
+  it("limits one authenticated user without blocking another user behind the same network", async () => {
+    const firstUserKey = authenticatedErrorReportRateLimitKey("secret", "report-user-1", 123);
+    const secondUserKey = authenticatedErrorReportRateLimitKey("secret", "report-user-2", 123);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await createErrorReport(submission({ reporterUserId: "report-user-1", message: `Melding A${attempt}`, rateLimitKey: firstUserKey }));
+    }
+    await expect(createErrorReport(submission({ reporterUserId: "report-user-1", message: "Melding A6", rateLimitKey: firstUserKey }))).rejects.toBeInstanceOf(ErrorReportRateLimitError);
+    await expect(createErrorReport(submission({ reporterUserId: "report-user-2", message: "Melding B1", rateLimitKey: secondUserKey }))).resolves.toMatchObject({ issueId: expect.any(String) });
+
+    expect((await (await getDatabase()).execute("SELECT id FROM error_reports")).rows).toHaveLength(6);
   });
 
   it("stores solution-page submissions as exercise solutions on the shared write path", async () => {

@@ -418,12 +418,18 @@ export async function errorReportThreadPinAction(formData: FormData) {
   await refreshErrorReportIssuePaths(learningSpaceId);
 }
 
-export async function errorReportThreadNoteAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState & { saved?: boolean }> {
+export interface ThreadNoteActionState extends AdminActionState { successCount: number; }
+
+export async function errorReportThreadNoteAction(previousState: ThreadNoteActionState, formData: FormData): Promise<ThreadNoteActionState> {
   const threadId = stringValue(formData, "threadId");
   const learningSpaceId = await requireErrorReportThreadManagement(threadId);
-  await saveErrorReportThreadNote(threadId, stringValue(formData, "note"));
-  await refreshErrorReportIssuePaths(learningSpaceId);
-  return { error: null, saved: true };
+  try {
+    await saveErrorReportThreadNote(threadId, stringValue(formData, "note"));
+    await refreshErrorReportIssuePaths(learningSpaceId);
+    return { error: null, successCount: previousState.successCount + 1 };
+  } catch {
+    return { error: "De adminnotitie kon niet worden opgeslagen. Probeer opnieuw.", successCount: previousState.successCount };
+  }
 }
 
 export interface ResponseActionState extends AdminActionState { successCount: number; }

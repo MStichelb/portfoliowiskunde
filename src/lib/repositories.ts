@@ -7,6 +7,7 @@ import type { DatabaseRow, InStatement } from "@/lib/database";
 import { executeBatch, getDatabase } from "@/lib/database";
 import type { IndexedPortfolio } from "@/lib/domain";
 import { listErrorReportExerciseIdentities, normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
+import { ErrorReportRateLimitError } from "@/lib/error-report-rate-limit";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRelativePath } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
@@ -1330,7 +1331,7 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
   const now = new Date();
   const windowStartedAt = new Date(Math.floor(now.getTime() / 600_000) * 600_000).toISOString();
   const current = await database.execute({ sql: "SELECT attempts FROM error_report_rate_limits WHERE key = ?", args: [input.rateLimitKey] });
-  if (Number(current.rows[0]?.attempts ?? 0) >= 5) throw new Error("Probeer later opnieuw.");
+  if (Number(current.rows[0]?.attempts ?? 0) >= 5) throw new ErrorReportRateLimitError();
   const exerciseIdentity = exerciseId ?? `code:${requestedExerciseCode}`;
   const threadId = stableId("error-thread", learningSpaceId, portfolioId, exerciseIdentity);
   await database.execute({

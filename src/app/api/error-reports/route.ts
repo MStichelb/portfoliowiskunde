@@ -1,6 +1,6 @@
-import { createHmac } from "node:crypto";
-
 import { getAuthenticatedUser } from "@/lib/auth";
+import { authenticatedErrorReportRateLimitKey, ErrorReportRateLimitError } from "@/lib/error-report-rate-limit";
+import { ERROR_REPORT_GENERIC_ERROR_MESSAGE, ERROR_REPORT_RATE_LIMIT_MESSAGE } from "@/lib/error-report-submission-feedback";
 import { canAccessPublicLearningSpace } from "@/lib/public-access";
 import { createErrorReport, getVisibleExercise, getVisiblePortfolioContext, type ErrorReportDocumentKind } from "@/lib/repositories";
 
@@ -27,9 +27,8 @@ export async function POST(request: Request) {
   }
   const secret = process.env.REPORT_RATE_LIMIT_SECRET?.trim() || process.env.ADMIN_SESSION_SECRET?.trim() || process.env.ADMIN_PASSWORD?.trim();
   if (!secret) return Response.json({ error: "Meldingen zijn tijdelijk niet beschikbaar." }, { status: 503 });
-  const visitor = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "unknown";
   const bucket = Math.floor(Date.now() / 600_000);
-  const rateLimitKey = createHmac("sha256", secret).update(`${bucket}:${visitor}`).digest("base64url");
+  const rateLimitKey = authenticatedErrorReportRateLimitKey(secret, user.id, bucket);
   try {
     await createErrorReport({
       exerciseId: portfolioFlow ? undefined : body.exerciseId as string,
@@ -44,7 +43,10 @@ export async function POST(request: Request) {
     });
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "De melding kon niet worden verstuurd." }, { status: 400 });
+    if (error instanceof ErrorReportRateLimitError) {
+      return Response.json({ error: ERROR_REPORT_RATE_LIMIT_MESSAGE }, { status: 429 });
+    }
+    return Response.json({ error: ERROR_REPORT_GENERIC_ERROR_MESSAGE }, { status: 400 });
   }
 }
 

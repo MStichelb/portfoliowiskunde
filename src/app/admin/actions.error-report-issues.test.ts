@@ -66,14 +66,32 @@ describe("error report thread management actions", () => {
 
     await errorReportThreadStatusAction(form({ threadId: "thread-1", status: "DONE" }));
     await errorReportThreadPinAction(form({ threadId: "thread-1" }));
-    const result = await errorReportThreadNoteAction({ error: null }, form({ threadId: "thread-1", learningSpaceId: "other", note: "Nakijken" }));
+    const result = await errorReportThreadNoteAction(
+      { error: null, successCount: 0 },
+      form({ threadId: "thread-1", learningSpaceId: "other", note: "Nakijken" }),
+    );
 
     expect(mocks.getErrorReportThreadLearningSpaceId).toHaveBeenCalledWith("thread-1");
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(actor, "space-5");
     expect(mocks.setErrorReportThreadStatus).toHaveBeenCalledWith("thread-1", "DONE");
     expect(mocks.toggleErrorReportThreadPin).toHaveBeenCalledWith("thread-1");
     expect(mocks.saveErrorReportThreadNote).toHaveBeenCalledWith("thread-1", "Nakijken");
-    expect(result).toEqual({ error: null, saved: true });
+    expect(result).toEqual({ error: null, successCount: 1 });
+  });
+
+  it("keeps the note editor state open when saving fails", async () => {
+    mocks.requireAdminUser.mockResolvedValue({ id: "owner-1", role: "teacher", status: "active" });
+    mocks.saveErrorReportThreadNote.mockRejectedValueOnce(new Error("Database tijdelijk niet beschikbaar"));
+
+    const result = await errorReportThreadNoteAction(
+      { error: null, successCount: 2 },
+      form({ threadId: "thread-1", note: "Blijft in editor" }),
+    );
+
+    expect(result).toEqual({
+      error: "De adminnotitie kon niet worden opgeslagen. Probeer opnieuw.",
+      successCount: 2,
+    });
   });
 
   it("blocks missing, invalid and unauthorized thread mutations", async () => {

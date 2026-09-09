@@ -4,6 +4,7 @@ import { Bell, ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 
 import { normalizeErrorReportExerciseCode, type ErrorReportExerciseIdentity } from "@/lib/error-report-exercise-code";
+import { ERROR_REPORT_GENERIC_ERROR_MESSAGE, errorReportSubmissionErrorMessage } from "@/lib/error-report-submission-feedback";
 import type { ErrorReportDocumentKind } from "@/lib/repositories";
 
 export type PortfolioErrorReportExerciseOption = ErrorReportExerciseIdentity;
@@ -25,6 +26,7 @@ export function PortfolioErrorReportForm({
 }) {
   const [open, setOpen] = useState(initiallyOpen);
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [errorMessage, setErrorMessage] = useState(ERROR_REPORT_GENERIC_ERROR_MESSAGE);
   const [documentKind, setDocumentKind] = useState<ErrorReportDocumentKind>(documents[0] ?? "assignment");
   const [exerciseCode, setExerciseCode] = useState(exercises[0]?.code ?? "");
   const contentId = useId();
@@ -50,8 +52,13 @@ export function PortfolioErrorReportForm({
           website: formData.get("website"),
         }),
       });
-      setStatus(response.ok ? "sent" : "error");
+      if (response.ok) setStatus("sent");
+      else {
+        setErrorMessage(await errorReportSubmissionErrorMessage(response));
+        setStatus("error");
+      }
     } catch {
+      setErrorMessage(ERROR_REPORT_GENERIC_ERROR_MESSAGE);
       setStatus("error");
     }
   }
@@ -67,7 +74,7 @@ export function PortfolioErrorReportForm({
         <label>Wat heb je opgemerkt?<textarea name="message" required minLength={3} maxLength={2000} /></label>
         <label className="honeypot">Website<input name="website" tabIndex={-1} autoComplete="off" /></label>
         <button className="secondary-button" disabled={status === "sending"}>{status === "sending" ? "Versturen..." : "Melding versturen"}</button>
-        {status === "error" ? <p className="error-message" role="alert">De melding kon niet worden verstuurd. Probeer later opnieuw.</p> : null}
+        {status === "error" ? <p className="error-message" role="alert">{errorMessage}</p> : null}
       </form>}
     </div> : null}
   </section>;

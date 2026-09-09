@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ErrorReportRateLimitError } from "@/lib/error-report-rate-limit";
+import { ERROR_REPORT_GENERIC_ERROR_MESSAGE, ERROR_REPORT_RATE_LIMIT_MESSAGE } from "@/lib/error-report-submission-feedback";
 
 const mocks = vi.hoisted(() => ({
   canAccessPublicLearningSpace: vi.fn(),
@@ -76,6 +78,33 @@ describe("POST /api/error-reports", () => {
     expect(response.status).toBe(200);
     expect(mocks.getAuthenticatedUser).not.toHaveBeenCalled();
     expect(mocks.createErrorReport).not.toHaveBeenCalled();
+  });
+
+  it("scopes authenticated rate-limit keys per user instead of shared IP", async () => {
+    await POST(request({ exerciseId: "exercise-1", message: "Eerste melding" }));
+    const firstUserKey = mocks.createErrorReport.mock.calls[0][0].rateLimitKey;
+
+    mocks.getAuthenticatedUser.mockResolvedValueOnce({ id: "student-2", role: "student", status: "active" });
+    await POST(request({ exerciseId: "exercise-1", message: "Andere leerling" }));
+    const secondUserKey = mocks.createErrorReport.mock.calls[1][0].rateLimitKey;
+
+    await POST(request({ exerciseId: "exercise-1", message: "Zelfde leerling" }));
+    const repeatedFirstUserKey = mocks.createErrorReport.mock.calls[2][0].rateLimitKey;
+
+    expect(firstUserKey).not.toBe(secondUserKey);
+    expect(repeatedFirstUserKey).toBe(firstUserKey);
+  });
+
+  it("returns a dedicated safe rate-limit response and keeps other failures generic", async () => {
+    mocks.createErrorReport.mockRejectedValueOnce(new ErrorReportRateLimitError());
+    const limited = await POST(request({ exerciseId: "exercise-1", message: "Te veel" }));
+    expect(limited.status).toBe(429);
+    await expect(limited.json()).resolves.toEqual({ error: ERROR_REPORT_RATE_LIMIT_MESSAGE });
+
+    mocks.createErrorReport.mockRejectedValueOnce(new Error("database details"));
+    const failed = await POST(request({ exerciseId: "exercise-1", message: "Databasefout" }));
+    expect(failed.status).toBe(400);
+    await expect(failed.json()).resolves.toEqual({ error: ERROR_REPORT_GENERIC_ERROR_MESSAGE });
   });
 });
 
