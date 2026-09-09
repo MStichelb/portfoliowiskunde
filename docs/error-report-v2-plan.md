@@ -60,6 +60,14 @@ De opruimactie voor DONE verwijdert complete threads waarvan `thread.completed_a
 
 De canonieke beheeracties en teller zijn nu threadgericht; de zichtbare teller gebruikt `getOpenErrorThreadCount()`. De niet meer gebruikte report- en issue-level status-, pin- en notitieacties zijn verwijderd. De oude report-/issue-readmodellen, compatibiliteitstellers en redundante databasevelden blijven voorlopig behouden voor migratiecontrole, historische reads en backward-compatibilitytests. Foutmeldingen v2 is hiermee functioneel afgerond.
 
+## Per-report leerlinglifecycle (v2.1 A1)
+
+Migratie 032 voegt nullable `handled_at`, `student_dismissed_at` en `teacher_response` toe aan ieder individueel report. Historische reports blijven behouden en krijgen voor deze velden `NULL`; ook oude DONE-data krijgt bewust geen gegokte `handled_at`. `teacher_response` is gereserveerd voor batch A2 en heeft in A1 nog geen schrijf- of beheerinterface.
+
+De canonieke threadactie naar DONE zet `thread.completed_at` en `thread.updated_at` op hetzelfde nieuwe tijdstip en vult transactioneel `report.handled_at` voor alle nog onbehandelde reports onder die thread. Een bestaande `handled_at` wordt nooit overschreven. Handmatig heropenen wist zoals voorheen `thread.completed_at`, maar niet de per-report afhandeling. Een nieuwe report op een automatisch heropende thread start onbehandeld; bij een resubmit van dezelfde user op hetzelfde issue worden `handled_at`, `student_dismissed_at` en `teacher_response` op het bestaande report gereset.
+
+De twee tijdstippen hebben verschillende verantwoordelijkheden: `thread.completed_at` stuurt de threadhistoriek en de bestaande admincleanup na veertien dagen; `report.handled_at` legt de eerste actuele afhandeling van één concrete leerlingmelding vast. Daarom blijft een automatisch heropende TODO-thread met een oude `completed_at` beschermd tegen cleanup en verandert die cleanup niet naar reportniveau. `student_dismissed_at` bewaart later persistent of de leerling de behandelingsnotificatie heeft weggeklikt, zonder het report zelf te verwijderen.
+
 ## Vervolg
 
 - **Legacy:** redundante workflowvelden gecontroleerd opruimen zodra migratie- en backward-compatibilityreads ze niet meer nodig hebben.

@@ -247,5 +247,8 @@ function report(id: string, message: string, createdAt: string): ErrorReportIssu
     reporterDisplayName: null,
     message,
     createdAt,
+    handledAt: null,
+    studentDismissedAt: null,
+    teacherResponse: null,
   };
 }

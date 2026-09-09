@@ -109,18 +109,28 @@ describe("error report v2 submission", () => {
         WHERE id = (SELECT thread_id FROM error_report_issues WHERE id = ?)`,
       args: [first.issueId],
     });
+    await database.execute({
+      sql: `UPDATE error_reports SET handled_at = '2026-09-08T12:00:00.000Z',
+        student_dismissed_at = '2026-09-08T13:00:00.000Z', teacher_response = 'Oude reactie'
+        WHERE issue_id = ? AND reporter_user_id = 'report-user-1'`,
+      args: [first.issueId],
+    });
 
     const updated = await createErrorReport(submission({ documentKind: "assignment", variant: null, reporterUserId: "report-user-1", message: "Bijgewerkte melding", rateLimitKey: "second" }));
     const secondUser = await createErrorReport(submission({ documentKind: "assignment", variant: null, reporterUserId: "report-user-2", message: "Andere leerling", rateLimitKey: "third" }));
     const issue = (await database.execute({ sql: "SELECT * FROM error_report_issues WHERE id = ?", args: [first.issueId] })).rows[0];
     const thread = (await database.execute({ sql: "SELECT * FROM error_report_threads WHERE id = ?", args: [issue?.thread_id as string] })).rows[0];
-    const reports = (await database.execute({ sql: "SELECT reporter_user_id, message FROM error_reports WHERE issue_id = ? ORDER BY reporter_user_id", args: [first.issueId] })).rows;
+    const reports = (await database.execute({
+      sql: `SELECT reporter_user_id, message, handled_at, student_dismissed_at, teacher_response
+        FROM error_reports WHERE issue_id = ? ORDER BY reporter_user_id`,
+      args: [first.issueId],
+    })).rows;
 
     expect(updated.issueId).toBe(first.issueId);
     expect(secondUser.issueId).toBe(first.issueId);
     expect(reports).toEqual([
-      expect.objectContaining({ reporter_user_id: "report-user-1", message: "Bijgewerkte melding" }),
-      expect.objectContaining({ reporter_user_id: "report-user-2", message: "Andere leerling" }),
+      expect.objectContaining({ reporter_user_id: "report-user-1", message: "Bijgewerkte melding", handled_at: null, student_dismissed_at: null, teacher_response: null }),
+      expect.objectContaining({ reporter_user_id: "report-user-2", message: "Andere leerling", handled_at: null, student_dismissed_at: null, teacher_response: null }),
     ]);
     expect(issue).toMatchObject({ status: "TODO", completed_at: null, pinned: 1, admin_note: "Behouden notitie" });
     expect(thread).toMatchObject({ status: "TODO", completed_at: "2026-09-08T12:00:00.000Z" });

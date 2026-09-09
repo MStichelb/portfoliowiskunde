@@ -790,4 +790,12 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE exercises ADD COLUMN note_label TEXT",
     ],
   },
+  {
+    version: "032_error_report_student_lifecycle",
+    statements: [
+      "ALTER TABLE error_reports ADD COLUMN handled_at TEXT",
+      "ALTER TABLE error_reports ADD COLUMN student_dismissed_at TEXT",
+      "ALTER TABLE error_reports ADD COLUMN teacher_response TEXT",
+    ],
+  },
 ];

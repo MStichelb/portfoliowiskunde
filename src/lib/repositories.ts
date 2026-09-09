@@ -1369,8 +1369,9 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
   const reportStatement: InStatement = reporterUserId ? {
     sql: `INSERT INTO error_reports
       (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message,
-        reporter_name, status, pinned, admin_note, created_at, completed_at, updated_at, issue_id, reporter_user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'TODO', 0, '', ?, NULL, ?, ?, ?)
+        reporter_name, status, pinned, admin_note, created_at, completed_at, updated_at, issue_id, reporter_user_id,
+        handled_at, student_dismissed_at, teacher_response)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, 'TODO', 0, '', ?, NULL, ?, ?, ?, NULL, NULL, NULL)
       ON CONFLICT(issue_id, reporter_user_id) WHERE reporter_user_id IS NOT NULL DO UPDATE SET
         asset_snapshot = excluded.asset_snapshot,
         source_last_modified_at = excluded.source_last_modified_at,
@@ -1378,14 +1379,18 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
         reporter_name = NULL,
         status = 'TODO',
         completed_at = NULL,
+        handled_at = NULL,
+        student_dismissed_at = NULL,
+        teacher_response = NULL,
         updated_at = excluded.updated_at`,
     args: [randomUUID(), portfolioId, sectionId, exerciseId, variant ?? "standard", assetSnapshot,
       sourceLastModifiedAt, input.message.trim(), now.toISOString(), now.toISOString(), resolvedIssueId, reporterUserId],
   } : {
     sql: `INSERT INTO error_reports
       (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, source_last_modified_at, message,
-        reporter_name, status, pinned, admin_note, created_at, completed_at, updated_at, issue_id, reporter_user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, NULL, ?, ?, NULL)`,
+        reporter_name, status, pinned, admin_note, created_at, completed_at, updated_at, issue_id, reporter_user_id,
+        handled_at, student_dismissed_at, teacher_response)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'TODO', 0, '', ?, NULL, ?, ?, NULL, NULL, NULL, NULL)`,
     args: [randomUUID(), portfolioId, sectionId, exerciseId, variant ?? "standard", assetSnapshot,
       sourceLastModifiedAt, input.message.trim(), reporterName, now.toISOString(), now.toISOString(), resolvedIssueId],
   };
@@ -1416,6 +1421,9 @@ export interface AdminErrorReport {
   adminNote: string;
   createdAt: string;
   completedAt: string | null;
+  handledAt: string | null;
+  studentDismissedAt: string | null;
+  teacherResponse: string | null;
   solutionConfiguredVisible: boolean;
   solutionStatus: EffectivePublication;
   solutionVisible: boolean;
@@ -1462,6 +1470,9 @@ export interface ErrorReportIssueDetail {
   reporterDisplayName: string | null;
   message: string;
   createdAt: string;
+  handledAt: string | null;
+  studentDismissedAt: string | null;
+  teacherResponse: string | null;
 }
 
 export interface GroupedErrorReportThread {
@@ -1674,6 +1685,7 @@ export async function listErrorReportIssuesForThreads(threadIds: string[], learn
       error_report_issues.document_kind, error_report_issues.variant_kind,
       error_reports.id AS report_id, error_reports.reporter_user_id, error_reports.reporter_name,
       users.display_name AS reporter_display_name, error_reports.message, error_reports.created_at AS report_created_at,
+      error_reports.handled_at, error_reports.student_dismissed_at, error_reports.teacher_response,
       COUNT(error_reports.id) OVER (PARTITION BY error_report_issues.id) AS report_count,
       MAX(error_reports.created_at) OVER (PARTITION BY error_report_issues.id) AS latest_report_at
       FROM error_report_issues
@@ -1712,6 +1724,9 @@ export async function listErrorReportIssuesForThreads(threadIds: string[], learn
         reporterDisplayName: nullableText(row, "reporter_display_name"),
         message: text(row, "message"),
         createdAt: text(row, "report_created_at"),
+        handledAt: nullableText(row, "handled_at"),
+        studentDismissedAt: nullableText(row, "student_dismissed_at"),
+        teacherResponse: nullableText(row, "teacher_response"),
       });
     }
   }
@@ -1730,7 +1745,8 @@ export async function listErrorReportsForIssues(issueIds: string[], learningSpac
   const result = await database.execute({
     sql: `SELECT error_reports.id, error_reports.issue_id, error_reports.reporter_user_id,
       error_reports.reporter_name, users.display_name AS reporter_display_name,
-      error_reports.message, error_reports.created_at
+      error_reports.message, error_reports.created_at, error_reports.handled_at,
+      error_reports.student_dismissed_at, error_reports.teacher_response
       FROM error_reports
       INNER JOIN error_report_issues ON error_report_issues.id = error_reports.issue_id
       LEFT JOIN users ON users.id = error_reports.reporter_user_id
@@ -1746,6 +1762,9 @@ export async function listErrorReportsForIssues(issueIds: string[], learningSpac
     reporterDisplayName: nullableText(row, "reporter_display_name"),
     message: text(row, "message"),
     createdAt: text(row, "created_at"),
+    handledAt: nullableText(row, "handled_at"),
+    studentDismissedAt: nullableText(row, "student_dismissed_at"),
+    teacherResponse: nullableText(row, "teacher_response"),
   }));
 }
 
@@ -1791,7 +1810,7 @@ export async function getAdminErrorReports(learningSpaceId?: string): Promise<Ad
     const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
     const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now);
     const solutionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.exercise_visibility_mode }), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now);
-    return { id: text(row, "id"), portfolioId: text(row, "portfolio_id"), portfolioCode: text(row, "portfolio_code"), portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"), sectionTitle: text(row, "section_title"), exerciseId: text(row, "exercise_id"), exerciseCode: text(row, "exercise_code"), variant: text(row, "variant_kind"), message: text(row, "message"), reporterName: nullableText(row, "reporter_name"), status: text(row, "status") === "DONE" ? "DONE" : "TODO", pinned: bool(row.pinned), adminNote: nullableText(row, "admin_note") ?? "", createdAt: text(row, "created_at"), completedAt: nullableText(row, "completed_at"), solutionConfiguredVisible: childMode({ visibility_mode: row.exercise_visibility_mode }) === "visible", solutionStatus, solutionVisible: solutionStatus.state === "visible" };
+    return { id: text(row, "id"), portfolioId: text(row, "portfolio_id"), portfolioCode: text(row, "portfolio_code"), portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"), sectionTitle: text(row, "section_title"), exerciseId: text(row, "exercise_id"), exerciseCode: text(row, "exercise_code"), variant: text(row, "variant_kind"), message: text(row, "message"), reporterName: nullableText(row, "reporter_name"), status: text(row, "status") === "DONE" ? "DONE" : "TODO", pinned: bool(row.pinned), adminNote: nullableText(row, "admin_note") ?? "", createdAt: text(row, "created_at"), completedAt: nullableText(row, "completed_at"), handledAt: nullableText(row, "handled_at"), studentDismissedAt: nullableText(row, "student_dismissed_at"), teacherResponse: nullableText(row, "teacher_response"), solutionConfiguredVisible: childMode({ visibility_mode: row.exercise_visibility_mode }) === "visible", solutionStatus, solutionVisible: solutionStatus.state === "visible" };
   });
 }
 
@@ -1816,10 +1835,17 @@ export async function getErrorReportThreadLearningSpaceId(threadId: string): Pro
 
 export async function setErrorReportThreadStatus(threadId: string, status: "TODO" | "DONE"): Promise<void> {
   const now = new Date().toISOString();
-  await (await getDatabase()).execute({
+  const database = await getDatabase();
+  const statements: InStatement[] = [{
     sql: "UPDATE error_report_threads SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?",
     args: [status, status === "DONE" ? now : null, now, threadId],
+  }];
+  if (status === "DONE") statements.push({
+    sql: `UPDATE error_reports SET handled_at = ?
+      WHERE handled_at IS NULL AND issue_id IN (SELECT id FROM error_report_issues WHERE thread_id = ?)`,
+    args: [now, threadId],
   });
+  await database.batch(statements);
 }
 
 export async function toggleErrorReportThreadPin(threadId: string): Promise<void> {
