@@ -6,12 +6,14 @@ import type { ErrorReportIssueDetail, ErrorReportThreadIssueDetail, GroupedError
 vi.mock("@/app/admin/actions", () => ({
   deleteErrorReportAction: vi.fn(),
   deleteOldDoneErrorThreadsAction: vi.fn(),
+  deleteExerciseNoteAction: vi.fn(),
   deleteErrorReportTeacherResponseAction: vi.fn(),
   errorReportStatusAction: vi.fn(),
   errorReportThreadNoteAction: vi.fn(),
   errorReportThreadPinAction: vi.fn(),
   errorReportThreadStatusAction: vi.fn(),
   saveErrorReportTeacherResponseAction: vi.fn(),
+  saveExerciseNoteAction: vi.fn(),
   toggleReportedExerciseVisibilityAction: vi.fn(),
 }));
 
@@ -87,6 +89,10 @@ describe("grouped error report thread inbox", () => {
     expect(markup).not.toContain('name="issueId"');
     expect(markup).not.toContain("Status: TO DO");
     expect(markup).toContain("Zichtbaarheid wisselen");
+    expect(markup).toContain('aria-label="Notitie voor oefening 5b toevoegen"');
+    expect(markup).toContain('class="visibility-toggle exercise-note-trigger"');
+    expect(markup.indexOf('aria-label="Notitie voor oefening 5b toevoegen"')).toBeGreaterThan(markup.indexOf("Zichtbaarheid wisselen"));
+    expect(markup.indexOf('aria-label="Notitie voor oefening 5b toevoegen"')).toBeLessThan(markup.indexOf("Melding pinnen"));
     expect(markup).toContain('name="exerciseId" value="exercise-5b"');
     expect(markup).toContain('name="visible" value="false"');
     expect(markup).toContain("Melding pinnen");
@@ -168,10 +174,23 @@ describe("grouped error report thread inbox", () => {
     expect(unmatchedMarkup).not.toContain(">Niet automatisch gekoppeld<");
     expect(unmatchedMarkup).not.toContain("/oefening/");
     expect(unmatchedMarkup).not.toContain("Zichtbaarheid wisselen");
+    expect(unmatchedMarkup).not.toContain("Notitie voor oefening");
 
     const matchedMarkup = renderToStaticMarkup(<GroupedErrorReportThreadCards threads={[thread()]} issuesByThread={{}} spaceSlug="5 wis" />);
     expect(matchedMarkup).toContain("/admin/5%20wis/oefening/exercise-5b");
     expect(matchedMarkup).toContain("Zichtbaarheid wisselen");
+    expect(matchedMarkup).toContain('aria-label="Notitie voor oefening 5b toevoegen"');
+  });
+
+  it("uses the shared checked note state and existing editor fields for a matched exercise", () => {
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadCards
+      threads={[thread({ customNote: "Eerste regel\nTweede regel", noteLabel: "Hint", notePosition: "below_solution" })]}
+      issuesByThread={{}}
+      spaceSlug="5wis"
+    />);
+
+    expect(markup).toContain('class="visibility-toggle exercise-note-trigger has-note"');
+    expect(markup).toContain('aria-label="Notitie voor oefening 5b bewerken"');
   });
 
   it("places pinned, TODO and DONE threads in thread-counted sections", () => {
@@ -227,6 +246,9 @@ function thread(overrides: Partial<GroupedErrorReportThread> = {}): GroupedError
     issueCount: 1,
     reportCount: 1,
     latestReportAt: "2026-09-08T11:00:00.000Z",
+    customNote: null,
+    noteLabel: null,
+    notePosition: "above_solution",
     solutionConfiguredVisible: true,
     solutionStatus: { configuredVisibility: "visible", state: "visible", reason: null, effectiveFrom: null, effectiveUntil: null },
     ...overrides,

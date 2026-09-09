@@ -115,6 +115,9 @@ describe("grouped error report read model", () => {
     });
     expect((await getGroupedErrorReportThreads("space-5")).find((item) => item.id === "thread-unmatched")).toMatchObject({
       exerciseId: null,
+      customNote: null,
+      noteLabel: null,
+      notePosition: null,
       solutionConfiguredVisible: null,
       solutionStatus: null,
     });
@@ -170,6 +173,11 @@ describe("grouped error report read model", () => {
   });
 
   it("groups issues and reports by exercise thread with one bulk issue-detail read", async () => {
+    const database = await getDatabase();
+    await database.execute({
+      sql: "UPDATE exercises SET custom_note = ?, note_label = ?, note_position = ? WHERE id = ?",
+      args: ["Eerste regel\nTweede regel", "Hint", "below_solution", "read-exercise-1"],
+    });
     const threads = await getGroupedErrorReportThreads("space-5");
     const firstExercise = threads.find((thread) => thread.exerciseId === "read-exercise-1");
 
@@ -181,6 +189,9 @@ describe("grouped error report read model", () => {
       status: "TODO",
       pinned: true,
       isMatchedExercise: true,
+      customNote: "Eerste regel\nTweede regel",
+      noteLabel: "Hint",
+      notePosition: "below_solution",
       solutionConfiguredVisible: true,
       solutionStatus: { configuredVisibility: "visible", state: "will-remain-hidden", reason: "parent-hidden" },
     });

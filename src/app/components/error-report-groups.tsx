@@ -6,6 +6,7 @@ import { useMemo, useReducer } from "react";
 
 import { deleteErrorReportAction, deleteOldDoneErrorThreadsAction, errorReportStatusAction, errorReportThreadPinAction, errorReportThreadStatusAction, toggleReportedExerciseVisibilityAction } from "@/app/admin/actions";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
+import { ExerciseNoteButton } from "@/app/components/exercise-note-button";
 import { ErrorReportNoteForm } from "@/app/components/error-report-note-form";
 import { ErrorReportResponseButton } from "@/app/components/error-report-response-button";
 import { ErrorReportSortControls } from "@/app/components/error-report-sort-controls";
@@ -128,6 +129,13 @@ function GroupedErrorReportThreadCard({ thread, issues, spaceSlug }: {
           <input type="hidden" name="visible" value={String(!thread.solutionConfiguredVisible)} />
           <button className="status-action" title="Zichtbaarheid wisselen" aria-label="Zichtbaarheid wisselen"><PublicationStatus status={thread.solutionStatus!} /></button>
         </form> : null}
+        {thread.exerciseId ? <ExerciseNoteButton
+          exerciseId={thread.exerciseId}
+          exerciseCode={thread.exerciseCode}
+          noteLabel={thread.noteLabel}
+          customNote={thread.customNote}
+          notePosition={thread.notePosition ?? "above_solution"}
+        /> : null}
         <form action={errorReportThreadPinAction}>
           <input type="hidden" name="threadId" value={thread.id} />
           <button className="icon-button" title={thread.pinned ? "Melding losmaken" : "Melding pinnen"} aria-label={thread.pinned ? "Melding losmaken" : "Melding pinnen"}>{thread.pinned ? <PinOff size={16} aria-hidden /> : <Pin size={16} aria-hidden />}</button>

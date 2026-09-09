@@ -665,6 +665,7 @@ function refreshExerciseNotePaths(exercise: { id: string; portfolioId: string },
   refreshPublicationPaths(exercise.portfolioId);
   revalidatePath(`/admin/${encodeURIComponent(spaceSlug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}`);
   revalidatePath(`/admin/${encodeURIComponent(spaceSlug)}/oefening/${encodeURIComponent(exercise.id)}`);
+  revalidatePath(`/admin/${encodeURIComponent(spaceSlug)}/foutmeldingen`);
   revalidatePath(`/${encodeURIComponent(spaceSlug)}/oefening/${encodeURIComponent(exercise.id)}`);
 }
 

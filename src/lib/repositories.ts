@@ -1494,6 +1494,9 @@ export interface GroupedErrorReportThread {
   issueCount: number;
   reportCount: number;
   latestReportAt: string | null;
+  customNote: string | null;
+  noteLabel: string | null;
+  notePosition: ExerciseNotePosition | null;
   solutionConfiguredVisible: boolean | null;
   solutionStatus: EffectivePublication | null;
 }
@@ -1612,6 +1615,7 @@ export async function getGroupedErrorReportThreads(learningSpaceId?: string): Pr
   const result = await database.execute({
     sql: `SELECT error_report_threads.*, portfolios.portfolio_code, portfolios.title AS portfolio_title,
       portfolios.title_override, sections.title AS section_title,
+      exercises.custom_note, exercises.note_label, exercises.note_position,
       exercises.visibility_mode AS exercise_visibility_mode,
       sections.visibility_mode AS section_visibility_mode,
       sections.publication_limited AS section_publication_limited,
@@ -1669,6 +1673,9 @@ export async function getGroupedErrorReportThreads(learningSpaceId?: string): Pr
       issueCount: Number(row.issue_count),
       reportCount: Number(row.report_count),
       latestReportAt: nullableText(row, "latest_report_at"),
+      customNote: exerciseId ? nullableText(row, "custom_note") : null,
+      noteLabel: exerciseId ? nullableText(row, "note_label") : null,
+      notePosition: exerciseId ? text(row, "note_position") as ExerciseNotePosition : null,
       solutionConfiguredVisible: exerciseId ? childMode({ visibility_mode: row.exercise_visibility_mode }) === "visible" : null,
       solutionStatus,
     };

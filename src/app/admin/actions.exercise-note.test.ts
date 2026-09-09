@@ -44,6 +44,7 @@ describe("exercise note actions", () => {
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.objectContaining({ id: "teacher-1" }), "space-5");
     expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", "Eerste regel\nTweede regel", "Hint", "below_solution");
     expect(mocks.redirect).toHaveBeenCalledWith("/admin/5wis/portfolio/portfolio-1#exercise-exercise-1");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin/5wis/foutmeldingen");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/5wis/oefening/exercise-1");
   });
 
@@ -76,6 +77,7 @@ describe("exercise note actions", () => {
 
     expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", null, null, "above_solution");
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.anything(), "space-5");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin/5wis/foutmeldingen");
   });
 });
 
