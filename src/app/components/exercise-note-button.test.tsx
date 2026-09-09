@@ -34,6 +34,14 @@ describe("ExerciseNoteButton", () => {
     expect(markup).toMatch(/checked="" value="below_solution"/);
     expect(markup).toContain('maxLength="2000"');
     expect(markup).toContain("Notitie verwijderen");
+    expect(markup).not.toContain("Annuleren");
+    expect(markup).toContain('aria-label="Sluiten"');
+    expect(markup).toContain('name="returnContext" value="portfolio"');
+  });
+
+  it("passes the error inbox as an explicit internal return context", () => {
+    const markup = renderToStaticMarkup(<ExerciseNoteButton exerciseId="exercise-12a" exerciseCode="12a" noteLabel={null} customNote={null} notePosition="above_solution" returnContext="error-inbox" initiallyOpen />);
+    expect(markup).toContain('name="returnContext" value="error-inbox"');
   });
 
   it("defaults a new note to above the solution", () => {

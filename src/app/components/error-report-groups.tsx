@@ -135,6 +135,7 @@ function GroupedErrorReportThreadCard({ thread, issues, spaceSlug }: {
           noteLabel={thread.noteLabel}
           customNote={thread.customNote}
           notePosition={thread.notePosition ?? "above_solution"}
+          returnContext="error-inbox"
         /> : null}
         <form action={errorReportThreadPinAction}>
           <input type="hidden" name="threadId" value={thread.id} />
@@ -180,12 +181,12 @@ function ThreadReportDetails({ thread, issues, reportLabel }: {
               <form action={errorReportStatusAction}>
                 <input type="hidden" name="id" value={report.id} />
                 <input type="hidden" name="status" value={treated ? "OPEN" : "DONE"} />
-                <button className="icon-button report-status-button" title={treated ? "Heropen melding" : "Markeer als afgewerkt"} aria-label={treated ? "Heropen melding" : "Markeer als afgewerkt"}>{treated ? <RotateCcw size={15} aria-hidden /> : <Check size={15} aria-hidden />}</button>
+                <button className="icon-button report-item-action report-status-button" title={treated ? "Heropen melding" : "Markeer als afgewerkt"} aria-label={treated ? "Heropen melding" : "Markeer als afgewerkt"}>{treated ? <RotateCcw size={15} aria-hidden /> : <Check size={15} aria-hidden />}</button>
               </form>
               <ConfirmActionButton
                 action={deleteErrorReportAction}
                 fields={{ id: report.id }}
-                className="icon-button report-delete-button"
+                className="icon-button report-item-action report-delete-button"
                 label={<Trash2 size={15} aria-hidden />}
                 confirmTitle="Melding verwijderen"
                 confirmText={errorReportDeleteConfirmText(thread)}

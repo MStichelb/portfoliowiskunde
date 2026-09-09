@@ -53,6 +53,22 @@ describe("exercise note actions", () => {
     expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", null, null, "above_solution");
   });
 
+  it("returns save and delete from the error inbox to that same trusted context", async () => {
+    await saveExerciseNoteAction(noteForm("Inboxnotitie", "above_solution", "", "error-inbox"));
+    expect(mocks.redirect).toHaveBeenLastCalledWith("/admin/5wis/foutmeldingen");
+
+    const deleteForm = new FormData();
+    deleteForm.set("id", "exercise-1");
+    deleteForm.set("returnContext", "error-inbox");
+    await deleteExerciseNoteAction(deleteForm);
+    expect(mocks.redirect).toHaveBeenLastCalledWith("/admin/5wis/foutmeldingen");
+  });
+
+  it("falls back to the portfolio for an untrusted return context", async () => {
+    await saveExerciseNoteAction(noteForm("Notitie", "above_solution", "", "https://evil.example"));
+    expect(mocks.redirect).toHaveBeenCalledWith("/admin/5wis/portfolio/portfolio-1#exercise-exercise-1");
+  });
+
   it("rejects invalid note content or position before mutation", async () => {
     await expect(saveExerciseNoteAction(noteForm("A".repeat(2_001), "above_solution"))).rejects.toThrow("Ongeldige oefeningnotitie");
     await expect(saveExerciseNoteAction(noteForm("Notitie", "above_solution", "A".repeat(41)))).rejects.toThrow("Ongeldige oefeningnotitie");
@@ -78,14 +94,16 @@ describe("exercise note actions", () => {
     expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", null, null, "above_solution");
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.anything(), "space-5");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin/5wis/foutmeldingen");
+    expect(mocks.redirect).toHaveBeenCalledWith("/admin/5wis/portfolio/portfolio-1#exercise-exercise-1");
   });
 });
 
-function noteForm(customNote: string, notePosition: string, noteLabel = "") {
+function noteForm(customNote: string, notePosition: string, noteLabel = "", returnContext = "portfolio") {
   const formData = new FormData();
   formData.set("id", "exercise-1");
   formData.set("customNote", customNote);
   formData.set("noteLabel", noteLabel);
   formData.set("notePosition", notePosition);
+  formData.set("returnContext", returnContext);
   return formData;
 }

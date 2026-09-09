@@ -20,4 +20,20 @@ describe("ConfirmActionButton", () => {
     expect(footer).toContain("class=\"danger-button\"");
     expect(footer).toContain("Verwijderen");
   });
+
+  it("uses a parent form action without rendering a nested form", () => {
+    const markup = renderToStaticMarkup(<form><ConfirmActionButton
+      action={() => undefined}
+      fields={{ id: "report-1" }}
+      label="Open"
+      confirmTitle="Bericht verwijderen?"
+      confirmText="Dit heeft geen invloed op de foutmelding zelf."
+      submitWithinParentForm
+      initiallyOpen
+    /></form>);
+
+    expect(markup.match(/<form/g)).toHaveLength(1);
+    expect(markup).not.toContain("confirm-dialog-action-form");
+    expect(markup).toContain('name="id" value="report-1"');
+  });
 });

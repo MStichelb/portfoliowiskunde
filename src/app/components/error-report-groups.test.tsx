@@ -105,6 +105,7 @@ describe("grouped error report thread inbox", () => {
     expect(markup).toContain('aria-label="Markeer als afgewerkt"');
     expect(markup.indexOf('aria-label="Bericht aan leerling"')).toBeGreaterThan(markup.indexOf('<details class="issue-report-details">'));
     expect(markup).toContain("report-delete-button");
+    expect(markup.match(/report-item-action/g)).toHaveLength(3);
     expect(markup).not.toContain("Thread verwijderen");
   });
 

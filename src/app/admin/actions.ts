@@ -7,7 +7,7 @@ import { z } from "zod";
 
 import { endAdminSession, requireAdmin, requireAdminUser } from "@/lib/auth";
 import { bulkSelectionError } from "@/lib/admin-validation";
-import { adminExercisePortfolioHref } from "@/lib/admin-routes";
+import { adminExerciseNoteReturnHref } from "@/lib/admin-routes";
 import { requireLearningSpaceConfiguration, requireLearningSpaceCreation, requireLearningSpaceManagement } from "@/lib/authorization";
 import { exerciseNoteSchema } from "@/lib/exercise-note";
 import { errorReportTeacherResponseSchema } from "@/lib/error-report-teacher-response";
@@ -385,7 +385,7 @@ export async function saveExerciseNoteAction(formData: FormData) {
   const { exercise, space } = await requireExerciseNoteManagement(id);
   await setExerciseNote(id, note.data.customNote, note.data.noteLabel, note.data.notePosition);
   refreshExerciseNotePaths(exercise, space.slug);
-  redirect(adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id));
+  redirect(adminExerciseNoteReturnHref(space.slug, exercise.portfolioId, exercise.id, stringValue(formData, "returnContext")));
 }
 
 export async function deleteExerciseNoteAction(formData: FormData) {
@@ -394,7 +394,7 @@ export async function deleteExerciseNoteAction(formData: FormData) {
   const { exercise, space } = await requireExerciseNoteManagement(id);
   await setExerciseNote(id, null, null, "above_solution");
   refreshExerciseNotePaths(exercise, space.slug);
-  redirect(adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id));
+  redirect(adminExerciseNoteReturnHref(space.slug, exercise.portfolioId, exercise.id, stringValue(formData, "returnContext")));
 }
 
 export async function logoutAction() {
@@ -408,7 +408,7 @@ export async function errorReportThreadStatusAction(formData: FormData) {
   const status = stringValue(formData, "status");
   if (status !== "TODO" && status !== "DONE") throw new Error("Ongeldige meldingsstatus.");
   await setErrorReportThreadStatus(threadId, status);
-  await refreshErrorReportIssuePaths(learningSpaceId);
+  await refreshErrorReportIssuePaths(learningSpaceId, true);
 }
 
 export async function errorReportThreadPinAction(formData: FormData) {
@@ -426,15 +426,21 @@ export async function errorReportThreadNoteAction(_previousState: AdminActionSta
   return { error: null, saved: true };
 }
 
-export async function saveErrorReportTeacherResponseAction(_previousState: AdminActionState, formData: FormData): Promise<AdminActionState & { saved?: boolean }> {
+export interface ResponseActionState extends AdminActionState { successCount: number; }
+
+export async function saveErrorReportTeacherResponseAction(previousState: ResponseActionState, formData: FormData): Promise<ResponseActionState> {
   const id = stringValue(formData, "id");
   const learningSpaceId = await requireErrorReportManagement(id);
   const response = errorReportTeacherResponseSchema.safeParse(String(formData.get("teacherResponse") ?? ""));
-  if (!response.success) return { error: "Gebruik maximaal 500 tekens platte tekst." };
-  if (stringValue(formData, "markHandled") === "true") await setErrorReportTeacherResponseAndHandled(id, response.data);
-  else await setErrorReportTeacherResponse(id, response.data);
-  await refreshErrorReportIssuePaths(learningSpaceId);
-  return { error: null, saved: true };
+  if (!response.success) return { error: "Gebruik maximaal 500 tekens platte tekst.", successCount: previousState.successCount };
+  try {
+    if (stringValue(formData, "markHandled") === "true") await setErrorReportTeacherResponseAndHandled(id, response.data);
+    else await setErrorReportTeacherResponse(id, response.data);
+    await refreshErrorReportIssuePaths(learningSpaceId, true);
+    return { error: null, successCount: previousState.successCount + 1 };
+  } catch {
+    return { error: "Het bericht kon niet worden opgeslagen. Probeer opnieuw.", successCount: previousState.successCount };
+  }
 }
 
 export async function errorReportStatusAction(formData: FormData) {
@@ -443,14 +449,19 @@ export async function errorReportStatusAction(formData: FormData) {
   const status = stringValue(formData, "status");
   if (status !== "OPEN" && status !== "DONE") throw new Error("Ongeldige meldingsstatus.");
   await setErrorReportHandled(id, status === "DONE");
-  await refreshErrorReportIssuePaths(learningSpaceId);
+  await refreshErrorReportIssuePaths(learningSpaceId, true);
 }
 
-export async function deleteErrorReportTeacherResponseAction(formData: FormData) {
+export async function deleteErrorReportTeacherResponseAction(previousState: ResponseActionState, formData: FormData): Promise<ResponseActionState> {
   const id = stringValue(formData, "id");
   const learningSpaceId = await requireErrorReportManagement(id);
-  await setErrorReportTeacherResponse(id, null);
-  await refreshErrorReportIssuePaths(learningSpaceId);
+  try {
+    await setErrorReportTeacherResponse(id, null);
+    await refreshErrorReportIssuePaths(learningSpaceId, true);
+    return { error: null, successCount: previousState.successCount + 1 };
+  } catch {
+    return { error: "Het bericht kon niet worden verwijderd. Probeer opnieuw.", successCount: previousState.successCount };
+  }
 }
 
 export async function deleteErrorReportAction(formData: FormData) {
@@ -458,7 +469,7 @@ export async function deleteErrorReportAction(formData: FormData) {
   const learningSpaceId = await requireErrorReportManagement(id);
   if (!id) return;
   await deleteErrorReport(id);
-  await refreshErrorReportIssuePaths(learningSpaceId);
+  await refreshErrorReportIssuePaths(learningSpaceId, true);
 }
 
 export async function deleteOldDoneErrorThreadsAction(formData: FormData) {
@@ -545,11 +556,15 @@ async function requireErrorReportThreadManagement(threadId: string) {
   return learningSpaceId;
 }
 
-async function refreshErrorReportIssuePaths(learningSpaceId: string) {
+async function refreshErrorReportIssuePaths(learningSpaceId: string, studentViews = false) {
   revalidatePath("/admin/meldingen");
   revalidatePath("/admin");
+  if (studentViews) revalidatePath("/mijn-meldingen");
   const learningSpace = await getLearningSpace(learningSpaceId);
-  if (learningSpace) revalidatePath(`/admin/${encodeURIComponent(learningSpace.slug)}/foutmeldingen`);
+  if (learningSpace) {
+    revalidatePath(`/admin/${encodeURIComponent(learningSpace.slug)}/foutmeldingen`);
+    if (studentViews) revalidatePath(`/${encodeURIComponent(learningSpace.slug)}`);
+  }
 }
 
 function stringValue(formData: FormData, key: string) {

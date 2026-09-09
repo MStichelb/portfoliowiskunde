@@ -6,7 +6,7 @@ vi.mock("@/app/admin/actions", () => ({
   saveErrorReportTeacherResponseAction: vi.fn(),
 }));
 
-import { ErrorReportResponseButton } from "./error-report-response-button";
+import { ErrorReportResponseButton, shouldCloseResponseDialog } from "./error-report-response-button";
 
 describe("ErrorReportResponseButton", () => {
   it("renders only an accessible neutral icon in the closed report details", () => {
@@ -28,7 +28,7 @@ describe("ErrorReportResponseButton", () => {
   });
 
   it("opens a compact labelled editor with context and response removal", () => {
-    const markup = renderToStaticMarkup(<ErrorReportResponseButton reportId="report-1" exerciseCode="12a" locationLabel="Hints" reporterLabel="Ada" teacherResponse={"Eerste regel\nTweede regel"} initiallyOpen />);
+    const markup = renderToStaticMarkup(<ErrorReportResponseButton reportId="report-1" exerciseCode="12a" locationLabel="Hints" reporterLabel="Ada" teacherResponse={"Eerste regel\nTweede regel"} initiallyOpen initiallyDeleteConfirmOpen />);
 
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain("Bericht aan leerling");
@@ -38,9 +38,20 @@ describe("ErrorReportResponseButton", () => {
     expect(markup).toContain("Eerste regel\nTweede regel");
     expect(markup).toContain("Dit bericht wordt zichtbaar voor de leerling zodra de melding is afgewerkt.");
     expect(markup).toContain("Opslaan");
-    expect(markup).toContain("Opslaan &amp; markeren als afgewerkt");
+    expect(markup).toContain("Opslaan en afwerken");
+    expect(markup).not.toContain("Opslaan &amp; markeren als afgewerkt");
     expect(markup).toContain('name="markHandled"');
     expect(markup).toContain('value="true"');
     expect(markup).toContain("Bericht verwijderen");
+    expect(markup).toContain("Dit heeft geen invloed op de foutmelding zelf.");
+    expect(markup).not.toContain("lifecycle");
+    expect(markup.match(/<form/g)).toHaveLength(1);
+  });
+
+  it("closes only after a successful save, completion or delete action state", () => {
+    expect(shouldCloseResponseDialog(0, 0)).toBe(false);
+    expect(shouldCloseResponseDialog(0, 1)).toBe(true);
+    expect(shouldCloseResponseDialog(1, 2)).toBe(true);
+    expect(shouldCloseResponseDialog(1, 1)).toBe(false);
   });
 });

@@ -93,7 +93,7 @@ describe("error report lifecycle actions", () => {
   ] as const)("authorizes teacher response save for an %s through the trusted report lookup", async (_role, actor) => {
     mocks.requireAdminUser.mockResolvedValue(actor);
 
-    const result = await saveErrorReportTeacherResponseAction({ error: null }, form({
+    const result = await saveErrorReportTeacherResponseAction({ error: null, successCount: 0 }, form({
       id: "report-1",
       learningSpaceId: "untrusted-space",
       teacherResponse: "  Eerste regel\nTweede regel  ",
@@ -102,14 +102,16 @@ describe("error report lifecycle actions", () => {
     expect(mocks.getErrorReportLearningSpaceId).toHaveBeenCalledWith("report-1");
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(actor, "space-5");
     expect(mocks.setErrorReportTeacherResponse).toHaveBeenCalledWith("report-1", "Eerste regel\nTweede regel");
-    expect(result).toEqual({ error: null, saved: true });
+    expect(result).toEqual({ error: null, successCount: 1 });
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/mijn-meldingen");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/5wis");
   });
 
   it("blocks unauthorized response saves before mutation", async () => {
     mocks.requireAdminUser.mockResolvedValue({ id: "student-1", role: "student", status: "active" });
     mocks.requireLearningSpaceManagement.mockRejectedValueOnce(new Error("Geen beheerrechten."));
 
-    await expect(saveErrorReportTeacherResponseAction({ error: null }, form({ id: "report-1", teacherResponse: "Bedankt" }))).rejects.toThrow("Geen beheerrechten");
+    await expect(saveErrorReportTeacherResponseAction({ error: null, successCount: 0 }, form({ id: "report-1", teacherResponse: "Bedankt" }))).rejects.toThrow("Geen beheerrechten");
     expect(mocks.setErrorReportTeacherResponse).not.toHaveBeenCalled();
   });
 
@@ -117,7 +119,7 @@ describe("error report lifecycle actions", () => {
     const actor = { id: "owner-1", role: "teacher", status: "active" };
     mocks.requireAdminUser.mockResolvedValue(actor);
 
-    const result = await saveErrorReportTeacherResponseAction({ error: null }, form({
+    const result = await saveErrorReportTeacherResponseAction({ error: null, successCount: 0 }, form({
       id: "report-1",
       teacherResponse: " Goed gezien. ",
       markHandled: "true",
@@ -126,13 +128,13 @@ describe("error report lifecycle actions", () => {
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(actor, "space-5");
     expect(mocks.setErrorReportTeacherResponseAndHandled).toHaveBeenCalledWith("report-1", "Goed gezien.");
     expect(mocks.setErrorReportTeacherResponse).not.toHaveBeenCalled();
-    expect(result).toEqual({ error: null, saved: true });
+    expect(result).toEqual({ error: null, successCount: 1 });
   });
 
   it("can complete a report through the response modal with an empty response", async () => {
     mocks.requireAdminUser.mockResolvedValue({ id: "owner-1", role: "teacher", status: "active" });
 
-    await saveErrorReportTeacherResponseAction({ error: null }, form({
+    await saveErrorReportTeacherResponseAction({ error: null, successCount: 0 }, form({
       id: "report-1",
       teacherResponse: " \n\t ",
       markHandled: "true",
@@ -165,21 +167,34 @@ describe("error report lifecycle actions", () => {
   it("normalizes whitespace-only saves and explicit removal to null", async () => {
     mocks.requireAdminUser.mockResolvedValue({ id: "owner-1", role: "teacher", status: "active" });
 
-    await saveErrorReportTeacherResponseAction({ error: null }, form({ id: "report-1", teacherResponse: " \n\t " }));
-    await deleteErrorReportTeacherResponseAction(form({ id: "report-1" }));
+    await saveErrorReportTeacherResponseAction({ error: null, successCount: 0 }, form({ id: "report-1", teacherResponse: " \n\t " }));
+    const deleted = await deleteErrorReportTeacherResponseAction({ error: null, successCount: 0 }, form({ id: "report-1" }));
 
     expect(mocks.setErrorReportTeacherResponse).toHaveBeenNthCalledWith(1, "report-1", null);
     expect(mocks.setErrorReportTeacherResponse).toHaveBeenNthCalledWith(2, "report-1", null);
+    expect(deleted).toEqual({ error: null, successCount: 1 });
   });
 
   it("rejects invalid response content after authorization and before mutation", async () => {
     mocks.requireAdminUser.mockResolvedValue({ id: "owner-1", role: "teacher", status: "active" });
-    const result = await saveErrorReportTeacherResponseAction({ error: null }, form({ id: "report-1", teacherResponse: "A".repeat(501) }));
+    const result = await saveErrorReportTeacherResponseAction({ error: null, successCount: 0 }, form({ id: "report-1", teacherResponse: "A".repeat(501) }));
 
     expect(result.error).toContain("maximaal 500 tekens platte tekst");
     expect(mocks.getErrorReportLearningSpaceId).toHaveBeenCalledWith("report-1");
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalled();
     expect(mocks.setErrorReportTeacherResponse).not.toHaveBeenCalled();
+  });
+
+  it("keeps action state open with a visible error when the response mutation fails", async () => {
+    mocks.requireAdminUser.mockResolvedValue({ id: "owner-1", role: "teacher", status: "active" });
+    mocks.setErrorReportTeacherResponse.mockRejectedValueOnce(new Error("Database tijdelijk niet beschikbaar"));
+
+    const result = await saveErrorReportTeacherResponseAction(
+      { error: null, successCount: 3 },
+      form({ id: "report-1", teacherResponse: "Blijft in editor" }),
+    );
+
+    expect(result).toEqual({ error: "Het bericht kon niet worden opgeslagen. Probeer opnieuw.", successCount: 3 });
   });
 
   it.each([
