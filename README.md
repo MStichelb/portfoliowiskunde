@@ -88,7 +88,7 @@ Productie weigert bewust te starten zonder een `postgres://` of `postgresql://` 
 3. Kopieer de TLS-verbinding als `DATABASE_URL`; gebruik `sslmode=require` wanneer de provider dat voorschrijft.
 4. Maak vóór elke latere schemamigratie een providerbackup of herstelpunt.
 
-Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001_initial` tot en met de huidige `029_error_report_threads` uit. PostgreSQL-starts worden met een advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
+Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001_initial` tot en met de huidige `030_exercise_notes` uit. PostgreSQL-starts worden met een advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
 
 Toekomstige rollout:
 
@@ -161,6 +161,8 @@ Gebruik Local filesystem niet in productie; de server weigert dit bewust omdat V
 ## H. First sync
 
 Kies per LearningSpace **Nu synchroniseren**. Deze actie gebruikt uitsluitend de actieve bron; ze schakelt nooit automatisch naar de andere rol. OneDrive en Google Drive gebruiken alleen read-only list/read/download-aanroepen. De app schrijft of verwijdert nooit bronbestanden. Controleer daarna portfolio's, waarschuwingen en de laatste synchronisatietijd.
+
+Een beheerder kan per oefening een optionele tekstnotitie boven of onder de volledige uitwerking tonen. Deze plain-textnotitie is applicatiemetadata in PostgreSQL: synchronisatie vernieuwt de geindexeerde bronbestanden, maar behoudt de notitie en haar positie.
 
 Leerlingen kunnen bij een uitwerking een melding indienen met een optionele, vrij ingevulde naam van maximaal 100 tekens. Admin groepeert open meldingen als **PINNED** en **TO DO**; afgewerkte meldingen staan onder **DONE**. PINNED en TO DO kunnen lokaal op datum of natuurlijke portfolio-ID worden gesorteerd en op een portfolio worden gefilterd. De resetknop wist alleen het portfoliofilter. DONE behoudt zijn eigen volgorde en bulkcleanup gebruikt `completedAt < now - 14 dagen`.
 

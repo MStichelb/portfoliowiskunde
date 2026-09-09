@@ -127,6 +127,8 @@ describe("Google Drive LearningSpace migration", () => {
     expect(portfolioColumns).toEqual(expect.arrayContaining(["hints_document_path", "hints_document_source_id", "custom_text", "custom_text_position"]));
     const userColumns = (await database.execute("PRAGMA table_info(users)")).rows.map((row) => row.name);
     expect(userColumns).toEqual(expect.arrayContaining(["first_name", "last_name", "class_group_override_id"]));
+    const exerciseColumns = (await database.execute("PRAGMA table_info(exercises)")).rows.map((row) => row.name);
+    expect(exerciseColumns).toEqual(expect.arrayContaining(["custom_note", "note_position"]));
     expect((await database.execute("PRAGMA table_info(individual_learning_space_access)")).rows.map((row) => row.name))
       .toEqual(expect.arrayContaining(["user_id", "learning_space_id", "created_at", "updated_at"]));
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '021_multi_user_foundation'")).rows).toHaveLength(1);
@@ -134,6 +136,7 @@ describe("Google Drive LearningSpace migration", () => {
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '024_legacy_learning_space_ownership'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '025_editor_student_access_delegation'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '026_portfolio_custom_message'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '030_exercise_notes'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT id, role, status FROM users WHERE id = 'user-legacy-superadmin'")).rows[0]).toMatchObject({
       role: "superadmin", status: "active",
     });
@@ -167,6 +170,37 @@ describe("Google Drive LearningSpace migration", () => {
       title: "Bestaande titel",
       custom_text: null,
       custom_text_position: "above_documents",
+    });
+  });
+
+  it("adds exercise note defaults without changing existing exercises", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-exercise-note-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 29)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-08T10:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.batch([
+      { sql: `INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, is_indexed, indexed_at)
+        VALUES ('note-portfolio', 'space-5:1', '1', 'space-5', 'Bestaand', 'Portfolio 1 - Bestaand', 1, '2026-09-08T10:00:00.000Z')`, args: [] },
+      { sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path)
+        VALUES ('note-section', 'note-portfolio', 1, 'Deel', 'Portfolio 1 - Bestaand/Uitwerkingen/1 - Deel')`, args: [] },
+      { sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix)
+        VALUES ('note-exercise', 'note-portfolio', 'note-section', '1', 1, '')`, args: [] },
+    ], "write");
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT exercise_code, custom_note, note_position FROM exercises WHERE id = 'note-exercise'")).rows[0]).toMatchObject({
+      exercise_code: "1",
+      custom_note: null,
+      note_position: "above_solution",
     });
   });
 

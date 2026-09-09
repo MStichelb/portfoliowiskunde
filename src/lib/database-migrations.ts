@@ -777,4 +777,11 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX error_reports_exercise_index ON error_reports(exercise_id)",
     ],
   },
+  {
+    version: "030_exercise_notes",
+    statements: [
+      "ALTER TABLE exercises ADD COLUMN custom_note TEXT",
+      "ALTER TABLE exercises ADD COLUMN note_position TEXT NOT NULL DEFAULT 'above_solution' CHECK(note_position IN ('above_solution', 'below_solution'))",
+    ],
+  },
 ];
