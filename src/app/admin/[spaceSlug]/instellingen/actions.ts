@@ -41,25 +41,25 @@ export async function removeLearningSpaceEditorAction(formData: FormData) {
 }
 
 export async function switchSourceProfileAction(formData: FormData) {
-  await runSourceProfileAction(formData, "switched", async (user, learningSpaceId) => {
+  await runSourceProfileAction(formData, "switched", "switch", async (user, learningSpaceId) => {
     await switchActiveSourceProfile(user, learningSpaceId, value(formData, "sourceProfileId"));
   });
 }
 
 export async function createOwnSourceProfileAction(formData: FormData) {
-  await runSourceProfileAction(formData, "created", async (user, learningSpaceId) => {
+  await runSourceProfileAction(formData, "created", null, async (user, learningSpaceId) => {
     await createOwnSourceProfile(user, learningSpaceId);
   });
 }
 
 export async function copySourceProfileAction(formData: FormData) {
-  await runSourceProfileAction(formData, "copied", async (user, learningSpaceId) => {
+  await runSourceProfileAction(formData, "copied", "copy", async (user, learningSpaceId) => {
     await copyActiveSourceProfile(user, learningSpaceId, value(formData, "sourceLearningSpaceId"));
   });
 }
 
 export async function renameSourceProfileAction(formData: FormData) {
-  await runSourceProfileAction(formData, "renamed", async (user, learningSpaceId) => {
+  await runSourceProfileAction(formData, "renamed", "rename", async (user, learningSpaceId) => {
     await renameSourceProfile(user, learningSpaceId, value(formData, "sourceProfileId"), value(formData, "name"));
   });
 }
@@ -67,6 +67,7 @@ export async function renameSourceProfileAction(formData: FormData) {
 async function runSourceProfileAction(
   formData: FormData,
   saved: "switched" | "created" | "copied" | "renamed",
+  errorModal: "switch" | "rename" | "copy" | null,
   mutation: (user: Awaited<ReturnType<typeof requireAdminUser>>, learningSpaceId: string) => Promise<void>,
 ): Promise<never> {
   const learningSpaceId = value(formData, "learningSpaceId");
@@ -78,7 +79,8 @@ async function runSourceProfileAction(
     await mutation(user, learningSpaceId);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Bronprofiel kon niet worden gewijzigd.";
-    redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?profileError=${encodeURIComponent(message)}`);
+    const modalQuery = errorModal ? `&profileModal=${errorModal}` : "";
+    redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?profileError=${encodeURIComponent(message)}${modalQuery}`);
   }
   revalidatePath(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
   redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?profileSaved=${saved}`);

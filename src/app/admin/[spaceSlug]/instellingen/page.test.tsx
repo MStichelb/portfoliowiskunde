@@ -106,6 +106,26 @@ describe("LearningSpace settings page", () => {
     expect(markup).not.toContain("Actieve bron");
   });
 
+  it("reopens only the failed modal and keeps successful mutations closed", async () => {
+    renderToStaticMarkup(await LearningSpaceSettingsPage({
+      params: Promise.resolve({ spaceSlug: "5" }),
+      searchParams: Promise.resolve({ profileError: "Ongeldige naam.", profileModal: "rename" }),
+    }));
+    expect(mocks.sourceProfileCard).toHaveBeenLastCalledWith(expect.objectContaining({
+      error: "Ongeldige naam.",
+      initialModal: "rename",
+    }));
+
+    renderToStaticMarkup(await LearningSpaceSettingsPage({
+      params: Promise.resolve({ spaceSlug: "5" }),
+      searchParams: Promise.resolve({ profileSaved: "renamed" }),
+    }));
+    expect(mocks.sourceProfileCard).toHaveBeenLastCalledWith(expect.objectContaining({
+      feedback: "Profielnaam gewijzigd.",
+      initialModal: null,
+    }));
+  });
+
   it("does not open settings for a user without configuration rights", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
     mocks.canManageLearningSpace.mockResolvedValue(false);

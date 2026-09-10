@@ -21,7 +21,7 @@ import { BUILT_IN_DEFAULT_SOURCE_PROFILE_ID } from "@/lib/source-profile-config"
 import { createOwnSourceProfile, getActiveSourceProfileForLearningSpace } from "@/lib/source-profiles";
 import { setIndividualLearningSpaceAccess, upsertManagedMembership } from "@/lib/user-management";
 
-import { createOwnSourceProfileAction, switchSourceProfileAction } from "./actions";
+import { copySourceProfileAction, createOwnSourceProfileAction, renameSourceProfileAction, switchSourceProfileAction } from "./actions";
 
 let temporaryDirectory: string | undefined;
 let owner: AppUser;
@@ -71,6 +71,27 @@ describe("source profile settings actions", () => {
     }))).rejects.toThrow("profileSaved=switched");
 
     expect(custom.id).not.toBe((await getActiveSourceProfileForLearningSpace("space-5"))?.id);
+    expect(mocks.redirect).toHaveBeenLastCalledWith("/admin/5/instellingen?profileSaved=switched");
+  });
+
+  it("reopens rename only after a validation error", async () => {
+    const custom = await createOwnSourceProfile(owner, "space-5");
+    mocks.requireAdminUser.mockResolvedValue(owner);
+
+    await expect(renameSourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: custom.id, name: " " }))).rejects.toThrow("profileModal=rename");
+
+    expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("profileError="));
+    expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("&profileModal=rename"));
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe("Eigen profiel");
+  });
+
+  it("closes after copy success and activates the new independent profile", async () => {
+    mocks.requireAdminUser.mockResolvedValue(superadmin);
+
+    await expect(copySourceProfileAction(form({ learningSpaceId: "space-5", sourceLearningSpaceId: "space-6" }))).rejects.toThrow("profileSaved=copied");
+
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))).toMatchObject({ type: "custom", managementLearningSpaceId: "space-5" });
+    expect(mocks.redirect).toHaveBeenLastCalledWith("/admin/5/instellingen?profileSaved=copied");
   });
 
   it("keeps a viewer out before resolving LearningSpace details", async () => {
@@ -85,6 +106,7 @@ describe("source profile settings actions", () => {
     mocks.requireAdminUser.mockResolvedValue(owner);
 
     await expect(switchSourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: foreign.id }))).rejects.toThrow("profileError=Bronprofiel%20niet%20beschikbaar");
+    expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("&profileModal=switch"));
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
   });
 });
