@@ -1,3 +1,11 @@
+import {
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON,
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_DESCRIPTION,
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_NAME,
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP,
+} from "@/lib/source-profile-config";
+
 export interface DatabaseMigration {
   version: string;
   statements: string[];
@@ -804,4 +812,41 @@ export const migrations: DatabaseMigration[] = [
       "DROP INDEX IF EXISTS error_reports_issue_reporter_unique",
     ],
   },
+  {
+    version: "034_source_profile_foundation",
+    statements: [
+      `CREATE TABLE source_profiles (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK(type IN ('built_in', 'custom')),
+        name TEXT NOT NULL,
+        description TEXT,
+        config_version INTEGER NOT NULL,
+        config_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE learning_space_source_profiles (
+        learning_space_id TEXT PRIMARY KEY REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        source_profile_id TEXT NOT NULL REFERENCES source_profiles(id) ON DELETE RESTRICT,
+        assigned_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `INSERT INTO source_profiles
+        (id, type, name, description, config_version, config_json, created_at, updated_at)
+        VALUES (${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)}, 'built_in', ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_NAME)},
+          ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_DESCRIPTION)}, 1, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON)},
+          ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP)}, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP)})
+        ON CONFLICT(id) DO NOTHING`,
+      `INSERT INTO learning_space_source_profiles
+        (learning_space_id, source_profile_id, assigned_at, updated_at)
+        SELECT id, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)}, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP)},
+          ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP)} FROM learning_spaces WHERE TRUE
+        ON CONFLICT(learning_space_id) DO NOTHING`,
+      "CREATE INDEX learning_space_source_profiles_profile_index ON learning_space_source_profiles(source_profile_id)",
+    ],
+  },
 ];
+
+function sqlText(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
