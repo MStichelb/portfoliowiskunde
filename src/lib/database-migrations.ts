@@ -845,6 +845,13 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX learning_space_source_profiles_profile_index ON learning_space_source_profiles(source_profile_id)",
     ],
   },
+  {
+    version: "035_source_profile_management_context",
+    statements: [
+      "ALTER TABLE source_profiles ADD COLUMN management_learning_space_id TEXT REFERENCES learning_spaces(id) ON DELETE SET NULL",
+      "CREATE INDEX source_profiles_management_context_index ON source_profiles(management_learning_space_id, type)",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

@@ -7,15 +7,19 @@ import type { LearningSpace } from "@/lib/repositories";
 const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   canConfigureLearningSpace: vi.fn(),
+  canManageLearningSpace: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
+  getSourceProfileAdminModel: vi.fn(),
   settingsForm: vi.fn(),
+  sourceProfileCard: vi.fn(),
   saveLearningSpaceAction: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NEXT_NOT_FOUND"); }),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
-vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: mocks.canConfigureLearningSpace }));
+vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: mocks.canConfigureLearningSpace, canManageLearningSpace: mocks.canManageLearningSpace }));
 vi.mock("@/lib/repositories", () => ({ getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug }));
+vi.mock("@/lib/source-profiles", () => ({ getSourceProfileAdminModel: mocks.getSourceProfileAdminModel }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("../../actions", () => ({ saveLearningSpaceAction: mocks.saveLearningSpaceAction }));
 vi.mock("@/app/components/admin-space-header", () => ({
@@ -30,6 +34,15 @@ vi.mock("@/app/components/learning-space-settings-form", () => ({
 vi.mock("@/app/components/source-switch-panel", () => ({
   SourceSwitchPanel: () => <section>Actieve bron</section>,
 }));
+vi.mock("@/app/components/source-profile-card", () => ({
+  SourceProfileCard: (props: unknown) => {
+    mocks.sourceProfileCard(props);
+    return <section>Bronprofiel: Standaard portfolio</section>;
+  },
+}));
+vi.mock("./actions", () => ({
+  switchSourceProfileAction: vi.fn(), createOwnSourceProfileAction: vi.fn(), copySourceProfileAction: vi.fn(), renameSourceProfileAction: vi.fn(),
+}));
 
 import LearningSpaceSettingsPage from "./page";
 
@@ -38,7 +51,9 @@ describe("LearningSpace settings page", () => {
     vi.clearAllMocks();
     mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
     mocks.canConfigureLearningSpace.mockResolvedValue(true);
+    mocks.canManageLearningSpace.mockResolvedValue(true);
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
+    mocks.getSourceProfileAdminModel.mockResolvedValue({ activeProfile: { name: "Standaard portfolio" }, availableProfiles: [], copySources: [] });
   });
 
   it("passes superadmin delete rights into settings while preserving the active source", async () => {
@@ -53,6 +68,7 @@ describe("LearningSpace settings page", () => {
       action: mocks.saveLearningSpaceAction,
     }));
     expect(markup).toContain("Instellingenformulier");
+    expect(markup).toContain("Bronprofiel: Standaard portfolio");
     expect(markup).toContain("Actieve bron");
     expect(markup).not.toContain("Status leeromgeving");
     expect(markup).not.toContain("Beheerders van deze leeromgeving");
@@ -77,9 +93,22 @@ describe("LearningSpace settings page", () => {
     expect(archivedMarkup).not.toContain("Actieve bron");
   });
 
-  it("does not open settings for a user without configuration rights", async () => {
+  it("lets an editor manage only the source profile card", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
     mocks.canConfigureLearningSpace.mockResolvedValue(false);
+
+    const markup = renderToStaticMarkup(await LearningSpaceSettingsPage({
+      params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({}),
+    }));
+
+    expect(markup).toContain("Bronprofiel: Standaard portfolio");
+    expect(markup).not.toContain("Instellingenformulier");
+    expect(markup).not.toContain("Actieve bron");
+  });
+
+  it("does not open settings for a user without configuration rights", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher"));
+    mocks.canManageLearningSpace.mockResolvedValue(false);
 
     await expect(LearningSpaceSettingsPage({
       params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({}),

@@ -48,8 +48,8 @@ describe("source profile foundation", () => {
   it("creates exactly one built-in default and assigns every fresh LearningSpace", async () => {
     const database = await useFreshDatabase("source-profile-fresh-");
 
-    expect((await database.execute("SELECT id, type FROM source_profiles")).rows).toEqual([
-      expect.objectContaining({ id: BUILT_IN_DEFAULT_SOURCE_PROFILE_ID, type: "built_in" }),
+    expect((await database.execute("SELECT id, type, management_learning_space_id FROM source_profiles")).rows).toEqual([
+      expect.objectContaining({ id: BUILT_IN_DEFAULT_SOURCE_PROFILE_ID, type: "built_in", management_learning_space_id: null }),
     ]);
     const assignments = (await database.execute("SELECT learning_space_id, source_profile_id FROM learning_space_source_profiles ORDER BY learning_space_id")).rows;
     expect(assignments).toHaveLength(2);

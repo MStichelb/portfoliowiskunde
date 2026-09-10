@@ -4,8 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdminUser } from "@/lib/auth";
-import { requireLearningSpaceConfiguration } from "@/lib/authorization";
+import { canManageLearningSpace, requireLearningSpaceConfiguration } from "@/lib/authorization";
 import { getLearningSpace } from "@/lib/repositories";
+import { copyActiveSourceProfile, createOwnSourceProfile, renameSourceProfile, switchActiveSourceProfile } from "@/lib/source-profiles";
 import { listManagedMemberships, removeManagedMembership, upsertManagedMembership } from "@/lib/user-management";
 
 export async function addLearningSpaceEditorAction(formData: FormData) {
@@ -37,6 +38,50 @@ export async function removeLearningSpaceEditorAction(formData: FormData) {
   await removeManagedMembership(learningSpaceId, targetUserId);
   revalidatePath(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
   redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?memberSaved=1`);
+}
+
+export async function switchSourceProfileAction(formData: FormData) {
+  await runSourceProfileAction(formData, "switched", async (user, learningSpaceId) => {
+    await switchActiveSourceProfile(user, learningSpaceId, value(formData, "sourceProfileId"));
+  });
+}
+
+export async function createOwnSourceProfileAction(formData: FormData) {
+  await runSourceProfileAction(formData, "created", async (user, learningSpaceId) => {
+    await createOwnSourceProfile(user, learningSpaceId);
+  });
+}
+
+export async function copySourceProfileAction(formData: FormData) {
+  await runSourceProfileAction(formData, "copied", async (user, learningSpaceId) => {
+    await copyActiveSourceProfile(user, learningSpaceId, value(formData, "sourceLearningSpaceId"));
+  });
+}
+
+export async function renameSourceProfileAction(formData: FormData) {
+  await runSourceProfileAction(formData, "renamed", async (user, learningSpaceId) => {
+    await renameSourceProfile(user, learningSpaceId, value(formData, "sourceProfileId"), value(formData, "name"));
+  });
+}
+
+async function runSourceProfileAction(
+  formData: FormData,
+  saved: "switched" | "created" | "copied" | "renamed",
+  mutation: (user: Awaited<ReturnType<typeof requireAdminUser>>, learningSpaceId: string) => Promise<void>,
+): Promise<never> {
+  const learningSpaceId = value(formData, "learningSpaceId");
+  const user = await requireAdminUser();
+  if (!await canManageLearningSpace(user, learningSpaceId)) redirect("/admin");
+  const space = await getLearningSpace(learningSpaceId);
+  if (!space) redirect("/admin");
+  try {
+    await mutation(user, learningSpaceId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Bronprofiel kon niet worden gewijzigd.";
+    redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?profileError=${encodeURIComponent(message)}`);
+  }
+  revalidatePath(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
+  redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?profileSaved=${saved}`);
 }
 
 function value(formData: FormData, key: string): string {
