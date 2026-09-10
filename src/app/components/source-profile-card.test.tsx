@@ -43,12 +43,12 @@ describe("SourceProfileCard", () => {
     expect(markup).not.toContain("<form");
   });
 
-  it("opens only the profile-selection modal with scoped labels and two close paths", () => {
+  it("opens only the profile-selection modal with scoped labels, no fallback and two close paths", () => {
     const markup = renderCard("custom", "switch");
 
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain("Ander bronprofiel kiezen");
-    expect(markup).toContain("Standaard portfolio — ingebouwd");
+    expect(markup).not.toContain("Standaard portfolio — ingebouwd");
     expect(markup).toContain("Mijn profiel — 6WIS");
     expect(markup).toContain("Annuleren");
     expect(markup).toContain("Activeren");
@@ -95,7 +95,7 @@ function renderCard(type: SourceProfile["type"], initialModal: SourceProfileModa
   const model: SourceProfileAdminModel = {
     activeProfile: active,
     availableProfiles: [
-      { ...profile("built-in", "built_in", "Standaard portfolio", null), managementLearningSpaceName: null, managementLearningSpaceShortLabel: null },
+      ...(active.type === "custom" ? [{ ...active, managementLearningSpaceName: "Vijfde jaar", managementLearningSpaceShortLabel: "5WIS" }] : []),
       { ...profile("other", "custom", "Mijn profiel", "space-6"), managementLearningSpaceName: "Zesde jaar", managementLearningSpaceShortLabel: "6WIS" },
     ],
     copySources: [{ learningSpaceId: "space-6", learningSpaceName: "Zesde jaar", learningSpaceShortLabel: "6WIS", profile: profile("other", "custom", "Mijn profiel", "space-6") }],

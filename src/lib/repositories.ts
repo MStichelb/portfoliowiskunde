@@ -13,7 +13,7 @@ import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRe
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { ExerciseNotePosition } from "@/lib/exercise-note";
 import type { SourceManifestEntry } from "@/lib/source-comparison";
-import { BUILT_IN_DEFAULT_SOURCE_PROFILE_ID } from "@/lib/source-profile-config";
+import { getDefaultSourceProfileTemplate, prepareSourceProfileTemplateClone } from "@/lib/source-profile-templates";
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
 import {
   resolveChildPublication,
@@ -339,6 +339,8 @@ export async function createLearningSpaceForOwner(input: LearningSpaceInput, own
 async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUserId: string | null): Promise<LearningSpace> {
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
+  const template = await getDefaultSourceProfileTemplate();
+  const profileClone = prepareSourceProfileTemplateClone(template, id, now);
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
   const mirror = input.mirrorSource ?? null;
   const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
@@ -346,11 +348,7 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args: [id, input.name, input.slug, input.shortLabel, input.description ?? DEFAULT_LEARNING_SPACE_DESCRIPTION, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder,
       legacyStorageProvider(primary.providerType), primary.providerType, primary.localSourcePath ?? null, primary.oneDriveDriveId ?? null,
       primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now] }];
-  statements.push({
-    sql: `INSERT INTO learning_space_source_profiles (learning_space_id, source_profile_id, assigned_at, updated_at)
-      VALUES (?, ?, ?, ?)`,
-    args: [id, BUILT_IN_DEFAULT_SOURCE_PROFILE_ID, now, now],
-  });
+  statements.push(...profileClone.statements);
   statements.push(sourceUpsertStatement(id, "primary", primary, true, now));
   if (mirror) statements.push(sourceUpsertStatement(id, "mirror", mirror, false, now));
   if (ownerUserId) {

@@ -32,7 +32,7 @@ afterEach(async () => {
 });
 
 describe("source profile config", () => {
-  it("accepts the built-in V1 config through the typed parser", () => {
+  it("accepts the built-in V1 config through the shared typed parser", () => {
     expect(parseSourceProfileConfig(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG)).toEqual(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
   });
 
@@ -44,55 +44,52 @@ describe("source profile config", () => {
   });
 });
 
-describe("source profile foundation", () => {
-  it("creates exactly one built-in default and assigns every fresh LearningSpace", async () => {
+describe("concrete source profile foundation", () => {
+  it("keeps one technical fallback while assigning distinct custom snapshots on a fresh database", async () => {
     const database = await useFreshDatabase("source-profile-fresh-");
+    const fallback = await database.execute({ sql: "SELECT type, management_learning_space_id FROM source_profiles WHERE id = ?", args: [BUILT_IN_DEFAULT_SOURCE_PROFILE_ID] });
+    const assignments = (await database.execute(`SELECT learning_space_source_profiles.learning_space_id, source_profiles.*
+      FROM learning_space_source_profiles JOIN source_profiles ON source_profiles.id = learning_space_source_profiles.source_profile_id
+      ORDER BY learning_space_source_profiles.learning_space_id`)).rows;
 
-    expect((await database.execute("SELECT id, type, management_learning_space_id FROM source_profiles")).rows).toEqual([
-      expect.objectContaining({ id: BUILT_IN_DEFAULT_SOURCE_PROFILE_ID, type: "built_in", management_learning_space_id: null }),
-    ]);
-    const assignments = (await database.execute("SELECT learning_space_id, source_profile_id FROM learning_space_source_profiles ORDER BY learning_space_id")).rows;
+    expect(fallback.rows[0]).toMatchObject({ type: "built_in", management_learning_space_id: null });
     expect(assignments).toHaveLength(2);
-    expect(assignments.every((row) => row.source_profile_id === BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)).toBe(true);
+    expect(new Set(assignments.map((row) => row.id)).size).toBe(2);
+    expect(assignments.every((row) => row.type === "custom" && row.management_learning_space_id === row.learning_space_id)).toBe(true);
+    expect(assignments.every((row) => row.config_json === JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG))).toBe(true);
   });
 
-  it("bootstraps idempotently and does not duplicate the default or assignments", async () => {
+  it("bootstraps only the technical fallback idempotently and does not reassign LearningSpaces", async () => {
     const database = await useFreshDatabase("source-profile-bootstrap-");
+    const before = (await database.execute("SELECT * FROM learning_space_source_profiles ORDER BY learning_space_id")).rows;
 
+    await database.execute({ sql: "DELETE FROM source_profiles WHERE id = ?", args: [BUILT_IN_DEFAULT_SOURCE_PROFILE_ID] });
     await ensureBuiltInDefaultSourceProfile();
-    await database.execute("DELETE FROM learning_space_source_profiles WHERE learning_space_id = 'space-5'");
     await ensureBuiltInDefaultSourceProfile();
 
-    expect(Number((await database.execute("SELECT COUNT(*) AS count FROM source_profiles")).rows[0].count)).toBe(1);
-    expect(Number((await database.execute("SELECT COUNT(*) AS count FROM learning_space_source_profiles")).rows[0].count)).toBe(2);
+    expect(Number((await database.execute({ sql: "SELECT COUNT(*) AS count FROM source_profiles WHERE id = ?", args: [BUILT_IN_DEFAULT_SOURCE_PROFILE_ID] })).rows[0].count)).toBe(1);
+    expect((await database.execute("SELECT * FROM learning_space_source_profiles ORDER BY learning_space_id")).rows).toEqual(before);
   });
 
-  it("assigns the default to a newly created LearningSpace and resolves typed config", async () => {
+  it("gives a newly created LearningSpace its own typed custom snapshot", async () => {
     await useFreshDatabase("source-profile-created-space-");
     const space = await createLearningSpace({
-      name: "Nieuwe leeromgeving",
-      slug: "nieuwe-leeromgeving",
-      shortLabel: "Nieuw",
-      sortOrder: 70,
-      sourceType: "local",
-      localSourcePath: null,
+      name: "Nieuwe leeromgeving", slug: "nieuwe-leeromgeving", shortLabel: "Nieuw", sortOrder: 70, sourceType: "local", localSourcePath: null,
     });
 
     const profile = await getActiveSourceProfileForLearningSpace(space.id);
-    expect(profile).toMatchObject({ id: BUILT_IN_DEFAULT_SOURCE_PROFILE_ID, type: "built_in", name: "Standaard portfolio" });
+    expect(profile).toMatchObject({ type: "custom", name: "Standaard portfolio", managementLearningSpaceId: space.id });
+    expect(profile?.id).not.toBe(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
     expect(profile && getSourceProfileConfig(profile)).toEqual(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
   });
 
-  it("marks only custom profiles as deletable and protects the assigned built-in profile relationally", async () => {
-    const database = await useFreshDatabase("source-profile-delete-");
-    const profile = await getActiveSourceProfileForLearningSpace("space-5");
-
-    expect(profile && canDeleteSourceProfile(profile)).toBe(false);
+  it("keeps the fallback immutable in application semantics", async () => {
+    await useFreshDatabase("source-profile-delete-");
+    expect(canDeleteSourceProfile({ type: "built_in" })).toBe(false);
     expect(canDeleteSourceProfile({ type: "custom" })).toBe(true);
-    await expect(database.execute({ sql: "DELETE FROM source_profiles WHERE id = ?", args: [BUILT_IN_DEFAULT_SOURCE_PROFILE_ID] })).rejects.toThrow();
   });
 
-  it("upgrades existing spaces without changing source connections or portfolio metadata", async () => {
+  it("upgrades existing spaces to snapshots without changing source connections or portfolio metadata", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "source-profile-upgrade-"));
     const databasePath = path.join(temporaryDirectory, "metadata.db");
     const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
@@ -115,14 +112,12 @@ describe("source profile foundation", () => {
     const upgraded = await getDatabase();
 
     expect((await upgraded.execute("SELECT local_source_path, last_validation_status FROM learning_space_sources WHERE id = 'space-6:primary'")).rows[0]).toMatchObject({
-      local_source_path: "D:/bestaande-bron",
-      last_validation_status: "valid",
+      local_source_path: "D:/bestaande-bron", last_validation_status: "valid",
     });
     expect((await upgraded.execute("SELECT title, custom_text FROM portfolios WHERE id = 'profile-portfolio'")).rows[0]).toMatchObject({
-      title: "Bestaande titel",
-      custom_text: "Bestaande metadata",
+      title: "Bestaande titel", custom_text: "Bestaande metadata",
     });
-    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.id).toBe(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
+    expect(await getActiveSourceProfileForLearningSpace("space-6")).toMatchObject({ type: "custom", managementLearningSpaceId: "space-6" });
   });
 });
 

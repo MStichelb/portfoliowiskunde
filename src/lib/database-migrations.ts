@@ -4,6 +4,11 @@ import {
   BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_NAME,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP,
+  INITIAL_SOURCE_PROFILE_TEMPLATE_DESCRIPTION,
+  INITIAL_SOURCE_PROFILE_TEMPLATE_ID,
+  INITIAL_SOURCE_PROFILE_TEMPLATE_NAME,
+  INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP,
+  MIGRATED_SOURCE_PROFILE_SNAPSHOT_PREFIX,
 } from "@/lib/source-profile-config";
 
 export interface DatabaseMigration {
@@ -850,6 +855,47 @@ export const migrations: DatabaseMigration[] = [
     statements: [
       "ALTER TABLE source_profiles ADD COLUMN management_learning_space_id TEXT REFERENCES learning_spaces(id) ON DELETE SET NULL",
       "CREATE INDEX source_profiles_management_context_index ON source_profiles(management_learning_space_id, type)",
+    ],
+  },
+  {
+    version: "036_global_source_profile_templates",
+    statements: [
+      `CREATE TABLE source_profile_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        config_version INTEGER NOT NULL,
+        config_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE source_profile_template_defaults (
+        singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+        default_template_id TEXT NOT NULL REFERENCES source_profile_templates(id) ON DELETE RESTRICT,
+        updated_at TEXT NOT NULL
+      )`,
+      `INSERT INTO source_profile_templates
+        (id, name, description, config_version, config_json, created_at, updated_at)
+        VALUES (${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_ID)}, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_NAME)},
+          ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_DESCRIPTION)}, 1, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON)},
+          ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)}, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)})
+        ON CONFLICT(id) DO NOTHING`,
+      `INSERT INTO source_profile_template_defaults (singleton_id, default_template_id, updated_at)
+        VALUES (1, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_ID)}, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)})
+        ON CONFLICT(singleton_id) DO NOTHING`,
+      `INSERT INTO source_profiles
+        (id, type, name, description, config_version, config_json, created_at, updated_at, management_learning_space_id)
+        SELECT ${sqlText(MIGRATED_SOURCE_PROFILE_SNAPSHOT_PREFIX)} || learning_space_source_profiles.learning_space_id,
+          'custom', ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_NAME)}, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_DESCRIPTION)},
+          1, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON)}, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)},
+          ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)}, learning_space_source_profiles.learning_space_id
+        FROM learning_space_source_profiles
+        WHERE learning_space_source_profiles.source_profile_id = ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)}
+        ON CONFLICT(id) DO NOTHING`,
+      `UPDATE learning_space_source_profiles
+        SET source_profile_id = ${sqlText(MIGRATED_SOURCE_PROFILE_SNAPSHOT_PREFIX)} || learning_space_id,
+          updated_at = ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)}
+        WHERE source_profile_id = ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)}`,
     ],
   },
 ];

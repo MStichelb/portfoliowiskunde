@@ -15,10 +15,11 @@ vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
-import { resetDatabaseForTests } from "@/lib/database";
+import { getDatabase, resetDatabaseForTests } from "@/lib/database";
 import { createUser, type AppUser } from "@/lib/identity";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_ID } from "@/lib/source-profile-config";
-import { createOwnSourceProfile, getActiveSourceProfileForLearningSpace } from "@/lib/source-profiles";
+import { getActiveSourceProfileForLearningSpace } from "@/lib/source-profiles";
+import { cloneSourceProfileTemplateToLearningSpace, getDefaultSourceProfileTemplate } from "@/lib/source-profile-templates";
 import { setIndividualLearningSpaceAccess, upsertManagedMembership } from "@/lib/user-management";
 
 import { copySourceProfileAction, createOwnSourceProfileAction, renameSourceProfileAction, switchSourceProfileAction } from "./actions";
@@ -53,6 +54,10 @@ afterEach(async () => {
 describe("source profile settings actions", () => {
   it("uses the authenticated owner and activates a newly created profile", async () => {
     mocks.requireAdminUser.mockResolvedValue(owner);
+    await (await getDatabase()).execute({
+      sql: "UPDATE learning_space_source_profiles SET source_profile_id = ? WHERE learning_space_id = 'space-5'",
+      args: [BUILT_IN_DEFAULT_SOURCE_PROFILE_ID],
+    });
 
     await expect(createOwnSourceProfileAction(form({ learningSpaceId: "space-5" }))).rejects.toThrow("profileSaved=created");
 
@@ -61,12 +66,13 @@ describe("source profile settings actions", () => {
   });
 
   it("allows the authenticated editor to switch without accepting a client user id", async () => {
-    const custom = await createOwnSourceProfile(owner, "space-5");
+    const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    const custom = await cloneSourceProfileTemplateToLearningSpace(await getDefaultSourceProfileTemplate(), "space-5");
     mocks.requireAdminUser.mockResolvedValue(editor);
 
     await expect(switchSourceProfileAction(form({
       learningSpaceId: "space-5",
-      sourceProfileId: BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
+      sourceProfileId: original.id,
       userId: superadmin.id,
     }))).rejects.toThrow("profileSaved=switched");
 
@@ -75,14 +81,14 @@ describe("source profile settings actions", () => {
   });
 
   it("reopens rename only after a validation error", async () => {
-    const custom = await createOwnSourceProfile(owner, "space-5");
+    const custom = (await getActiveSourceProfileForLearningSpace("space-5"))!;
     mocks.requireAdminUser.mockResolvedValue(owner);
 
     await expect(renameSourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: custom.id, name: " " }))).rejects.toThrow("profileModal=rename");
 
     expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("profileError="));
     expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("&profileModal=rename"));
-    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe("Eigen profiel");
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe("Standaard portfolio");
   });
 
   it("closes after copy success and activates the new independent profile", async () => {
@@ -96,18 +102,20 @@ describe("source profile settings actions", () => {
 
   it("keeps a viewer out before resolving LearningSpace details", async () => {
     mocks.requireAdminUser.mockResolvedValue(viewer);
+    const originalId = (await getActiveSourceProfileForLearningSpace("space-5"))!.id;
 
-    await expect(switchSourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: BUILT_IN_DEFAULT_SOURCE_PROFILE_ID }))).rejects.toThrow("NEXT_REDIRECT:/admin");
-    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
+    await expect(switchSourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: originalId }))).rejects.toThrow("NEXT_REDIRECT:/admin");
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(originalId);
   });
 
   it("turns a manipulated foreign profile id into a scoped error without activating it", async () => {
-    const foreign = await createOwnSourceProfile(superadmin, "space-6");
+    const foreign = (await getActiveSourceProfileForLearningSpace("space-6"))!;
+    const originalId = (await getActiveSourceProfileForLearningSpace("space-5"))!.id;
     mocks.requireAdminUser.mockResolvedValue(owner);
 
     await expect(switchSourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: foreign.id }))).rejects.toThrow("profileError=Bronprofiel%20niet%20beschikbaar");
     expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("&profileModal=switch"));
-    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(originalId);
   });
 });
 

@@ -4,6 +4,11 @@ export const BUILT_IN_DEFAULT_SOURCE_PROFILE_ID = "source-profile-standard-portf
 export const BUILT_IN_DEFAULT_SOURCE_PROFILE_NAME = "Standaard portfolio";
 export const BUILT_IN_DEFAULT_SOURCE_PROFILE_DESCRIPTION = "Ingebouwd profiel voor de huidige portfolio- en bestandsconventies.";
 export const BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP = "2026-09-10T00:00:00.000Z";
+export const INITIAL_SOURCE_PROFILE_TEMPLATE_ID = "source-profile-template-standard-portfolio";
+export const INITIAL_SOURCE_PROFILE_TEMPLATE_NAME = "Standaard portfolio";
+export const INITIAL_SOURCE_PROFILE_TEMPLATE_DESCRIPTION = "Appbreed standaardsjabloon voor de huidige portfolio- en bestandsconventies.";
+export const INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP = "2026-09-10T00:00:00.000Z";
+export const MIGRATED_SOURCE_PROFILE_SNAPSHOT_PREFIX = "source-profile-template-snapshot:";
 
 export const sourceProfileConfigV1Schema = z.object({
   configVersion: z.literal(1),

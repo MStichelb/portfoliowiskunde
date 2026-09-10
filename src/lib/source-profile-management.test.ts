@@ -9,6 +9,7 @@ import { AuthorizationError } from "./authorization";
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { createUser, type AppUser } from "./identity";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, BUILT_IN_DEFAULT_SOURCE_PROFILE_ID } from "./source-profile-config";
+import { cloneSourceProfileTemplateToLearningSpace, getDefaultSourceProfileTemplate } from "./source-profile-templates";
 import {
   copyActiveSourceProfile,
   createOwnSourceProfile,
@@ -50,11 +51,13 @@ afterEach(async () => {
 });
 
 describe("source profile management", () => {
-  it("shows the built-in profile and scopes available profiles to manageable LearningSpaces", async () => {
-    const spaceSixProfile = await createOwnSourceProfile(actors.managerBoth, "space-6");
+  it("shows concrete profiles, hides the technical fallback and scopes choices to manageable LearningSpaces", async () => {
+    const spaceSixProfile = (await getActiveSourceProfileForLearningSpace("space-6"))!;
 
     const ownerModel = await getSourceProfileAdminModel(actors.owner, "space-5");
-    expect(ownerModel.activeProfile).toMatchObject({ id: BUILT_IN_DEFAULT_SOURCE_PROFILE_ID, type: "built_in", name: "Standaard portfolio" });
+    expect(ownerModel.activeProfile).toMatchObject({ type: "custom", name: "Standaard portfolio", managementLearningSpaceId: "space-5" });
+    expect(ownerModel.availableProfiles.map((profile) => profile.id)).not.toContain(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
+    await expect(switchActiveSourceProfile(actors.owner, "space-5", BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)).rejects.toBeInstanceOf(AuthorizationError);
     expect(ownerModel.availableProfiles.map((profile) => profile.id)).not.toContain(spaceSixProfile.id);
     expect(ownerModel.copySources).toEqual([]);
 
@@ -70,6 +73,10 @@ describe("source profile management", () => {
   });
 
   it("creates an independent custom snapshot with a new id and activates it", async () => {
+    await (await getDatabase()).execute({
+      sql: "UPDATE learning_space_source_profiles SET source_profile_id = ? WHERE learning_space_id = 'space-5'",
+      args: [BUILT_IN_DEFAULT_SOURCE_PROFILE_ID],
+    });
     const custom = await createOwnSourceProfile(actors.owner, "space-5");
     const builtIn = (await getDatabase()).execute({ sql: "SELECT name, config_json FROM source_profiles WHERE id = ?", args: [BUILT_IN_DEFAULT_SOURCE_PROFILE_ID] });
 
@@ -81,7 +88,7 @@ describe("source profile management", () => {
   });
 
   it("copies another managed space's active profile as an independent target-owned row", async () => {
-    const source = await createOwnSourceProfile(actors.managerBoth, "space-6");
+    const source = (await getActiveSourceProfileForLearningSpace("space-6"))!;
     await renameSourceProfile(actors.managerBoth, "space-6", source.id, "Profiel zes");
     const copy = await copyActiveSourceProfile(actors.managerBoth, "space-5", "space-6");
 
@@ -95,10 +102,11 @@ describe("source profile management", () => {
   });
 
   it.each(["owner", "editor", "superadmin"] as const)("allows a %s to switch an allowed profile", async (actorRole) => {
-    const custom = await createOwnSourceProfile(actors.owner, "space-5");
-    await switchActiveSourceProfile(actors[actorRole], "space-5", BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
-    await switchActiveSourceProfile(actors[actorRole], "space-5", custom.id);
-    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(custom.id);
+    const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    const second = await createAdditionalProfile("space-5");
+    await switchActiveSourceProfile(actors[actorRole], "space-5", original.id);
+    await switchActiveSourceProfile(actors[actorRole], "space-5", second.id);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(second.id);
   });
 
   it.each(["viewer", "student"] as const)("rejects a %s mutation", async (actorRole) => {
@@ -108,26 +116,28 @@ describe("source profile management", () => {
   });
 
   it("blocks unmanaged custom profiles and manipulated profile ids", async () => {
-    const foreign = await createOwnSourceProfile(actors.superadmin, "space-6");
+    const foreign = (await getActiveSourceProfileForLearningSpace("space-6"))!;
+    const originalId = (await getActiveSourceProfileForLearningSpace("space-5"))!.id;
     await expect(switchActiveSourceProfile(actors.owner, "space-5", foreign.id)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(copyActiveSourceProfile(actors.owner, "space-5", "space-6")).rejects.toBeInstanceOf(AuthorizationError);
     await expect(switchActiveSourceProfile(actors.owner, "space-5", "source-profile-does-not-exist")).rejects.toBeInstanceOf(AuthorizationError);
-    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(originalId);
   });
 
   it("renames only active custom profiles with a non-empty name of at most 80 characters", async () => {
-    const custom = await createOwnSourceProfile(actors.editor, "space-5");
+    const custom = (await getActiveSourceProfileForLearningSpace("space-5"))!;
     await renameSourceProfile(actors.editor, "space-5", custom.id, "  Eigen indeling  ");
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe("Eigen indeling");
     await expect(renameSourceProfile(actors.owner, "space-5", custom.id, " ")).rejects.toThrow("Geef het bronprofiel een naam");
     await expect(renameSourceProfile(actors.owner, "space-5", custom.id, "a".repeat(81))).rejects.toThrow("maximaal 80");
-    await switchActiveSourceProfile(actors.owner, "space-5", BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
-    await expect(renameSourceProfile(actors.owner, "space-5", BUILT_IN_DEFAULT_SOURCE_PROFILE_ID, "Gewijzigd")).rejects.toThrow("ingebouwde bronprofiel");
+    await expect(renameSourceProfile(actors.owner, "space-5", BUILT_IN_DEFAULT_SOURCE_PROFILE_ID, "Gewijzigd")).rejects.toBeInstanceOf(AuthorizationError);
+    await createAdditionalProfile("space-5");
     await expect(renameSourceProfile(actors.owner, "space-5", custom.id, "Niet actief")).rejects.toBeInstanceOf(AuthorizationError);
   });
 
   it("rejects malformed and unknown config versions without changing the active assignment", async () => {
     const database = await getDatabase();
+    const originalId = (await getActiveSourceProfileForLearningSpace("space-5"))!.id;
     await insertRawCustom("malformed", 1, JSON.stringify({ configVersion: 1, scanner: {} }));
     await insertRawCustom("unknown", 2, JSON.stringify({ configVersion: 2, scanner: { convention: "legacy_portfolio_v1" } }));
 
@@ -137,20 +147,21 @@ describe("source profile management", () => {
 
     await expect(switchActiveSourceProfile(actors.owner, "space-5", "malformed")).rejects.toThrow();
     await expect(switchActiveSourceProfile(actors.owner, "space-5", "unknown")).rejects.toThrow();
-    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(originalId);
 
     await database.execute("UPDATE learning_space_source_profiles SET source_profile_id = 'malformed' WHERE learning_space_id = 'space-6'");
     await expect(copyActiveSourceProfile(actors.managerBoth, "space-5", "space-6")).rejects.toThrow();
-    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(originalId);
   });
 
   it("changes only the profile assignment and never source or indexed data", async () => {
     const database = await getDatabase();
-    const custom = await createOwnSourceProfile(actors.owner, "space-5");
+    const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    const custom = await createAdditionalProfile("space-5");
     const beforeSource = (await database.execute("SELECT * FROM learning_space_sources WHERE learning_space_id = 'space-5' ORDER BY id")).rows;
     const beforePortfolios = (await database.execute("SELECT * FROM portfolios WHERE learning_space_id = 'space-5' ORDER BY id")).rows;
 
-    await switchActiveSourceProfile(actors.owner, "space-5", BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
+    await switchActiveSourceProfile(actors.owner, "space-5", original.id);
 
     expect((await database.execute("SELECT * FROM learning_space_sources WHERE learning_space_id = 'space-5' ORDER BY id")).rows).toEqual(beforeSource);
     expect((await database.execute("SELECT * FROM portfolios WHERE learning_space_id = 'space-5' ORDER BY id")).rows).toEqual(beforePortfolios);
@@ -158,6 +169,10 @@ describe("source profile management", () => {
     expect(custom.id).not.toBe((await getActiveSourceProfileForLearningSpace("space-5"))?.id);
   });
 });
+
+async function createAdditionalProfile(learningSpaceId: string) {
+  return cloneSourceProfileTemplateToLearningSpace(await getDefaultSourceProfileTemplate(), learningSpaceId);
+}
 
 async function insertRawCustom(id: string, configVersion: number, configJson: string): Promise<void> {
   await (await getDatabase()).execute({

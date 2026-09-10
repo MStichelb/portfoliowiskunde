@@ -83,8 +83,8 @@ export async function getSourceProfileAdminModel(user: AppUser, learningSpaceId:
           learning_spaces.short_label AS management_learning_space_short_label
         FROM source_profiles
         LEFT JOIN learning_spaces ON learning_spaces.id = source_profiles.management_learning_space_id
-        WHERE source_profiles.type = 'built_in'
-          OR source_profiles.management_learning_space_id IN (${placeholders})
+        WHERE source_profiles.type = 'custom'
+          AND source_profiles.management_learning_space_id IN (${placeholders})
         ORDER BY source_profiles.type, source_profiles.name, learning_spaces.name`,
       args: manageableSpaceIds,
     }),
@@ -198,13 +198,6 @@ export function builtInDefaultSourceProfileBootstrapStatements(): InStatement[] 
         BUILT_IN_DEFAULT_SOURCE_PROFILE_DESCRIPTION, BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON,
         BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP, BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP],
     },
-    {
-      sql: `INSERT INTO learning_space_source_profiles
-        (learning_space_id, source_profile_id, assigned_at, updated_at)
-        SELECT id, ?, ?, ? FROM learning_spaces WHERE TRUE
-        ON CONFLICT(learning_space_id) DO NOTHING`,
-      args: [BUILT_IN_DEFAULT_SOURCE_PROFILE_ID, BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP, BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP],
-    },
   ];
 }
 
@@ -227,7 +220,7 @@ async function requireAllowedSourceProfile(user: AppUser, sourceProfileId: strin
   const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [sourceProfileId] });
   if (!result.rows[0]) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
   const profile = sourceProfileFromRow(result.rows[0]);
-  if (profile.type === "built_in") return profile;
+  if (profile.type === "built_in") throw new AuthorizationError("Bronprofiel niet beschikbaar.");
   if (!profile.managementLearningSpaceId || !await canManageLearningSpace(user, profile.managementLearningSpaceId)) {
     throw new AuthorizationError("Bronprofiel niet beschikbaar.");
   }
