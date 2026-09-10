@@ -54,6 +54,8 @@ Batch G1.3 maakt de threadkaarten compacter met locatiechips, compacte reportmet
 
 Batch G1.4 combineert aantal, laatste melding en eventuele afwerkdatum in de disclosuretrigger. Individuele reports verschijnen per locatie als compacte minikaarten. Sinds A4.1 hangt de terughoudende grijze/doorgestreepte reportweergave uitsluitend af van `report.handled_at`; `thread.completed_at` bepaalt deze individuele adminvisualisatie niet. De interne beheernotitie heeft een afzonderlijk subtiel bordeaux accent.
 
+Een gematchte thread hergebruikt de bestaande `ExerciseNoteButton`, actions en validatie om dezelfde optionele plain-textnotitie met label en boven/onder-positie te beheren; een unmatched thread toont geen notitieknop. De server resolveert de oefening en LearningSpace zelf. Alleen de allowlisted return-context `error-inbox` keert na save of delete terug naar de foutmeldingeninbox; iedere onbekende of externe waarde valt veilig terug op portfolio-admin.
+
 Batch G2 rondt de lifecycle af. Een beheerder kan een individuele reportmelding na bevestiging permanent verwijderen. De server leidt de LearningSpace uitsluitend af uit de report-, issue- en threadrelatie. Blijven er andere reports in het issue, dan verandert verder niets. Een issue zonder reports wordt verwijderd; wanneer daardoor ook de thread geen issues meer heeft, verdwijnt de thread inclusief eventuele beheernotitie. Deze deletevolgorde gebeurt transactioneel en verandert status of `completed_at` van een niet-lege thread niet.
 
 De opruimactie voor DONE verwijdert complete threads waarvan `thread.completed_at` strikt ouder is dan veertien dagen. Eerst verdwijnen alle reports, daarna de issues en ten slotte de thread. De teller telt threads. Een TODO-thread wordt nooit door deze cleanup verwijderd, ook niet wanneer een automatische heropening een oude `completed_at` als behandelingsgrens heeft behouden.
@@ -78,9 +80,9 @@ De effectieve leerlingstatus is **Afgewerkt** wanneer `report.handled_at` bestaa
 
 Batch A4 toont op de leerling-home maximaal één compacte behandelingsbanner voor eigen, recent afgewerkte reports zonder `student_dismissed_at`. Eén report gebruikt een oefeningsspecifieke tekst wanneer de koppeling betrouwbaar is; meerdere reports worden in dezelfde banner geaggregeerd. Dismiss zet voor precies de nog geldige eigen pending set `student_dismissed_at`, maar verwijdert geen report en wijzigt `handled_at` of `teacher_response` niet. Een volgende submit maakt een nieuw open report, dat na latere afhandeling een eigen feedbackcyclus en banner kan starten.
 
-Batch A4.1 voegt per report beveiligde acties toe om individueel af te werken of te heropenen. Individueel afwerken zet `handled_at` op nu en wist `student_dismissed_at`; heropenen maakt beide velden leeg. Beide acties behouden `teacher_response` en laten de threadstatus en `thread.completed_at` ongemoeid. De responsemodal biedt daarnaast **Opslaan** als lifecycle-neutrale optie en **Opslaan & markeren als afgewerkt** als één transactionele response-plus-afhandelactie. Alleen een individueel ingevulde `report.handled_at` kan de behandelingsbanner starten; thread-DONE alleen nooit.
+Batch A4.1 voegt per report beveiligde acties toe om individueel af te werken of te heropenen. Individueel afwerken zet `handled_at` op nu en wist `student_dismissed_at`; heropenen maakt beide velden leeg. Beide acties behouden `teacher_response` en laten de threadstatus en `thread.completed_at` ongemoeid. De responsemodal biedt daarnaast **Opslaan** als lifecycle-neutrale optie en **Opslaan en afwerken** als één transactionele response-plus-afhandelactie. Alleen een individueel ingevulde `report.handled_at` kan de behandelingsbanner starten; thread-DONE alleen nooit.
 
-Met batches A1 tot en met A4.3 is Foutmeldingen v2.1 functioneel en technisch afgerond.
+Met batches A1 tot en met A4.8 is Foutmeldingen v2.1 functioneel en technisch afgerond.
 
 ## Vervolg
 

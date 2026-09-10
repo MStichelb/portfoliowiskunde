@@ -164,7 +164,7 @@ Kies per LearningSpace **Nu synchroniseren**. Deze actie gebruikt uitsluitend de
 
 Een beheerder kan per oefening een optionele tekstnotitie met een optioneel label boven of onder de volledige uitwerking tonen. Deze plain-textmetadata staat in PostgreSQL: synchronisatie vernieuwt de geindexeerde bronbestanden, maar behoudt notitie, label en positie.
 
-Leerlingen kunnen bij een uitwerking een melding indienen met een optionele, vrij ingevulde naam van maximaal 100 tekens. Admin groepeert open meldingen als **PINNED** en **TO DO**; afgewerkte meldingen staan onder **DONE**. PINNED en TO DO kunnen lokaal op datum of natuurlijke portfolio-ID worden gesorteerd en op een portfolio worden gefilterd. De resetknop wist alleen het portfoliofilter. DONE behoudt zijn eigen volgorde en bulkcleanup gebruikt `thread.completed_at < now - 14 dagen`; `report.handled_at` is afzonderlijke leerling-lifecyclemetadata en stuurt deze cleanup niet.
+Ingelogde leerlingen kunnen vanuit een portfolio of uitwerking meerdere afzonderlijke foutmeldingen indienen en volgen hun eigen meldingen via **Mijn meldingen**. Admin groepeert issues per oefeningthread als **PINNED**, **TO DO** en **DONE**, met een afzonderlijke afhandelstatus en optioneel antwoord per individueel report. De leerlingstatus is afgewerkt bij `report.handled_at` of, als dat ontbreekt, bij een DONE-thread; de bijbehorende datum bepaalt de zichtbaarheid gedurende maximaal veertien dagen. Alleen individuele afhandeling kan de geaggregeerde behandelingsbanner starten. Threadcleanup gebruikt afzonderlijk `thread.completed_at < now - 14 dagen`.
 
 Superadmins beheren lokale rollen, userstatus, profielen en accountacties op `/admin/gebruikers`. Lerarenrechten, Smartschoolgroep-mappings en individuele leerlingtoegang worden per LearningSpace beheerd via `/admin/[spaceSlug]/toegang`. Een groupID-koppeling geeft iedere reeds aangemelde leerling met exact die Smartschoolgroep toegang; het overzicht bevat alleen users die minstens één keer via Smartschool zijn aangemeld. Teachers en hoofdbeheerders kunnen een LearningSpace aanmaken en worden daarbij transactioneel eigenaar. Alleen een eigenaar of hoofdbeheerder wijzigt de bronconfiguratie.
 
@@ -198,7 +198,7 @@ Voer na de eerste production sync uit:
 3. Open PNG/JPG/PDF-uitwerkingen en de opgaven- en eindoplossingen-PDF.
 4. Controleer dat verborgen content en directe verborgen asset-URL's 404 geven.
 5. Controleer dat alternatieve uitwerkingen alleen voor leerlingen verschijnen wanneer de toggle actief is; adminpreview toont ze altijd.
-6. Dien zowel anoniem als met een optionele naam een foutmelding in. Controleer in admin PINNED, TO DO, sorteren op datum/portfolio, filteren op portfolio, notitie, DONE en individuele/bulkdelete.
+6. Meld als ingelogde leerling meermaals hetzelfde probleem. Controleer de afzonderlijke reports in admin en **Mijn meldingen**, de individuele afhandeling en response, de behandelingsbanner, threadstatussen en cleanup.
 7. Wijzig een bestand in de gekozen cloudbron, wacht minstens de TTL en open opnieuw een leerlingroute; controleer de nieuwe syncsamenvatting.
 8. Maak tijdelijk een ongeldige folder-ID, voer handmatige sync uit en controleer de vriendelijke fout. Herstel de ID en verifieer dat de oude index tijdens de fout beschikbaar bleef.
 9. Log uit en controleer dat adminpagina's en admin-assetendpoints niet meer toegankelijk zijn.
