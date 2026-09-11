@@ -160,6 +160,16 @@ describe("source profile settings actions", () => {
     expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("&profileModal=switch"));
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(originalId);
   });
+
+  it("keeps the owner-safe link invariant in the old deep action for a superadmin", async () => {
+    const source = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    const targetBefore = (await getActiveSourceProfileForLearningSpace("space-6"))!;
+    mocks.requireAdminUser.mockResolvedValue(superadmin);
+
+    await expect(linkSourceProfileAction(form({ learningSpaceId: "space-6", sourceProfileId: source.id })))
+      .rejects.toThrow("profileError=Dit%20bronprofiel%20kan%20alleen%20worden%20gekoppeld");
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.id).toBe(targetBefore.id);
+  });
 });
 
 function form(values: Record<string, string>): FormData {

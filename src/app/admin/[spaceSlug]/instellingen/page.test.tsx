@@ -9,8 +9,7 @@ const mocks = vi.hoisted(() => ({
   canConfigureLearningSpace: vi.fn(),
   canManageLearningSpace: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
-  getSourceProfileAdminModel: vi.fn(),
-  listSourceProfileTemplates: vi.fn(),
+  getSourceProfileForLearningSpaceCard: vi.fn(),
   settingsForm: vi.fn(),
   sourceProfileCard: vi.fn(),
   saveLearningSpaceAction: vi.fn(),
@@ -20,8 +19,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: mocks.canConfigureLearningSpace, canManageLearningSpace: mocks.canManageLearningSpace }));
 vi.mock("@/lib/repositories", () => ({ getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug }));
-vi.mock("@/lib/source-profiles", () => ({ getSourceProfileAdminModel: mocks.getSourceProfileAdminModel }));
-vi.mock("@/lib/source-profile-templates", () => ({ listSourceProfileTemplates: mocks.listSourceProfileTemplates }));
+vi.mock("@/lib/source-profiles", () => ({ getSourceProfileForLearningSpaceCard: mocks.getSourceProfileForLearningSpaceCard }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("../../actions", () => ({ saveLearningSpaceAction: mocks.saveLearningSpaceAction }));
 vi.mock("@/app/components/admin-space-header", () => ({
@@ -42,9 +40,6 @@ vi.mock("@/app/components/source-profile-card", () => ({
     return <section>Bronprofiel: Standaard portfolio</section>;
   },
 }));
-vi.mock("./actions", () => ({
-  linkSourceProfileAction: vi.fn(), copySelectedSourceProfileAction: vi.fn(), copySourceProfileTemplateAction: vi.fn(), createOwnSourceProfileAction: vi.fn(), copySourceProfileAction: vi.fn(), renameSourceProfileAction: vi.fn(),
-}));
 
 import LearningSpaceSettingsPage from "./page";
 
@@ -55,8 +50,7 @@ describe("LearningSpace settings page", () => {
     mocks.canConfigureLearningSpace.mockResolvedValue(true);
     mocks.canManageLearningSpace.mockResolvedValue(true);
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
-    mocks.getSourceProfileAdminModel.mockResolvedValue({ activeProfile: { name: "Standaard portfolio" }, availableProfiles: [], copyTargets: [] });
-    mocks.listSourceProfileTemplates.mockResolvedValue([]);
+    mocks.getSourceProfileForLearningSpaceCard.mockResolvedValue({ id: "profile-1", name: "Standaard portfolio" });
   });
 
   it("passes superadmin delete rights into settings while preserving the active source", async () => {
@@ -96,7 +90,7 @@ describe("LearningSpace settings page", () => {
     expect(archivedMarkup).not.toContain("Actieve bron");
   });
 
-  it("lets an editor manage only the source profile card", async () => {
+  it("lets an editor view only the source profile card", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
     mocks.canConfigureLearningSpace.mockResolvedValue(false);
 
@@ -110,24 +104,14 @@ describe("LearningSpace settings page", () => {
     expect(mocks.sourceProfileCard).toHaveBeenCalledWith(expect.objectContaining({ canConfigure: false }));
   });
 
-  it("reopens only the failed modal and keeps successful mutations closed", async () => {
+  it("passes no profile mutation flows into the read-only card", async () => {
     renderToStaticMarkup(await LearningSpaceSettingsPage({
-      params: Promise.resolve({ spaceSlug: "5" }),
-      searchParams: Promise.resolve({ profileError: "Ongeldige naam.", profileModal: "rename" }),
+      params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({}),
     }));
-    expect(mocks.sourceProfileCard).toHaveBeenLastCalledWith(expect.objectContaining({
-      error: "Ongeldige naam.",
-      initialModal: "rename",
-    }));
-
-    renderToStaticMarkup(await LearningSpaceSettingsPage({
-      params: Promise.resolve({ spaceSlug: "5" }),
-      searchParams: Promise.resolve({ profileSaved: "renamed" }),
-    }));
-    expect(mocks.sourceProfileCard).toHaveBeenLastCalledWith(expect.objectContaining({
-      feedback: "Profielnaam gewijzigd.",
-      initialModal: null,
-    }));
+    const props = mocks.sourceProfileCard.mock.calls[0][0] as Record<string, unknown>;
+    expect(props).toEqual({ profile: expect.objectContaining({ name: "Standaard portfolio" }), canConfigure: true });
+    expect(props).not.toHaveProperty("actions");
+    expect(props).not.toHaveProperty("initialModal");
   });
 
   it("does not open settings for a user without configuration rights", async () => {

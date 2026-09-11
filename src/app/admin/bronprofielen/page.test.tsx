@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "@/lib/source-profile-config";
 import type { AppUser } from "@/lib/identity";
-import type { ManagedSourceProfile } from "@/lib/source-profiles";
+import type { ManagedSourceProfile, SourceProfileCopyTarget } from "@/lib/source-profiles";
 
 const mocks = vi.hoisted(() => ({ requireAdminUser: vi.fn(), getSourceProfileOverview: vi.fn(), listSourceProfileTemplates: vi.fn() }));
 
@@ -40,7 +40,10 @@ describe("central source profile page", () => {
     expect(markup).not.toContain("4 actieve leeromgevingen");
     expect(markup).toContain("Beheren");
     expect(mocks.getSourceProfileOverview).toHaveBeenCalledWith(expect.objectContaining({ role }));
-    expect(markup).toContain(role === "superadmin" ? "Appbrede sjablonen" : "Sjablonen");
+    expect(markup).toContain("Mijn bronprofielen");
+    expect(markup).toContain("Bronprofielen uit leeromgevingen");
+    expect(markup).toContain("Sjablonen");
+    expect(markup).not.toContain("Bronprofielen uit leeromgevingen</h2>");
     expect(markup).not.toContain("Appbreed sjabloon");
     expect(markup).toContain('title="Gedeeld profiel"');
     expect(markup).not.toContain("Gedeeld door 4 leeromgevingen");
@@ -81,24 +84,42 @@ describe("central source profile page", () => {
 
   it("separates editor-accessible active profiles from owned profiles and keeps them read-only", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
-    const foreign = profile({ id: "foreign", name: "Profiel collega", ownerUserId: "colleague", ownerName: "Collega", access: "editor", canRename: false, canLink: false });
+    const foreign = profile({ id: "foreign", name: "Profiel collega", ownerUserId: "colleague", ownerName: "Collega", access: "editor", canRename: false, canLink: false, linkTargets: [] });
     mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [profile()], editorAccessibleActiveProfiles: [foreign], copyTargets: [copyTarget()] });
 
-    const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({}) }));
-    expect(markup).toContain("Bronprofielen via leeromgevingen");
+    const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ tab: "editor" }) }));
+    expect(markup).toContain("Bronprofielen uit leeromgevingen</h2>");
     expect(markup).toContain("Eigenaar: Collega");
     expect(markup).toContain("Bekijken");
+    expect(markup).toContain("source-profile-tab-section");
+    expect(markup).not.toContain("TipTopPortfolio");
     expect(markup).not.toContain(`linkProfile=${foreign.id}`);
+  });
+
+  it("shows no copy entrypoint to a pure editor without an owner target", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher"));
+    const foreign = profile({ id: "foreign", name: "Profiel collega", ownerUserId: "colleague", ownerName: "Collega", access: "editor", canRename: false, canCopy: false, canLink: false, linkTargets: [] });
+    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [], editorAccessibleActiveProfiles: [foreign], copyTargets: [] });
+
+    const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ tab: "editor", copyProfile: foreign.id }) }));
+    expect(markup).toContain("Profiel collega");
+    expect(markup).toContain("Bekijken");
+    expect(markup).not.toContain(`copyProfile=${foreign.id}`);
+    expect(markup).not.toContain("Bronprofiel kopiëren");
   });
 
   it("keeps manage, copy and link in separate modals with explicit shared behavior", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
+    mocks.getSourceProfileOverview.mockResolvedValue({
+      ownedProfiles: [profile()], editorAccessibleActiveProfiles: [], copyTargets: [copyTarget(), otherOwnerCopyTarget()],
+    });
 
     const manage = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ profile: "profile-1" }) }));
     expect(manage).toContain("Dit profiel is gedeeld");
     expect(manage).toContain("4NW1");
     expect(manage).toContain("Voor alle aanpassen");
     expect(manage).toContain('name="confirmShared"');
+    expect(manage).toContain("source-profile-shared-confirm");
     expect(manage).not.toContain("Configuratieversie");
     expect(manage).not.toContain("Doelleeromgeving");
     expect(manage).not.toContain("Koppelen aan leeromgeving");
@@ -108,6 +129,7 @@ describe("central source profile page", () => {
     expect(copy).toContain("lucide-copy");
     expect(copy).toContain("Doelleeromgeving");
     expect(copy).toContain("5WIS — Standaard portfolio");
+    expect(copy).toContain("6WIS — Profiel andere eigenaar");
     expect(copy).not.toContain("Voor alle aanpassen");
 
     const link = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ linkProfile: "profile-1" }) }));
@@ -115,7 +137,18 @@ describe("central source profile page", () => {
     expect(link).toContain("lucide-link-2");
     expect(link).toContain("Koppelen aan leeromgeving");
     expect(link).toContain("Latere wijzigingen aan dit profiel gelden voor alle gekoppelde leeromgevingen");
+    expect(link).toContain("5WIS — Standaard portfolio");
+    expect(link).not.toContain("6WIS — Profiel andere eigenaar");
     expect(link).not.toContain("Doelleeromgeving");
+  });
+
+  it("hides linking and refuses to open an empty link modal without owner-compatible targets", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
+    const unlinkable = profile({ canLink: false, linkTargets: [] });
+    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [unlinkable], editorAccessibleActiveProfiles: [], copyTargets: [copyTarget()] });
+    const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ linkProfile: unlinkable.id }) }));
+    expect(markup).not.toContain(`linkProfile=${unlinkable.id}`);
+    expect(markup).not.toContain("Bronprofiel koppelen");
   });
 
   it("does not continue loading when admin authentication rejects a student", async () => {
@@ -132,7 +165,7 @@ function profile(overrides: Partial<ManagedSourceProfile> = {}): ManagedSourcePr
     config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, managementLearningSpaceId: "space-5", ownerUserId: "teacher", ownerName: "Mathias",
     managementLearningSpaceName: "Vijfde jaar", managementLearningSpaceShortLabel: "5WIS",
     usages: labels.map((learningSpaceShortLabel, index) => ({ learningSpaceId: `space-${index}`, learningSpaceName: `Ruimte ${index}`, learningSpaceShortLabel })),
-    usageCount: 4, isInactive: false, access: "owner", canRename: true, canCopy: true, canLink: true, createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z",
+    usageCount: 4, isInactive: false, access: "owner", canRename: true, canCopy: true, canLink: true, linkTargets: [copyTarget()], createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -145,10 +178,18 @@ function template() {
   return { id: "template-1", name: "Standaard portfolio", description: "Appbreed sjabloon", configVersion: 1, isDefault: true };
 }
 
-function copyTarget() {
+function copyTarget(): SourceProfileCopyTarget {
   return {
     learningSpaceId: "space-5", learningSpaceName: "Vijfde jaar", learningSpaceShortLabel: "5WIS",
     profile: { id: "active-5", name: "Standaard portfolio", type: "custom", description: null, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
       managementLearningSpaceId: "space-5", ownerUserId: "teacher", createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z" }, canConfigure: true,
+  };
+}
+
+function otherOwnerCopyTarget(): SourceProfileCopyTarget {
+  return {
+    learningSpaceId: "space-6", learningSpaceName: "Zesde jaar", learningSpaceShortLabel: "6WIS",
+    profile: { id: "active-6", name: "Profiel andere eigenaar", type: "custom" as const, description: null, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
+      managementLearningSpaceId: "space-6", ownerUserId: "other-owner", createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z" }, canConfigure: true,
   };
 }

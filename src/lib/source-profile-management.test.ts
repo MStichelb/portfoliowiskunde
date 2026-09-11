@@ -16,7 +16,7 @@ import {
   createOwnSourceProfile,
   getActiveSourceProfileForLearningSpace,
   getManagedSourceProfiles,
-  getSourceProfileAdminModel,
+  getSourceProfileForLearningSpaceCard,
   getSourceProfileOverview,
   linkSourceProfileToLearningSpace,
   renameManagedSourceProfile,
@@ -83,24 +83,24 @@ describe("source profile ownership and access", () => {
     expect((await getManagedSourceProfiles(actors.superadmin)).map((profile) => profile.id)).toEqual(expect.arrayContaining([profileFiveId, profileSixId, inactiveOwned.id]));
   });
 
-  it("uses the same ownership model centrally and in the selector", async () => {
+  it("uses the same ownership model centrally and in the read-only LearningSpace card", async () => {
     const inactiveOwned = await createProfile("space-5", actors.owner.id, "Eigen reserve", false);
     const overview = await getSourceProfileOverview(actors.owner);
-    const selector = await getSourceProfileAdminModel(actors.owner, "space-5");
-    expect(selector.availableProfiles.map((profile) => profile.id)).toEqual(overview.ownedProfiles.map((profile) => profile.id));
-    expect(selector.availableProfiles.map((profile) => profile.id)).toContain(inactiveOwned.id);
-    expect(selector.availableProfiles.every((profile) => profile.ownerUserId === actors.owner.id)).toBe(true);
+    const card = await getSourceProfileForLearningSpaceCard(actors.owner, "space-5");
+    expect(overview.ownedProfiles.map((profile) => profile.id)).toContain(inactiveOwned.id);
+    expect(overview.ownedProfiles.every((profile) => profile.ownerUserId === actors.owner.id)).toBe(true);
+    expect(card).toMatchObject({ id: profileFiveId, ownerUserId: actors.owner.id, usageCount: 1 });
   });
 
   it("shows a contextual active profile to editors and derives copy capability from owner targets", async () => {
-    const pureEditorModel = await getSourceProfileAdminModel(actors.pureEditor, "space-5");
-    expect(pureEditorModel.activeProfile).toMatchObject({ id: profileFiveId, ownerName: "Olivia Owner", access: "editor", canCopy: false });
-    expect(pureEditorModel.copyTargets).toEqual([]);
+    const pureEditorOverview = await getSourceProfileOverview(actors.pureEditor);
+    expect(pureEditorOverview.editorAccessibleActiveProfiles[0]).toMatchObject({ id: profileFiveId, ownerName: "Olivia Owner", access: "editor", canCopy: false });
+    expect(pureEditorOverview.copyTargets).toEqual([]);
     expect(await canCopySourceProfile(actors.pureEditor, profileFiveId)).toBe(false);
 
-    const ownerEditorModel = await getSourceProfileAdminModel(actors.ownerEditor, "space-5");
-    expect(ownerEditorModel.activeProfile).toMatchObject({ id: profileFiveId, access: "editor", canCopy: true });
-    expect(ownerEditorModel.copyTargets.map((target) => target.learningSpaceId)).toEqual(["space-6"]);
+    const ownerEditorOverview = await getSourceProfileOverview(actors.ownerEditor);
+    expect(ownerEditorOverview.editorAccessibleActiveProfiles[0]).toMatchObject({ id: profileFiveId, access: "editor", canCopy: true, canLink: false });
+    expect(ownerEditorOverview.copyTargets.map((target) => target.learningSpaceId)).toEqual(["space-6"]);
     expect(await canCopySourceProfile(actors.ownerEditor, profileFiveId)).toBe(true);
   });
 
@@ -126,6 +126,26 @@ describe("source profile ownership and access", () => {
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe("Nieuwe eigen naam");
   });
 
+  it("derives owner-compatible link targets and does not let a superadmin bypass them", async () => {
+    const inactiveOwned = await createProfile("space-5", actors.owner.id, "Te koppelen profiel", false);
+    const ownerProfile = (await getSourceProfileOverview(actors.owner)).ownedProfiles.find((profile) => profile.id === profileFiveId)!;
+    expect(ownerProfile.linkTargets).toEqual([]);
+    expect(ownerProfile.canLink).toBe(false);
+    const inactiveProfile = (await getSourceProfileOverview(actors.owner)).ownedProfiles.find((profile) => profile.id === inactiveOwned.id)!;
+    expect(inactiveProfile.linkTargets.map((target) => target.learningSpaceId)).toEqual(["space-5"]);
+    expect(inactiveProfile.canLink).toBe(true);
+
+    const adminProfile = (await getSourceProfileOverview(actors.superadmin)).ownedProfiles.find((profile) => profile.id === profileFiveId)!;
+    expect(adminProfile.linkTargets).toEqual([]);
+    await expect(linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6")).rejects.toThrow("profieleigenaar ook eigenaar");
+
+    await upsertManagedMembership("space-6", actors.owner.id, "owner");
+    const refreshed = (await getSourceProfileOverview(actors.superadmin)).ownedProfiles.find((profile) => profile.id === profileFiveId)!;
+    expect(refreshed.linkTargets.map((target) => target.learningSpaceId)).toEqual(["space-6"]);
+    await linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6");
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.id).toBe(profileFiveId);
+  });
+
   it("keeps concrete names unique per owner and generates collision-safe copy names", async () => {
     await expect(createProfile("space-5", actors.owner.id, " standaard PORTFOLIO ", false)).rejects.toThrow("al een bronprofiel");
     const sameNameOtherOwner = await createProfile("space-6", actors.ownerEditor.id, "Standaard portfolio", false);
@@ -140,6 +160,7 @@ describe("source profile ownership and access", () => {
   });
 
   it("preserves shared usage and makes a split copy owned by the current user", async () => {
+    await upsertManagedMembership("space-6", actors.owner.id, "owner");
     await linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6");
     await expect(renameSourceProfile(actors.owner, "space-5", profileFiveId, "Alleen vijf")).rejects.toThrow("Kies of je");
     await renameSourceProfile(actors.owner, "space-5", profileFiveId, "Alleen vijf", "current");
@@ -154,7 +175,7 @@ describe("source profile ownership and access", () => {
     const database = await getDatabase();
     const execute = vi.spyOn(database, "execute");
     const profiles = await getManagedSourceProfiles(actors.owner);
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(2);
     expect(profiles.map((profile) => profile.name)).toEqual(["Standaard portfolio", "Alfa", "Zulu"]);
     expect(profiles.find((profile) => profile.id === profileFiveId)).toMatchObject({ usageCount: 1, isInactive: false });
   });
@@ -169,6 +190,8 @@ describe("source profile ownership and access", () => {
     await expect(copySourceProfileToLearningSpace(disabledOwner, profileFiveId, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
     await expect(renameManagedSourceProfile(disabledOwner, profileFiveId, "Verboden")).rejects.toBeInstanceOf(AuthorizationError);
     await expect(linkSourceProfileToLearningSpace(actors.owner, "missing", "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(linkSourceProfileToLearningSpace(actors.owner, profileFiveId, "missing-space")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(linkSourceProfileToLearningSpace(actors.owner, (await getDefaultSourceProfileTemplate()).id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(profileFiveId);
   });
 

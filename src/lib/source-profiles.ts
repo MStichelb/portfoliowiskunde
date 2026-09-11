@@ -45,6 +45,7 @@ export interface AvailableSourceProfile extends SourceProfile {
   canRename: boolean;
   canCopy: boolean;
   canLink: boolean;
+  linkTargets: SourceProfileCopyTarget[];
 }
 
 export interface SourceProfileUsage {
@@ -66,12 +67,6 @@ export interface SourceProfileCopyTarget {
 export interface SourceProfileOverview {
   ownedProfiles: ManagedSourceProfile[];
   editorAccessibleActiveProfiles: ManagedSourceProfile[];
-  copyTargets: SourceProfileCopyTarget[];
-}
-
-export interface SourceProfileAdminModel {
-  activeProfile: AvailableSourceProfile;
-  availableProfiles: AvailableSourceProfile[];
   copyTargets: SourceProfileCopyTarget[];
 }
 
@@ -98,28 +93,32 @@ export async function getActiveSourceProfileForLearningSpace(learningSpaceId: st
 
 export async function getSourceProfileOverview(user: AppUser): Promise<SourceProfileOverview> {
   if (!canAccessAdmin(user)) throw new AuthorizationError("Bronprofielen zijn alleen beschikbaar voor actieve beheerders.");
-  const [copyTargets, profileRows] = await Promise.all([getOwnedSourceProfileCopyTargets(user), getVisibleSourceProfileRows(user)]);
-  const profiles = sourceProfileDetailsFromRows(profileRows, user, copyTargets.length > 0);
+  const [targetRows, profileRows] = await Promise.all([getSourceProfileTargetRows(user), getVisibleSourceProfileRows(user)]);
+  const targets = sourceProfileTargetReadModel(targetRows);
+  const profiles = sourceProfileDetailsFromRows(profileRows, user, targets.copyTargets.length > 0, targets.linkTargetsByOwner);
   return {
     ownedProfiles: profiles.filter((profile) => profile.access === "owner" || profile.access === "superadmin"),
     editorAccessibleActiveProfiles: profiles.filter((profile) => profile.access === "editor"),
-    copyTargets,
+    copyTargets: targets.copyTargets,
   };
 }
 
-export async function getSourceProfileAdminModel(user: AppUser, learningSpaceId: string): Promise<SourceProfileAdminModel> {
+export async function getSourceProfileForLearningSpaceCard(user: AppUser, learningSpaceId: string): Promise<AvailableSourceProfile> {
   await requireLearningSpaceManagement(user, learningSpaceId);
-  const [overview, active] = await Promise.all([getSourceProfileOverview(user), getActiveSourceProfileForLearningSpace(learningSpaceId)]);
-  if (!active) throw new Error("Deze leeromgeving heeft geen actief bronprofiel.");
-  const allVisible = [...overview.ownedProfiles, ...overview.editorAccessibleActiveProfiles];
-  const activeProfile = allVisible.find((profile) => profile.id === active.id)
-    ?? await getContextualSourceProfileDetails(user, active.id, overview.copyTargets.length > 0);
-  if (!activeProfile) throw new Error("Deze leeromgeving heeft geen geldig actief bronprofiel.");
-  return { activeProfile, availableProfiles: overview.ownedProfiles, copyTargets: overview.copyTargets };
+  const result = await (await getDatabase()).execute({
+    sql: `${sourceProfileDetailsSelect()} WHERE source_profiles.id = (
+      SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = ?
+    ) ORDER BY usage_space.sort_order, usage_space.name, usage_space.id`,
+    args: [learningSpaceId],
+  });
+  const profile = sourceProfileDetailsFromRows(result.rows, user, false, new Map(), true)[0];
+  if (!profile) throw new Error("Deze leeromgeving heeft geen geldig actief bronprofiel.");
+  return profile;
 }
 
 export async function getSourceProfileCopyTargets(user: AppUser): Promise<SourceProfileCopyTarget[]> {
-  return getOwnedSourceProfileCopyTargets(user);
+  if (!canAccessAdmin(user)) return [];
+  return sourceProfileTargetReadModel(await getSourceProfileTargetRows(user)).copyTargets;
 }
 
 export async function getManagedSourceProfiles(user: AppUser): Promise<ManagedSourceProfile[]> {
@@ -130,7 +129,7 @@ export async function getManagedSourceProfiles(user: AppUser): Promise<ManagedSo
 export async function canCopySourceProfile(user: AppUser, sourceProfileId: string): Promise<boolean> {
   try {
     await requireVisibleSourceProfile(user, sourceProfileId);
-    return (await getOwnedLearningSpaceIds(user)).length > 0;
+    return (await getSourceProfileCopyTargets(user)).length > 0;
   } catch {
     return false;
   }
@@ -140,6 +139,7 @@ export async function switchActiveSourceProfile(user: AppUser, learningSpaceId: 
   await requireLearningSpaceConfiguration(user, learningSpaceId);
   const profile = await requireOwnedSourceProfile(user, sourceProfileId);
   getSourceProfileConfig(profile);
+  await requireProfileOwnerTarget(profile, learningSpaceId);
   await assignSourceProfile(learningSpaceId, profile.id);
 }
 
@@ -168,6 +168,7 @@ export async function copyActiveSourceProfileToLearningSpace(user: AppUser, sour
 export async function linkSourceProfileToLearningSpace(user: AppUser, sourceProfileId: string, targetLearningSpaceId: string): Promise<void> {
   await requireLearningSpaceConfiguration(user, targetLearningSpaceId);
   const profile = await requireOwnedSourceProfile(user, sourceProfileId);
+  await requireProfileOwnerTarget(profile, targetLearningSpaceId);
   await assignSourceProfile(targetLearningSpaceId, profile.id);
 }
 
@@ -248,14 +249,6 @@ async function getVisibleSourceProfileRows(user: AppUser): Promise<DatabaseRow[]
   return result.rows;
 }
 
-async function getContextualSourceProfileDetails(user: AppUser, sourceProfileId: string, hasCopyTargets: boolean): Promise<AvailableSourceProfile | null> {
-  const result = await (await getDatabase()).execute({
-    sql: `${sourceProfileDetailsSelect()} WHERE source_profiles.id = ? ORDER BY usage_space.sort_order, usage_space.name, usage_space.id`,
-    args: [sourceProfileId],
-  });
-  return sourceProfileDetailsFromRows(result.rows, user, hasCopyTargets, true)[0] ?? null;
-}
-
 function sourceProfileDetailsSelect(): string {
   return `SELECT source_profiles.*, management_space.name AS management_learning_space_name,
       management_space.short_label AS management_learning_space_short_label, owner.display_name AS owner_name,
@@ -268,7 +261,13 @@ function sourceProfileDetailsSelect(): string {
     LEFT JOIN learning_spaces AS usage_space ON usage_space.id = learning_space_source_profiles.learning_space_id`;
 }
 
-function sourceProfileDetailsFromRows(rows: DatabaseRow[], user: AppUser, hasCopyTargets: boolean, contextual = false): ManagedSourceProfile[] {
+function sourceProfileDetailsFromRows(
+  rows: DatabaseRow[],
+  user: AppUser,
+  hasCopyTargets: boolean,
+  linkTargetsByOwner: Map<string, SourceProfileCopyTarget[]>,
+  contextual = false,
+): ManagedSourceProfile[] {
   const profiles = new Map<string, ManagedSourceProfile>();
   for (const row of rows) {
     const id = String(row.id);
@@ -279,6 +278,9 @@ function sourceProfileDetailsFromRows(rows: DatabaseRow[], user: AppUser, hasCop
       const access: SourceProfileAccess = user.role === "superadmin" ? "superadmin"
         : parsed.ownerUserId === user.id ? "owner" : contextual ? "context" : "editor";
       const canMutate = access === "owner" || access === "superadmin";
+      const linkTargets = canMutate && parsed.ownerUserId
+        ? (linkTargetsByOwner.get(parsed.ownerUserId) ?? []).filter((target) => target.profile.id !== parsed.id)
+        : [];
       profile = {
         ...parsed,
         managementLearningSpaceName: row.management_learning_space_name == null ? null : String(row.management_learning_space_name),
@@ -287,7 +289,8 @@ function sourceProfileDetailsFromRows(rows: DatabaseRow[], user: AppUser, hasCop
         usages: [], usageCount: 0, isInactive: true, access,
         canRename: canMutate,
         canCopy: parsed.type === "custom" && hasCopyTargets && (canMutate || access === "editor"),
-        canLink: canMutate,
+        canLink: parsed.type === "custom" && linkTargets.length > 0,
+        linkTargets,
       };
       profiles.set(id, profile);
     }
@@ -335,47 +338,89 @@ async function requireOwnedSourceProfile(user: AppUser, sourceProfileId: string)
 }
 
 async function requireOwnerCopyTarget(user: AppUser, learningSpaceId: string): Promise<void> {
-  if (!(await getOwnedLearningSpaceIds(user)).includes(learningSpaceId)) {
+  if (!canAccessAdmin(user)) throw new AuthorizationError("Kopiëren kan alleen naar een leeromgeving waarvan je eigenaar bent.");
+  const membershipCheck = user.role === "superadmin" ? { sql: "", args: [] } : {
+    sql: `AND EXISTS (SELECT 1 FROM learning_space_members
+      WHERE learning_space_members.learning_space_id = learning_spaces.id
+        AND learning_space_members.user_id = ? AND learning_space_members.role = 'owner')`,
+    args: [user.id],
+  };
+  const result = await (await getDatabase()).execute({
+    sql: `SELECT 1 FROM learning_spaces WHERE learning_spaces.id = ?
+      AND learning_spaces.is_active = 1 AND learning_spaces.archived_at IS NULL ${membershipCheck.sql}`,
+    args: [learningSpaceId, ...membershipCheck.args],
+  });
+  if (!result.rows[0]) {
     throw new AuthorizationError("Kopiëren kan alleen naar een leeromgeving waarvan je eigenaar bent.");
   }
 }
 
-async function getOwnedLearningSpaceIds(user: AppUser): Promise<string[]> {
-  if (!canAccessAdmin(user)) return [];
-  const database = await getDatabase();
-  if (user.role === "superadmin") {
-    const result = await database.execute("SELECT id FROM learning_spaces WHERE is_active = 1 AND archived_at IS NULL ORDER BY sort_order, name");
-    return result.rows.map((row) => String(row.id));
-  }
-  const result = await database.execute({
-    sql: `SELECT learning_spaces.id FROM learning_space_members
+async function requireProfileOwnerTarget(profile: SourceProfile, learningSpaceId: string): Promise<void> {
+  if (!profile.ownerUserId) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+  const result = await (await getDatabase()).execute({
+    sql: `SELECT 1 FROM learning_space_members
       JOIN learning_spaces ON learning_spaces.id = learning_space_members.learning_space_id
-      WHERE learning_space_members.user_id = ? AND learning_space_members.role = 'owner'
-        AND learning_spaces.is_active = 1 AND learning_spaces.archived_at IS NULL
-      ORDER BY learning_spaces.sort_order, learning_spaces.name`, args: [user.id],
+      WHERE learning_space_members.learning_space_id = ? AND learning_space_members.user_id = ?
+        AND learning_space_members.role = 'owner' AND learning_spaces.is_active = 1
+        AND learning_spaces.archived_at IS NULL LIMIT 1`,
+    args: [learningSpaceId, profile.ownerUserId],
   });
-  return result.rows.map((row) => String(row.id));
+  if (!result.rows[0]) {
+    throw new AuthorizationError("Dit bronprofiel kan alleen worden gekoppeld aan een leeromgeving waarvan de profieleigenaar ook eigenaar is.");
+  }
 }
 
-async function getOwnedSourceProfileCopyTargets(user: AppUser): Promise<SourceProfileCopyTarget[]> {
-  const learningSpaceIds = await getOwnedLearningSpaceIds(user);
-  if (learningSpaceIds.length === 0) return [];
-  const placeholders = learningSpaceIds.map(() => "?").join(", ");
-  const result = await (await getDatabase()).execute({
-    sql: `SELECT source_profiles.*, learning_spaces.id AS target_learning_space_id,
-        learning_spaces.name AS target_learning_space_name, learning_spaces.short_label AS target_learning_space_short_label
-      FROM learning_space_source_profiles
-      JOIN learning_spaces ON learning_spaces.id = learning_space_source_profiles.learning_space_id
-      JOIN source_profiles ON source_profiles.id = learning_space_source_profiles.source_profile_id
-      WHERE learning_spaces.id IN (${placeholders}) ORDER BY learning_spaces.sort_order, learning_spaces.name`, args: learningSpaceIds,
-  });
-  return result.rows.flatMap((row) => {
+async function getSourceProfileTargetRows(user: AppUser): Promise<DatabaseRow[]> {
+  const scope = user.role === "superadmin" ? { sql: "", args: [] } : {
+    sql: `AND EXISTS (SELECT 1 FROM learning_space_members AS current_owner
+      WHERE current_owner.learning_space_id = learning_spaces.id
+        AND current_owner.user_id = ? AND current_owner.role = 'owner')`,
+    args: [user.id],
+  };
+  return (await (await getDatabase()).execute({
+    sql: `SELECT active_profile.*, learning_spaces.id AS target_learning_space_id,
+        learning_spaces.name AS target_learning_space_name,
+        learning_spaces.short_label AS target_learning_space_short_label,
+        target_owner.user_id AS target_owner_user_id
+      FROM learning_spaces
+      JOIN learning_space_source_profiles ON learning_space_source_profiles.learning_space_id = learning_spaces.id
+      JOIN source_profiles AS active_profile ON active_profile.id = learning_space_source_profiles.source_profile_id
+      LEFT JOIN learning_space_members AS target_owner ON target_owner.learning_space_id = learning_spaces.id
+        AND target_owner.role = 'owner'
+      WHERE learning_spaces.is_active = 1 AND learning_spaces.archived_at IS NULL ${scope.sql}
+      ORDER BY learning_spaces.sort_order, learning_spaces.name, target_owner.user_id`,
+    args: scope.args,
+  })).rows;
+}
+
+function sourceProfileTargetReadModel(rows: DatabaseRow[]): {
+  copyTargets: SourceProfileCopyTarget[];
+  linkTargetsByOwner: Map<string, SourceProfileCopyTarget[]>;
+} {
+  const copyTargets = new Map<string, SourceProfileCopyTarget>();
+  const linkTargetsByOwner = new Map<string, Map<string, SourceProfileCopyTarget>>();
+  for (const row of rows) {
     const profile = trySourceProfileFromRow(row);
-    return profile ? [{
-      learningSpaceId: String(row.target_learning_space_id), learningSpaceName: String(row.target_learning_space_name),
-      learningSpaceShortLabel: String(row.target_learning_space_short_label), profile, canConfigure: true,
-    }] : [];
-  });
+    if (!profile) continue;
+    const target: SourceProfileCopyTarget = {
+      learningSpaceId: String(row.target_learning_space_id),
+      learningSpaceName: String(row.target_learning_space_name),
+      learningSpaceShortLabel: String(row.target_learning_space_short_label),
+      profile,
+      canConfigure: true,
+    };
+    copyTargets.set(target.learningSpaceId, target);
+    if (row.target_owner_user_id != null) {
+      const ownerUserId = String(row.target_owner_user_id);
+      const ownerTargets = linkTargetsByOwner.get(ownerUserId) ?? new Map<string, SourceProfileCopyTarget>();
+      ownerTargets.set(target.learningSpaceId, target);
+      linkTargetsByOwner.set(ownerUserId, ownerTargets);
+    }
+  }
+  return {
+    copyTargets: [...copyTargets.values()],
+    linkTargetsByOwner: new Map([...linkTargetsByOwner].map(([ownerUserId, targets]) => [ownerUserId, [...targets.values()]])),
+  };
 }
 
 async function createIndependentCopy(source: SourceProfile, managementLearningSpaceId: string, requestedName: string, ownerUserId: string, activate: boolean): Promise<SourceProfile> {

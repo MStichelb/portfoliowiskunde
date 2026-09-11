@@ -2,7 +2,7 @@ import { ArrowLeft, Copy, Eye, Link2, Pencil, SlidersHorizontal, X } from "lucid
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { SourceProfileSectionTabs } from "@/app/components/source-profile-section-tabs";
+import { SourceProfileSectionTabs, type SourceProfileSectionTab } from "@/app/components/source-profile-section-tabs";
 import { SourceProfileTemplateManager, type SourceProfileTemplateModal } from "@/app/components/source-profile-template-manager";
 import { requireAdminUser } from "@/lib/auth";
 import { getSourceProfileOverview, sourceProfileUsageLabel, type ManagedSourceProfile } from "@/lib/source-profiles";
@@ -11,7 +11,7 @@ import { copyManagedSourceProfileAction, copyManagedSourceProfileTemplateAction,
 
 export const dynamic = "force-dynamic";
 
-interface Query { profile?: string; copyProfile?: string; linkProfile?: string; error?: string; saved?: string; template?: string; templateError?: string; templateModal?: string; templateSaved?: string }
+interface Query { tab?: string; profile?: string; copyProfile?: string; linkProfile?: string; error?: string; saved?: string; template?: string; templateError?: string; templateModal?: string; templateSaved?: string }
 
 export default async function SourceProfilesPage({ searchParams }: { searchParams: Promise<Query> }) {
   const user = await requireAdminUser();
@@ -22,16 +22,17 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
   const linkProfile = profiles.find((profile) => profile.id === query.linkProfile && profile.canLink) ?? null;
 
   const ownedHeading = user.role === "superadmin" ? "Alle bronprofielen" : "Mijn bronprofielen";
-  const profileSection = <section aria-labelledby="owned-source-profiles-heading">
+  const ownedSection = <section className="source-profile-tab-section" aria-labelledby="owned-source-profiles-heading">
     <div className="source-profile-overview-heading">
       <div><h2 id="owned-source-profiles-heading">{ownedHeading}</h2><p>{user.role === "superadmin" ? "Bekijk en beheer alle concrete bronprofielen volgens de globale adminscope." : "Bekijk en beheer alle bronprofielen waarvan jij eigenaar bent, ook wanneer ze inactief zijn."}</p></div>
       <span className="source-role-badge">{overview.ownedProfiles.length} {overview.ownedProfiles.length === 1 ? "profiel" : "profielen"}</span>
     </div>
     <ProfileList profiles={overview.ownedProfiles} showOwner={user.role === "superadmin"} empty="Je hebt momenteel geen eigen bronprofielen." />
-    {overview.editorAccessibleActiveProfiles.length > 0 ? <section className="source-profile-related-section" aria-labelledby="editor-source-profiles-heading">
-      <div className="source-profile-overview-heading"><div><h2 id="editor-source-profiles-heading">Bronprofielen via leeromgevingen</h2><p>Actieve profielen uit leeromgevingen waar je editor bent. Deze profielen blijven eigendom van een collega.</p></div></div>
-      <ProfileList profiles={overview.editorAccessibleActiveProfiles} showOwner empty="" />
-    </section> : null}
+  </section>;
+
+  const editorSection = <section className="source-profile-tab-section" aria-labelledby="editor-source-profiles-heading">
+    <div className="source-profile-overview-heading"><div><h2 id="editor-source-profiles-heading">Bronprofielen uit leeromgevingen</h2><p>Actieve profielen uit leeromgevingen waar je editor bent. Deze profielen blijven eigendom van een collega en zijn alleen te bekijken of onafhankelijk te kopiëren.</p></div></div>
+    <ProfileList profiles={overview.editorAccessibleActiveProfiles} showOwner empty="Je hebt momenteel geen actieve foreign bronprofielen via editor-leeromgevingen." />
   </section>;
 
   const templateSection = <SourceProfileTemplateManager key={`${query.templateSaved ?? ""}:${query.templateError ?? ""}:${query.templateModal ?? ""}:${query.template ?? ""}`} templates={templates} copyTargets={overview.copyTargets} canManage={user.role === "superadmin"} actions={{ create: createSourceProfileTemplateAction, update: updateSourceProfileTemplateAction, duplicate: duplicateSourceProfileTemplateAction, setDefault: setDefaultSourceProfileTemplateAction, copy: copyManagedSourceProfileTemplateAction }} initialModal={templateModal(query.templateModal)} initialTemplateId={query.template} error={query.templateError} />;
@@ -42,7 +43,7 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
     {profileFeedback(query.saved) ? <p className="success-message" role="status">{profileFeedback(query.saved)}</p> : null}
     {query.error && !selectedProfile && !copyProfile && !linkProfile ? <p className="form-message" role="alert">{query.error}</p> : null}
     {templateFeedback(query.templateSaved) ? <p className="success-message" role="status">{templateFeedback(query.templateSaved)}</p> : null}
-    <SourceProfileSectionTabs profileSection={profileSection} templateSection={templateSection} templateLabel={user.role === "superadmin" ? "Appbrede sjablonen" : "Sjablonen"} initialTab={query.templateModal || query.template || query.templateError || query.templateSaved ? "templates" : "profiles"} />
+    <SourceProfileSectionTabs ownedSection={ownedSection} editorSection={editorSection} templateSection={templateSection} initialTab={initialSection(query, overview.editorAccessibleActiveProfiles)} />
 
     {selectedProfile ? <div className="confirm-backdrop" role="presentation"><div className="source-profile-dialog" role="dialog" aria-modal="true" aria-labelledby="manage-source-profile-title">
       <div className="source-profile-dialog-heading"><h2 id="manage-source-profile-title">Bronprofiel {selectedProfile.canRename ? "beheren" : "bekijken"}</h2><CloseLink /></div>
@@ -53,7 +54,7 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
 
     {copyProfile ? <div className="confirm-backdrop" role="presentation"><div className="source-profile-dialog" role="dialog" aria-modal="true" aria-labelledby="copy-source-profile-title"><div className="source-profile-dialog-heading"><h2 id="copy-source-profile-title">Bronprofiel kopiëren</h2><CloseLink /></div><form action={copyManagedSourceProfileAction} className="source-profile-dialog-form"><input type="hidden" name="sourceProfileId" value={copyProfile.id} /><ReadonlyProfile name={copyProfile.name} /><label>Doelleeromgeving<select name="targetLearningSpaceId" required defaultValue=""><option value="" disabled>Kies een leeromgeving</option>{overview.copyTargets.map((target) => <option key={target.learningSpaceId} value={target.learningSpaceId}>{target.learningSpaceShortLabel} — {target.profile.name}</option>)}</select></label><p>Er wordt een onafhankelijke kopie gemaakt waarvan jij eigenaar wordt. De kopie wordt actief in de gekozen leeromgeving.</p>{query.error ? <ErrorMessage text={query.error} /> : null}<DialogLinks submit="Kopiëren" icon={<Copy size={16} aria-hidden />} /></form></div></div> : null}
 
-    {linkProfile ? <div className="confirm-backdrop" role="presentation"><div className="source-profile-dialog" role="dialog" aria-modal="true" aria-labelledby="link-source-profile-title"><div className="source-profile-dialog-heading"><h2 id="link-source-profile-title">Bronprofiel koppelen</h2><CloseLink /></div><form action={linkManagedSourceProfileAction} className="source-profile-dialog-form"><input type="hidden" name="sourceProfileId" value={linkProfile.id} /><ReadonlyProfile name={linkProfile.name} /><label>Koppelen aan leeromgeving<select name="targetLearningSpaceId" required defaultValue=""><option value="" disabled>Kies een leeromgeving</option>{overview.copyTargets.map((target) => <option key={target.learningSpaceId} value={target.learningSpaceId}>{target.learningSpaceShortLabel} — {target.profile.name}</option>)}</select></label><div className="source-profile-shared-warning"><strong><Link2 size={16} aria-hidden />Gedeeld profiel</strong><p>Dit bronprofiel wordt gedeeld. Latere wijzigingen aan dit profiel gelden voor alle gekoppelde leeromgevingen.</p></div>{query.error ? <ErrorMessage text={query.error} /> : null}<DialogLinks submit="Koppelen" icon={<Link2 size={16} aria-hidden />} /></form></div></div> : null}
+    {linkProfile ? <div className="confirm-backdrop" role="presentation"><div className="source-profile-dialog" role="dialog" aria-modal="true" aria-labelledby="link-source-profile-title"><div className="source-profile-dialog-heading"><h2 id="link-source-profile-title">Bronprofiel koppelen</h2><CloseLink /></div><form action={linkManagedSourceProfileAction} className="source-profile-dialog-form"><input type="hidden" name="sourceProfileId" value={linkProfile.id} /><ReadonlyProfile name={linkProfile.name} /><label>Koppelen aan leeromgeving<select name="targetLearningSpaceId" required defaultValue=""><option value="" disabled>Kies een leeromgeving</option>{linkProfile.linkTargets.map((target) => <option key={target.learningSpaceId} value={target.learningSpaceId}>{target.learningSpaceShortLabel} — {target.profile.name}</option>)}</select></label><div className="source-profile-shared-warning"><strong><Link2 size={16} aria-hidden />Gedeeld profiel</strong><p>Dit bronprofiel wordt gedeeld. Latere wijzigingen aan dit profiel gelden voor alle gekoppelde leeromgevingen.</p></div>{query.error ? <ErrorMessage text={query.error} /> : null}<DialogLinks submit="Koppelen" icon={<Link2 size={16} aria-hidden />} /></form></div></div> : null}
   </main>;
 }
 
@@ -80,3 +81,9 @@ function profileFeedback(value: string | undefined): string | null {
 }
 function templateModal(value: string | undefined): SourceProfileTemplateModal | null { return value === "create" || value === "manage" || value === "default" || value === "copy" ? value : null; }
 function templateFeedback(value: string | undefined): string | null { if (value === "created") return "Bronprofielsjabloon gemaakt."; if (value === "updated") return "Bronprofielsjabloon bijgewerkt."; if (value === "duplicated") return "Bronprofielsjabloon onafhankelijk gedupliceerd."; if (value === "default") return "Standaardsjabloon gewijzigd voor toekomstige leeromgevingen."; return null; }
+function initialSection(query: Query, editorProfiles: ManagedSourceProfile[]): SourceProfileSectionTab {
+  if (query.tab === "editor" || query.tab === "templates" || query.tab === "owned") return query.tab;
+  if (query.templateModal || query.template || query.templateError || query.templateSaved) return "templates";
+  const profileId = query.profile ?? query.copyProfile;
+  return profileId && editorProfiles.some((profile) => profile.id === profileId) ? "editor" : "owned";
+}
