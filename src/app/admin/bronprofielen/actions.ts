@@ -4,13 +4,36 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdminUser } from "@/lib/auth";
-import { renameManagedSourceProfile } from "@/lib/source-profiles";
+import { copyManagedSourceProfile, renameManagedSourceProfile } from "@/lib/source-profiles";
 import {
+  copySourceProfileTemplateToLearningSpace,
   createSourceProfileTemplate,
   duplicateSourceProfileTemplate,
   setDefaultSourceProfileTemplate,
   updateSourceProfileTemplateMetadata,
 } from "@/lib/source-profile-templates";
+
+export async function copyManagedSourceProfileAction(formData: FormData): Promise<never> {
+  const user = await requireAdminUser();
+  try {
+    await copyManagedSourceProfile(user, value(formData, "sourceProfileId"));
+  } catch (error) {
+    redirect(`/admin/bronprofielen?error=${encodeURIComponent(error instanceof Error ? error.message : "Het profiel kon niet worden gekopieerd.")}`);
+  }
+  revalidatePath("/admin/bronprofielen");
+  redirect("/admin/bronprofielen?saved=copied");
+}
+
+export async function copyManagedSourceProfileTemplateAction(formData: FormData): Promise<never> {
+  const user = await requireAdminUser();
+  try {
+    await copySourceProfileTemplateToLearningSpace(user, value(formData, "templateId"), value(formData, "managementLearningSpaceId"), false);
+  } catch (error) {
+    redirect(`/admin/bronprofielen?error=${encodeURIComponent(error instanceof Error ? error.message : "Het sjabloon kon niet worden gekopieerd.")}`);
+  }
+  revalidatePath("/admin/bronprofielen");
+  redirect("/admin/bronprofielen?saved=templateCopied");
+}
 
 export async function renameManagedSourceProfileAction(formData: FormData): Promise<never> {
   const user = await requireAdminUser();

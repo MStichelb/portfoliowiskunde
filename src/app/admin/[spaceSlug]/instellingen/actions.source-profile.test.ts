@@ -22,7 +22,7 @@ import { getActiveSourceProfileForLearningSpace } from "@/lib/source-profiles";
 import { cloneSourceProfileTemplateToLearningSpace, getDefaultSourceProfileTemplate } from "@/lib/source-profile-templates";
 import { setIndividualLearningSpaceAccess, upsertManagedMembership } from "@/lib/user-management";
 
-import { copySourceProfileAction, createOwnSourceProfileAction, renameSourceProfileAction, switchSourceProfileAction } from "./actions";
+import { copySourceProfileAction, copySourceProfileTemplateAction, createOwnSourceProfileAction, renameSourceProfileAction, switchSourceProfileAction } from "./actions";
 
 let temporaryDirectory: string | undefined;
 let owner: AppUser;
@@ -65,7 +65,7 @@ describe("source profile settings actions", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin/5/instellingen");
   });
 
-  it("allows the authenticated editor to switch without accepting a client user id", async () => {
+  it("blocks an authenticated editor from switching despite a manipulated client user id", async () => {
     const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
     const template = await getDefaultSourceProfileTemplate();
     const custom = await cloneSourceProfileTemplateToLearningSpace({ ...template, name: "Tweede profiel" }, "space-5");
@@ -75,10 +75,9 @@ describe("source profile settings actions", () => {
       learningSpaceId: "space-5",
       sourceProfileId: original.id,
       userId: superadmin.id,
-    }))).rejects.toThrow("profileSaved=switched");
+    }))).rejects.toThrow("profileError=Alleen%20een%20eigenaar%20of%20hoofdbeheerder");
 
-    expect(custom.id).not.toBe((await getActiveSourceProfileForLearningSpace("space-5"))?.id);
-    expect(mocks.redirect).toHaveBeenLastCalledWith("/admin/5/instellingen?profileSaved=switched");
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(custom.id);
   });
 
   it("reopens rename only after a validation error", async () => {
@@ -99,6 +98,29 @@ describe("source profile settings actions", () => {
 
     expect((await getActiveSourceProfileForLearningSpace("space-5"))).toMatchObject({ type: "custom", managementLearningSpaceId: "space-5" });
     expect(mocks.redirect).toHaveBeenLastCalledWith("/admin/5/instellingen?profileSaved=copied");
+  });
+
+  it("lets an editor copy without changing the active source profile", async () => {
+    mocks.requireAdminUser.mockResolvedValue(editor);
+    const before = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+
+    await expect(copySourceProfileAction(form({ learningSpaceId: "space-5", sourceLearningSpaceId: "space-5" }))).rejects.toThrow("profileSaved=copiedInactive");
+
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(before.id);
+    const copies = await (await getDatabase()).execute({ sql: "SELECT id, config_json FROM source_profiles WHERE management_learning_space_id = ?", args: ["space-5"] });
+    expect(copies.rows).toHaveLength(2);
+    expect(copies.rows.some((row) => row.id !== before.id && row.config_json === JSON.stringify(before.config))).toBe(true);
+  });
+
+  it("copies a server-resolved template to a concrete active owner profile", async () => {
+    mocks.requireAdminUser.mockResolvedValue(owner);
+    const template = await getDefaultSourceProfileTemplate();
+
+    await expect(copySourceProfileTemplateAction(form({ learningSpaceId: "space-5", templateId: template.id }))).rejects.toThrow("profileSaved=templateCopied");
+
+    const active = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    expect(active).toMatchObject({ type: "custom", managementLearningSpaceId: "space-5", config: template.config });
+    expect(active.id).not.toBe(template.id);
   });
 
   it("keeps a viewer out before resolving LearningSpace details", async () => {

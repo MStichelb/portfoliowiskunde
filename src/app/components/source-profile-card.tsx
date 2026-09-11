@@ -5,27 +5,32 @@ import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import type { SourceProfileAdminModel } from "@/lib/source-profiles";
+import type { SourceProfileTemplateSummary } from "@/lib/source-profile-templates";
 import { sourceProfileUsageLabel } from "@/lib/source-profile-usage";
 
 export type SourceProfileModal = "switch" | "rename" | "copy";
 
 export interface SourceProfileCardActions {
   switchProfile: (formData: FormData) => Promise<void>;
+  copyTemplate: (formData: FormData) => Promise<void>;
   createOwnProfile: (formData: FormData) => Promise<void>;
   copyProfile: (formData: FormData) => Promise<void>;
   renameProfile: (formData: FormData) => Promise<void>;
 }
 
-export function SourceProfileCard({ learningSpaceId, model, actions, feedback, error, initialModal = null }: {
+export function SourceProfileCard({ learningSpaceId, model, templates, canConfigure, actions, feedback, error, initialModal = null }: {
   learningSpaceId: string;
   model: SourceProfileAdminModel;
+  templates: SourceProfileTemplateSummary[];
+  canConfigure: boolean;
   actions: SourceProfileCardActions;
   feedback?: string;
   error?: string;
   initialModal?: SourceProfileModal | null;
 }) {
   const { activeProfile, availableProfiles, copySources } = model;
-  const [modal, setModal] = useState<SourceProfileModal | null>(() => allowedInitialModal(initialModal, activeProfile.type, copySources.length));
+  const [modal, setModal] = useState<SourceProfileModal | null>(() => allowedInitialModal(initialModal, activeProfile.type, copySources.length, canConfigure));
+  const [switchSource, setSwitchSource] = useState<"profiles" | "templates">("profiles");
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -61,15 +66,16 @@ export function SourceProfileCard({ learningSpaceId, model, actions, feedback, e
       {activeProfile.description ? <p>{displayProfileDescription(activeProfile.description)}</p> : null}
       <small>Configuratieversie {activeProfile.config.configVersion}</small>
     </div>
-    <Link className="source-profile-management-link" href="/admin/bronprofielen">Bronprofielen beheren</Link>
+    <Link className="source-profile-management-link" href="/admin/bronprofielen">Bronprofielen {canConfigure ? "beheren" : "bekijken"}</Link>
     <div className="source-profile-actions">
-      <button className="secondary-button" type="button" onClick={(event) => open("switch", event.currentTarget)}><RefreshCw size={16} aria-hidden />Ander profiel kiezen</button>
-      {activeProfile.type === "built_in" ? <form action={actions.createOwnProfile}>
+      {canConfigure ? <button className="secondary-button" type="button" onClick={(event) => open("switch", event.currentTarget)}><RefreshCw size={16} aria-hidden />Ander profiel kiezen</button> : null}
+      {canConfigure && activeProfile.type === "built_in" ? <form action={actions.createOwnProfile}>
         <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
         <button className="secondary-button" type="submit"><Plus size={16} aria-hidden />Eigen profiel maken</button>
-      </form> : <button className="secondary-button" type="button" onClick={(event) => open("rename", event.currentTarget)}><Pencil size={16} aria-hidden />Naam wijzigen</button>}
+      </form> : canConfigure ? <button className="secondary-button" type="button" onClick={(event) => open("rename", event.currentTarget)}><Pencil size={16} aria-hidden />Naam wijzigen</button> : null}
       {copySources.length > 0 ? <button className="secondary-button" type="button" onClick={(event) => open("copy", event.currentTarget)}><Copy size={16} aria-hidden />Profiel kopiëren</button> : null}
     </div>
+    {!canConfigure ? <p className="source-profile-readonly-note">Als editor kun je de actieve configuratie bekijken en onafhankelijk kopiëren, maar niet wijzigen.</p> : null}
     <p className="source-profile-footnote">De huidige scanner gebruikt deze configuratie nog niet.</p>
     {feedback ? <p className="success-message" role="status">{feedback}</p> : null}
     {error && !modal ? <p className="form-message" role="alert">{error}</p> : null}
@@ -80,13 +86,27 @@ export function SourceProfileCard({ learningSpaceId, model, actions, feedback, e
           <h2 id={titleId}>{modalTitle(modal)}</h2>
           <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
         </div>
-        {modal === "switch" ? <form action={actions.switchProfile} className="source-profile-dialog-form">
+        {modal === "switch" ? <>
+          <div className="source-profile-choice-toggle" role="group" aria-label="Bronprofielbasis">
+            <button type="button" className={switchSource === "profiles" ? "is-active" : ""} aria-pressed={switchSource === "profiles"} onClick={() => setSwitchSource("profiles")}>Eigen profielen</button>
+            <button type="button" className={switchSource === "templates" ? "is-active" : ""} aria-pressed={switchSource === "templates"} onClick={() => setSwitchSource("templates")}>Sjablonen</button>
+          </div>
+          {switchSource === "profiles" ? <form action={actions.switchProfile} className="source-profile-dialog-form">
           <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
           <label>Beschikbaar bronprofiel<select name="sourceProfileId" defaultValue={activeProfile.id} required>
             {availableProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} — {sourceProfileUsageLabel(profile.usages, "inactief")}</option>)}
           </select></label>
           <ModalFooter cancel={close} submitLabel="Activeren" error={error} />
-        </form> : null}
+          </form> : <form action={actions.copyTemplate} className="source-profile-dialog-form">
+            <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
+            <label>Appbreed sjabloon<select name="templateId" required defaultValue="">
+              <option value="" disabled>Kies een sjabloon</option>
+              {templates.map((template) => <option key={template.id} value={template.id}>{template.name}{template.isDefault ? " — Standaard" : ""}</option>)}
+            </select></label>
+            <p>Het sjabloon wordt eerst een onafhankelijk concreet profiel. Latere sjabloonwijzigingen werken niet door.</p>
+            <ModalFooter cancel={close} submitLabel="Kopiëren en activeren" error={error} />
+          </form>}
+        </> : null}
         {modal === "rename" ? <form action={actions.renameProfile} className="source-profile-dialog-form">
           <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
           <input type="hidden" name="sourceProfileId" value={activeProfile.id} />
@@ -95,12 +115,12 @@ export function SourceProfileCard({ learningSpaceId, model, actions, feedback, e
         </form> : null}
         {modal === "copy" ? <form action={actions.copyProfile} className="source-profile-dialog-form">
           <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
-          <label>Profiel uit andere leeromgeving<select name="sourceLearningSpaceId" required defaultValue="">
-            <option value="" disabled>Kies een leeromgeving</option>
+          <label>Profiel<select name="sourceLearningSpaceId" required defaultValue="">
+            <option value="" disabled>Kies een profiel</option>
             {copySources.map((source) => <option key={source.learningSpaceId} value={source.learningSpaceId}>{source.profile.name} — {source.learningSpaceShortLabel}</option>)}
           </select></label>
           <p>Er wordt een onafhankelijke kopie gemaakt. Latere wijzigingen aan het oorspronkelijke profiel hebben geen invloed op deze kopie.</p>
-          <ModalFooter cancel={close} submitLabel="Kopiëren en activeren" error={error} />
+          <ModalFooter cancel={close} submitLabel={canConfigure ? "Kopiëren en activeren" : "Kopiëren"} error={error} />
         </form> : null}
       </div>
     </div> : null}
@@ -129,7 +149,8 @@ function modalTitle(modal: SourceProfileModal): string {
   return "Bronprofiel kopiëren";
 }
 
-function allowedInitialModal(modal: SourceProfileModal | null, profileType: "built_in" | "custom", copySourceCount: number): SourceProfileModal | null {
+function allowedInitialModal(modal: SourceProfileModal | null, profileType: "built_in" | "custom", copySourceCount: number, canConfigure: boolean): SourceProfileModal | null {
+  if ((modal === "switch" || modal === "rename") && !canConfigure) return null;
   if (modal === "rename" && profileType !== "custom") return null;
   if (modal === "copy" && copySourceCount === 0) return null;
   return modal;

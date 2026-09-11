@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import { requireSourceProfileTemplateManagement } from "@/lib/authorization";
+import { AuthorizationError, canAccessAdmin, requireLearningSpaceConfiguration, requireLearningSpaceManagement, requireSourceProfileTemplateManagement } from "@/lib/authorization";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { getDatabase } from "@/lib/database";
 import type { AppUser } from "@/lib/identity";
@@ -14,7 +14,7 @@ import {
   parseStoredSourceProfileConfig,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
-import { uniqueSourceProfileName } from "@/lib/source-profile-name";
+import { availableSourceProfileName, uniqueSourceProfileName } from "@/lib/source-profile-name";
 import type { SourceProfile } from "@/lib/source-profiles";
 
 export interface SourceProfileTemplate {
@@ -65,7 +65,7 @@ export function getSourceProfileTemplateConfig(template: SourceProfileTemplate):
 }
 
 export async function listSourceProfileTemplates(user: AppUser): Promise<SourceProfileTemplateSummary[]> {
-  requireSourceProfileTemplateManagement(user);
+  if (!canAccessAdmin(user)) throw new AuthorizationError("Bronprofielsjablonen zijn alleen beschikbaar voor actieve beheerders.");
   const result = await (await getDatabase()).execute(`SELECT source_profile_templates.id, source_profile_templates.name,
       source_profile_templates.description, source_profile_templates.config_version,
       CASE WHEN source_profile_template_defaults.default_template_id = source_profile_templates.id THEN 1 ELSE 0 END AS is_default
@@ -79,6 +79,21 @@ export async function listSourceProfileTemplates(user: AppUser): Promise<SourceP
     configVersion: Number(row.config_version),
     isDefault: Number(row.is_default) === 1,
   }));
+}
+
+export async function copySourceProfileTemplateToLearningSpace(
+  user: AppUser,
+  templateId: string,
+  learningSpaceId: string,
+  activate: boolean,
+): Promise<SourceProfile> {
+  if (activate) await requireLearningSpaceConfiguration(user, learningSpaceId);
+  else await requireLearningSpaceManagement(user, learningSpaceId);
+  const template = await getSourceProfileTemplate(templateId);
+  const name = await availableSourceProfileName(learningSpaceId, template.name);
+  const prepared = prepareSourceProfileTemplateClone({ ...template, name }, learningSpaceId, new Date().toISOString(), activate);
+  await (await getDatabase()).batch(prepared.statements);
+  return prepared.profile;
 }
 
 export async function createSourceProfileTemplate(
@@ -138,6 +153,7 @@ export function prepareSourceProfileTemplateClone(
   template: SourceProfileTemplate,
   learningSpaceId: string,
   now = new Date().toISOString(),
+  activate = true,
 ): PreparedSourceProfileTemplateClone {
   const configJson = JSON.stringify(getSourceProfileTemplateConfig(template));
   const config = parseStoredSourceProfileConfig(template.config.configVersion, configJson);
@@ -160,12 +176,12 @@ export function prepareSourceProfileTemplateClone(
           VALUES (?, 'custom', ?, ?, ?, ?, ?, ?, ?)`,
         args: [profile.id, profile.name, profile.description, config.configVersion, JSON.stringify(config), now, now, learningSpaceId],
       },
-      {
+      ...(activate ? [{
         sql: `INSERT INTO learning_space_source_profiles (learning_space_id, source_profile_id, assigned_at, updated_at)
           VALUES (?, ?, ?, ?)
           ON CONFLICT(learning_space_id) DO UPDATE SET source_profile_id = excluded.source_profile_id, updated_at = excluded.updated_at`,
         args: [learningSpaceId, profile.id, now, now],
-      },
+      }] : []),
     ],
   };
 }

@@ -7,6 +7,7 @@ import { requireAdminUser } from "@/lib/auth";
 import { canManageLearningSpace, requireLearningSpaceConfiguration } from "@/lib/authorization";
 import { getLearningSpace } from "@/lib/repositories";
 import { copyActiveSourceProfile, createOwnSourceProfile, renameSourceProfile, switchActiveSourceProfile } from "@/lib/source-profiles";
+import { copySourceProfileTemplateToLearningSpace } from "@/lib/source-profile-templates";
 import { listManagedMemberships, removeManagedMembership, upsertManagedMembership } from "@/lib/user-management";
 
 export async function addLearningSpaceEditorAction(formData: FormData) {
@@ -54,7 +55,14 @@ export async function createOwnSourceProfileAction(formData: FormData) {
 
 export async function copySourceProfileAction(formData: FormData) {
   await runSourceProfileAction(formData, "copied", "copy", async (user, learningSpaceId) => {
-    await copyActiveSourceProfile(user, learningSpaceId, value(formData, "sourceLearningSpaceId"));
+    const result = await copyActiveSourceProfile(user, learningSpaceId, value(formData, "sourceLearningSpaceId"));
+    return result.activated ? "copied" : "copiedInactive";
+  });
+}
+
+export async function copySourceProfileTemplateAction(formData: FormData) {
+  await runSourceProfileAction(formData, "templateCopied", "switch", async (user, learningSpaceId) => {
+    await copySourceProfileTemplateToLearningSpace(user, value(formData, "templateId"), learningSpaceId, true);
   });
 }
 
@@ -66,9 +74,9 @@ export async function renameSourceProfileAction(formData: FormData) {
 
 async function runSourceProfileAction(
   formData: FormData,
-  saved: "switched" | "created" | "copied" | "renamed",
+  saved: SourceProfileSaved,
   errorModal: "switch" | "rename" | "copy" | null,
-  mutation: (user: Awaited<ReturnType<typeof requireAdminUser>>, learningSpaceId: string) => Promise<void>,
+  mutation: (user: Awaited<ReturnType<typeof requireAdminUser>>, learningSpaceId: string) => Promise<SourceProfileSaved | void>,
 ): Promise<never> {
   const learningSpaceId = value(formData, "learningSpaceId");
   const user = await requireAdminUser();
@@ -76,7 +84,7 @@ async function runSourceProfileAction(
   const space = await getLearningSpace(learningSpaceId);
   if (!space) redirect("/admin");
   try {
-    await mutation(user, learningSpaceId);
+    saved = await mutation(user, learningSpaceId) ?? saved;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Bronprofiel kon niet worden gewijzigd.";
     const modalQuery = errorModal ? `&profileModal=${errorModal}` : "";
@@ -85,6 +93,8 @@ async function runSourceProfileAction(
   revalidatePath(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
   redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?profileSaved=${saved}`);
 }
+
+type SourceProfileSaved = "switched" | "created" | "copied" | "copiedInactive" | "templateCopied" | "renamed";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();

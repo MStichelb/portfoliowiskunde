@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   renameManagedSourceProfile: vi.fn(),
+  copyManagedSourceProfile: vi.fn(),
+  copySourceProfileTemplateToLearningSpace: vi.fn(),
   createSourceProfileTemplate: vi.fn(),
   updateSourceProfileTemplateMetadata: vi.fn(),
   duplicateSourceProfileTemplate: vi.fn(),
@@ -12,8 +14,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
-vi.mock("@/lib/source-profiles", () => ({ renameManagedSourceProfile: mocks.renameManagedSourceProfile }));
+vi.mock("@/lib/source-profiles", () => ({ renameManagedSourceProfile: mocks.renameManagedSourceProfile, copyManagedSourceProfile: mocks.copyManagedSourceProfile }));
 vi.mock("@/lib/source-profile-templates", () => ({
+  copySourceProfileTemplateToLearningSpace: mocks.copySourceProfileTemplateToLearningSpace,
   createSourceProfileTemplate: mocks.createSourceProfileTemplate,
   updateSourceProfileTemplateMetadata: mocks.updateSourceProfileTemplateMetadata,
   duplicateSourceProfileTemplate: mocks.duplicateSourceProfileTemplate,
@@ -23,6 +26,8 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
 import {
+  copyManagedSourceProfileAction,
+  copyManagedSourceProfileTemplateAction,
   createSourceProfileTemplateAction,
   duplicateSourceProfileTemplateAction,
   renameManagedSourceProfileAction,
@@ -35,10 +40,23 @@ describe("central source profile actions", () => {
     vi.clearAllMocks();
     mocks.requireAdminUser.mockResolvedValue({ id: "superadmin", role: "superadmin", status: "active" });
     mocks.renameManagedSourceProfile.mockResolvedValue(undefined);
+    mocks.copyManagedSourceProfile.mockResolvedValue(undefined);
+    mocks.copySourceProfileTemplateToLearningSpace.mockResolvedValue(undefined);
     mocks.createSourceProfileTemplate.mockResolvedValue(undefined);
     mocks.updateSourceProfileTemplateMetadata.mockResolvedValue(undefined);
     mocks.duplicateSourceProfileTemplate.mockResolvedValue(undefined);
     mocks.setDefaultSourceProfileTemplate.mockResolvedValue(undefined);
+  });
+
+  it("routes independent central copies through authenticated domain helpers", async () => {
+    const profileData = form("profile-1", "");
+    await expect(copyManagedSourceProfileAction(profileData)).rejects.toThrow("saved=copied");
+    expect(mocks.copyManagedSourceProfile).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "profile-1");
+
+    const templateData = templateForm("template-1");
+    templateData.set("managementLearningSpaceId", "space-5");
+    await expect(copyManagedSourceProfileTemplateAction(templateData)).rejects.toThrow("saved=templateCopied");
+    expect(mocks.copySourceProfileTemplateToLearningSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "template-1", "space-5", false);
   });
 
   it("routes all template mutations through the authenticated server-side domain helpers", async () => {

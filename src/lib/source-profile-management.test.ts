@@ -12,6 +12,7 @@ import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, BUILT_IN_DEFAULT_SOURCE_PROFILE
 import { cloneSourceProfileTemplateToLearningSpace, getDefaultSourceProfileTemplate } from "./source-profile-templates";
 import {
   copyActiveSourceProfile,
+  copyManagedSourceProfile,
   createOwnSourceProfile,
   getActiveSourceProfileForLearningSpace,
   getManagedSourceProfiles,
@@ -62,7 +63,7 @@ describe("source profile management", () => {
     expect(ownerModel.availableProfiles.map((profile) => profile.id)).not.toContain(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
     await expect(switchActiveSourceProfile(actors.owner, "space-5", BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)).rejects.toBeInstanceOf(AuthorizationError);
     expect(ownerModel.availableProfiles.map((profile) => profile.id)).not.toContain(spaceSixProfile.id);
-    expect(ownerModel.copySources).toEqual([]);
+    expect(ownerModel.copySources).toContainEqual(expect.objectContaining({ learningSpaceId: "space-5" }));
 
     const sharedManagerModel = await getSourceProfileAdminModel(actors.managerBoth, "space-5");
     expect(sharedManagerModel.availableProfiles).toContainEqual(expect.objectContaining({
@@ -82,7 +83,7 @@ describe("source profile management", () => {
     const execute = vi.spyOn(database, "execute");
 
     let profiles = await getManagedSourceProfiles(actors.managerBoth);
-    expect(execute).toHaveBeenCalledTimes(2);
+    expect(execute).toHaveBeenCalledTimes(3);
     expect(profiles.find((profile) => profile.id === profileFive.id)).toMatchObject({
       usageCount: 1, isInactive: false, usages: [{ learningSpaceId: "space-5", learningSpaceShortLabel: "5" }],
     });
@@ -129,24 +130,43 @@ describe("source profile management", () => {
 
   it("copies another managed space's active profile as an independent target-owned row", async () => {
     const source = (await getActiveSourceProfileForLearningSpace("space-6"))!;
-    await renameSourceProfile(actors.managerBoth, "space-6", source.id, "Profiel zes");
+    await renameSourceProfile(actors.superadmin, "space-6", source.id, "Profiel zes");
     const copy = await copyActiveSourceProfile(actors.managerBoth, "space-5", "space-6");
 
-    expect(copy).toMatchObject({ name: "Kopie van Profiel zes", managementLearningSpaceId: "space-5", config: source.config });
-    expect(copy.id).not.toBe(source.id);
-    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(copy.id);
+    expect(copy).toMatchObject({ activated: true, profile: { name: "Kopie van Profiel zes", managementLearningSpaceId: "space-5", config: source.config } });
+    expect(copy.profile.id).not.toBe(source.id);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(copy.profile.id);
 
-    await renameSourceProfile(actors.managerBoth, "space-5", copy.id, "Mijn onafhankelijke kopie");
+    await renameSourceProfile(actors.managerBoth, "space-5", copy.profile.id, "Mijn onafhankelijke kopie");
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe("Mijn onafhankelijke kopie");
     expect((await getActiveSourceProfileForLearningSpace("space-6"))?.name).toBe("Profiel zes");
   });
 
-  it.each(["owner", "editor", "superadmin"] as const)("allows a %s to switch an allowed profile", async (actorRole) => {
+  it.each(["owner", "superadmin"] as const)("allows a %s to switch an allowed profile", async (actorRole) => {
     const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
     const second = await createAdditionalProfile("space-5");
     await switchActiveSourceProfile(actors[actorRole], "space-5", original.id);
     await switchActiveSourceProfile(actors[actorRole], "space-5", second.id);
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(second.id);
+  });
+
+  it("keeps editor copies independent and inactive while blocking switch and rename", async () => {
+    const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    const copy = await copyActiveSourceProfile(actors.editor, "space-5", "space-5");
+
+    expect(copy.activated).toBe(false);
+    expect(copy.profile.id).not.toBe(original.id);
+    expect(copy.profile.config).toEqual(original.config);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(original.id);
+    await expect(switchActiveSourceProfile(actors.editor, "space-5", copy.profile.id)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(renameSourceProfile(actors.editor, "space-5", original.id, "Verboden")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(renameManagedSourceProfile(actors.editor, original.id, "Verboden")).rejects.toBeInstanceOf(AuthorizationError);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe(original.name);
+
+    const centralCopy = await copyManagedSourceProfile(actors.editor, original.id);
+    expect(centralCopy.id).not.toBe(original.id);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(original.id);
+    await expect(copyManagedSourceProfile(actors.editor, (await getActiveSourceProfileForLearningSpace("space-6"))!.id)).rejects.toBeInstanceOf(AuthorizationError);
   });
 
   it.each(["viewer", "student"] as const)("rejects a %s mutation", async (actorRole) => {
@@ -166,7 +186,7 @@ describe("source profile management", () => {
 
   it("renames only active custom profiles with a non-empty name of at most 80 characters", async () => {
     const custom = (await getActiveSourceProfileForLearningSpace("space-5"))!;
-    await renameSourceProfile(actors.editor, "space-5", custom.id, "  Eigen indeling  ");
+    await renameSourceProfile(actors.owner, "space-5", custom.id, "  Eigen indeling  ");
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe("Eigen indeling");
     await expect(renameSourceProfile(actors.owner, "space-5", custom.id, " ")).rejects.toThrow("Geef het bronprofiel een naam");
     await expect(renameSourceProfile(actors.owner, "space-5", custom.id, "a".repeat(81))).rejects.toThrow("maximaal 80");
@@ -181,9 +201,10 @@ describe("source profile management", () => {
     const secondFive = await createAdditionalProfile("space-5", "Tweede profiel");
 
     await renameManagedSourceProfile(actors.managerBoth, profileFive.id, "Eigen portfolio");
-    await renameManagedSourceProfile(actors.managerBoth, profileSix.id, " eigen PORTFOLIO ");
+    await renameManagedSourceProfile(actors.superadmin, profileSix.id, " eigen PORTFOLIO ");
     await expect(renameManagedSourceProfile(actors.managerBoth, secondFive.id, " EIGEN portfolio ")).rejects.toThrow("bestaat al");
     await expect(renameManagedSourceProfile(actors.owner, profileSix.id, "Niet toegestaan")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(renameManagedSourceProfile(actors.managerBoth, profileSix.id, "Ook niet toegestaan")).rejects.toBeInstanceOf(AuthorizationError);
     expect((await getActiveSourceProfileForLearningSpace("space-6"))?.name).toBe("eigen PORTFOLIO");
   });
 

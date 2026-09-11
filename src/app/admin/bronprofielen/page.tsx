@@ -1,4 +1,4 @@
-import { ArrowLeft, Pencil, SlidersHorizontal, X } from "lucide-react";
+import { ArrowLeft, Copy, Eye, Pencil, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 
 import { SourceProfileTemplateManager, type SourceProfileTemplateModal } from "@/app/components/source-profile-template-manager";
@@ -8,6 +8,8 @@ import { listSourceProfileTemplates } from "@/lib/source-profile-templates";
 
 import {
   createSourceProfileTemplateAction,
+  copyManagedSourceProfileAction,
+  copyManagedSourceProfileTemplateAction,
   duplicateSourceProfileTemplateAction,
   renameManagedSourceProfileAction,
   setDefaultSourceProfileTemplateAction,
@@ -31,7 +33,7 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
   const [profiles, query, templates] = await Promise.all([
     getManagedSourceProfiles(user),
     searchParams,
-    user.role === "superadmin" ? listSourceProfileTemplates(user) : Promise.resolve([]),
+    listSourceProfileTemplates(user),
   ]);
   const selectedProfile = profiles.find((profile) => profile.id === query.profile) ?? null;
 
@@ -42,7 +44,8 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
       <h1>Bronprofielen</h1>
       <p>Bekijk en beheer concrete bronprofielen en zie in welke leeromgevingen ze momenteel actief zijn.</p>
     </header>
-    {query.saved === "renamed" ? <p className="success-message" role="status">Profielnaam gewijzigd.</p> : null}
+    {profileFeedback(query.saved) ? <p className="success-message" role="status">{profileFeedback(query.saved)}</p> : null}
+    {query.error && !selectedProfile ? <p className="form-message" role="alert">{query.error}</p> : null}
     {templateFeedback(query.templateSaved) ? <p className="success-message" role="status">{templateFeedback(query.templateSaved)}</p> : null}
     <section aria-labelledby="managed-source-profiles-heading">
       <div className="source-profile-overview-heading">
@@ -59,7 +62,7 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
             </p>
             <small>{profile.usageCount} {profile.usageCount === 1 ? "actieve leeromgeving" : "actieve leeromgevingen"}</small>
           </div>
-          <Link className="secondary-button link-button source-profile-manage-button" href={`/admin/bronprofielen?profile=${encodeURIComponent(profile.id)}`}><Pencil size={16} aria-hidden />Beheren</Link>
+          <Link className="secondary-button link-button source-profile-manage-button" href={`/admin/bronprofielen?profile=${encodeURIComponent(profile.id)}`}>{profile.canRename ? <Pencil size={16} aria-hidden /> : <Eye size={16} aria-hidden />}{profile.canRename ? "Beheren" : "Bekijken"}</Link>
         </article>)}
       </div>}
     </section>
@@ -76,7 +79,13 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
       initialModal={templateModal(query.templateModal)}
       initialTemplateId={query.template}
       error={query.templateError}
-    /> : null}
+    /> : <section className="source-profile-template-section" aria-labelledby="source-profile-templates-heading">
+      <div className="source-profile-overview-heading"><div><h2 id="source-profile-templates-heading">Appbrede sjablonen</h2><p>Sjablonen zijn alleen-lezen vertrekpunten voor nieuwe, onafhankelijke profielen.</p></div></div>
+      <div className="source-profile-overview-list">{templates.map((template) => <article className="source-profile-overview-card" key={template.id}>
+        <div className="source-profile-overview-copy"><div className="source-profile-template-title"><div className="source-profile-overview-title"><SlidersHorizontal size={18} aria-hidden /><h3>{template.name}</h3></div>{template.isDefault ? <span className="active-source-badge">Standaard</span> : null}</div><small>Configuratieversie {template.configVersion}</small>{template.description ? <p>{template.description}</p> : null}</div>
+        <form action={copyManagedSourceProfileTemplateAction} className="source-profile-template-copy-form"><input type="hidden" name="templateId" value={template.id} /><label>Beheercontext<select name="managementLearningSpaceId" required>{managementContexts(profiles).map((context) => <option key={context.id} value={context.id}>{context.label}</option>)}</select></label><button className="secondary-button" type="submit"><Copy size={16} aria-hidden />Kopiëren</button></form>
+      </article>)}</div>
+    </section>}
 
     {selectedProfile ? <div className="confirm-backdrop" role="presentation">
       <div className="source-profile-dialog" role="dialog" aria-modal="true" aria-labelledby="manage-source-profile-title">
@@ -88,7 +97,7 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
           <strong>{selectedProfile.isInactive ? "Inactief" : `Gebruikt in: ${sourceProfileUsageLabel(selectedProfile.usages)}`}</strong>
           <small>{selectedProfile.usageCount} {selectedProfile.usageCount === 1 ? "actieve leeromgeving" : "actieve leeromgevingen"}</small>
         </div>
-        <form action={renameManagedSourceProfileAction} className="source-profile-dialog-form">
+        {selectedProfile.canRename ? <form action={renameManagedSourceProfileAction} className="source-profile-dialog-form">
           <input type="hidden" name="sourceProfileId" value={selectedProfile.id} />
           <label>Profielnaam<input name="name" defaultValue={selectedProfile.name} maxLength={80} required /></label>
           {query.error ? <p className="form-message" role="alert">{query.error}</p> : null}
@@ -96,10 +105,29 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
             <Link className="secondary-button link-button" href="/admin/bronprofielen">Annuleren</Link>
             <button className="primary-button" type="submit">Opslaan</button>
           </div>
+        </form> : <div className="source-profile-dialog-form"><p>Je kunt dit profiel en het actuele gebruik bekijken. Als editor kun je het bestaande profiel niet hernoemen.</p><div className="source-profile-dialog-actions"><Link className="secondary-button link-button" href="/admin/bronprofielen">Sluiten</Link></div></div>}
+        <form action={copyManagedSourceProfileAction} className="source-profile-dialog-form">
+          <input type="hidden" name="sourceProfileId" value={selectedProfile.id} />
+          <p>Maak een onafhankelijke kopie binnen dezelfde beheercontext. De actieve configuratie verandert niet.</p>
+          <div className="source-profile-dialog-actions"><button className="secondary-button" type="submit"><Copy size={16} aria-hidden />Profiel kopiëren</button></div>
         </form>
       </div>
     </div> : null}
   </main>;
+}
+
+function profileFeedback(value: string | undefined): string | null {
+  if (value === "renamed") return "Profielnaam gewijzigd.";
+  if (value === "copied") return "Profiel gekopieerd. De actieve configuratie is niet gewijzigd.";
+  if (value === "templateCopied") return "Sjabloon gekopieerd. De actieve configuratie is niet gewijzigd.";
+  return null;
+}
+
+function managementContexts(profiles: Awaited<ReturnType<typeof getManagedSourceProfiles>>): Array<{ id: string; label: string }> {
+  return [...new Map(profiles.flatMap((profile) => profile.managementLearningSpaceId ? [[profile.managementLearningSpaceId, {
+    id: profile.managementLearningSpaceId,
+    label: profile.managementLearningSpaceName ?? profile.managementLearningSpaceShortLabel ?? profile.managementLearningSpaceId,
+  }] as const] : [])).values()];
 }
 
 function templateModal(value: string | undefined): SourceProfileTemplateModal | null {

@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   canManageLearningSpace: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
   getSourceProfileAdminModel: vi.fn(),
+  listSourceProfileTemplates: vi.fn(),
   settingsForm: vi.fn(),
   sourceProfileCard: vi.fn(),
   saveLearningSpaceAction: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: mocks.canConfigureLearningSpace, canManageLearningSpace: mocks.canManageLearningSpace }));
 vi.mock("@/lib/repositories", () => ({ getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug }));
 vi.mock("@/lib/source-profiles", () => ({ getSourceProfileAdminModel: mocks.getSourceProfileAdminModel }));
+vi.mock("@/lib/source-profile-templates", () => ({ listSourceProfileTemplates: mocks.listSourceProfileTemplates }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("../../actions", () => ({ saveLearningSpaceAction: mocks.saveLearningSpaceAction }));
 vi.mock("@/app/components/admin-space-header", () => ({
@@ -41,7 +43,7 @@ vi.mock("@/app/components/source-profile-card", () => ({
   },
 }));
 vi.mock("./actions", () => ({
-  switchSourceProfileAction: vi.fn(), createOwnSourceProfileAction: vi.fn(), copySourceProfileAction: vi.fn(), renameSourceProfileAction: vi.fn(),
+  switchSourceProfileAction: vi.fn(), copySourceProfileTemplateAction: vi.fn(), createOwnSourceProfileAction: vi.fn(), copySourceProfileAction: vi.fn(), renameSourceProfileAction: vi.fn(),
 }));
 
 import LearningSpaceSettingsPage from "./page";
@@ -54,6 +56,7 @@ describe("LearningSpace settings page", () => {
     mocks.canManageLearningSpace.mockResolvedValue(true);
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
     mocks.getSourceProfileAdminModel.mockResolvedValue({ activeProfile: { name: "Standaard portfolio" }, availableProfiles: [], copySources: [] });
+    mocks.listSourceProfileTemplates.mockResolvedValue([]);
   });
 
   it("passes superadmin delete rights into settings while preserving the active source", async () => {
@@ -104,6 +107,7 @@ describe("LearningSpace settings page", () => {
     expect(markup).toContain("Bronprofiel: Standaard portfolio");
     expect(markup).not.toContain("Instellingenformulier");
     expect(markup).not.toContain("Actieve bron");
+    expect(mocks.sourceProfileCard).toHaveBeenCalledWith(expect.objectContaining({ canConfigure: false }));
   });
 
   it("reopens only the failed modal and keeps successful mutations closed", async () => {

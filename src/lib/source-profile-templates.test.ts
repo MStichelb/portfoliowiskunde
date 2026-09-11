@@ -11,6 +11,7 @@ import { getDatabase, resetDatabaseForTests } from "./database";
 import { migrations } from "./database-migrations";
 import { createUser, type AppUser } from "./identity";
 import { createLearningSpace, getAdminLearningSpaceBySlug } from "./repositories";
+import { upsertManagedMembership } from "./user-management";
 import {
   BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
@@ -19,6 +20,7 @@ import {
 import { getActiveSourceProfileForLearningSpace } from "./source-profiles";
 import {
   cloneSourceProfileTemplateToLearningSpace,
+  copySourceProfileTemplateToLearningSpace,
   createSourceProfileTemplate,
   duplicateSourceProfileTemplate,
   ensureInitialSourceProfileTemplate,
@@ -39,6 +41,8 @@ beforeEach(async () => {
   superadmin = await createUser({ displayName: "Admin", role: "superadmin" });
   owner = await createUser({ displayName: "Owner", role: "teacher" });
   editor = await createUser({ displayName: "Editor", role: "teacher" });
+  await upsertManagedMembership("space-5", owner.id, "owner");
+  await upsertManagedMembership("space-5", editor.id, "editor");
 });
 
 afterEach(async () => {
@@ -191,11 +195,31 @@ describe("global source profile templates", () => {
       () => setDefaultSourceProfileTemplate(editor, INITIAL_SOURCE_PROFILE_TEMPLATE_ID),
     ];
     for (const mutation of mutations) await expect(mutation()).rejects.toThrow("Alleen een hoofdbeheerder");
-    await expect(listSourceProfileTemplates(owner)).rejects.toThrow("Alleen een hoofdbeheerder");
+    await expect(listSourceProfileTemplates(owner)).resolves.toHaveLength(1);
+    await expect(listSourceProfileTemplates(editor)).resolves.toHaveLength(1);
     await expect(createSourceProfileTemplate({ ...superadmin, status: "disabled" }, { name: "Uitgeschakeld" })).rejects.toThrow("Alleen een hoofdbeheerder");
     await expect(updateSourceProfileTemplateMetadata(superadmin, "foreign-template", { name: "Verboden" })).rejects.toThrow("niet gevonden");
     await expect(duplicateSourceProfileTemplate(superadmin, "foreign-template")).rejects.toThrow("niet gevonden");
     expect((await listSourceProfileTemplates(superadmin))).toHaveLength(1);
+  });
+
+  it("uses templates as server-resolved independent snapshots with role-safe activation", async () => {
+    const database = await getDatabase();
+    const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    const template = await getDefaultSourceProfileTemplate();
+
+    const editorCopy = await copySourceProfileTemplateToLearningSpace(editor, template.id, "space-5", false);
+    expect(editorCopy).toMatchObject({ type: "custom", managementLearningSpaceId: "space-5", config: template.config });
+    expect(editorCopy.id).not.toBe(template.id);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(original.id);
+    await expect(copySourceProfileTemplateToLearningSpace(editor, template.id, "space-5", true)).rejects.toThrow("Alleen een eigenaar");
+    await expect(copySourceProfileTemplateToLearningSpace(owner, "foreign-template", "space-5", true)).rejects.toThrow("niet gevonden");
+
+    const ownerCopy = await copySourceProfileTemplateToLearningSpace(owner, template.id, "space-5", true);
+    expect(ownerCopy.name).toBe("Standaard portfolio (3)");
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(ownerCopy.id);
+    await database.execute({ sql: "UPDATE source_profile_templates SET config_json = '{}' WHERE id = ?", args: [template.id] });
+    expect((await database.execute({ sql: "SELECT config_json FROM source_profiles WHERE id = ?", args: [ownerCopy.id] })).rows[0].config_json).toBe(JSON.stringify(template.config));
   });
 
   it("changes only future LearningSpace snapshots when the default switches", async () => {

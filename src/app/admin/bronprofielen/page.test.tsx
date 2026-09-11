@@ -16,7 +16,8 @@ vi.mock("@/lib/source-profiles", () => ({
 vi.mock("@/lib/source-profile-templates", () => ({ listSourceProfileTemplates: mocks.listSourceProfileTemplates }));
 vi.mock("./actions", () => ({
   renameManagedSourceProfileAction: vi.fn(), createSourceProfileTemplateAction: vi.fn(), updateSourceProfileTemplateAction: vi.fn(),
-  duplicateSourceProfileTemplateAction: vi.fn(), setDefaultSourceProfileTemplateAction: vi.fn(),
+  duplicateSourceProfileTemplateAction: vi.fn(), setDefaultSourceProfileTemplateAction: vi.fn(), copyManagedSourceProfileAction: vi.fn(),
+  copyManagedSourceProfileTemplateAction: vi.fn(),
 }));
 
 import SourceProfilesPage from "./page";
@@ -30,6 +31,7 @@ describe("central source profile page", () => {
 
   it.each(["teacher", "superadmin"] as const)("is accessible to a %s and shows current usage", async (role) => {
     mocks.requireAdminUser.mockResolvedValue(user(role));
+    mocks.getManagedSourceProfiles.mockResolvedValue([profile({ canRename: role === "superadmin" })]);
     const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({}) }));
 
     expect(markup).toContain("Mijn bronprofielen");
@@ -37,7 +39,7 @@ describe("central source profile page", () => {
     expect(markup).toContain("Gebruikt in:");
     expect(markup).toContain("4NW1, 5WET, 6WIS +1");
     expect(markup).toContain("4 actieve leeromgevingen");
-    expect(markup).toContain("Beheren");
+    expect(markup).toContain(role === "superadmin" ? "Beheren" : "Bekijken");
     expect(mocks.getManagedSourceProfiles).toHaveBeenCalledWith(expect.objectContaining({ role }));
     if (role === "superadmin") {
       expect(markup).toContain("Appbrede sjablonen");
@@ -45,13 +47,15 @@ describe("central source profile page", () => {
       expect(markup).toContain("Standaard");
       expect(mocks.listSourceProfileTemplates).toHaveBeenCalledOnce();
     } else {
-      expect(markup).not.toContain("Appbrede sjablonen");
-      expect(mocks.listSourceProfileTemplates).not.toHaveBeenCalled();
+      expect(markup).toContain("Appbrede sjablonen");
+      expect(markup).toContain("alleen-lezen vertrekpunten");
+      expect(markup).toContain("Kopiëren");
+      expect(mocks.listSourceProfileTemplates).toHaveBeenCalledOnce();
     }
   });
 
   it("shows inactive profiles and reopens only a server-authorized management target", async () => {
-    const inactive = profile({ id: "inactive", name: "Los profiel", usages: [], usageCount: 0, isInactive: true });
+    const inactive = profile({ id: "inactive", name: "Los profiel", usages: [], usageCount: 0, isInactive: true, canRename: false });
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
     mocks.getManagedSourceProfiles.mockResolvedValue([inactive]);
 
@@ -59,8 +63,8 @@ describe("central source profile page", () => {
     expect(markup).toContain("Inactief");
     expect(markup).toContain("0 actieve leeromgevingen");
     expect(markup).toContain('role="dialog"');
-    expect(markup).toContain('value="Los profiel"');
-    expect(markup).toContain("Naam bestaat al.");
+    expect(markup).not.toContain('name="name"');
+    expect(markup).toContain("bestaande profiel niet hernoemen");
 
     const manipulated = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ profile: "foreign" }) }));
     expect(manipulated).not.toContain('role="dialog"');
@@ -80,7 +84,7 @@ function profile(overrides: Partial<ManagedSourceProfile> = {}): ManagedSourcePr
     config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, managementLearningSpaceId: "space-5",
     managementLearningSpaceName: "Vijfde jaar", managementLearningSpaceShortLabel: "5WIS",
     usages: labels.map((learningSpaceShortLabel, index) => ({ learningSpaceId: `space-${index}`, learningSpaceName: `Ruimte ${index}`, learningSpaceShortLabel })),
-    usageCount: 4, isInactive: false, createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z",
+    usageCount: 4, isInactive: false, canRename: true, createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z",
     ...overrides,
   };
 }
