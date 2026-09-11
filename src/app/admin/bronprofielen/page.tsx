@@ -1,10 +1,18 @@
 import { ArrowLeft, Pencil, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
 
+import { SourceProfileTemplateManager, type SourceProfileTemplateModal } from "@/app/components/source-profile-template-manager";
 import { requireAdminUser } from "@/lib/auth";
 import { getManagedSourceProfiles, sourceProfileUsageLabel } from "@/lib/source-profiles";
+import { listSourceProfileTemplates } from "@/lib/source-profile-templates";
 
-import { renameManagedSourceProfileAction } from "./actions";
+import {
+  createSourceProfileTemplateAction,
+  duplicateSourceProfileTemplateAction,
+  renameManagedSourceProfileAction,
+  setDefaultSourceProfileTemplateAction,
+  updateSourceProfileTemplateAction,
+} from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +20,19 @@ interface SourceProfilesPageQuery {
   profile?: string;
   error?: string;
   saved?: string;
+  template?: string;
+  templateError?: string;
+  templateModal?: string;
+  templateSaved?: string;
 }
 
 export default async function SourceProfilesPage({ searchParams }: { searchParams: Promise<SourceProfilesPageQuery> }) {
   const user = await requireAdminUser();
-  const [profiles, query] = await Promise.all([getManagedSourceProfiles(user), searchParams]);
+  const [profiles, query, templates] = await Promise.all([
+    getManagedSourceProfiles(user),
+    searchParams,
+    user.role === "superadmin" ? listSourceProfileTemplates(user) : Promise.resolve([]),
+  ]);
   const selectedProfile = profiles.find((profile) => profile.id === query.profile) ?? null;
 
   return <main className="page-shell admin-page source-profiles-page">
@@ -27,6 +43,7 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
       <p>Bekijk en beheer concrete bronprofielen en zie in welke leeromgevingen ze momenteel actief zijn.</p>
     </header>
     {query.saved === "renamed" ? <p className="success-message" role="status">Profielnaam gewijzigd.</p> : null}
+    {templateFeedback(query.templateSaved) ? <p className="success-message" role="status">{templateFeedback(query.templateSaved)}</p> : null}
     <section aria-labelledby="managed-source-profiles-heading">
       <div className="source-profile-overview-heading">
         <div><h2 id="managed-source-profiles-heading">Mijn bronprofielen</h2><p>De beheercontext bepaalt wie een profiel mag aanpassen; gebruik wordt afzonderlijk uit de actuele koppelingen afgeleid.</p></div>
@@ -46,6 +63,20 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
         </article>)}
       </div>}
     </section>
+
+    {user.role === "superadmin" ? <SourceProfileTemplateManager
+      key={`${query.templateSaved ?? ""}:${query.templateError ?? ""}:${query.templateModal ?? ""}:${query.template ?? ""}`}
+      templates={templates}
+      actions={{
+        create: createSourceProfileTemplateAction,
+        update: updateSourceProfileTemplateAction,
+        duplicate: duplicateSourceProfileTemplateAction,
+        setDefault: setDefaultSourceProfileTemplateAction,
+      }}
+      initialModal={templateModal(query.templateModal)}
+      initialTemplateId={query.template}
+      error={query.templateError}
+    /> : null}
 
     {selectedProfile ? <div className="confirm-backdrop" role="presentation">
       <div className="source-profile-dialog" role="dialog" aria-modal="true" aria-labelledby="manage-source-profile-title">
@@ -69,4 +100,16 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
       </div>
     </div> : null}
   </main>;
+}
+
+function templateModal(value: string | undefined): SourceProfileTemplateModal | null {
+  return value === "create" || value === "manage" || value === "default" ? value : null;
+}
+
+function templateFeedback(value: string | undefined): string | null {
+  if (value === "created") return "Bronprofielsjabloon gemaakt.";
+  if (value === "updated") return "Bronprofielsjabloon bijgewerkt.";
+  if (value === "duplicated") return "Bronprofielsjabloon onafhankelijk gedupliceerd.";
+  if (value === "default") return "Standaardsjabloon gewijzigd voor toekomstige leeromgevingen.";
+  return null;
 }

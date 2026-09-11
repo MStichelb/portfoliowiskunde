@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { z } from "zod";
 
 import { requireSourceProfileTemplateManagement } from "@/lib/authorization";
 import type { DatabaseRow, InStatement } from "@/lib/database";
@@ -30,6 +31,22 @@ export interface PreparedSourceProfileTemplateClone {
   statements: InStatement[];
 }
 
+export interface SourceProfileTemplateSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  configVersion: number;
+  isDefault: boolean;
+}
+
+export interface SourceProfileTemplateMetadataInput {
+  name: string;
+  description?: string | null;
+}
+
+const sourceProfileTemplateNameSchema = z.string().trim().min(1, "Geef het bronprofielsjabloon een naam.").max(80, "Een sjabloonnaam mag maximaal 80 tekens bevatten.");
+const sourceProfileTemplateDescriptionSchema = z.string().trim().max(240, "Een sjabloonbeschrijving mag maximaal 240 tekens bevatten.").optional().nullable();
+
 export async function ensureInitialSourceProfileTemplate(): Promise<void> {
   await (await getDatabase()).batch(initialSourceProfileTemplateBootstrapStatements());
 }
@@ -45,6 +62,54 @@ export async function getDefaultSourceProfileTemplate(): Promise<SourceProfileTe
 
 export function getSourceProfileTemplateConfig(template: SourceProfileTemplate): SourceProfileConfig {
   return template.config;
+}
+
+export async function listSourceProfileTemplates(user: AppUser): Promise<SourceProfileTemplateSummary[]> {
+  requireSourceProfileTemplateManagement(user);
+  const result = await (await getDatabase()).execute(`SELECT source_profile_templates.id, source_profile_templates.name,
+      source_profile_templates.description, source_profile_templates.config_version,
+      CASE WHEN source_profile_template_defaults.default_template_id = source_profile_templates.id THEN 1 ELSE 0 END AS is_default
+    FROM source_profile_templates
+    LEFT JOIN source_profile_template_defaults ON source_profile_template_defaults.singleton_id = 1
+    ORDER BY LOWER(source_profile_templates.name), source_profile_templates.id`);
+  return result.rows.map((row) => ({
+    id: String(row.id),
+    name: String(row.name),
+    description: row.description == null ? null : String(row.description),
+    configVersion: Number(row.config_version),
+    isDefault: Number(row.is_default) === 1,
+  }));
+}
+
+export async function createSourceProfileTemplate(
+  user: AppUser,
+  input: SourceProfileTemplateMetadataInput & { sourceTemplateId?: string | null },
+): Promise<SourceProfileTemplate> {
+  requireSourceProfileTemplateManagement(user);
+  const source = input.sourceTemplateId ? await getSourceProfileTemplate(input.sourceTemplateId) : await getDefaultSourceProfileTemplate();
+  const metadata = await validatedUniqueTemplateMetadata(input);
+  return insertIndependentTemplateSnapshot(source, metadata);
+}
+
+export async function updateSourceProfileTemplateMetadata(
+  user: AppUser,
+  templateId: string,
+  input: SourceProfileTemplateMetadataInput,
+): Promise<void> {
+  requireSourceProfileTemplateManagement(user);
+  await getSourceProfileTemplate(templateId);
+  const metadata = await validatedUniqueTemplateMetadata(input, templateId);
+  await (await getDatabase()).execute({
+    sql: "UPDATE source_profile_templates SET name = ?, description = ?, updated_at = ? WHERE id = ?",
+    args: [metadata.name, metadata.description, new Date().toISOString(), templateId],
+  });
+}
+
+export async function duplicateSourceProfileTemplate(user: AppUser, templateId: string): Promise<SourceProfileTemplate> {
+  requireSourceProfileTemplateManagement(user);
+  const source = await getSourceProfileTemplate(templateId);
+  const name = await availableTemplateCopyName(source.name);
+  return insertIndependentTemplateSnapshot(source, { name, description: source.description });
 }
 
 export async function setDefaultSourceProfileTemplate(user: AppUser, templateId: string): Promise<void> {
@@ -139,4 +204,50 @@ async function getSourceProfileTemplate(templateId: string): Promise<SourceProfi
   const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profile_templates WHERE id = ?", args: [templateId] });
   if (!result.rows[0]) throw new Error("Bronprofielsjabloon niet gevonden.");
   return sourceProfileTemplateFromRow(result.rows[0]);
+}
+
+async function insertIndependentTemplateSnapshot(
+  source: SourceProfileTemplate,
+  metadata: { name: string; description: string | null },
+): Promise<SourceProfileTemplate> {
+  const configJson = JSON.stringify(getSourceProfileTemplateConfig(source));
+  const config = parseStoredSourceProfileConfig(source.config.configVersion, configJson);
+  const id = `source-profile-template-${randomUUID()}`;
+  const now = new Date().toISOString();
+  await (await getDatabase()).execute({
+    sql: `INSERT INTO source_profile_templates
+      (id, name, description, config_version, config_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    args: [id, metadata.name, metadata.description, config.configVersion, JSON.stringify(config), now, now],
+  });
+  return { id, name: metadata.name, description: metadata.description, config, createdAt: now, updatedAt: now };
+}
+
+async function validatedUniqueTemplateMetadata(
+  input: SourceProfileTemplateMetadataInput,
+  excludeTemplateId?: string,
+): Promise<{ name: string; description: string | null }> {
+  const parsedName = sourceProfileTemplateNameSchema.safeParse(input.name);
+  if (!parsedName.success) throw new Error(parsedName.error.issues[0]?.message ?? "Ongeldige sjabloonnaam.");
+  const parsedDescription = sourceProfileTemplateDescriptionSchema.safeParse(input.description);
+  if (!parsedDescription.success) throw new Error(parsedDescription.error.issues[0]?.message ?? "Ongeldige sjabloonbeschrijving.");
+  const duplicate = await (await getDatabase()).execute({
+    sql: `SELECT 1 FROM source_profile_templates
+      WHERE LOWER(TRIM(name)) = LOWER(?) AND (? IS NULL OR id <> ?) LIMIT 1`,
+    args: [parsedName.data, excludeTemplateId ?? null, excludeTemplateId ?? null],
+  });
+  if (duplicate.rows[0]) throw new Error("Er bestaat al een appbreed bronprofielsjabloon met deze naam.");
+  return { name: parsedName.data, description: parsedDescription.data || null };
+}
+
+async function availableTemplateCopyName(sourceName: string): Promise<string> {
+  const prefix = "Kopie van ";
+  const names = (await (await getDatabase()).execute("SELECT name FROM source_profile_templates")).rows
+    .map((row) => String(row.name).trim().toLocaleLowerCase("nl"));
+  for (let number = 1; number <= names.length + 1; number += 1) {
+    const suffix = number === 1 ? "" : ` (${number})`;
+    const name = `${prefix}${sourceName}`.slice(0, 80 - suffix.length).trimEnd() + suffix;
+    if (!names.includes(name.toLocaleLowerCase("nl"))) return name;
+  }
+  throw new Error("Er kon geen unieke naam voor de sjabloonkopie worden gemaakt.");
 }

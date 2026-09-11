@@ -19,10 +19,14 @@ import {
 import { getActiveSourceProfileForLearningSpace } from "./source-profiles";
 import {
   cloneSourceProfileTemplateToLearningSpace,
+  createSourceProfileTemplate,
+  duplicateSourceProfileTemplate,
   ensureInitialSourceProfileTemplate,
   getDefaultSourceProfileTemplate,
   getSourceProfileTemplateConfig,
+  listSourceProfileTemplates,
   setDefaultSourceProfileTemplate,
+  updateSourceProfileTemplateMetadata,
 } from "./source-profile-templates";
 
 let temporaryDirectory: string | undefined;
@@ -58,6 +62,19 @@ describe("global source profile templates", () => {
       sql: "INSERT INTO source_profile_template_defaults (singleton_id, default_template_id, updated_at) VALUES (2, ?, ?)",
       args: [INITIAL_SOURCE_PROFILE_TEMPLATE_ID, "2026-09-10T00:00:00.000Z"],
     })).rejects.toThrow();
+  });
+
+  it("returns a compact bulk overview with exactly one default", async () => {
+    const database = await getDatabase();
+    const execute = vi.spyOn(database, "execute");
+    const templates = await listSourceProfileTemplates(superadmin);
+
+    expect(execute).toHaveBeenCalledOnce();
+    expect(templates).toEqual([expect.objectContaining({
+      id: INITIAL_SOURCE_PROFILE_TEMPLATE_ID, name: "Standaard portfolio", configVersion: 1, isDefault: true,
+    })]);
+    expect(templates[0]).not.toHaveProperty("config");
+    expect(templates.filter((template) => template.isDefault)).toHaveLength(1);
   });
 
   it("keeps bootstrap idempotent without overwriting template data or a changed default", async () => {
@@ -130,6 +147,94 @@ describe("global source profile templates", () => {
 
     await setDefaultSourceProfileTemplate(superadmin, "second-template");
     expect((await getDefaultSourceProfileTemplate()).id).toBe("second-template");
+  });
+
+  it("creates, renames and duplicates independent validated template snapshots", async () => {
+    const database = await getDatabase();
+    const created = await createSourceProfileTemplate(superadmin, {
+      name: "  Eigen sjabloon  ", description: "  Korte beschrijving  ", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID,
+    });
+    expect(created).toMatchObject({ name: "Eigen sjabloon", description: "Korte beschrijving", config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG });
+    expect(created.id).not.toBe(INITIAL_SOURCE_PROFILE_TEMPLATE_ID);
+    expect((await listSourceProfileTemplates(superadmin)).find((template) => template.id === created.id)?.isDefault).toBe(false);
+
+    await database.execute({
+      sql: "UPDATE source_profile_templates SET config_json = ? WHERE id = ?",
+      args: [JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, null, 2), INITIAL_SOURCE_PROFILE_TEMPLATE_ID],
+    });
+    const createdJson = (await database.execute({ sql: "SELECT config_json FROM source_profile_templates WHERE id = ?", args: [created.id] })).rows[0].config_json;
+    expect(createdJson).toBe(JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG));
+
+    await updateSourceProfileTemplateMetadata(superadmin, created.id, { name: "  Hernoemd sjabloon ", description: " " });
+    expect((await listSourceProfileTemplates(superadmin)).find((template) => template.id === created.id)).toMatchObject({ name: "Hernoemd sjabloon", description: null });
+
+    const duplicate = await duplicateSourceProfileTemplate(superadmin, created.id);
+    expect(duplicate).toMatchObject({ name: "Kopie van Hernoemd sjabloon", config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG });
+    expect(duplicate.id).not.toBe(created.id);
+    await database.execute({ sql: "UPDATE source_profile_templates SET config_json = '{}' WHERE id = ?", args: [created.id] });
+    expect((await database.execute({ sql: "SELECT config_json FROM source_profile_templates WHERE id = ?", args: [duplicate.id] })).rows[0].config_json).toBe(JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG));
+  });
+
+  it("enforces trimmed case-insensitive global names and the 80 character limit", async () => {
+    const created = await createSourceProfileTemplate(superadmin, { name: "Eigen sjabloon", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID });
+    await expect(createSourceProfileTemplate(superadmin, { name: " eigen SJABLOON ", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID })).rejects.toThrow("bestaat al");
+    await expect(updateSourceProfileTemplateMetadata(superadmin, created.id, { name: " standaard PORTFOLIO " })).rejects.toThrow("bestaat al");
+    await expect(updateSourceProfileTemplateMetadata(superadmin, created.id, { name: " " })).rejects.toThrow("Geef het bronprofielsjabloon");
+    await expect(updateSourceProfileTemplateMetadata(superadmin, created.id, { name: "a".repeat(81) })).rejects.toThrow("maximaal 80");
+  });
+
+  it("guards every template mutation against teacher role escalation and foreign ids", async () => {
+    const mutations = [
+      () => createSourceProfileTemplate(owner, { name: "Verboden" }),
+      () => updateSourceProfileTemplateMetadata(editor, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, { name: "Verboden" }),
+      () => duplicateSourceProfileTemplate(owner, INITIAL_SOURCE_PROFILE_TEMPLATE_ID),
+      () => setDefaultSourceProfileTemplate(editor, INITIAL_SOURCE_PROFILE_TEMPLATE_ID),
+    ];
+    for (const mutation of mutations) await expect(mutation()).rejects.toThrow("Alleen een hoofdbeheerder");
+    await expect(listSourceProfileTemplates(owner)).rejects.toThrow("Alleen een hoofdbeheerder");
+    await expect(createSourceProfileTemplate({ ...superadmin, status: "disabled" }, { name: "Uitgeschakeld" })).rejects.toThrow("Alleen een hoofdbeheerder");
+    await expect(updateSourceProfileTemplateMetadata(superadmin, "foreign-template", { name: "Verboden" })).rejects.toThrow("niet gevonden");
+    await expect(duplicateSourceProfileTemplate(superadmin, "foreign-template")).rejects.toThrow("niet gevonden");
+    expect((await listSourceProfileTemplates(superadmin))).toHaveLength(1);
+  });
+
+  it("changes only future LearningSpace snapshots when the default switches", async () => {
+    const database = await getDatabase();
+    const existingSpace = await createLearningSpace(spaceInput("before-default-switch"));
+    const existingProfile = (await getActiveSourceProfileForLearningSpace(existingSpace.id))!;
+    const existingRowBefore = (await database.execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [existingProfile.id] })).rows[0];
+    const second = await createSourceProfileTemplate(superadmin, { name: "Nieuw standaard", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID });
+
+    await setDefaultSourceProfileTemplate(superadmin, second.id);
+
+    const existingRowAfter = (await database.execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [existingProfile.id] })).rows[0];
+    expect(existingRowAfter).toEqual(existingRowBefore);
+    expect((await getActiveSourceProfileForLearningSpace(existingSpace.id))?.name).toBe("Standaard portfolio");
+    expect((await listSourceProfileTemplates(superadmin)).filter((template) => template.isDefault)).toEqual([
+      expect.objectContaining({ id: second.id }),
+    ]);
+
+    const futureSpace = await createLearningSpace(spaceInput("after-default-switch"));
+    const futureProfile = (await getActiveSourceProfileForLearningSpace(futureSpace.id))!;
+    expect(futureProfile).toMatchObject({ name: "Nieuw standaard", type: "custom", managementLearningSpaceId: futureSpace.id, config: second.config });
+    expect(futureProfile.id).not.toBe(second.id);
+    expect(Number((await database.execute("SELECT COUNT(*) AS count FROM sync_runs WHERE learning_space_id IN ('space-before-default-switch', 'space-after-default-switch')")).rows[0].count)).toBe(0);
+  });
+
+  it("rejects malformed and unknown template configs for clone, duplicate and default selection", async () => {
+    const database = await getDatabase();
+    await insertTemplate("malformed-template", "Malformed");
+    await database.execute("UPDATE source_profile_templates SET config_json = '{}' WHERE id = 'malformed-template'");
+    await expect(createSourceProfileTemplate(superadmin, { name: "Van malformed", sourceTemplateId: "malformed-template" })).rejects.toThrow();
+    await expect(duplicateSourceProfileTemplate(superadmin, "malformed-template")).rejects.toThrow();
+    await expect(setDefaultSourceProfileTemplate(superadmin, "malformed-template")).rejects.toThrow();
+
+    await insertTemplate("unknown-template", "Unknown");
+    await database.execute("UPDATE source_profile_templates SET config_version = 2, config_json = '{\"configVersion\":2}' WHERE id = 'unknown-template'");
+    await expect(createSourceProfileTemplate(superadmin, { name: "Van unknown", sourceTemplateId: "unknown-template" })).rejects.toThrow();
+    await expect(duplicateSourceProfileTemplate(superadmin, "unknown-template")).rejects.toThrow();
+    await expect(setDefaultSourceProfileTemplate(superadmin, "unknown-template")).rejects.toThrow();
+    expect((await getDefaultSourceProfileTemplate()).id).toBe(INITIAL_SOURCE_PROFILE_TEMPLATE_ID);
   });
 
   it("fails creation safely when the default is missing, malformed or has an unknown version", async () => {

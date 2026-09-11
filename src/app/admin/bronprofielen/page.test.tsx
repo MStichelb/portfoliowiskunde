@@ -5,7 +5,7 @@ import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "@/lib/source-profile-con
 import type { AppUser } from "@/lib/identity";
 import type { ManagedSourceProfile } from "@/lib/source-profiles";
 
-const mocks = vi.hoisted(() => ({ requireAdminUser: vi.fn(), getManagedSourceProfiles: vi.fn() }));
+const mocks = vi.hoisted(() => ({ requireAdminUser: vi.fn(), getManagedSourceProfiles: vi.fn(), listSourceProfileTemplates: vi.fn() }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/source-profiles", () => ({
@@ -13,7 +13,11 @@ vi.mock("@/lib/source-profiles", () => ({
   sourceProfileUsageLabel: (usages: Array<{ learningSpaceShortLabel: string }>, inactiveLabel = "Inactief") =>
     usages.length === 0 ? inactiveLabel : `${usages.slice(0, 3).map((usage) => usage.learningSpaceShortLabel).join(", ")}${usages.length > 3 ? ` +${usages.length - 3}` : ""}`,
 }));
-vi.mock("./actions", () => ({ renameManagedSourceProfileAction: vi.fn() }));
+vi.mock("@/lib/source-profile-templates", () => ({ listSourceProfileTemplates: mocks.listSourceProfileTemplates }));
+vi.mock("./actions", () => ({
+  renameManagedSourceProfileAction: vi.fn(), createSourceProfileTemplateAction: vi.fn(), updateSourceProfileTemplateAction: vi.fn(),
+  duplicateSourceProfileTemplateAction: vi.fn(), setDefaultSourceProfileTemplateAction: vi.fn(),
+}));
 
 import SourceProfilesPage from "./page";
 
@@ -21,6 +25,7 @@ describe("central source profile page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getManagedSourceProfiles.mockResolvedValue([profile()]);
+    mocks.listSourceProfileTemplates.mockResolvedValue([template()]);
   });
 
   it.each(["teacher", "superadmin"] as const)("is accessible to a %s and shows current usage", async (role) => {
@@ -34,6 +39,15 @@ describe("central source profile page", () => {
     expect(markup).toContain("4 actieve leeromgevingen");
     expect(markup).toContain("Beheren");
     expect(mocks.getManagedSourceProfiles).toHaveBeenCalledWith(expect.objectContaining({ role }));
+    if (role === "superadmin") {
+      expect(markup).toContain("Appbrede sjablonen");
+      expect(markup).toContain("Standaard portfolio");
+      expect(markup).toContain("Standaard");
+      expect(mocks.listSourceProfileTemplates).toHaveBeenCalledOnce();
+    } else {
+      expect(markup).not.toContain("Appbrede sjablonen");
+      expect(mocks.listSourceProfileTemplates).not.toHaveBeenCalled();
+    }
   });
 
   it("shows inactive profiles and reopens only a server-authorized management target", async () => {
@@ -73,4 +87,8 @@ function profile(overrides: Partial<ManagedSourceProfile> = {}): ManagedSourcePr
 
 function user(role: "teacher" | "superadmin"): AppUser {
   return { id: role, displayName: role, firstName: role, lastName: null, email: null, role, status: "active", classGroupOverrideId: null };
+}
+
+function template() {
+  return { id: "template-1", name: "Standaard portfolio", description: "Appbreed sjabloon", configVersion: 1, isDefault: true };
 }
