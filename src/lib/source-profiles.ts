@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { AuthorizationError, canConfigureLearningSpace, canManageLearningSpace, getManageableLearningSpaceIds, requireLearningSpaceConfiguration, requireLearningSpaceManagement } from "@/lib/authorization";
+import { AuthorizationError, canConfigureLearningSpace, getManageableLearningSpaceIds, requireLearningSpaceConfiguration, requireLearningSpaceManagement } from "@/lib/authorization";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { getDatabase } from "@/lib/database";
 import type { AppUser } from "@/lib/identity";
@@ -88,9 +88,7 @@ export async function getActiveSourceProfileForLearningSpace(learningSpaceId: st
 
 export async function getSourceProfileAdminModel(user: AppUser, learningSpaceId: string): Promise<SourceProfileAdminModel> {
   await requireLearningSpaceManagement(user, learningSpaceId);
-  const manageableSpaceIds = await getManageableLearningSpaceIds(user);
-  if (!manageableSpaceIds.includes(learningSpaceId)) manageableSpaceIds.push(learningSpaceId);
-  const configurableIds = new Set(await configurableLearningSpaceIds(user, manageableSpaceIds));
+  const { managementLearningSpaceIds, configurableIds } = await getSourceProfileVisibilityScope(user);
   const database = await getDatabase();
   const [activeResult, managedProfiles, copyTargets] = await Promise.all([
     database.execute({
@@ -99,8 +97,8 @@ export async function getSourceProfileAdminModel(user: AppUser, learningSpaceId:
         WHERE learning_space_source_profiles.learning_space_id = ?`,
       args: [learningSpaceId],
     }),
-    getManagedSourceProfilesForManagementIds(manageableSpaceIds),
-    getSourceProfileCopyTargetsForIds(manageableSpaceIds, configurableIds),
+    getManagedSourceProfilesForManagementIds(managementLearningSpaceIds, configurableIds),
+    getSourceProfileCopyTargetsForIds(managementLearningSpaceIds, configurableIds),
   ]);
   const activeProfile = activeResult.rows[0] ? sourceProfileFromRow(activeResult.rows[0]) : null;
   if (!activeProfile) throw new Error("Deze leeromgeving heeft geen actief bronprofiel.");
@@ -112,13 +110,13 @@ export async function getSourceProfileAdminModel(user: AppUser, learningSpaceId:
 }
 
 export async function getSourceProfileCopyTargets(user: AppUser): Promise<SourceProfileCopyTarget[]> {
-  const manageableIds = await getManageableLearningSpaceIds(user);
-  return getSourceProfileCopyTargetsForIds(manageableIds, new Set(await configurableLearningSpaceIds(user, manageableIds)));
+  const { managementLearningSpaceIds, configurableIds } = await getSourceProfileVisibilityScope(user);
+  return getSourceProfileCopyTargetsForIds(managementLearningSpaceIds, configurableIds);
 }
 
 export async function getManagedSourceProfiles(user: AppUser): Promise<ManagedSourceProfile[]> {
-  const manageableIds = await getManageableLearningSpaceIds(user);
-  return getManagedSourceProfilesForManagementIds(manageableIds, new Set(await configurableLearningSpaceIds(user, manageableIds)), true);
+  const { managementLearningSpaceIds, configurableIds } = await getSourceProfileVisibilityScope(user);
+  return getManagedSourceProfilesForManagementIds(managementLearningSpaceIds, configurableIds, true);
 }
 
 async function getManagedSourceProfilesForManagementIds(manageableSpaceIds: string[], configurableIds?: Set<string>, includeOwners = false): Promise<ManagedSourceProfile[]> {
@@ -240,6 +238,7 @@ export async function copyActiveSourceProfileToLearningSpace(
   await requireLearningSpaceManagement(user, targetLearningSpaceId);
   const source = await getActiveSourceProfileForLearningSpace(sourceLearningSpaceId);
   if (!source || source.type === "built_in") throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+  await requireVisibleSourceProfile(user, source.id);
   const activated = await canConfigureLearningSpace(user, targetLearningSpaceId);
   return { profile: await createIndependentCopy(source, targetLearningSpaceId, copyName(source.name), activated), activated };
 }
@@ -344,30 +343,23 @@ function sourceProfileFromRow(row: DatabaseRow): SourceProfile {
 }
 
 async function requireAllowedSourceProfile(user: AppUser, sourceProfileId: string): Promise<SourceProfile> {
+  return requireVisibleSourceProfile(user, sourceProfileId);
+}
+
+async function requireVisibleSourceProfile(user: AppUser, sourceProfileId: string): Promise<SourceProfile> {
   const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [sourceProfileId] });
   if (!result.rows[0]) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
   const profile = sourceProfileFromRow(result.rows[0]);
   if (profile.type === "built_in") throw new AuthorizationError("Bronprofiel niet beschikbaar.");
-  if (!profile.managementLearningSpaceId || !await canManageLearningSpace(user, profile.managementLearningSpaceId)) {
+  const managementLearningSpaceIds = await getVisibleManagementLearningSpaceIds(user);
+  if (!profile.managementLearningSpaceId || !managementLearningSpaceIds.includes(profile.managementLearningSpaceId)) {
     throw new AuthorizationError("Bronprofiel niet beschikbaar.");
   }
   return profile;
 }
 
 async function requireCopyableSourceProfile(user: AppUser, sourceProfileId: string): Promise<SourceProfile> {
-  const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [sourceProfileId] });
-  if (!result.rows[0]) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
-  const profile = sourceProfileFromRow(result.rows[0]);
-  const manageableIds = await getManageableLearningSpaceIds(user);
-  if (profile.type === "built_in" || manageableIds.length === 0) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
-  if (profile.managementLearningSpaceId && manageableIds.includes(profile.managementLearningSpaceId)) return profile;
-  const placeholders = manageableIds.map(() => "?").join(", ");
-  const assignment = await (await getDatabase()).execute({
-    sql: `SELECT 1 FROM learning_space_source_profiles WHERE source_profile_id = ? AND learning_space_id IN (${placeholders}) LIMIT 1`,
-    args: [profile.id, ...manageableIds],
-  });
-  if (!assignment.rows[0]) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
-  return profile;
+  return requireVisibleSourceProfile(user, sourceProfileId);
 }
 
 function trySourceProfileFromRow(row: DatabaseRow): SourceProfile | null {
@@ -420,6 +412,18 @@ async function configurableLearningSpaceIds(user: AppUser, manageableIds: string
     args: [user.id],
   });
   return rows.rows.map((row) => String(row.learning_space_id));
+}
+
+async function getSourceProfileVisibilityScope(user: AppUser): Promise<{ managementLearningSpaceIds: string[]; configurableIds: Set<string> }> {
+  const managementLearningSpaceIds = await getVisibleManagementLearningSpaceIds(user);
+  return {
+    managementLearningSpaceIds,
+    configurableIds: new Set(await configurableLearningSpaceIds(user, managementLearningSpaceIds)),
+  };
+}
+
+async function getVisibleManagementLearningSpaceIds(user: AppUser): Promise<string[]> {
+  return getManageableLearningSpaceIds(user);
 }
 
 async function getSourceProfileCopyTargetsForIds(manageableSpaceIds: string[], configurableIds: Set<string>): Promise<SourceProfileCopyTarget[]> {

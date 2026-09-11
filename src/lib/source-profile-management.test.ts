@@ -74,6 +74,27 @@ describe("source profile management", () => {
       learningSpaceId: "space-6",
       profile: expect.objectContaining({ id: spaceSixProfile.id }),
     }));
+
+    const editorProfiles = await getManagedSourceProfiles(actors.editor);
+    expect(editorProfiles.map((profile) => profile.id)).toEqual(ownerModel.availableProfiles.map((profile) => profile.id));
+    expect(editorProfiles.every((profile) => profile.canRename === false)).toBe(true);
+    expect((await getManagedSourceProfiles(actors.viewer))).toEqual([]);
+    expect((await getManagedSourceProfiles(actors.superadmin)).map((profile) => profile.id)).toEqual(
+      expect.arrayContaining([ownerModel.activeProfile.id, spaceSixProfile.id]),
+    );
+  });
+
+  it("uses management membership, never current usage, for list visibility and profile-id mutations", async () => {
+    const foreign = (await getActiveSourceProfileForLearningSpace("space-6"))!;
+    await linkSourceProfileToLearningSpace(actors.managerBoth, foreign.id, "space-5");
+
+    const centralProfiles = await getManagedSourceProfiles(actors.owner);
+    const selectorProfiles = (await getSourceProfileAdminModel(actors.owner, "space-5")).availableProfiles;
+    expect(centralProfiles.map((profile) => profile.id)).toEqual(selectorProfiles.map((profile) => profile.id));
+    expect(centralProfiles.map((profile) => profile.id)).not.toContain(foreign.id);
+    await expect(copySourceProfileToLearningSpace(actors.owner, foreign.id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(renameManagedSourceProfile(actors.owner, foreign.id, "Verboden")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(linkSourceProfileToLearningSpace(actors.owner, foreign.id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
   });
 
   it("builds current 0..n usage in bulk instead of presenting management context as usage", async () => {

@@ -25,7 +25,7 @@ describe("SourceProfileCard", () => {
 
     expect(markup).toContain("Bronprofiel");
     expect(markup).toContain("Standaard portfolio");
-    expect(markup).toContain("Ingebouwd profiel");
+    expect(markup).not.toContain("Ingebouwd profiel");
     expect(markup).toContain("Ander profiel kiezen");
     expect(markup).toContain("Eigen profiel maken");
     expect(markup).toContain("Profiel kopiëren");
@@ -41,7 +41,7 @@ describe("SourceProfileCard", () => {
   it("keeps custom actions compact without inline forms", () => {
     const markup = renderCard("custom");
 
-    expect(markup).toContain("Concreet profiel");
+    expect(markup).not.toContain("Concreet profiel");
     expect(markup).toContain("Naam wijzigen");
     expect(markup).toContain("Profiel kopiëren");
     expect(markup).not.toContain("Eigen profiel maken");
@@ -93,6 +93,7 @@ describe("SourceProfileCard", () => {
     const markup = renderCard("custom", null, undefined, false);
 
     expect(markup).toContain("Bronprofielen bekijken");
+    expect(markup).toContain("lucide-sliders-horizontal");
     expect(markup).toContain("Profiel kopiëren");
     expect(markup).toContain("Als editor kun je profielen bekijken en kopiëren, maar niet wijzigen.");
     expect(markup).not.toContain("Ander profiel kiezen");
@@ -108,6 +109,8 @@ describe("SourceProfileCard", () => {
     expect(markup).toContain('href="/admin/bronprofielen"');
     expect(markup).toContain("Bronprofielen beheren");
     expect(markup).toContain("secondary-button link-button source-profile-management-link");
+    expect(markup).toContain("lucide-sliders-horizontal");
+    expect(markup.indexOf("source-profile-management-link")).toBeLessThan(markup.indexOf("source-profile-summary"));
     expect(markup).not.toContain("Appbreed standaardsjabloon voor de huidige portfolio");
     expect(markup).not.toContain("Configuratieversie");
   });
@@ -139,6 +142,7 @@ describe("SourceProfileCard", () => {
     expect(markup).toContain("De kopie wordt het actieve bronprofiel van de gekozen leeromgeving.");
     expect(markup).toContain("Annuleren");
     expect(markup).toContain(">Kopiëren</button>");
+    expect(markup).toContain("lucide-copy");
     expect(markup).not.toContain("Kopiëren en activeren");
     expect(markup).not.toContain("Ander bronprofiel kiezen");
     expect(markup).not.toContain("Profielnaam wijzigen");

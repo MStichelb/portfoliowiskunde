@@ -1,8 +1,8 @@
 "use client";
 
-import { Copy, Link2, Pencil, Plus, RefreshCw, Settings2, X } from "lucide-react";
+import { Copy, Link2, Pencil, Plus, RefreshCw, SlidersHorizontal, X } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import type { SourceProfileAdminModel } from "@/lib/source-profiles";
 import type { SourceProfileTemplateSummary } from "@/lib/source-profile-templates";
@@ -47,7 +47,6 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
-  const activeType = activeProfile.type === "built_in" ? "Ingebouwd profiel" : "Concreet profiel";
   const open = (next: SourceProfileModal, trigger: HTMLButtonElement) => {
     triggerRef.current = trigger;
     setModal(next);
@@ -71,7 +70,7 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
         <h2 id="source-profile-heading">Bronprofiel</h2>
         <p>Het bronprofiel bepaalt hoe bestanden en mappen in de bron worden geïnterpreteerd.</p>
       </div>
-      <span className={activeProfile.type === "built_in" ? "source-role-badge" : "active-source-badge"}>{activeType}</span>
+      <Link className="secondary-button link-button source-profile-management-link" href="/admin/bronprofielen"><SlidersHorizontal size={16} aria-hidden />Bronprofielen {canConfigure ? "beheren" : "bekijken"}</Link>
     </div>
     <div className="source-profile-summary">
       <span>Actief profiel</span>
@@ -79,7 +78,6 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
       {isShared ? <span className="source-profile-shared-status"><Link2 size={15} aria-hidden />Gekoppeld aan {activeDetails!.usageCount} leeromgevingen</span> : null}
       {activeProfile.description ? <p>{displayProfileDescription(activeProfile.description)}</p> : null}
     </div>
-    <Link className="secondary-button link-button source-profile-management-link" href="/admin/bronprofielen"><Settings2 size={16} aria-hidden />Bronprofielen {canConfigure ? "beheren" : "bekijken"}</Link>
     <div className="source-profile-actions">
       {canConfigure ? <button className="secondary-button" type="button" onClick={(event) => open("switch", event.currentTarget)}><RefreshCw size={16} aria-hidden />Ander profiel kiezen</button> : null}
       {canConfigure && activeProfile.type === "built_in" ? <form action={actions.createOwnProfile}>
@@ -142,7 +140,7 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
           </select></label>
           <p>Er wordt een onafhankelijke kopie gemaakt. Latere wijzigingen aan het oorspronkelijke profiel hebben geen invloed op deze kopie.</p>
           <p>{selectedCopyTarget?.canConfigure ? "De kopie wordt het actieve bronprofiel van de gekozen leeromgeving." : "De kopie wordt niet actief. Een eigenaar moet het profiel nog activeren."}</p>
-          <ModalFooter cancel={close} submitLabel="Kopiëren" error={error} submitClassName="source-profile-copy-button" />
+          <ModalFooter cancel={close} submitLabel="Kopiëren" submitIcon={<Copy size={16} aria-hidden />} error={error} submitClassName="source-profile-copy-button" />
         </form> : null}
       </div>
     </div> : null}
@@ -155,12 +153,12 @@ export function displayProfileDescription(description: string): string {
     : description;
 }
 
-function ModalFooter({ cancel, submitLabel, error, submitClassName }: { cancel: () => void; submitLabel: string; error?: string; submitClassName?: string }) {
+function ModalFooter({ cancel, submitLabel, submitIcon, error, submitClassName }: { cancel: () => void; submitLabel: string; submitIcon?: ReactNode; error?: string; submitClassName?: string }) {
   return <>
     {error ? <p className="form-message" role="alert">{error}</p> : null}
     <div className="source-profile-dialog-actions">
       <button className="secondary-button" type="button" onClick={cancel}>Annuleren</button>
-      <button className={`primary-button${submitClassName ? ` ${submitClassName}` : ""}`} type="submit">{submitLabel}</button>
+      <button className={`primary-button${submitClassName ? ` ${submitClassName}` : ""}`} type="submit">{submitIcon}{submitLabel}</button>
     </div>
   </>;
 }

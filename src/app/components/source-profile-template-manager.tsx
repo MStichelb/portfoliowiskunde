@@ -1,7 +1,7 @@
 "use client";
 
 import { Copy, Plus, Settings2, X } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import type { SourceProfileTemplateSummary } from "@/lib/source-profile-templates";
 import type { SourceProfileCopyTarget } from "@/lib/source-profiles";
@@ -117,15 +117,15 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
           <label>Doelleeromgeving<select name="managementLearningSpaceId" required defaultValue=""><option value="" disabled>Kies een leeromgeving</option>{copyTargets.map((target) => <option key={target.learningSpaceId} value={target.learningSpaceId}>{target.learningSpaceShortLabel} — {target.profile.name}</option>)}</select></label>
           <p>Er wordt een onafhankelijk concreet bronprofiel gemaakt. Het sjabloon zelf wordt nooit rechtstreeks gekoppeld.</p>
           <TemplateError error={error} />
-          <DialogActions cancel={close} submitLabel="Kopiëren" />
+          <DialogActions cancel={close} submitLabel="Kopiëren" submitIcon={<Copy size={16} aria-hidden />} />
         </form> : null}
       </div>
     </div> : null}
   </section>;
 }
 
-function DialogActions({ cancel, submitLabel }: { cancel: () => void; submitLabel: string }) {
-  return <div className="source-profile-dialog-actions"><button className="secondary-button" type="button" onClick={cancel}>Annuleren</button><button className="primary-button" type="submit">{submitLabel}</button></div>;
+function DialogActions({ cancel, submitLabel, submitIcon }: { cancel: () => void; submitLabel: string; submitIcon?: ReactNode }) {
+  return <div className="source-profile-dialog-actions"><button className="secondary-button" type="button" onClick={cancel}>Annuleren</button><button className="primary-button" type="submit">{submitIcon}{submitLabel}</button></div>;
 }
 
 function TemplateError({ error }: { error?: string }) {

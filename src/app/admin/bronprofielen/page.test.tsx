@@ -49,6 +49,7 @@ describe("central source profile page", () => {
     expect(markup).not.toContain("Configuratieversie");
     if (role === "teacher") expect(markup).toContain("Eigenaar: Mathias");
     expect(markup).toContain(role === "superadmin" ? "Koppelen" : "Kopiëren");
+    expect(markup).toContain("source-profile-card-actions");
     expect(mocks.listSourceProfileTemplates).toHaveBeenCalledOnce();
   });
 
@@ -97,12 +98,14 @@ describe("central source profile page", () => {
 
     const copy = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ copyProfile: "profile-1" }) }));
     expect(copy).toContain("Bronprofiel kopiëren");
+    expect(copy).toContain("lucide-copy");
     expect(copy).toContain("Doelleeromgeving");
     expect(copy).toContain("5WIS — Standaard portfolio");
     expect(copy).not.toContain("Voor alle aanpassen");
 
     const link = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ linkProfile: "profile-1" }) }));
     expect(link).toContain("Bronprofiel koppelen");
+    expect(link).toContain("lucide-link-2");
     expect(link).toContain("Koppelen aan leeromgeving");
     expect(link).toContain("Latere wijzigingen aan dit profiel gelden voor alle gekoppelde leeromgevingen");
     expect(link).not.toContain("Doelleeromgeving");
