@@ -67,7 +67,8 @@ describe("source profile settings actions", () => {
 
   it("allows the authenticated editor to switch without accepting a client user id", async () => {
     const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
-    const custom = await cloneSourceProfileTemplateToLearningSpace(await getDefaultSourceProfileTemplate(), "space-5");
+    const template = await getDefaultSourceProfileTemplate();
+    const custom = await cloneSourceProfileTemplateToLearningSpace({ ...template, name: "Tweede profiel" }, "space-5");
     mocks.requireAdminUser.mockResolvedValue(editor);
 
     await expect(switchSourceProfileAction(form({

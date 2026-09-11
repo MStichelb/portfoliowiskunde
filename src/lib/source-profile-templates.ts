@@ -13,6 +13,7 @@ import {
   parseStoredSourceProfileConfig,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
+import { uniqueSourceProfileName } from "@/lib/source-profile-name";
 import type { SourceProfile } from "@/lib/source-profiles";
 
 export interface SourceProfileTemplate {
@@ -62,6 +63,7 @@ export async function cloneSourceProfileTemplateToLearningSpace(
   template: SourceProfileTemplate,
   learningSpaceId: string,
 ): Promise<SourceProfile> {
+  await uniqueSourceProfileName(learningSpaceId, template.name);
   const prepared = prepareSourceProfileTemplateClone(template, learningSpaceId);
   await (await getDatabase()).batch(prepared.statements);
   return prepared.profile;

@@ -110,7 +110,8 @@ describe("global source profile templates", () => {
 
   it("clones a server-resolved template as a fresh active concrete profile", async () => {
     const before = (await getActiveSourceProfileForLearningSpace("space-5"))!;
-    const clone = await cloneSourceProfileTemplateToLearningSpace(await getDefaultSourceProfileTemplate(), "space-5");
+    const template = await getDefaultSourceProfileTemplate();
+    const clone = await cloneSourceProfileTemplateToLearningSpace({ ...template, name: "Tweede profiel" }, "space-5");
 
     expect(clone).toMatchObject({ type: "custom", managementLearningSpaceId: "space-5", config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG });
     expect(clone.id).not.toBe(before.id);

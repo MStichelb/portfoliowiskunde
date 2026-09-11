@@ -1,7 +1,6 @@
 import "server-only";
 
 import { randomUUID } from "node:crypto";
-import { z } from "zod";
 
 import { AuthorizationError, canManageLearningSpace, getManageableLearningSpaceIds, requireLearningSpaceManagement } from "@/lib/authorization";
 import type { DatabaseRow, InStatement } from "@/lib/database";
@@ -16,6 +15,9 @@ import {
   parseStoredSourceProfileConfig,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
+import { uniqueSourceProfileName } from "@/lib/source-profile-name";
+export { sourceProfileUsageLabel } from "@/lib/source-profile-usage";
+export { sourceProfileNameSchema } from "@/lib/source-profile-name";
 
 export type SourceProfileType = "built_in" | "custom";
 
@@ -33,7 +35,18 @@ export interface SourceProfile {
 export interface AvailableSourceProfile extends SourceProfile {
   managementLearningSpaceName: string | null;
   managementLearningSpaceShortLabel: string | null;
+  usages: SourceProfileUsage[];
+  usageCount: number;
+  isInactive: boolean;
 }
+
+export interface SourceProfileUsage {
+  learningSpaceId: string;
+  learningSpaceName: string;
+  learningSpaceShortLabel: string;
+}
+
+export type ManagedSourceProfile = AvailableSourceProfile;
 
 export interface SourceProfileCopySource {
   learningSpaceId: string;
@@ -47,8 +60,6 @@ export interface SourceProfileAdminModel {
   availableProfiles: AvailableSourceProfile[];
   copySources: SourceProfileCopySource[];
 }
-
-export const sourceProfileNameSchema = z.string().trim().min(1, "Geef het bronprofiel een naam.").max(80, "Een profielnaam mag maximaal 80 tekens bevatten.");
 
 export async function ensureBuiltInDefaultSourceProfile(): Promise<void> {
   const database = await getDatabase();
@@ -71,23 +82,14 @@ export async function getSourceProfileAdminModel(user: AppUser, learningSpaceId:
   if (!manageableSpaceIds.includes(learningSpaceId)) manageableSpaceIds.push(learningSpaceId);
   const database = await getDatabase();
   const placeholders = manageableSpaceIds.map(() => "?").join(", ");
-  const [activeResult, availableResult, copyResult] = await Promise.all([
+  const [activeResult, managedProfiles, copyResult] = await Promise.all([
     database.execute({
       sql: `SELECT source_profiles.* FROM learning_space_source_profiles
         JOIN source_profiles ON source_profiles.id = learning_space_source_profiles.source_profile_id
         WHERE learning_space_source_profiles.learning_space_id = ?`,
       args: [learningSpaceId],
     }),
-    database.execute({
-      sql: `SELECT source_profiles.*, learning_spaces.name AS management_learning_space_name,
-          learning_spaces.short_label AS management_learning_space_short_label
-        FROM source_profiles
-        LEFT JOIN learning_spaces ON learning_spaces.id = source_profiles.management_learning_space_id
-        WHERE source_profiles.type = 'custom'
-          AND source_profiles.management_learning_space_id IN (${placeholders})
-        ORDER BY source_profiles.type, source_profiles.name, learning_spaces.name`,
-      args: manageableSpaceIds,
-    }),
+    getManagedSourceProfilesForManagementIds(manageableSpaceIds),
     database.execute({
       sql: `SELECT source_profiles.*, learning_spaces.id AS source_learning_space_id,
           learning_spaces.name AS source_learning_space_name,
@@ -104,14 +106,7 @@ export async function getSourceProfileAdminModel(user: AppUser, learningSpaceId:
   if (!activeProfile) throw new Error("Deze leeromgeving heeft geen actief bronprofiel.");
   return {
     activeProfile,
-    availableProfiles: availableResult.rows.flatMap((row) => {
-      const profile = trySourceProfileFromRow(row);
-      return profile ? [{
-        ...profile,
-        managementLearningSpaceName: row.management_learning_space_name == null ? null : String(row.management_learning_space_name),
-        managementLearningSpaceShortLabel: row.management_learning_space_short_label == null ? null : String(row.management_learning_space_short_label),
-      }] : [];
-    }),
+    availableProfiles: managedProfiles,
     copySources: copyResult.rows.flatMap((row) => {
       const profile = trySourceProfileFromRow(row);
       return profile ? [{
@@ -122,6 +117,63 @@ export async function getSourceProfileAdminModel(user: AppUser, learningSpaceId:
       }] : [];
     }),
   };
+}
+
+export async function getManagedSourceProfiles(user: AppUser): Promise<ManagedSourceProfile[]> {
+  return getManagedSourceProfilesForManagementIds(await getManageableLearningSpaceIds(user));
+}
+
+async function getManagedSourceProfilesForManagementIds(manageableSpaceIds: string[]): Promise<ManagedSourceProfile[]> {
+  if (manageableSpaceIds.length === 0) return [];
+  const placeholders = manageableSpaceIds.map(() => "?").join(", ");
+  const result = await (await getDatabase()).execute({
+    sql: `SELECT source_profiles.*,
+        management_space.name AS management_learning_space_name,
+        management_space.short_label AS management_learning_space_short_label,
+        usage_space.id AS usage_learning_space_id,
+        usage_space.name AS usage_learning_space_name,
+        usage_space.short_label AS usage_learning_space_short_label,
+        usage_space.sort_order AS usage_learning_space_sort_order
+      FROM source_profiles
+      JOIN learning_spaces AS management_space ON management_space.id = source_profiles.management_learning_space_id
+      LEFT JOIN learning_space_source_profiles ON learning_space_source_profiles.source_profile_id = source_profiles.id
+      LEFT JOIN learning_spaces AS usage_space ON usage_space.id = learning_space_source_profiles.learning_space_id
+      WHERE source_profiles.type = 'custom'
+        AND source_profiles.management_learning_space_id IN (${placeholders})
+      ORDER BY LOWER(source_profiles.name), source_profiles.id, usage_space.sort_order, usage_space.name, usage_space.id`,
+    args: manageableSpaceIds,
+  });
+  const profiles = new Map<string, ManagedSourceProfile>();
+  for (const row of result.rows) {
+    const id = String(row.id);
+    let profile = profiles.get(id);
+    if (!profile) {
+      const parsed = trySourceProfileFromRow(row);
+      if (!parsed) continue;
+      profile = {
+        ...parsed,
+        managementLearningSpaceName: String(row.management_learning_space_name),
+        managementLearningSpaceShortLabel: String(row.management_learning_space_short_label),
+        usages: [],
+        usageCount: 0,
+        isInactive: true,
+      };
+      profiles.set(id, profile);
+    }
+    if (row.usage_learning_space_id != null) {
+      profile.usages.push({
+        learningSpaceId: String(row.usage_learning_space_id),
+        learningSpaceName: String(row.usage_learning_space_name),
+        learningSpaceShortLabel: String(row.usage_learning_space_short_label),
+      });
+      profile.usageCount = profile.usages.length;
+      profile.isInactive = false;
+    }
+  }
+  return [...profiles.values()].sort((first, second) =>
+    Number(first.isInactive) - Number(second.isInactive)
+      || first.name.localeCompare(second.name, "nl", { sensitivity: "base" })
+      || first.id.localeCompare(second.id));
 }
 
 export async function switchActiveSourceProfile(user: AppUser, learningSpaceId: string, sourceProfileId: string): Promise<void> {
@@ -172,10 +224,20 @@ export async function renameSourceProfile(
     args: [learningSpaceId, sourceProfileId],
   });
   if (!assignment.rows[0]) throw new AuthorizationError("Dit bronprofiel is niet actief voor deze leeromgeving.");
-  const validName = validSourceProfileName(name);
+  await renameAllowedSourceProfile(profile, name);
+}
+
+export async function renameManagedSourceProfile(user: AppUser, sourceProfileId: string, name: string): Promise<void> {
+  const profile = await requireAllowedSourceProfile(user, sourceProfileId);
+  await renameAllowedSourceProfile(profile, name);
+}
+
+async function renameAllowedSourceProfile(profile: SourceProfile, name: string): Promise<void> {
+  if (profile.type !== "custom" || !profile.managementLearningSpaceId) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+  const validName = await uniqueSourceProfileName(profile.managementLearningSpaceId, name, profile.id);
   await (await getDatabase()).execute({
     sql: "UPDATE source_profiles SET name = ?, updated_at = ? WHERE id = ? AND type = 'custom'",
-    args: [validName, new Date().toISOString(), sourceProfileId],
+    args: [validName, new Date().toISOString(), profile.id],
   });
 }
 
@@ -242,7 +304,7 @@ async function createIndependentCopy(source: SourceProfile, learningSpaceId: str
   const validatedConfig = parseStoredSourceProfileConfig(config.configVersion, configJson);
   const id = `source-profile-${randomUUID()}`;
   const now = new Date().toISOString();
-  const name = validSourceProfileName(requestedName);
+  const name = await uniqueSourceProfileName(learningSpaceId, requestedName);
   await (await getDatabase()).batch([
     {
       sql: `INSERT INTO source_profiles
@@ -272,10 +334,4 @@ async function createIndependentCopy(source: SourceProfile, learningSpaceId: str
 function copyName(sourceName: string): string {
   const prefix = "Kopie van ";
   return `${prefix}${sourceName}`.slice(0, 80).trim();
-}
-
-function validSourceProfileName(value: string): string {
-  const result = sourceProfileNameSchema.safeParse(value);
-  if (!result.success) throw new Error(result.error.issues[0]?.message ?? "Ongeldige profielnaam.");
-  return result.data;
 }

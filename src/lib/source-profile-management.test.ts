@@ -14,8 +14,11 @@ import {
   copyActiveSourceProfile,
   createOwnSourceProfile,
   getActiveSourceProfileForLearningSpace,
+  getManagedSourceProfiles,
   getSourceProfileAdminModel,
+  renameManagedSourceProfile,
   renameSourceProfile,
+  sourceProfileUsageLabel,
   switchActiveSourceProfile,
 } from "./source-profiles";
 import { setIndividualLearningSpaceAccess, upsertManagedMembership } from "./user-management";
@@ -70,6 +73,43 @@ describe("source profile management", () => {
       learningSpaceId: "space-6",
       profile: expect.objectContaining({ id: spaceSixProfile.id }),
     }));
+  });
+
+  it("builds current 0..n usage in bulk instead of presenting management context as usage", async () => {
+    const database = await getDatabase();
+    const profileFive = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    const profileSix = (await getActiveSourceProfileForLearningSpace("space-6"))!;
+    const execute = vi.spyOn(database, "execute");
+
+    let profiles = await getManagedSourceProfiles(actors.managerBoth);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(profiles.find((profile) => profile.id === profileFive.id)).toMatchObject({
+      usageCount: 1, isInactive: false, usages: [{ learningSpaceId: "space-5", learningSpaceShortLabel: "5" }],
+    });
+
+    await database.execute({
+      sql: "UPDATE learning_space_source_profiles SET source_profile_id = ? WHERE learning_space_id = 'space-5'",
+      args: [profileSix.id],
+    });
+    profiles = await getManagedSourceProfiles(actors.managerBoth);
+    expect(profiles[0]).toMatchObject({ id: profileSix.id, usageCount: 2, isInactive: false });
+    expect(profiles.find((profile) => profile.id === profileFive.id)).toMatchObject({
+      managementLearningSpaceId: "space-5", usageCount: 0, isInactive: true, usages: [],
+    });
+    expect(profiles.map((profile) => profile.id)).toContain(profileFive.id);
+    expect((await getSourceProfileAdminModel(actors.managerBoth, "space-5")).availableProfiles).toContainEqual(
+      expect.objectContaining({ id: profileFive.id, usageCount: 0, isInactive: true }),
+    );
+  });
+
+  it("formats at most three current usage labels and a remaining count", () => {
+    const usages = ["4NW1", "5WET", "6WIS", "EXTRA"].map((learningSpaceShortLabel, index) => ({
+      learningSpaceId: `space-${index}`, learningSpaceName: `Ruimte ${index}`, learningSpaceShortLabel,
+    }));
+    expect(sourceProfileUsageLabel([])).toBe("Inactief");
+    expect(sourceProfileUsageLabel(usages.slice(0, 1))).toBe("4NW1");
+    expect(sourceProfileUsageLabel(usages.slice(0, 3))).toBe("4NW1, 5WET, 6WIS");
+    expect(sourceProfileUsageLabel(usages)).toBe("4NW1, 5WET, 6WIS +1");
   });
 
   it("creates an independent custom snapshot with a new id and activates it", async () => {
@@ -135,6 +175,18 @@ describe("source profile management", () => {
     await expect(renameSourceProfile(actors.owner, "space-5", custom.id, "Niet actief")).rejects.toBeInstanceOf(AuthorizationError);
   });
 
+  it("enforces normalized name uniqueness only inside the same management context", async () => {
+    const profileFive = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    const profileSix = (await getActiveSourceProfileForLearningSpace("space-6"))!;
+    const secondFive = await createAdditionalProfile("space-5", "Tweede profiel");
+
+    await renameManagedSourceProfile(actors.managerBoth, profileFive.id, "Eigen portfolio");
+    await renameManagedSourceProfile(actors.managerBoth, profileSix.id, " eigen PORTFOLIO ");
+    await expect(renameManagedSourceProfile(actors.managerBoth, secondFive.id, " EIGEN portfolio ")).rejects.toThrow("bestaat al");
+    await expect(renameManagedSourceProfile(actors.owner, profileSix.id, "Niet toegestaan")).rejects.toBeInstanceOf(AuthorizationError);
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.name).toBe("eigen PORTFOLIO");
+  });
+
   it("rejects malformed and unknown config versions without changing the active assignment", async () => {
     const database = await getDatabase();
     const originalId = (await getActiveSourceProfileForLearningSpace("space-5"))!.id;
@@ -170,8 +222,9 @@ describe("source profile management", () => {
   });
 });
 
-async function createAdditionalProfile(learningSpaceId: string) {
-  return cloneSourceProfileTemplateToLearningSpace(await getDefaultSourceProfileTemplate(), learningSpaceId);
+async function createAdditionalProfile(learningSpaceId: string, name = "Tweede profiel") {
+  const template = await getDefaultSourceProfileTemplate();
+  return cloneSourceProfileTemplateToLearningSpace({ ...template, name }, learningSpaceId);
 }
 
 async function insertRawCustom(id: string, configVersion: number, configJson: string): Promise<void> {

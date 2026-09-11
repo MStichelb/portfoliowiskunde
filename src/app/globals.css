@@ -116,6 +116,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-profile-actions > form { margin: 0; }
 .source-profile-actions button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 7px; }
 .source-profile-footnote { margin: 16px 0 0; color: #52616a; font-size: 13px; }
+.source-profile-management-link { display: inline-block; margin-top: 14px; font-weight: 700; }
 .source-profile-dialog { width: min(500px, 100%); padding: 20px; border: 1px solid var(--admin-border); border-radius: 6px; background: var(--admin-surface); box-shadow: 0 12px 36px rgba(0,0,0,.22); }
 .source-profile-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .source-profile-dialog-heading h2 { margin: 0; font-size: 21px; }
@@ -125,6 +126,19 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-profile-dialog-form > p:not(.form-message) { margin: 0; color: #52616a; line-height: 1.45; }
 .source-profile-dialog-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 2px; }
 .source-profile-dialog-actions button { min-height: 40px; }
+.source-profile-overview-heading { display: flex; align-items: start; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
+.source-profile-overview-heading h2 { margin-bottom: 5px; }
+.source-profile-overview-heading p { max-width: 720px; margin: 0; color: #52616a; }
+.source-profile-overview-list { display: grid; gap: 10px; }
+.source-profile-overview-card { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 16px 18px; border: 1px solid var(--admin-border); border-radius: 6px; background: var(--admin-surface); }
+.source-profile-overview-copy { min-width: 0; display: grid; gap: 3px; }
+.source-profile-overview-title { display: flex; align-items: center; gap: 8px; }
+.source-profile-overview-title h3 { margin: 0; }
+.source-profile-overview-copy small, .source-profile-central-usage small { color: #68757b; }
+.source-profile-overview-copy p { margin: 6px 0 0; color: #314149; }
+.source-profile-overview-copy .source-profile-inactive { color: #68757b; font-weight: 700; }
+.source-profile-manage-button { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; }
+.source-profile-central-usage { display: grid; gap: 3px; margin-top: 18px; padding: 12px 14px; border-radius: 4px; background: #f7f9f8; }
 .active-source-summary { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 18px; margin: 20px 0; padding: 16px; border: 1px solid #d5ddda; border-radius: 5px; background: #f7f9f8; }
 .active-source-summary > div { display: grid; gap: 4px; }
 .active-source-summary span { color: #52616a; font-size: 12px; text-transform: uppercase; font-weight: 700; }
@@ -911,4 +925,6 @@ h3 { font-size: 17px; margin-bottom: 12px; }
   .source-profile-actions > form > button, .source-profile-actions > button { width: 100%; }
   .source-profile-dialog { width: 100%; padding: 16px; }
   .source-profile-dialog-actions { flex-wrap: wrap; }
+  .source-profile-overview-heading, .source-profile-overview-card { align-items: stretch; flex-direction: column; }
+  .source-profile-manage-button { width: fit-content; }
 }

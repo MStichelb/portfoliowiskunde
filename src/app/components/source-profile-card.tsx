@@ -1,9 +1,11 @@
 "use client";
 
 import { Copy, Pencil, Plus, RefreshCw, X } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import type { SourceProfileAdminModel } from "@/lib/source-profiles";
+import { sourceProfileUsageLabel } from "@/lib/source-profile-usage";
 
 export type SourceProfileModal = "switch" | "rename" | "copy";
 
@@ -27,7 +29,7 @@ export function SourceProfileCard({ learningSpaceId, model, actions, feedback, e
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
-  const activeType = activeProfile.type === "built_in" ? "Ingebouwd profiel" : "Eigen profiel";
+  const activeType = activeProfile.type === "built_in" ? "Ingebouwd profiel" : "Concreet profiel";
   const open = (next: SourceProfileModal, trigger: HTMLButtonElement) => {
     triggerRef.current = trigger;
     setModal(next);
@@ -56,9 +58,10 @@ export function SourceProfileCard({ learningSpaceId, model, actions, feedback, e
     <div className="source-profile-summary">
       <span>Actief profiel</span>
       <strong>{activeProfile.name}</strong>
-      {activeProfile.description ? <p>{activeProfile.description}</p> : null}
+      {activeProfile.description ? <p>{displayProfileDescription(activeProfile.description)}</p> : null}
       <small>Configuratieversie {activeProfile.config.configVersion}</small>
     </div>
+    <Link className="source-profile-management-link" href="/admin/bronprofielen">Bronprofielen beheren</Link>
     <div className="source-profile-actions">
       <button className="secondary-button" type="button" onClick={(event) => open("switch", event.currentTarget)}><RefreshCw size={16} aria-hidden />Ander profiel kiezen</button>
       {activeProfile.type === "built_in" ? <form action={actions.createOwnProfile}>
@@ -80,7 +83,7 @@ export function SourceProfileCard({ learningSpaceId, model, actions, feedback, e
         {modal === "switch" ? <form action={actions.switchProfile} className="source-profile-dialog-form">
           <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
           <label>Beschikbaar bronprofiel<select name="sourceProfileId" defaultValue={activeProfile.id} required>
-            {availableProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name}{profile.managementLearningSpaceShortLabel ? ` — ${profile.managementLearningSpaceShortLabel}` : " — ingebouwd"}</option>)}
+            {availableProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} — {sourceProfileUsageLabel(profile.usages, "inactief")}</option>)}
           </select></label>
           <ModalFooter cancel={close} submitLabel="Activeren" error={error} />
         </form> : null}
@@ -102,6 +105,12 @@ export function SourceProfileCard({ learningSpaceId, model, actions, feedback, e
       </div>
     </div> : null}
   </section>;
+}
+
+export function displayProfileDescription(description: string): string {
+  return description === "Appbreed standaardsjabloon voor de huidige portfolio- en bestandsconventies."
+    ? "Gebaseerd op het appbrede standaardsjabloon."
+    : description;
 }
 
 function ModalFooter({ cancel, submitLabel, error }: { cancel: () => void; submitLabel: string; error?: string }) {

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "@/lib/source-profile-config";
 import type { SourceProfile, SourceProfileAdminModel } from "@/lib/source-profiles";
 
-import { SourceProfileCard, type SourceProfileCardActions, type SourceProfileModal } from "./source-profile-card";
+import { displayProfileDescription, SourceProfileCard, type SourceProfileCardActions, type SourceProfileModal } from "./source-profile-card";
 
 const actions: SourceProfileCardActions = {
   switchProfile: async () => undefined,
@@ -14,6 +14,10 @@ const actions: SourceProfileCardActions = {
 };
 
 describe("SourceProfileCard", () => {
+  it("does not present a concrete snapshot as the app-wide template", () => {
+    expect(displayProfileDescription("Appbreed standaardsjabloon voor de huidige portfolio- en bestandsconventies.")).toBe("Gebaseerd op het appbrede standaardsjabloon.");
+  });
+
   it("keeps the built-in card compact without inline selection, rename or copy forms", () => {
     const markup = renderCard("built_in");
 
@@ -34,7 +38,7 @@ describe("SourceProfileCard", () => {
   it("keeps custom actions compact without inline forms", () => {
     const markup = renderCard("custom");
 
-    expect(markup).toContain("Eigen profiel");
+    expect(markup).toContain("Concreet profiel");
     expect(markup).toContain("Naam wijzigen");
     expect(markup).toContain("Profiel kopiëren");
     expect(markup).not.toContain("Eigen profiel maken");
@@ -49,7 +53,8 @@ describe("SourceProfileCard", () => {
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain("Ander bronprofiel kiezen");
     expect(markup).not.toContain("Standaard portfolio — ingebouwd");
-    expect(markup).toContain("Mijn profiel — 6WIS");
+    expect(markup).toContain("Mijn profiel — 4NW1, 5WET, 6WIS +1");
+    expect(markup).toContain("Los profiel — inactief");
     expect(markup).toContain("Annuleren");
     expect(markup).toContain("Activeren");
     expect(markup).toContain('aria-label="Sluiten"');
@@ -57,6 +62,17 @@ describe("SourceProfileCard", () => {
     expect(markup).not.toContain("Bronprofiel kopiëren");
     expect(markup.match(/role="dialog"/g)).toHaveLength(1);
     expect(markup.match(/<form/g)).toHaveLength(1);
+  });
+
+  it("shows current usage labels and a semantically correct central management link", () => {
+    const markup = renderCard("custom", "switch");
+
+    expect(markup).toContain("Eigen profiel — 5WIS");
+    expect(markup).toContain("Mijn profiel — 4NW1, 5WET, 6WIS +1");
+    expect(markup).toContain("Los profiel — inactief");
+    expect(markup).toContain('href="/admin/bronprofielen"');
+    expect(markup).toContain("Bronprofielen beheren");
+    expect(markup).not.toContain("Appbreed standaardsjabloon voor de huidige portfolio");
   });
 
   it("opens rename with the current value and keeps a validation error inside the modal", () => {
@@ -95,12 +111,20 @@ function renderCard(type: SourceProfile["type"], initialModal: SourceProfileModa
   const model: SourceProfileAdminModel = {
     activeProfile: active,
     availableProfiles: [
-      ...(active.type === "custom" ? [{ ...active, managementLearningSpaceName: "Vijfde jaar", managementLearningSpaceShortLabel: "5WIS" }] : []),
-      { ...profile("other", "custom", "Mijn profiel", "space-6"), managementLearningSpaceName: "Zesde jaar", managementLearningSpaceShortLabel: "6WIS" },
+      ...(active.type === "custom" ? [{ ...active, managementLearningSpaceName: "Vijfde jaar", managementLearningSpaceShortLabel: "5WIS", usages: [usage("space-5", "Vijfde jaar", "5WIS")], usageCount: 1, isInactive: false }] : []),
+      { ...profile("other", "custom", "Mijn profiel", "space-6"), managementLearningSpaceName: "Zesde jaar", managementLearningSpaceShortLabel: "6WIS", usages: [
+        usage("space-4", "Vierde jaar", "4NW1"), usage("space-5b", "Vijfde wetenschappen", "5WET"),
+        usage("space-6", "Zesde jaar", "6WIS"), usage("space-extra", "Extra", "EXTRA"),
+      ], usageCount: 4, isInactive: false },
+      { ...profile("inactive", "custom", "Los profiel", "space-6"), managementLearningSpaceName: "Zesde jaar", managementLearningSpaceShortLabel: "6WIS", usages: [], usageCount: 0, isInactive: true },
     ],
     copySources: [{ learningSpaceId: "space-6", learningSpaceName: "Zesde jaar", learningSpaceShortLabel: "6WIS", profile: profile("other", "custom", "Mijn profiel", "space-6") }],
   };
   return renderToStaticMarkup(<SourceProfileCard learningSpaceId="space-5" model={model} actions={actions} initialModal={initialModal} error={error} />);
+}
+
+function usage(learningSpaceId: string, learningSpaceName: string, learningSpaceShortLabel: string) {
+  return { learningSpaceId, learningSpaceName, learningSpaceShortLabel };
 }
 
 function profile(id: string, type: SourceProfile["type"], name: string, managementLearningSpaceId: string | null): SourceProfile {

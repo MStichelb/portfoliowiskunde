@@ -1,4 +1,4 @@
-import { Link2, Users } from "lucide-react";
+import { Link2, SlidersHorizontal, Users } from "lucide-react";
 import Link from "next/link";
 
 import { AdminLearningSpaceOverview } from "@/app/components/admin-learning-space-overview";
@@ -28,7 +28,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     <PageBanner variant="admin" />
     <header className="admin-header">
       <div><p className="eyebrow">Beheer</p><h1>Leeromgevingen</h1><p>Kies een leeromgeving om portfolio&apos;s binnen deze leeromgeving te beheren.</p></div>
-      <div className="admin-actions"><Link className="secondary-button link-button" href="/admin/verbindingen"><Link2 size={17} aria-hidden />Verbindingen</Link>{user.role === "superadmin" ? <Link className="secondary-button link-button" href="/admin/gebruikers"><Users size={17} aria-hidden />Gebruikers</Link> : null}<LearningSpaceCreateModal action={createLearningSpaceAction} initialOpen={params.create === "1"} error={createErrorMessage(params.createError)} /></div>
+      <div className="admin-actions"><Link className="secondary-button link-button" href="/admin/bronprofielen"><SlidersHorizontal size={17} aria-hidden />Bronprofielen</Link><Link className="secondary-button link-button" href="/admin/verbindingen"><Link2 size={17} aria-hidden />Verbindingen</Link>{user.role === "superadmin" ? <Link className="secondary-button link-button" href="/admin/gebruikers"><Users size={17} aria-hidden />Gebruikers</Link> : null}<LearningSpaceCreateModal action={createLearningSpaceAction} initialOpen={params.create === "1"} error={createErrorMessage(params.createError)} /></div>
     </header>
     {params.smartschool === "linked" ? <p className="success-message" role="status">Smartschool-account gekoppeld.</p> : null}
     {params.smartschool && params.smartschool !== "linked" ? <p className="error-message" role="alert">De Smartschool-koppeling is niet gelukt.</p> : null}
