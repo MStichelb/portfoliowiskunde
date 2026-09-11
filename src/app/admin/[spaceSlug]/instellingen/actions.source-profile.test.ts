@@ -91,13 +91,13 @@ describe("source profile settings actions", () => {
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe("Standaard portfolio");
   });
 
-  it("keeps an owner ordinary copy inactive", async () => {
+  it("activates an owner ordinary copy", async () => {
     mocks.requireAdminUser.mockResolvedValue(owner);
     const targetBefore = (await getActiveSourceProfileForLearningSpace("space-5"))!;
 
-    await expect(copySourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: "manipulated", targetLearningSpaceId: "space-5" }))).rejects.toThrow("profileSaved=copiedInactive");
+    await expect(copySourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: "manipulated", targetLearningSpaceId: "space-5" }))).rejects.toThrow("profileSaved=copied");
 
-    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(targetBefore.id);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).not.toBe(targetBefore.id);
     const copies = await (await getDatabase()).execute({ sql: "SELECT id FROM source_profiles WHERE management_learning_space_id = ?", args: ["space-5"] });
     expect(copies.rows.some((row) => row.id !== targetBefore.id)).toBe(true);
   });

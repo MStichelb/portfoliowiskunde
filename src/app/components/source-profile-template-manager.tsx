@@ -4,24 +4,28 @@ import { Copy, Plus, Settings2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import type { SourceProfileTemplateSummary } from "@/lib/source-profile-templates";
+import type { SourceProfileCopyTarget } from "@/lib/source-profiles";
 
-export type SourceProfileTemplateModal = "create" | "manage" | "default";
+export type SourceProfileTemplateModal = "create" | "manage" | "default" | "copy";
 
 export interface SourceProfileTemplateActions {
   create: (formData: FormData) => Promise<void>;
   update: (formData: FormData) => Promise<void>;
   duplicate: (formData: FormData) => Promise<void>;
   setDefault: (formData: FormData) => Promise<void>;
+  copy: (formData: FormData) => Promise<void>;
 }
 
-export function SourceProfileTemplateManager({ templates, actions, initialModal = null, initialTemplateId, error }: {
+export function SourceProfileTemplateManager({ templates, copyTargets, canManage, actions, initialModal = null, initialTemplateId, error }: {
   templates: SourceProfileTemplateSummary[];
+  copyTargets: SourceProfileCopyTarget[];
+  canManage: boolean;
   actions: SourceProfileTemplateActions;
   initialModal?: SourceProfileTemplateModal | null;
   initialTemplateId?: string;
   error?: string;
 }) {
-  const initial = allowedInitialModal(initialModal, initialTemplateId, templates);
+  const initial = allowedInitialModal(initialModal, initialTemplateId, templates, canManage);
   const [modal, setModal] = useState<SourceProfileTemplateModal | null>(initial.modal);
   const [templateId, setTemplateId] = useState<string | null>(initial.templateId);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -54,7 +58,7 @@ export function SourceProfileTemplateManager({ templates, actions, initialModal 
         <h2 id="source-profile-templates-heading">Appbrede sjablonen</h2>
         <p>Sjablonen zijn vertrekpunten voor nieuwe, onafhankelijke bronprofielen en zijn nooit rechtstreeks actief in een leeromgeving.</p>
       </div>
-      <button className="primary-button source-profile-template-create" type="button" onClick={(event) => open("create", null, event.currentTarget)}><Plus size={16} aria-hidden />Nieuw sjabloon</button>
+      {canManage ? <button className="primary-button source-profile-template-create" type="button" onClick={(event) => open("create", null, event.currentTarget)}><Plus size={16} aria-hidden />Nieuw sjabloon</button> : null}
     </div>
     <p className="source-profile-template-note">Wijzigingen aan een sjabloon hebben geen invloed op bestaande bronprofielen. Alleen nieuwe kopieën gebruiken de aangepaste versie.</p>
     <div className="source-profile-overview-list">
@@ -64,7 +68,10 @@ export function SourceProfileTemplateManager({ templates, actions, initialModal 
           <small>Configuratieversie {template.configVersion}</small>
           {template.description ? <p>{template.description}</p> : null}
         </div>
-        <button className="secondary-button source-profile-manage-button" type="button" onClick={(event) => open("manage", template.id, event.currentTarget)}>Beheren</button>
+        <div className="source-profile-card-actions">
+          {canManage ? <button className="secondary-button source-profile-manage-button" type="button" onClick={(event) => open("manage", template.id, event.currentTarget)}>Beheren</button> : null}
+          <button className="secondary-button source-profile-copy-button" type="button" onClick={(event) => open("copy", template.id, event.currentTarget)}><Copy size={16} aria-hidden />Kopiëren</button>
+        </div>
       </article>)}
     </div>
 
@@ -105,6 +112,14 @@ export function SourceProfileTemplateManager({ templates, actions, initialModal 
           <TemplateError error={error} />
           <div className="source-profile-dialog-actions"><button className="secondary-button" type="button" onClick={() => setModal("manage")}>Annuleren</button><button className="primary-button" type="submit">Als standaard instellen</button></div>
         </form> : null}
+        {modal === "copy" && selected ? <form action={actions.copy} className="source-profile-dialog-form">
+          <input type="hidden" name="templateId" value={selected.id} />
+          <div className="source-profile-readonly-field"><span>Bronprofielsjabloon</span><strong>{selected.name}</strong></div>
+          <label>Doelleeromgeving<select name="managementLearningSpaceId" required defaultValue=""><option value="" disabled>Kies een leeromgeving</option>{copyTargets.map((target) => <option key={target.learningSpaceId} value={target.learningSpaceId}>{target.learningSpaceShortLabel} — {target.profile.name}</option>)}</select></label>
+          <p>Er wordt een onafhankelijk concreet bronprofiel gemaakt. Het sjabloon zelf wordt nooit rechtstreeks gekoppeld.</p>
+          <TemplateError error={error} />
+          <DialogActions cancel={close} submitLabel="Kopiëren" />
+        </form> : null}
       </div>
     </div> : null}
   </section>;
@@ -121,6 +136,7 @@ function TemplateError({ error }: { error?: string }) {
 function modalTitle(modal: SourceProfileTemplateModal): string {
   if (modal === "create") return "Nieuw bronprofielsjabloon";
   if (modal === "default") return "Standaardsjabloon wijzigen";
+  if (modal === "copy") return "Bronprofielsjabloon kopiëren";
   return "Bronprofielsjabloon beheren";
 }
 
@@ -128,7 +144,9 @@ function allowedInitialModal(
   modal: SourceProfileTemplateModal | null,
   templateId: string | undefined,
   templates: SourceProfileTemplateSummary[],
+  canManage: boolean,
 ): { modal: SourceProfileTemplateModal | null; templateId: string | null } {
+  if (!canManage && modal !== "copy") return { modal: null, templateId: null };
   if (modal === "create") return { modal, templateId: null };
   const template = templates.find((candidate) => candidate.id === templateId);
   if (!template || !modal || (modal === "default" && template.isDefault)) return { modal: null, templateId: null };

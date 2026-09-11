@@ -16,6 +16,7 @@ import {
   getActiveSourceProfileForLearningSpace,
   getManagedSourceProfiles,
   getSourceProfileAdminModel,
+  linkSourceProfileToLearningSpace,
   renameManagedSourceProfile,
   renameSourceProfile,
   sourceProfileUsageLabel,
@@ -127,15 +128,16 @@ describe("source profile management", () => {
     expect((await builtIn).rows[0]).toMatchObject({ name: "Standaard portfolio", config_json: JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG) });
   });
 
-  it("copies another managed space's active profile as an independent target-owned row", async () => {
+  it("copies another managed space's active profile as an independent target-owned row and activates it for an owner", async () => {
     const source = (await getActiveSourceProfileForLearningSpace("space-6"))!;
     await renameSourceProfile(actors.superadmin, "space-6", source.id, "Profiel zes");
-    const targetBefore = (await getActiveSourceProfileForLearningSpace("space-5"))!;
-    const copy = await copySourceProfileToLearningSpace(actors.managerBoth, source.id, "space-5");
+    const result = await copySourceProfileToLearningSpace(actors.managerBoth, source.id, "space-5");
+    const copy = result.profile;
 
     expect(copy).toMatchObject({ name: "Kopie van Profiel zes", managementLearningSpaceId: "space-5", config: source.config });
+    expect(result.activated).toBe(true);
     expect(copy.id).not.toBe(source.id);
-    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(targetBefore.id);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(copy.id);
 
     await renameManagedSourceProfile(actors.managerBoth, copy.id, "Mijn onafhankelijke kopie");
     expect((await getActiveSourceProfileForLearningSpace("space-6"))?.name).toBe("Profiel zes");
@@ -151,8 +153,10 @@ describe("source profile management", () => {
 
   it("keeps editor copies independent and inactive while blocking switch and rename", async () => {
     const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
-    const copy = await copySourceProfileToLearningSpace(actors.editor, original.id, "space-5");
+    const result = await copySourceProfileToLearningSpace(actors.editor, original.id, "space-5");
+    const copy = result.profile;
 
+    expect(result.activated).toBe(false);
     expect(copy.id).not.toBe(original.id);
     expect(copy.config).toEqual(original.config);
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(original.id);
@@ -161,10 +165,55 @@ describe("source profile management", () => {
     await expect(renameManagedSourceProfile(actors.editor, original.id, "Verboden")).rejects.toBeInstanceOf(AuthorizationError);
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe(original.name);
 
-    const centralCopy = await copySourceProfileToLearningSpace(actors.editor, original.id, "space-5");
+    const centralCopy = (await copySourceProfileToLearningSpace(actors.editor, original.id, "space-5")).profile;
     expect(centralCopy.id).not.toBe(original.id);
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(original.id);
     await expect(copySourceProfileToLearningSpace(actors.editor, (await getActiveSourceProfileForLearningSpace("space-6"))!.id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it("lets a superadmin copy and activate an independent snapshot", async () => {
+    const source = (await getActiveSourceProfileForLearningSpace("space-6"))!;
+    const result = await copySourceProfileToLearningSpace(actors.superadmin, source.id, "space-5");
+    expect(result.activated).toBe(true);
+    expect(result.profile.id).not.toBe(source.id);
+    expect(result.profile.config).toEqual(source.config);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(result.profile.id);
+  });
+
+  it("links the exact managed profile without creating a row and exposes shared changes", async () => {
+    const database = await getDatabase();
+    const source = (await getActiveSourceProfileForLearningSpace("space-6"))!;
+    const before = Number((await database.execute("SELECT COUNT(*) AS count FROM source_profiles")).rows[0].count);
+
+    await linkSourceProfileToLearningSpace(actors.managerBoth, source.id, "space-5");
+
+    expect(Number((await database.execute("SELECT COUNT(*) AS count FROM source_profiles")).rows[0].count)).toBe(before);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(source.id);
+    expect((await getManagedSourceProfiles(actors.managerBoth)).find((profile) => profile.id === source.id)?.usageCount).toBe(2);
+    await renameSourceProfile(actors.managerBoth, "space-5", source.id, "Gedeeld profiel", "all");
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.name).toBe("Gedeeld profiel");
+  });
+
+  it("blocks editor linking and link IDORs for unmanaged target or source", async () => {
+    const own = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    const foreign = (await getActiveSourceProfileForLearningSpace("space-6"))!;
+    await expect(linkSourceProfileToLearningSpace(actors.editor, own.id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(linkSourceProfileToLearningSpace(actors.owner, own.id, "space-6")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(linkSourceProfileToLearningSpace(actors.owner, foreign.id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it("requires shared rename scope and can detach only the current LearningSpace", async () => {
+    const source = (await getActiveSourceProfileForLearningSpace("space-6"))!;
+    await linkSourceProfileToLearningSpace(actors.managerBoth, source.id, "space-5");
+    await expect(renameSourceProfile(actors.managerBoth, "space-5", source.id, "Nieuwe naam")).rejects.toThrow("Kies of je");
+
+    await renameSourceProfile(actors.managerBoth, "space-5", source.id, "Alleen vijf", "current");
+    const current = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    expect(current.id).not.toBe(source.id);
+    expect(current.name).toBe("Alleen vijf");
+    expect(current.config).toEqual(source.config);
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.id).toBe(source.id);
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.name).not.toBe("Alleen vijf");
   });
 
   it.each(["viewer", "student"] as const)("rejects a %s mutation", async (actorRole) => {

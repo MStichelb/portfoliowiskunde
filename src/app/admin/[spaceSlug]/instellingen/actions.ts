@@ -55,7 +55,8 @@ export async function createOwnSourceProfileAction(formData: FormData) {
 
 export async function copySourceProfileAction(formData: FormData) {
   await runSourceProfileAction(formData, "copiedInactive", "copy", async (user, learningSpaceId) => {
-    await copyActiveSourceProfileToLearningSpace(user, learningSpaceId, value(formData, "targetLearningSpaceId"));
+    const result = await copyActiveSourceProfileToLearningSpace(user, learningSpaceId, value(formData, "targetLearningSpaceId"));
+    return result.activated ? "copied" : "copiedInactive";
   });
 }
 
@@ -67,7 +68,8 @@ export async function copySourceProfileTemplateAction(formData: FormData) {
 
 export async function renameSourceProfileAction(formData: FormData) {
   await runSourceProfileAction(formData, "renamed", "rename", async (user, learningSpaceId) => {
-    await renameSourceProfile(user, learningSpaceId, value(formData, "sourceProfileId"), value(formData, "name"));
+    const scope = value(formData, "renameScope");
+    await renameSourceProfile(user, learningSpaceId, value(formData, "sourceProfileId"), value(formData, "name"), scope === "all" || scope === "current" ? scope : undefined);
   });
 }
 

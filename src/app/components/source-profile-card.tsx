@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Pencil, Plus, RefreshCw, X } from "lucide-react";
+import { Copy, Link2, Pencil, Plus, RefreshCw, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
@@ -29,8 +29,12 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
   initialModal?: SourceProfileModal | null;
 }) {
   const { activeProfile, availableProfiles, copyTargets } = model;
+  const activeDetails = availableProfiles.find((profile) => profile.id === activeProfile.id) ?? null;
+  const isShared = (activeDetails?.usageCount ?? 0) > 1;
   const [modal, setModal] = useState<SourceProfileModal | null>(() => allowedInitialModal(initialModal, activeProfile.type, copyTargets.length, canConfigure));
   const [switchSource, setSwitchSource] = useState<"profiles" | "templates">("profiles");
+  const [copyTargetId, setCopyTargetId] = useState(learningSpaceId);
+  const selectedCopyTarget = copyTargets.find((target) => target.learningSpaceId === copyTargetId);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
@@ -63,6 +67,7 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
     <div className="source-profile-summary">
       <span>Actief profiel</span>
       <strong>{activeProfile.name}</strong>
+      {isShared ? <span className="source-profile-shared-status"><Link2 size={15} aria-hidden />Gekoppeld aan {activeDetails!.usageCount} leeromgevingen</span> : null}
       {activeProfile.description ? <p>{displayProfileDescription(activeProfile.description)}</p> : null}
       <small>Configuratieversie {activeProfile.config.configVersion}</small>
     </div>
@@ -76,7 +81,6 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
       {copyTargets.length > 0 ? <button className="secondary-button source-profile-copy-button" type="button" onClick={(event) => open("copy", event.currentTarget)}><Copy size={16} aria-hidden />Profiel kopiëren</button> : null}
     </div>
     {!canConfigure ? <p className="source-profile-readonly-note">Als editor kun je profielen bekijken en kopiëren, maar niet wijzigen.</p> : null}
-    <p className="source-profile-footnote">De huidige scanner gebruikt deze configuratie nog niet.</p>
     {feedback ? <p className="success-message" role="status">{feedback}</p> : null}
     {error && !modal ? <p className="form-message" role="alert">{error}</p> : null}
 
@@ -111,15 +115,20 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
           <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
           <input type="hidden" name="sourceProfileId" value={activeProfile.id} />
           <label>Profielnaam<input name="name" defaultValue={activeProfile.name} maxLength={80} required /></label>
+          {isShared ? <fieldset className="source-profile-rename-scope"><legend>Waar wil je deze wijziging toepassen?</legend>
+            <label><input type="radio" name="renameScope" value="all" required /> <span><strong>Wijzigen voor alle gekoppelde leeromgevingen</strong><small>Dit profiel wordt gedeeld door {activeDetails!.usages.map((usage) => usage.learningSpaceShortLabel).join(", ")}. De wijziging geldt voor allemaal.</small></span></label>
+            <label><input type="radio" name="renameScope" value="current" required /> <span><strong>Alleen voor deze leeromgeving</strong><small>Er wordt een onafhankelijk profiel gemaakt voor {copyTargets.find((target) => target.learningSpaceId === learningSpaceId)?.learningSpaceShortLabel ?? "deze leeromgeving"}.</small></span></label>
+          </fieldset> : null}
           <ModalFooter cancel={close} submitLabel="Opslaan" error={error} />
         </form> : null}
         {modal === "copy" ? <form action={actions.copyProfile} className="source-profile-dialog-form">
           <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
           <div className="source-profile-readonly-field"><span>Bronprofiel</span><strong>{activeProfile.name}</strong></div>
-          <label>Toepassen op leeromgeving<select name="targetLearningSpaceId" required defaultValue={learningSpaceId}>
+          <label>Doelleeromgeving<select name="targetLearningSpaceId" required value={copyTargetId} onChange={(event) => setCopyTargetId(event.target.value)}>
             {copyTargets.map((target) => <option key={target.learningSpaceId} value={target.learningSpaceId}>{target.learningSpaceShortLabel} — {target.profile.name}</option>)}
           </select></label>
           <p>Er wordt een onafhankelijke kopie gemaakt. Latere wijzigingen aan het oorspronkelijke profiel hebben geen invloed op deze kopie.</p>
+          <p>{selectedCopyTarget?.canConfigure ? "De kopie wordt het actieve bronprofiel van de gekozen leeromgeving." : "De kopie wordt niet actief. Een eigenaar moet het profiel nog activeren."}</p>
           <ModalFooter cancel={close} submitLabel="Kopiëren" error={error} submitClassName="source-profile-copy-button" />
         </form> : null}
       </div>

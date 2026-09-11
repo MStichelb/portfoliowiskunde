@@ -47,7 +47,8 @@ function sourceProfileModal(value: string | undefined): SourceProfileModal | nul
 
 function profileFeedback(value: string | undefined): string | undefined {
   if (value === "created") return "Eigen bronprofiel gemaakt en geactiveerd.";
-  if (value === "copiedInactive") return "Profiel gekopieerd. De actieve configuratie is niet gewijzigd.";
+  if (value === "copied") return "Profiel gekopieerd en actief gemaakt in de gekozen leeromgeving.";
+  if (value === "copiedInactive") return "Profiel gekopieerd. Een eigenaar moet het profiel nog activeren.";
   if (value === "templateCopied") return "Sjabloon gekopieerd naar een onafhankelijk profiel en geactiveerd.";
   if (value === "renamed") return "Profielnaam gewijzigd.";
   if (value === "switched") return "Bronprofiel gewijzigd.";
