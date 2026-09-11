@@ -141,7 +141,7 @@ describe("global source profile templates", () => {
   it("clones a server-resolved template as a fresh active concrete profile", async () => {
     const before = (await getActiveSourceProfileForLearningSpace("space-5"))!;
     const template = await getDefaultSourceProfileTemplate();
-    const clone = await cloneSourceProfileTemplateToLearningSpace({ ...template, name: "Tweede profiel" }, "space-5");
+    const clone = await cloneSourceProfileTemplateToLearningSpace({ ...template, name: "Tweede profiel" }, "space-5", owner.id);
 
     expect(clone).toMatchObject({ type: "custom", managementLearningSpaceId: "space-5", config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG });
     expect(clone.id).not.toBe(before.id);
@@ -217,15 +217,12 @@ describe("global source profile templates", () => {
     const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
     const template = await getDefaultSourceProfileTemplate();
 
-    const editorCopy = await copySourceProfileTemplateToLearningSpace(editor, template.id, "space-5", false);
-    expect(editorCopy).toMatchObject({ type: "custom", managementLearningSpaceId: "space-5", config: template.config });
-    expect(editorCopy.id).not.toBe(template.id);
+    await expect(copySourceProfileTemplateToLearningSpace(editor, template.id, "space-5")).rejects.toThrow("Alleen een eigenaar");
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(original.id);
-    await expect(copySourceProfileTemplateToLearningSpace(editor, template.id, "space-5", true)).rejects.toThrow("Alleen een eigenaar");
-    await expect(copySourceProfileTemplateToLearningSpace(owner, "foreign-template", "space-5", true)).rejects.toThrow("niet gevonden");
+    await expect(copySourceProfileTemplateToLearningSpace(owner, "foreign-template", "space-5")).rejects.toThrow("niet gevonden");
 
-    const ownerCopy = await copySourceProfileTemplateToLearningSpace(owner, template.id, "space-5", true);
-    expect(ownerCopy.name).toBe("Standaard portfolio (3)");
+    const ownerCopy = await copySourceProfileTemplateToLearningSpace(owner, template.id, "space-5");
+    expect(ownerCopy).toMatchObject({ name: "Standaard portfolio", ownerUserId: owner.id });
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(ownerCopy.id);
     await database.execute({ sql: "UPDATE source_profile_templates SET config_json = '{}' WHERE id = ?", args: [template.id] });
     expect((await database.execute({ sql: "SELECT config_json FROM source_profiles WHERE id = ?", args: [ownerCopy.id] })).rows[0].config_json).toBe(JSON.stringify(template.config));

@@ -62,15 +62,15 @@ export async function createOwnSourceProfileAction(formData: FormData) {
 }
 
 export async function copySourceProfileAction(formData: FormData) {
-  await runSourceProfileAction(formData, "copiedInactive", "copy", async (user, learningSpaceId) => {
+  await runSourceProfileAction(formData, "copied", "copy", async (user, learningSpaceId) => {
     const result = await copyActiveSourceProfileToLearningSpace(user, learningSpaceId, value(formData, "targetLearningSpaceId"));
-    return result.activated ? "copied" : "copiedInactive";
+    if (!result.activated) throw new Error("De profielkopie kon niet worden geactiveerd.");
   });
 }
 
 export async function copySourceProfileTemplateAction(formData: FormData) {
   await runSourceProfileAction(formData, "templateCopied", "switch", async (user, learningSpaceId) => {
-    await copySourceProfileTemplateToLearningSpace(user, value(formData, "templateId"), learningSpaceId, true);
+    await copySourceProfileTemplateToLearningSpace(user, value(formData, "templateId"), learningSpaceId);
   });
 }
 
@@ -103,7 +103,7 @@ async function runSourceProfileAction(
   redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?profileSaved=${saved}`);
 }
 
-type SourceProfileSaved = "linked" | "created" | "copied" | "copiedInactive" | "templateCopied" | "renamed";
+type SourceProfileSaved = "linked" | "created" | "copied" | "templateCopied" | "renamed";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();

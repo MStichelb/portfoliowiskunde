@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import { AuthorizationError, canAccessAdmin, requireLearningSpaceConfiguration, requireLearningSpaceManagement, requireSourceProfileTemplateManagement } from "@/lib/authorization";
+import { AuthorizationError, canAccessAdmin, requireLearningSpaceConfiguration, requireSourceProfileTemplateManagement } from "@/lib/authorization";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { getDatabase } from "@/lib/database";
 import type { AppUser } from "@/lib/identity";
@@ -85,13 +85,11 @@ export async function copySourceProfileTemplateToLearningSpace(
   user: AppUser,
   templateId: string,
   learningSpaceId: string,
-  activate: boolean,
 ): Promise<SourceProfile> {
-  if (activate) await requireLearningSpaceConfiguration(user, learningSpaceId);
-  else await requireLearningSpaceManagement(user, learningSpaceId);
+  await requireLearningSpaceConfiguration(user, learningSpaceId);
   const template = await getSourceProfileTemplate(templateId);
-  const name = await availableSourceProfileName(learningSpaceId, template.name);
-  const prepared = prepareSourceProfileTemplateClone({ ...template, name }, learningSpaceId, new Date().toISOString(), activate);
+  const name = await availableSourceProfileName(user.id, template.name);
+  const prepared = prepareSourceProfileTemplateClone({ ...template, name }, learningSpaceId, user.id);
   await (await getDatabase()).batch(prepared.statements);
   return prepared.profile;
 }
@@ -142,9 +140,10 @@ export async function setDefaultSourceProfileTemplate(user: AppUser, templateId:
 export async function cloneSourceProfileTemplateToLearningSpace(
   template: SourceProfileTemplate,
   learningSpaceId: string,
+  ownerUserId: string,
 ): Promise<SourceProfile> {
-  await uniqueSourceProfileName(learningSpaceId, template.name);
-  const prepared = prepareSourceProfileTemplateClone(template, learningSpaceId);
+  await uniqueSourceProfileName(ownerUserId, template.name);
+  const prepared = prepareSourceProfileTemplateClone(template, learningSpaceId, ownerUserId);
   await (await getDatabase()).batch(prepared.statements);
   return prepared.profile;
 }
@@ -152,6 +151,7 @@ export async function cloneSourceProfileTemplateToLearningSpace(
 export function prepareSourceProfileTemplateClone(
   template: SourceProfileTemplate,
   learningSpaceId: string,
+  ownerUserId: string,
   now = new Date().toISOString(),
   activate = true,
 ): PreparedSourceProfileTemplateClone {
@@ -164,6 +164,7 @@ export function prepareSourceProfileTemplateClone(
     description: template.description,
     config,
     managementLearningSpaceId: learningSpaceId,
+    ownerUserId,
     createdAt: now,
     updatedAt: now,
   };
@@ -172,9 +173,9 @@ export function prepareSourceProfileTemplateClone(
     statements: [
       {
         sql: `INSERT INTO source_profiles
-          (id, type, name, description, config_version, config_json, created_at, updated_at, management_learning_space_id)
-          VALUES (?, 'custom', ?, ?, ?, ?, ?, ?, ?)`,
-        args: [profile.id, profile.name, profile.description, config.configVersion, JSON.stringify(config), now, now, learningSpaceId],
+          (id, type, name, description, config_version, config_json, created_at, updated_at, management_learning_space_id, owner_user_id)
+          VALUES (?, 'custom', ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [profile.id, profile.name, profile.description, config.configVersion, JSON.stringify(config), now, now, learningSpaceId, ownerUserId],
       },
       ...(activate ? [{
         sql: `INSERT INTO learning_space_source_profiles (learning_space_id, source_profile_id, assigned_at, updated_at)

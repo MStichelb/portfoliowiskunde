@@ -25,7 +25,7 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
   initialTemplateId?: string;
   error?: string;
 }) {
-  const initial = allowedInitialModal(initialModal, initialTemplateId, templates, canManage);
+  const initial = allowedInitialModal(initialModal, initialTemplateId, templates, canManage, copyTargets.length > 0);
   const [modal, setModal] = useState<SourceProfileTemplateModal | null>(initial.modal);
   const [templateId, setTemplateId] = useState<string | null>(initial.templateId);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -69,7 +69,7 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
         </div>
         <div className="source-profile-card-actions">
           {canManage ? <button className="secondary-button source-profile-manage-button" type="button" onClick={(event) => open("manage", template.id, event.currentTarget)}>Beheren</button> : null}
-          <button className="secondary-button source-profile-copy-button" type="button" onClick={(event) => open("copy", template.id, event.currentTarget)}><Copy size={16} aria-hidden />Kopiëren</button>
+          {copyTargets.length > 0 ? <button className="secondary-button source-profile-copy-button" type="button" onClick={(event) => open("copy", template.id, event.currentTarget)}><Copy size={16} aria-hidden />Kopiëren</button> : null}
         </div>
       </article>)}
     </div>
@@ -144,8 +144,10 @@ function allowedInitialModal(
   templateId: string | undefined,
   templates: SourceProfileTemplateSummary[],
   canManage: boolean,
+  canCopy: boolean,
 ): { modal: SourceProfileTemplateModal | null; templateId: string | null } {
   if (!canManage && modal !== "copy") return { modal: null, templateId: null };
+  if (modal === "copy" && !canCopy) return { modal: null, templateId: null };
   if (modal === "create") return { modal, templateId: null };
   const template = templates.find((candidate) => candidate.id === templateId);
   if (!template || !modal || (modal === "default" && template.isDefault)) return { modal: null, templateId: null };

@@ -32,16 +32,15 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
   initialSwitchSource?: "profiles" | "templates";
 }) {
   const { activeProfile, availableProfiles, copyTargets } = model;
-  const activeDetails = availableProfiles.find((profile) => profile.id === activeProfile.id) ?? null;
-  const isShared = (activeDetails?.usageCount ?? 0) > 1;
-  const [modal, setModal] = useState<SourceProfileModal | null>(() => allowedInitialModal(initialModal, activeProfile.type, copyTargets.length, canConfigure));
+  const isShared = activeProfile.usageCount > 1;
+  const [modal, setModal] = useState<SourceProfileModal | null>(() => allowedInitialModal(initialModal, activeProfile.type, activeProfile.canCopy, canConfigure));
   const [switchSource, setSwitchSource] = useState<"profiles" | "templates">(initialSwitchSource);
   const [selectedProfileId, setSelectedProfileId] = useState(() => {
     if (availableProfiles.some((profile) => profile.id === initialSelectedProfileId)) return initialSelectedProfileId!;
     if (availableProfiles.some((profile) => profile.id === activeProfile.id)) return activeProfile.id;
     return availableProfiles[0]?.id ?? "";
   });
-  const [copyTargetId, setCopyTargetId] = useState(learningSpaceId);
+  const [copyTargetId, setCopyTargetId] = useState(() => copyTargets.some((target) => target.learningSpaceId === learningSpaceId) ? learningSpaceId : copyTargets[0]?.learningSpaceId ?? "");
   const selectedProfile = availableProfiles.find((profile) => profile.id === selectedProfileId) ?? null;
   const selectedCopyTarget = copyTargets.find((target) => target.learningSpaceId === copyTargetId);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -75,7 +74,8 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
     <div className="source-profile-summary">
       <span>Actief profiel</span>
       <strong>{activeProfile.name}</strong>
-      {isShared ? <span className="source-profile-shared-status"><Link2 size={15} aria-hidden />Gekoppeld aan {activeDetails!.usageCount} leeromgevingen</span> : null}
+      {activeProfile.ownerName ? <small>Eigenaar: {activeProfile.ownerName}</small> : null}
+      {isShared ? <span className="source-profile-shared-status"><Link2 size={15} aria-hidden />Gekoppeld aan {activeProfile.usageCount} leeromgevingen</span> : null}
       {activeProfile.description ? <p>{displayProfileDescription(activeProfile.description)}</p> : null}
     </div>
     <div className="source-profile-actions">
@@ -83,10 +83,10 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
       {canConfigure && activeProfile.type === "built_in" ? <form action={actions.createOwnProfile}>
         <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
         <button className="secondary-button" type="submit"><Plus size={16} aria-hidden />Eigen profiel maken</button>
-      </form> : canConfigure ? <button className="secondary-button" type="button" onClick={(event) => open("rename", event.currentTarget)}><Pencil size={16} aria-hidden />Naam wijzigen</button> : null}
-      {copyTargets.length > 0 ? <button className="secondary-button source-profile-copy-button" type="button" onClick={(event) => open("copy", event.currentTarget)}><Copy size={16} aria-hidden />Profiel kopiëren</button> : null}
+      </form> : canConfigure && activeProfile.canRename ? <button className="secondary-button" type="button" onClick={(event) => open("rename", event.currentTarget)}><Pencil size={16} aria-hidden />Naam wijzigen</button> : null}
+      {activeProfile.canCopy ? <button className="secondary-button source-profile-copy-button" type="button" onClick={(event) => open("copy", event.currentTarget)}><Copy size={16} aria-hidden />Profiel kopiëren</button> : null}
     </div>
-    {!canConfigure ? <p className="source-profile-readonly-note">Als editor kun je profielen bekijken en kopiëren, maar niet wijzigen.</p> : null}
+    {!canConfigure ? <p className="source-profile-readonly-note">{activeProfile.canCopy ? "Als editor kun je dit profiel bekijken en naar een eigen leeromgeving kopiëren, maar niet wijzigen." : "Als editor kun je dit profiel bekijken, maar niet wijzigen of kopiëren zonder een eigen leeromgeving."}</p> : null}
     {feedback ? <p className="success-message" role="status">{feedback}</p> : null}
     {error && !modal ? <p className="form-message" role="alert">{error}</p> : null}
 
@@ -108,7 +108,7 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
           </select></label>
           {!selectedProfile ? <><p>Er zijn geen concrete profielen beschikbaar.</p><div className="source-profile-dialog-actions"><button className="secondary-button" type="button" onClick={close}>Sluiten</button></div></> : selectedProfile.id === activeProfile.id ? <><span className="active-source-badge">Huidig profiel</span>{error ? <p className="form-message" role="alert">{error}</p> : null}<div className="source-profile-dialog-actions"><button className="secondary-button" type="button" onClick={close}>Sluiten</button></div></> : <>
             <p>Met <strong>Kopiëren</strong> wordt een onafhankelijk profiel gemaakt voor deze leeromgeving.</p>
-            {selectedProfile && selectedProfile.usageCount > 0 ? <div className="source-profile-shared-warning"><strong><Link2 size={16} aria-hidden />Gedeeld profiel</strong><p>Deze leeromgeving wordt bij <strong>Koppelen</strong> gekoppeld aan hetzelfde bronprofiel. Latere wijzigingen aan dit profiel gelden voor alle gekoppelde leeromgevingen.</p></div> : null}
+            {selectedProfile.usageCount > 0 ? <p className="source-profile-help-text">Met <strong>Koppelen</strong> gebruikt deze leeromgeving hetzelfde profiel. Latere wijzigingen gelden dan voor alle gekoppelde leeromgevingen.</p> : null}
             {error ? <p className="form-message" role="alert">{error}</p> : null}
             <div className="source-profile-dialog-actions source-profile-selection-actions"><button className="secondary-button" type="button" onClick={close}>Annuleren</button><button className="secondary-button" type="submit"><Copy size={16} aria-hidden />Kopiëren</button><button className="primary-button" type="submit" formAction={actions.linkProfile}><Link2 size={16} aria-hidden />Koppelen</button></div>
           </>}
@@ -127,7 +127,7 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
           <input type="hidden" name="sourceProfileId" value={activeProfile.id} />
           <label>Profielnaam<input name="name" defaultValue={activeProfile.name} maxLength={80} required /></label>
           {isShared ? <fieldset className="source-profile-rename-scope"><legend>Waar wil je deze wijziging toepassen?</legend>
-            <label><input type="radio" name="renameScope" value="all" required /> <span><strong>Wijzigen voor alle gekoppelde leeromgevingen</strong><small>Dit profiel wordt gedeeld door {activeDetails!.usages.map((usage) => usage.learningSpaceShortLabel).join(", ")}. De wijziging geldt voor allemaal.</small></span></label>
+            <label><input type="radio" name="renameScope" value="all" required /> <span><strong>Wijzigen voor alle gekoppelde leeromgevingen</strong><small>Dit profiel wordt gedeeld door {activeProfile.usages.map((usage) => usage.learningSpaceShortLabel).join(", ")}. De wijziging geldt voor allemaal.</small></span></label>
             <label><input type="radio" name="renameScope" value="current" required /> <span><strong>Alleen voor deze leeromgeving</strong><small>Er wordt een onafhankelijk profiel gemaakt voor {copyTargets.find((target) => target.learningSpaceId === learningSpaceId)?.learningSpaceShortLabel ?? "deze leeromgeving"}.</small></span></label>
           </fieldset> : null}
           <ModalFooter cancel={close} submitLabel="Opslaan" error={error} />
@@ -169,9 +169,9 @@ function modalTitle(modal: SourceProfileModal): string {
   return "Bronprofiel kopiëren";
 }
 
-function allowedInitialModal(modal: SourceProfileModal | null, profileType: "built_in" | "custom", copySourceCount: number, canConfigure: boolean): SourceProfileModal | null {
+function allowedInitialModal(modal: SourceProfileModal | null, profileType: "built_in" | "custom", canCopy: boolean, canConfigure: boolean): SourceProfileModal | null {
   if ((modal === "switch" || modal === "rename") && !canConfigure) return null;
   if (modal === "rename" && profileType !== "custom") return null;
-  if (modal === "copy" && copySourceCount === 0) return null;
+  if (modal === "copy" && !canCopy) return null;
   return modal;
 }

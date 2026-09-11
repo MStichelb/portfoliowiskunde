@@ -5,7 +5,6 @@ const mocks = vi.hoisted(() => ({
   renameManagedSourceProfile: vi.fn(),
   copySourceProfileToLearningSpace: vi.fn(),
   linkSourceProfileToLearningSpace: vi.fn(),
-  canConfigureLearningSpace: vi.fn(),
   copySourceProfileTemplateToLearningSpace: vi.fn(),
   createSourceProfileTemplate: vi.fn(),
   updateSourceProfileTemplateMetadata: vi.fn(),
@@ -17,7 +16,6 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/source-profiles", () => ({ renameManagedSourceProfile: mocks.renameManagedSourceProfile, copySourceProfileToLearningSpace: mocks.copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace: mocks.linkSourceProfileToLearningSpace }));
-vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: mocks.canConfigureLearningSpace }));
 vi.mock("@/lib/source-profile-templates", () => ({
   copySourceProfileTemplateToLearningSpace: mocks.copySourceProfileTemplateToLearningSpace,
   createSourceProfileTemplate: mocks.createSourceProfileTemplate,
@@ -46,7 +44,6 @@ describe("central source profile actions", () => {
     mocks.renameManagedSourceProfile.mockResolvedValue(undefined);
     mocks.copySourceProfileToLearningSpace.mockResolvedValue({ profile: { id: "copy" }, activated: true });
     mocks.linkSourceProfileToLearningSpace.mockResolvedValue(undefined);
-    mocks.canConfigureLearningSpace.mockResolvedValue(true);
     mocks.copySourceProfileTemplateToLearningSpace.mockResolvedValue(undefined);
     mocks.createSourceProfileTemplate.mockResolvedValue(undefined);
     mocks.updateSourceProfileTemplateMetadata.mockResolvedValue(undefined);
@@ -63,14 +60,14 @@ describe("central source profile actions", () => {
     const templateData = templateForm("template-1");
     templateData.set("managementLearningSpaceId", "space-5");
     await expect(copyManagedSourceProfileTemplateAction(templateData)).rejects.toThrow("saved=templateCopied");
-    expect(mocks.copySourceProfileTemplateToLearningSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "template-1", "space-5", true);
+    expect(mocks.copySourceProfileTemplateToLearningSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "template-1", "space-5");
   });
 
-  it("keeps editor copies inactive and routes linking through the guarded helper", async () => {
+  it("rejects an impossible inactive copy result and routes linking through the guarded helper", async () => {
     mocks.copySourceProfileToLearningSpace.mockResolvedValue({ profile: { id: "copy" }, activated: false });
     const copyData = form("profile-1", "");
     copyData.set("targetLearningSpaceId", "space-5");
-    await expect(copyManagedSourceProfileAction(copyData)).rejects.toThrow("saved=copiedInactive");
+    await expect(copyManagedSourceProfileAction(copyData)).rejects.toThrow("error=De%20profielkopie%20kon%20niet%20worden%20geactiveerd");
 
     const linkData = form("profile-1", "");
     linkData.set("targetLearningSpaceId", "space-5");

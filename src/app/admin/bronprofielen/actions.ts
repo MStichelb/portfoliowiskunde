@@ -4,7 +4,6 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdminUser } from "@/lib/auth";
-import { canConfigureLearningSpace } from "@/lib/authorization";
 import { copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace, renameManagedSourceProfile } from "@/lib/source-profiles";
 import {
   copySourceProfileTemplateToLearningSpace,
@@ -16,15 +15,14 @@ import {
 
 export async function copyManagedSourceProfileAction(formData: FormData): Promise<never> {
   const user = await requireAdminUser();
-  let activated = false;
   try {
     const result = await copySourceProfileToLearningSpace(user, value(formData, "sourceProfileId"), value(formData, "targetLearningSpaceId"));
-    activated = result.activated;
+    if (!result.activated) throw new Error("De profielkopie kon niet worden geactiveerd.");
   } catch (error) {
     redirect(`/admin/bronprofielen?error=${encodeURIComponent(error instanceof Error ? error.message : "Het profiel kon niet worden gekopieerd.")}`);
   }
   revalidatePath("/admin/bronprofielen");
-  redirect(`/admin/bronprofielen?saved=${activated ? "copied" : "copiedInactive"}`);
+  redirect("/admin/bronprofielen?saved=copied");
 }
 
 export async function linkManagedSourceProfileAction(formData: FormData): Promise<never> {
@@ -41,15 +39,13 @@ export async function linkManagedSourceProfileAction(formData: FormData): Promis
 export async function copyManagedSourceProfileTemplateAction(formData: FormData): Promise<never> {
   const user = await requireAdminUser();
   const targetLearningSpaceId = value(formData, "managementLearningSpaceId");
-  let activated = false;
   try {
-    activated = await canConfigureLearningSpace(user, targetLearningSpaceId);
-    await copySourceProfileTemplateToLearningSpace(user, value(formData, "templateId"), targetLearningSpaceId, activated);
+    await copySourceProfileTemplateToLearningSpace(user, value(formData, "templateId"), targetLearningSpaceId);
   } catch (error) {
     redirect(`/admin/bronprofielen?error=${encodeURIComponent(error instanceof Error ? error.message : "Het sjabloon kon niet worden gekopieerd.")}`);
   }
   revalidatePath("/admin/bronprofielen");
-  redirect(`/admin/bronprofielen?saved=${activated ? "templateCopied" : "templateCopiedInactive"}`);
+  redirect("/admin/bronprofielen?saved=templateCopied");
 }
 
 export async function renameManagedSourceProfileAction(formData: FormData): Promise<never> {

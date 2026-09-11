@@ -129,6 +129,10 @@ describe("Google Drive LearningSpace migration", () => {
     expect(userColumns).toEqual(expect.arrayContaining(["first_name", "last_name", "class_group_override_id"]));
     const exerciseColumns = (await database.execute("PRAGMA table_info(exercises)")).rows.map((row) => row.name);
     expect(exerciseColumns).toEqual(expect.arrayContaining(["custom_note", "note_position", "note_label"]));
+    const sourceProfileColumns = (await database.execute("PRAGMA table_info(source_profiles)")).rows.map((row) => row.name);
+    expect(sourceProfileColumns).toContain("owner_user_id");
+    expect((await database.execute("SELECT COUNT(*) AS count FROM source_profiles WHERE type = 'custom' AND owner_user_id IS NULL")).rows[0].count).toBe(0);
+    expect((await database.execute("SELECT owner_user_id FROM source_profiles WHERE type = 'built_in'")).rows[0].owner_user_id).toBeNull();
     expect((await database.execute("PRAGMA table_info(individual_learning_space_access)")).rows.map((row) => row.name))
       .toEqual(expect.arrayContaining(["user_id", "learning_space_id", "created_at", "updated_at"]));
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '021_multi_user_foundation'")).rows).toHaveLength(1);
@@ -138,12 +142,71 @@ describe("Google Drive LearningSpace migration", () => {
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '026_portfolio_custom_message'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '030_exercise_notes'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '031_exercise_note_labels'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '037_source_profile_ownership'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT id, role, status FROM users WHERE id = 'user-legacy-superadmin'")).rows[0]).toMatchObject({
       role: "superadmin", status: "active",
     });
     expect((await database.execute("SELECT owner_user_id, provider, status FROM storage_connections")).rows).toEqual([
       expect.objectContaining({ owner_user_id: "user-legacy-superadmin", provider: "onedrive", status: "disconnected" }),
     ]);
+  });
+
+  it("assigns deterministic source profile owners on upgrade without changing usage or profile snapshots", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-source-profile-ownership-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 36)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-10T10:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.batch([
+      { sql: `INSERT INTO users (id, display_name, role, status, created_at, updated_at)
+          VALUES ('z-owner', 'Z Owner', 'teacher', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, args: [] },
+      { sql: `INSERT INTO users (id, display_name, role, status, created_at, updated_at)
+          VALUES ('a-owner', 'A Owner', 'teacher', 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, args: [] },
+      { sql: `INSERT INTO learning_space_members (learning_space_id, user_id, role, created_at, updated_at)
+          VALUES ('space-5', 'z-owner', 'owner', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, args: [] },
+      { sql: `INSERT INTO learning_space_members (learning_space_id, user_id, role, created_at, updated_at)
+          VALUES ('space-5', 'a-owner', 'owner', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, args: [] },
+      { sql: `INSERT INTO learning_space_members (learning_space_id, user_id, role, created_at, updated_at)
+          VALUES ('space-6', 'a-owner', 'owner', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, args: [] },
+      { sql: `UPDATE learning_space_source_profiles
+          SET source_profile_id = (SELECT id FROM source_profiles WHERE management_learning_space_id = 'space-5')
+          WHERE learning_space_id = 'space-6'`, args: [] },
+      { sql: `INSERT INTO source_profiles
+          (id, type, name, description, config_version, config_json, created_at, updated_at, management_learning_space_id)
+          SELECT 'legacy-orphan-profile', 'custom', 'Los profiel', description, config_version, config_json,
+            '2026-09-10T09:00:00.000Z', '2026-09-10T09:00:00.000Z', NULL
+          FROM source_profiles WHERE type = 'built_in'`, args: [] },
+    ], "write");
+    const profileSnapshotsBefore = (await legacy.execute(`SELECT id, description, config_version, config_json, created_at, updated_at,
+        management_learning_space_id FROM source_profiles WHERE type = 'custom' ORDER BY id`)).rows;
+    const usageBefore = (await legacy.execute("SELECT * FROM learning_space_source_profiles ORDER BY learning_space_id")).rows;
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    const profiles = (await upgraded.execute(`SELECT id, name, owner_user_id, description, config_version, config_json, created_at,
+        updated_at, management_learning_space_id FROM source_profiles WHERE type = 'custom' ORDER BY id`)).rows;
+    expect(profiles.filter((row) => row.management_learning_space_id != null).every((row) => row.owner_user_id === "a-owner")).toBe(true);
+    expect(profiles.find((row) => row.id === "legacy-orphan-profile")?.owner_user_id).toBe("user-legacy-superadmin");
+    expect(profiles.every((row) => row.owner_user_id != null)).toBe(true);
+    expect(new Set(profiles.filter((row) => row.owner_user_id === "a-owner").map((row) => String(row.name).trim().toLocaleLowerCase("nl"))).size).toBe(2);
+    expect(profiles.map((row) => ({
+      id: row.id,
+      description: row.description,
+      config_version: row.config_version,
+      config_json: row.config_json,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+      management_learning_space_id: row.management_learning_space_id,
+    }))).toEqual(profileSnapshotsBefore);
+    expect((await upgraded.execute("SELECT * FROM learning_space_source_profiles ORDER BY learning_space_id")).rows).toEqual(usageBefore);
+    expect((await upgraded.execute("SELECT version FROM schema_migrations WHERE version = '037_source_profile_ownership'")).rows).toHaveLength(1);
   });
 
   it("adds custom message defaults without changing existing portfolio data", async () => {

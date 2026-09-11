@@ -42,6 +42,10 @@ beforeEach(async () => {
   await upsertManagedMembership("space-5", owner.id, "owner");
   await upsertManagedMembership("space-5", editor.id, "editor");
   await setIndividualLearningSpaceAccess(viewer.id, "space-5", true);
+  await (await getDatabase()).execute({
+    sql: "UPDATE source_profiles SET owner_user_id = ? WHERE management_learning_space_id = 'space-5'",
+    args: [owner.id],
+  });
 });
 
 afterEach(async () => {
@@ -68,7 +72,7 @@ describe("source profile settings actions", () => {
   it("blocks an authenticated editor from linking despite a manipulated client user id", async () => {
     const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
     const template = await getDefaultSourceProfileTemplate();
-    const custom = await cloneSourceProfileTemplateToLearningSpace({ ...template, name: "Tweede profiel" }, "space-5");
+    const custom = await cloneSourceProfileTemplateToLearningSpace({ ...template, name: "Tweede profiel" }, "space-5", owner.id);
     mocks.requireAdminUser.mockResolvedValue(editor);
 
     await expect(linkSourceProfileAction(form({
@@ -83,7 +87,7 @@ describe("source profile settings actions", () => {
 
   it("lets an owner explicitly copy or link a selected concrete profile", async () => {
     const original = (await getActiveSourceProfileForLearningSpace("space-5"))!;
-    const source = await cloneSourceProfileTemplateToLearningSpace({ ...(await getDefaultSourceProfileTemplate()), name: "Andere basis" }, "space-5");
+    const source = await cloneSourceProfileTemplateToLearningSpace({ ...(await getDefaultSourceProfileTemplate()), name: "Andere basis" }, "space-5", owner.id);
     mocks.requireAdminUser.mockResolvedValue(owner);
 
     await expect(copySelectedSourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: original.id }))).rejects.toThrow("profileSaved=copied");
@@ -117,16 +121,15 @@ describe("source profile settings actions", () => {
     expect(copies.rows.some((row) => row.id !== targetBefore.id)).toBe(true);
   });
 
-  it("lets an editor copy without changing the active source profile", async () => {
+  it("blocks a pure editor from copying without an owned target LearningSpace", async () => {
     mocks.requireAdminUser.mockResolvedValue(editor);
     const before = (await getActiveSourceProfileForLearningSpace("space-5"))!;
 
-    await expect(copySourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: "manipulated", targetLearningSpaceId: "space-5" }))).rejects.toThrow("profileSaved=copiedInactive");
+    await expect(copySourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: "manipulated", targetLearningSpaceId: "space-5" }))).rejects.toThrow("profileError=Kopi%C3%ABren%20kan%20alleen");
 
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(before.id);
     const copies = await (await getDatabase()).execute({ sql: "SELECT id, config_json FROM source_profiles WHERE management_learning_space_id = ?", args: ["space-5"] });
-    expect(copies.rows).toHaveLength(2);
-    expect(copies.rows.some((row) => row.id !== before.id && row.config_json === JSON.stringify(before.config))).toBe(true);
+    expect(copies.rows).toHaveLength(1);
   });
 
   it("copies a server-resolved template to a concrete active owner profile", async () => {

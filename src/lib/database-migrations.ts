@@ -898,6 +898,38 @@ export const migrations: DatabaseMigration[] = [
         WHERE source_profile_id = ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)}`,
     ],
   },
+  {
+    version: "037_source_profile_ownership",
+    statements: [
+      "ALTER TABLE source_profiles ADD COLUMN owner_user_id TEXT REFERENCES users(id) ON DELETE RESTRICT",
+      `UPDATE source_profiles
+        SET owner_user_id = COALESCE(
+          (SELECT MIN(learning_space_members.user_id)
+            FROM learning_space_members
+            WHERE learning_space_members.learning_space_id = source_profiles.management_learning_space_id
+              AND learning_space_members.role = 'owner'),
+          (SELECT MIN(users.id) FROM users WHERE users.role = 'superadmin' AND users.status = 'active'),
+          (SELECT MIN(users.id) FROM users WHERE users.role = 'superadmin')
+        )
+        WHERE source_profiles.type = 'custom' AND source_profiles.owner_user_id IS NULL`,
+      `WITH ranked_profiles AS (
+          SELECT id, name,
+            ROW_NUMBER() OVER (PARTITION BY owner_user_id, LOWER(TRIM(name)) ORDER BY created_at, id) AS duplicate_number
+          FROM source_profiles
+          WHERE type = 'custom' AND owner_user_id IS NOT NULL
+        )
+        UPDATE source_profiles
+        SET name = (
+          SELECT SUBSTR(TRIM(ranked_profiles.name), 1,
+              80 - LENGTH(' (' || CAST(ranked_profiles.duplicate_number AS TEXT) || ')'))
+            || ' (' || CAST(ranked_profiles.duplicate_number AS TEXT) || ')'
+          FROM ranked_profiles
+          WHERE ranked_profiles.id = source_profiles.id
+        )
+        WHERE id IN (SELECT id FROM ranked_profiles WHERE duplicate_number > 1)`,
+      "CREATE INDEX source_profiles_owner_index ON source_profiles(owner_user_id, type)",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

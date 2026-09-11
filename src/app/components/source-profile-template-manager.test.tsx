@@ -81,18 +81,24 @@ describe("SourceProfileTemplateManager", () => {
     expect(markup).not.toContain("Beheren");
     expect(markup).not.toContain("Nieuw sjabloon");
   });
+
+  it("hides template copy from a pure editor without an owned target", () => {
+    const markup = renderManager("copy", "template-1", undefined, false, false);
+    expect(markup).not.toContain("Kopiëren");
+    expect(markup).not.toContain('role="dialog"');
+  });
 });
 
-function renderManager(initialModal: SourceProfileTemplateModal | null = null, initialTemplateId?: string, error?: string, canManage = true): string {
+function renderManager(initialModal: SourceProfileTemplateModal | null = null, initialTemplateId?: string, error?: string, canManage = true, hasCopyTargets = true): string {
   return renderToStaticMarkup(<SourceProfileTemplateManager
     templates={[
       { id: "template-1", name: "Standaard portfolio", description: "Appbreed standaardsjabloon", configVersion: 1, isDefault: true },
       { id: "template-2", name: "Eigen basis", description: null, configVersion: 1, isDefault: false },
     ]}
-    copyTargets={[{ learningSpaceId: "space-6", learningSpaceName: "Zesde jaar", learningSpaceShortLabel: "6WIS", profile: {
+    copyTargets={hasCopyTargets ? [{ learningSpaceId: "space-6", learningSpaceName: "Zesde jaar", learningSpaceShortLabel: "6WIS", profile: {
       id: "profile-6", type: "custom", name: "Huidig profiel", description: null, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
-      managementLearningSpaceId: "space-6", createdAt: "2026-09-10", updatedAt: "2026-09-10",
-    }, canConfigure: true }]}
+      managementLearningSpaceId: "space-6", ownerUserId: "owner", createdAt: "2026-09-10", updatedAt: "2026-09-10",
+    }, canConfigure: true }] : []}
     canManage={canManage}
     actions={actions}
     initialModal={initialModal}

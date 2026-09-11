@@ -12,6 +12,7 @@ import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycl
 import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRelativePath } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { ExerciseNotePosition } from "@/lib/exercise-note";
+import { LEGACY_SUPERADMIN_USER_ID } from "@/lib/identity";
 import type { SourceManifestEntry } from "@/lib/source-comparison";
 import { getDefaultSourceProfileTemplate, prepareSourceProfileTemplateClone } from "@/lib/source-profile-templates";
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
@@ -340,7 +341,7 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
   const template = await getDefaultSourceProfileTemplate();
-  const profileClone = prepareSourceProfileTemplateClone(template, id, now);
+  const profileClone = prepareSourceProfileTemplateClone(template, id, ownerUserId ?? LEGACY_SUPERADMIN_USER_ID, now);
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
   const mirror = input.mirrorSource ?? null;
   const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
