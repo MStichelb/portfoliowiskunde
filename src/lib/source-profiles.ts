@@ -2,7 +2,7 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { AuthorizationError, canConfigureLearningSpace, canManageLearningSpace, getManageableLearningSpaceIds, requireLearningSpaceConfiguration, requireLearningSpaceManagement } from "@/lib/authorization";
+import { AuthorizationError, canManageLearningSpace, getManageableLearningSpaceIds, requireLearningSpaceConfiguration, requireLearningSpaceManagement } from "@/lib/authorization";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { getDatabase } from "@/lib/database";
 import type { AppUser } from "@/lib/identity";
@@ -49,7 +49,7 @@ export interface SourceProfileUsage {
 
 export type ManagedSourceProfile = AvailableSourceProfile;
 
-export interface SourceProfileCopySource {
+export interface SourceProfileCopyTarget {
   learningSpaceId: string;
   learningSpaceName: string;
   learningSpaceShortLabel: string;
@@ -59,12 +59,7 @@ export interface SourceProfileCopySource {
 export interface SourceProfileAdminModel {
   activeProfile: SourceProfile;
   availableProfiles: AvailableSourceProfile[];
-  copySources: SourceProfileCopySource[];
-}
-
-export interface SourceProfileCopyResult {
-  profile: SourceProfile;
-  activated: boolean;
+  copyTargets: SourceProfileCopyTarget[];
 }
 
 export async function ensureBuiltInDefaultSourceProfile(): Promise<void> {
@@ -87,8 +82,7 @@ export async function getSourceProfileAdminModel(user: AppUser, learningSpaceId:
   const manageableSpaceIds = await getManageableLearningSpaceIds(user);
   if (!manageableSpaceIds.includes(learningSpaceId)) manageableSpaceIds.push(learningSpaceId);
   const database = await getDatabase();
-  const placeholders = manageableSpaceIds.map(() => "?").join(", ");
-  const [activeResult, managedProfiles, copyResult] = await Promise.all([
+  const [activeResult, managedProfiles, copyTargets] = await Promise.all([
     database.execute({
       sql: `SELECT source_profiles.* FROM learning_space_source_profiles
         JOIN source_profiles ON source_profiles.id = learning_space_source_profiles.source_profile_id
@@ -96,33 +90,19 @@ export async function getSourceProfileAdminModel(user: AppUser, learningSpaceId:
       args: [learningSpaceId],
     }),
     getManagedSourceProfilesForManagementIds(manageableSpaceIds),
-    database.execute({
-      sql: `SELECT source_profiles.*, learning_spaces.id AS source_learning_space_id,
-          learning_spaces.name AS source_learning_space_name,
-          learning_spaces.short_label AS source_learning_space_short_label
-        FROM learning_space_source_profiles
-        JOIN learning_spaces ON learning_spaces.id = learning_space_source_profiles.learning_space_id
-        JOIN source_profiles ON source_profiles.id = learning_space_source_profiles.source_profile_id
-        WHERE learning_spaces.id IN (${placeholders})
-        ORDER BY learning_spaces.sort_order, learning_spaces.name`,
-      args: manageableSpaceIds,
-    }),
+    getSourceProfileCopyTargetsForIds(manageableSpaceIds),
   ]);
   const activeProfile = activeResult.rows[0] ? sourceProfileFromRow(activeResult.rows[0]) : null;
   if (!activeProfile) throw new Error("Deze leeromgeving heeft geen actief bronprofiel.");
   return {
     activeProfile,
     availableProfiles: managedProfiles,
-    copySources: copyResult.rows.flatMap((row) => {
-      const profile = trySourceProfileFromRow(row);
-      return profile ? [{
-        learningSpaceId: String(row.source_learning_space_id),
-        learningSpaceName: String(row.source_learning_space_name),
-        learningSpaceShortLabel: String(row.source_learning_space_short_label),
-        profile,
-      }] : [];
-    }),
+    copyTargets,
   };
+}
+
+export async function getSourceProfileCopyTargets(user: AppUser): Promise<SourceProfileCopyTarget[]> {
+  return getSourceProfileCopyTargetsForIds(await getManageableLearningSpaceIds(user));
 }
 
 export async function getManagedSourceProfiles(user: AppUser): Promise<ManagedSourceProfile[]> {
@@ -205,23 +185,26 @@ export async function createOwnSourceProfile(user: AppUser, learningSpaceId: str
   return createIndependentCopy(active, learningSpaceId, "Eigen profiel", true);
 }
 
-export async function copyActiveSourceProfile(
+export async function copySourceProfileToLearningSpace(
   user: AppUser,
+  sourceProfileId: string,
   targetLearningSpaceId: string,
-  sourceLearningSpaceId: string,
-): Promise<SourceProfileCopyResult> {
+): Promise<SourceProfile> {
   await requireLearningSpaceManagement(user, targetLearningSpaceId);
-  await requireLearningSpaceManagement(user, sourceLearningSpaceId);
-  const source = await getActiveSourceProfileForLearningSpace(sourceLearningSpaceId);
-  if (!source) throw new Error("Het bronprofiel van de gekozen leeromgeving bestaat niet.");
-  const activated = await canConfigureLearningSpace(user, targetLearningSpaceId);
-  return { profile: await createIndependentCopy(source, targetLearningSpaceId, copyName(source.name), activated), activated };
+  const source = await requireCopyableSourceProfile(user, sourceProfileId);
+  return createIndependentCopy(source, targetLearningSpaceId, copyName(source.name), false);
 }
 
-export async function copyManagedSourceProfile(user: AppUser, sourceProfileId: string): Promise<SourceProfile> {
-  const source = await requireAllowedSourceProfile(user, sourceProfileId);
-  if (!source.managementLearningSpaceId) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
-  return createIndependentCopy(source, source.managementLearningSpaceId, copyName(source.name), false);
+export async function copyActiveSourceProfileToLearningSpace(
+  user: AppUser,
+  sourceLearningSpaceId: string,
+  targetLearningSpaceId: string,
+): Promise<SourceProfile> {
+  await requireLearningSpaceManagement(user, sourceLearningSpaceId);
+  await requireLearningSpaceManagement(user, targetLearningSpaceId);
+  const source = await getActiveSourceProfileForLearningSpace(sourceLearningSpaceId);
+  if (!source || source.type === "built_in") throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+  return createIndependentCopy(source, targetLearningSpaceId, copyName(source.name), false);
 }
 
 export async function renameSourceProfile(
@@ -305,6 +288,22 @@ async function requireAllowedSourceProfile(user: AppUser, sourceProfileId: strin
   return profile;
 }
 
+async function requireCopyableSourceProfile(user: AppUser, sourceProfileId: string): Promise<SourceProfile> {
+  const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [sourceProfileId] });
+  if (!result.rows[0]) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+  const profile = sourceProfileFromRow(result.rows[0]);
+  const manageableIds = await getManageableLearningSpaceIds(user);
+  if (profile.type === "built_in" || manageableIds.length === 0) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+  if (profile.managementLearningSpaceId && manageableIds.includes(profile.managementLearningSpaceId)) return profile;
+  const placeholders = manageableIds.map(() => "?").join(", ");
+  const assignment = await (await getDatabase()).execute({
+    sql: `SELECT 1 FROM learning_space_source_profiles WHERE source_profile_id = ? AND learning_space_id IN (${placeholders}) LIMIT 1`,
+    args: [profile.id, ...manageableIds],
+  });
+  if (!assignment.rows[0]) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+  return profile;
+}
+
 function trySourceProfileFromRow(row: DatabaseRow): SourceProfile | null {
   try {
     return sourceProfileFromRow(row);
@@ -355,6 +354,31 @@ async function configurableLearningSpaceIds(user: AppUser, manageableIds: string
     args: [user.id],
   });
   return rows.rows.map((row) => String(row.learning_space_id));
+}
+
+async function getSourceProfileCopyTargetsForIds(manageableSpaceIds: string[]): Promise<SourceProfileCopyTarget[]> {
+  if (manageableSpaceIds.length === 0) return [];
+  const placeholders = manageableSpaceIds.map(() => "?").join(", ");
+  const result = await (await getDatabase()).execute({
+    sql: `SELECT source_profiles.*, learning_spaces.id AS target_learning_space_id,
+        learning_spaces.name AS target_learning_space_name,
+        learning_spaces.short_label AS target_learning_space_short_label
+      FROM learning_space_source_profiles
+      JOIN learning_spaces ON learning_spaces.id = learning_space_source_profiles.learning_space_id
+      JOIN source_profiles ON source_profiles.id = learning_space_source_profiles.source_profile_id
+      WHERE learning_spaces.id IN (${placeholders})
+      ORDER BY learning_spaces.sort_order, learning_spaces.name`,
+    args: manageableSpaceIds,
+  });
+  return result.rows.flatMap((row) => {
+    const profile = trySourceProfileFromRow(row);
+    return profile ? [{
+      learningSpaceId: String(row.target_learning_space_id),
+      learningSpaceName: String(row.target_learning_space_name),
+      learningSpaceShortLabel: String(row.target_learning_space_short_label),
+      profile,
+    }] : [];
+  });
 }
 
 function copyName(sourceName: string): string {

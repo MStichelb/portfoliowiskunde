@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { requireAdminUser } from "@/lib/auth";
 import { canManageLearningSpace, requireLearningSpaceConfiguration } from "@/lib/authorization";
 import { getLearningSpace } from "@/lib/repositories";
-import { copyActiveSourceProfile, createOwnSourceProfile, renameSourceProfile, switchActiveSourceProfile } from "@/lib/source-profiles";
+import { copyActiveSourceProfileToLearningSpace, createOwnSourceProfile, renameSourceProfile, switchActiveSourceProfile } from "@/lib/source-profiles";
 import { copySourceProfileTemplateToLearningSpace } from "@/lib/source-profile-templates";
 import { listManagedMemberships, removeManagedMembership, upsertManagedMembership } from "@/lib/user-management";
 
@@ -54,9 +54,8 @@ export async function createOwnSourceProfileAction(formData: FormData) {
 }
 
 export async function copySourceProfileAction(formData: FormData) {
-  await runSourceProfileAction(formData, "copied", "copy", async (user, learningSpaceId) => {
-    const result = await copyActiveSourceProfile(user, learningSpaceId, value(formData, "sourceLearningSpaceId"));
-    return result.activated ? "copied" : "copiedInactive";
+  await runSourceProfileAction(formData, "copiedInactive", "copy", async (user, learningSpaceId) => {
+    await copyActiveSourceProfileToLearningSpace(user, learningSpaceId, value(formData, "targetLearningSpaceId"));
   });
 }
 

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdminUser } from "@/lib/auth";
-import { copyManagedSourceProfile, renameManagedSourceProfile } from "@/lib/source-profiles";
+import { copySourceProfileToLearningSpace, renameManagedSourceProfile } from "@/lib/source-profiles";
 import {
   copySourceProfileTemplateToLearningSpace,
   createSourceProfileTemplate,
@@ -16,7 +16,7 @@ import {
 export async function copyManagedSourceProfileAction(formData: FormData): Promise<never> {
   const user = await requireAdminUser();
   try {
-    await copyManagedSourceProfile(user, value(formData, "sourceProfileId"));
+    await copySourceProfileToLearningSpace(user, value(formData, "sourceProfileId"), value(formData, "targetLearningSpaceId"));
   } catch (error) {
     redirect(`/admin/bronprofielen?error=${encodeURIComponent(error instanceof Error ? error.message : "Het profiel kon niet worden gekopieerd.")}`);
   }

@@ -5,11 +5,12 @@ import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "@/lib/source-profile-con
 import type { AppUser } from "@/lib/identity";
 import type { ManagedSourceProfile } from "@/lib/source-profiles";
 
-const mocks = vi.hoisted(() => ({ requireAdminUser: vi.fn(), getManagedSourceProfiles: vi.fn(), listSourceProfileTemplates: vi.fn() }));
+const mocks = vi.hoisted(() => ({ requireAdminUser: vi.fn(), getManagedSourceProfiles: vi.fn(), getSourceProfileCopyTargets: vi.fn(), listSourceProfileTemplates: vi.fn() }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/source-profiles", () => ({
   getManagedSourceProfiles: mocks.getManagedSourceProfiles,
+  getSourceProfileCopyTargets: mocks.getSourceProfileCopyTargets,
   sourceProfileUsageLabel: (usages: Array<{ learningSpaceShortLabel: string }>, inactiveLabel = "Inactief") =>
     usages.length === 0 ? inactiveLabel : `${usages.slice(0, 3).map((usage) => usage.learningSpaceShortLabel).join(", ")}${usages.length > 3 ? ` +${usages.length - 3}` : ""}`,
 }));
@@ -26,6 +27,7 @@ describe("central source profile page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getManagedSourceProfiles.mockResolvedValue([profile()]);
+    mocks.getSourceProfileCopyTargets.mockResolvedValue([copyTarget()]);
     mocks.listSourceProfileTemplates.mockResolvedValue([template()]);
   });
 
@@ -50,6 +52,8 @@ describe("central source profile page", () => {
       expect(markup).toContain("Appbrede sjablonen");
       expect(markup).toContain("alleen-lezen vertrekpunten");
       expect(markup).toContain("Kopiëren");
+      expect(markup).toContain("Toepassen op leeromgeving");
+      expect(markup).toContain("5WIS — Standaard portfolio");
       expect(mocks.listSourceProfileTemplates).toHaveBeenCalledOnce();
     }
   });
@@ -65,6 +69,9 @@ describe("central source profile page", () => {
     expect(markup).toContain('role="dialog"');
     expect(markup).not.toContain('name="name"');
     expect(markup).toContain("bestaande profiel niet hernoemen");
+    expect(markup).toContain("<span>Bronprofiel</span><strong>Los profiel</strong>");
+    expect(markup).toContain("Toepassen op leeromgeving");
+    expect(markup).toContain('class="secondary-button source-profile-copy-button"');
 
     const manipulated = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ profile: "foreign" }) }));
     expect(manipulated).not.toContain('role="dialog"');
@@ -95,4 +102,12 @@ function user(role: "teacher" | "superadmin"): AppUser {
 
 function template() {
   return { id: "template-1", name: "Standaard portfolio", description: "Appbreed sjabloon", configVersion: 1, isDefault: true };
+}
+
+function copyTarget() {
+  return {
+    learningSpaceId: "space-5", learningSpaceName: "Vijfde jaar", learningSpaceShortLabel: "5WIS",
+    profile: { id: "active-5", name: "Standaard portfolio", type: "custom", description: null, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
+      managementLearningSpaceId: "space-5", createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z" },
+  };
 }

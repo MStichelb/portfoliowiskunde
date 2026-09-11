@@ -55,7 +55,7 @@ describe("LearningSpace settings page", () => {
     mocks.canConfigureLearningSpace.mockResolvedValue(true);
     mocks.canManageLearningSpace.mockResolvedValue(true);
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
-    mocks.getSourceProfileAdminModel.mockResolvedValue({ activeProfile: { name: "Standaard portfolio" }, availableProfiles: [], copySources: [] });
+    mocks.getSourceProfileAdminModel.mockResolvedValue({ activeProfile: { name: "Standaard portfolio" }, availableProfiles: [], copyTargets: [] });
     mocks.listSourceProfileTemplates.mockResolvedValue([]);
   });
 

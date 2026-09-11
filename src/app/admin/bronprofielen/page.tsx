@@ -3,7 +3,7 @@ import Link from "next/link";
 
 import { SourceProfileTemplateManager, type SourceProfileTemplateModal } from "@/app/components/source-profile-template-manager";
 import { requireAdminUser } from "@/lib/auth";
-import { getManagedSourceProfiles, sourceProfileUsageLabel } from "@/lib/source-profiles";
+import { getManagedSourceProfiles, getSourceProfileCopyTargets, sourceProfileUsageLabel } from "@/lib/source-profiles";
 import { listSourceProfileTemplates } from "@/lib/source-profile-templates";
 
 import {
@@ -30,8 +30,9 @@ interface SourceProfilesPageQuery {
 
 export default async function SourceProfilesPage({ searchParams }: { searchParams: Promise<SourceProfilesPageQuery> }) {
   const user = await requireAdminUser();
-  const [profiles, query, templates] = await Promise.all([
+  const [profiles, copyTargets, query, templates] = await Promise.all([
     getManagedSourceProfiles(user),
+    getSourceProfileCopyTargets(user),
     searchParams,
     listSourceProfileTemplates(user),
   ]);
@@ -56,7 +57,6 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
         {profiles.map((profile) => <article className="source-profile-overview-card" key={profile.id}>
           <div className="source-profile-overview-copy">
             <div className="source-profile-overview-title"><SlidersHorizontal size={18} aria-hidden /><h3>{profile.name}</h3></div>
-            <small>Configuratieversie {profile.config.configVersion}</small>
             <p className={profile.isInactive ? "source-profile-inactive" : undefined}>
               {profile.isInactive ? "Inactief" : <>Gebruikt in: <strong>{sourceProfileUsageLabel(profile.usages)}</strong></>}
             </p>
@@ -83,7 +83,7 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
       <div className="source-profile-overview-heading"><div><h2 id="source-profile-templates-heading">Appbrede sjablonen</h2><p>Sjablonen zijn alleen-lezen vertrekpunten voor nieuwe, onafhankelijke profielen.</p></div></div>
       <div className="source-profile-overview-list">{templates.map((template) => <article className="source-profile-overview-card" key={template.id}>
         <div className="source-profile-overview-copy"><div className="source-profile-template-title"><div className="source-profile-overview-title"><SlidersHorizontal size={18} aria-hidden /><h3>{template.name}</h3></div>{template.isDefault ? <span className="active-source-badge">Standaard</span> : null}</div><small>Configuratieversie {template.configVersion}</small>{template.description ? <p>{template.description}</p> : null}</div>
-        <form action={copyManagedSourceProfileTemplateAction} className="source-profile-template-copy-form"><input type="hidden" name="templateId" value={template.id} /><label>Beheercontext<select name="managementLearningSpaceId" required>{managementContexts(profiles).map((context) => <option key={context.id} value={context.id}>{context.label}</option>)}</select></label><button className="secondary-button" type="submit"><Copy size={16} aria-hidden />Kopiëren</button></form>
+        <form action={copyManagedSourceProfileTemplateAction} className="source-profile-template-copy-form"><input type="hidden" name="templateId" value={template.id} /><label>Toepassen op leeromgeving<select name="managementLearningSpaceId" required>{copyTargets.map((target) => <option key={target.learningSpaceId} value={target.learningSpaceId}>{target.learningSpaceShortLabel} — {target.profile.name}</option>)}</select></label><button className="secondary-button source-profile-copy-button" type="submit"><Copy size={16} aria-hidden />Kopiëren</button></form>
       </article>)}</div>
     </section>}
 
@@ -96,6 +96,7 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
         <div className="source-profile-central-usage">
           <strong>{selectedProfile.isInactive ? "Inactief" : `Gebruikt in: ${sourceProfileUsageLabel(selectedProfile.usages)}`}</strong>
           <small>{selectedProfile.usageCount} {selectedProfile.usageCount === 1 ? "actieve leeromgeving" : "actieve leeromgevingen"}</small>
+          <small>Configuratieversie {selectedProfile.config.configVersion}</small>
         </div>
         {selectedProfile.canRename ? <form action={renameManagedSourceProfileAction} className="source-profile-dialog-form">
           <input type="hidden" name="sourceProfileId" value={selectedProfile.id} />
@@ -108,8 +109,10 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
         </form> : <div className="source-profile-dialog-form"><p>Je kunt dit profiel en het actuele gebruik bekijken. Als editor kun je het bestaande profiel niet hernoemen.</p><div className="source-profile-dialog-actions"><Link className="secondary-button link-button" href="/admin/bronprofielen">Sluiten</Link></div></div>}
         <form action={copyManagedSourceProfileAction} className="source-profile-dialog-form">
           <input type="hidden" name="sourceProfileId" value={selectedProfile.id} />
-          <p>Maak een onafhankelijke kopie binnen dezelfde beheercontext. De actieve configuratie verandert niet.</p>
-          <div className="source-profile-dialog-actions"><button className="secondary-button" type="submit"><Copy size={16} aria-hidden />Profiel kopiëren</button></div>
+          <div className="source-profile-readonly-field"><span>Bronprofiel</span><strong>{selectedProfile.name}</strong></div>
+          <label>Toepassen op leeromgeving<select name="targetLearningSpaceId" required>{copyTargets.map((target) => <option key={target.learningSpaceId} value={target.learningSpaceId}>{target.learningSpaceShortLabel} — {target.profile.name}</option>)}</select></label>
+          <p>Maak een onafhankelijke kopie. De actieve configuratie van de gekozen leeromgeving verandert niet.</p>
+          <div className="source-profile-dialog-actions"><button className="secondary-button source-profile-copy-button" type="submit"><Copy size={16} aria-hidden />Profiel kopiëren</button></div>
         </form>
       </div>
     </div> : null}
@@ -121,13 +124,6 @@ function profileFeedback(value: string | undefined): string | null {
   if (value === "copied") return "Profiel gekopieerd. De actieve configuratie is niet gewijzigd.";
   if (value === "templateCopied") return "Sjabloon gekopieerd. De actieve configuratie is niet gewijzigd.";
   return null;
-}
-
-function managementContexts(profiles: Awaited<ReturnType<typeof getManagedSourceProfiles>>): Array<{ id: string; label: string }> {
-  return [...new Map(profiles.flatMap((profile) => profile.managementLearningSpaceId ? [[profile.managementLearningSpaceId, {
-    id: profile.managementLearningSpaceId,
-    label: profile.managementLearningSpaceName ?? profile.managementLearningSpaceShortLabel ?? profile.managementLearningSpaceId,
-  }] as const] : [])).values()];
 }
 
 function templateModal(value: string | undefined): SourceProfileTemplateModal | null {

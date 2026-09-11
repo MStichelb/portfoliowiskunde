@@ -91,20 +91,22 @@ describe("source profile settings actions", () => {
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe("Standaard portfolio");
   });
 
-  it("closes after copy success and activates the new independent profile", async () => {
-    mocks.requireAdminUser.mockResolvedValue(superadmin);
+  it("keeps an owner ordinary copy inactive", async () => {
+    mocks.requireAdminUser.mockResolvedValue(owner);
+    const targetBefore = (await getActiveSourceProfileForLearningSpace("space-5"))!;
 
-    await expect(copySourceProfileAction(form({ learningSpaceId: "space-5", sourceLearningSpaceId: "space-6" }))).rejects.toThrow("profileSaved=copied");
+    await expect(copySourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: "manipulated", targetLearningSpaceId: "space-5" }))).rejects.toThrow("profileSaved=copiedInactive");
 
-    expect((await getActiveSourceProfileForLearningSpace("space-5"))).toMatchObject({ type: "custom", managementLearningSpaceId: "space-5" });
-    expect(mocks.redirect).toHaveBeenLastCalledWith("/admin/5/instellingen?profileSaved=copied");
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(targetBefore.id);
+    const copies = await (await getDatabase()).execute({ sql: "SELECT id FROM source_profiles WHERE management_learning_space_id = ?", args: ["space-5"] });
+    expect(copies.rows.some((row) => row.id !== targetBefore.id)).toBe(true);
   });
 
   it("lets an editor copy without changing the active source profile", async () => {
     mocks.requireAdminUser.mockResolvedValue(editor);
     const before = (await getActiveSourceProfileForLearningSpace("space-5"))!;
 
-    await expect(copySourceProfileAction(form({ learningSpaceId: "space-5", sourceLearningSpaceId: "space-5" }))).rejects.toThrow("profileSaved=copiedInactive");
+    await expect(copySourceProfileAction(form({ learningSpaceId: "space-5", sourceProfileId: "manipulated", targetLearningSpaceId: "space-5" }))).rejects.toThrow("profileSaved=copiedInactive");
 
     expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(before.id);
     const copies = await (await getDatabase()).execute({ sql: "SELECT id, config_json FROM source_profiles WHERE management_learning_space_id = ?", args: ["space-5"] });

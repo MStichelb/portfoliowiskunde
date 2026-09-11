@@ -28,6 +28,7 @@ describe("SourceProfileCard", () => {
     expect(markup).toContain("Ander profiel kiezen");
     expect(markup).toContain("Eigen profiel maken");
     expect(markup).toContain("Profiel kopiëren");
+    expect(markup).toContain('class="secondary-button source-profile-copy-button"');
     expect(markup).toContain("huidige scanner gebruikt deze configuratie nog niet");
     expect(markup).not.toContain('role="dialog"');
     expect(markup).not.toContain("Beschikbaar bronprofiel");
@@ -72,7 +73,7 @@ describe("SourceProfileCard", () => {
 
     expect(markup).toContain("Bronprofielen bekijken");
     expect(markup).toContain("Profiel kopiëren");
-    expect(markup).toContain("Als editor kun je de actieve configuratie bekijken");
+    expect(markup).toContain("Als editor kun je profielen bekijken en kopiëren, maar niet wijzigen.");
     expect(markup).not.toContain("Ander profiel kiezen");
     expect(markup).not.toContain("Naam wijzigen");
   });
@@ -107,11 +108,14 @@ describe("SourceProfileCard", () => {
     const markup = renderCard("custom", "copy");
 
     expect(markup).toContain("Bronprofiel kopiëren");
-    expect(markup).toContain("<label>Profiel<select");
-    expect(markup).toContain("Mijn profiel — 6WIS");
+    expect(markup).not.toContain("Kies een profiel");
+    expect(markup).toContain("<span>Bronprofiel</span><strong>Eigen profiel</strong>");
+    expect(markup).toContain("Toepassen op leeromgeving");
+    expect(markup).toContain("6WIS — Mijn profiel");
     expect(markup).toContain("Er wordt een onafhankelijke kopie gemaakt");
     expect(markup).toContain("Annuleren");
-    expect(markup).toContain("Kopiëren en activeren");
+    expect(markup).toContain(">Kopiëren</button>");
+    expect(markup).not.toContain("Kopiëren en activeren");
     expect(markup).not.toContain("Ander bronprofiel kiezen");
     expect(markup).not.toContain("Profielnaam wijzigen");
     expect(markup.match(/role="dialog"/g)).toHaveLength(1);
@@ -131,7 +135,10 @@ function renderCard(type: SourceProfile["type"], initialModal: SourceProfileModa
       ], usageCount: 4, isInactive: false, canRename: true },
       { ...profile("inactive", "custom", "Los profiel", "space-6"), managementLearningSpaceName: "Zesde jaar", managementLearningSpaceShortLabel: "6WIS", usages: [], usageCount: 0, isInactive: true, canRename: true },
     ],
-    copySources: [{ learningSpaceId: "space-6", learningSpaceName: "Zesde jaar", learningSpaceShortLabel: "6WIS", profile: profile("other", "custom", "Mijn profiel", "space-6") }],
+    copyTargets: [
+      { learningSpaceId: "space-5", learningSpaceName: "Vijfde jaar", learningSpaceShortLabel: "5WIS", profile: active },
+      { learningSpaceId: "space-6", learningSpaceName: "Zesde jaar", learningSpaceShortLabel: "6WIS", profile: profile("other", "custom", "Mijn profiel", "space-6") },
+    ],
   };
   return renderToStaticMarkup(<SourceProfileCard learningSpaceId="space-5" model={model} templates={[{ id: "template-1", name: "Standaardtest", description: null, configVersion: 1, isDefault: true }]} canConfigure={canConfigure} actions={actions} initialModal={initialModal} error={error} />);
 }

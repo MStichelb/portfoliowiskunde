@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   renameManagedSourceProfile: vi.fn(),
-  copyManagedSourceProfile: vi.fn(),
+  copySourceProfileToLearningSpace: vi.fn(),
   copySourceProfileTemplateToLearningSpace: vi.fn(),
   createSourceProfileTemplate: vi.fn(),
   updateSourceProfileTemplateMetadata: vi.fn(),
@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
-vi.mock("@/lib/source-profiles", () => ({ renameManagedSourceProfile: mocks.renameManagedSourceProfile, copyManagedSourceProfile: mocks.copyManagedSourceProfile }));
+vi.mock("@/lib/source-profiles", () => ({ renameManagedSourceProfile: mocks.renameManagedSourceProfile, copySourceProfileToLearningSpace: mocks.copySourceProfileToLearningSpace }));
 vi.mock("@/lib/source-profile-templates", () => ({
   copySourceProfileTemplateToLearningSpace: mocks.copySourceProfileTemplateToLearningSpace,
   createSourceProfileTemplate: mocks.createSourceProfileTemplate,
@@ -40,7 +40,7 @@ describe("central source profile actions", () => {
     vi.clearAllMocks();
     mocks.requireAdminUser.mockResolvedValue({ id: "superadmin", role: "superadmin", status: "active" });
     mocks.renameManagedSourceProfile.mockResolvedValue(undefined);
-    mocks.copyManagedSourceProfile.mockResolvedValue(undefined);
+    mocks.copySourceProfileToLearningSpace.mockResolvedValue(undefined);
     mocks.copySourceProfileTemplateToLearningSpace.mockResolvedValue(undefined);
     mocks.createSourceProfileTemplate.mockResolvedValue(undefined);
     mocks.updateSourceProfileTemplateMetadata.mockResolvedValue(undefined);
@@ -50,8 +50,9 @@ describe("central source profile actions", () => {
 
   it("routes independent central copies through authenticated domain helpers", async () => {
     const profileData = form("profile-1", "");
+    profileData.set("targetLearningSpaceId", "space-5");
     await expect(copyManagedSourceProfileAction(profileData)).rejects.toThrow("saved=copied");
-    expect(mocks.copyManagedSourceProfile).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "profile-1");
+    expect(mocks.copySourceProfileToLearningSpace).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "profile-1", "space-5");
 
     const templateData = templateForm("template-1");
     templateData.set("managementLearningSpaceId", "space-5");

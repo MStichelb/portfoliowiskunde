@@ -28,8 +28,8 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
   error?: string;
   initialModal?: SourceProfileModal | null;
 }) {
-  const { activeProfile, availableProfiles, copySources } = model;
-  const [modal, setModal] = useState<SourceProfileModal | null>(() => allowedInitialModal(initialModal, activeProfile.type, copySources.length, canConfigure));
+  const { activeProfile, availableProfiles, copyTargets } = model;
+  const [modal, setModal] = useState<SourceProfileModal | null>(() => allowedInitialModal(initialModal, activeProfile.type, copyTargets.length, canConfigure));
   const [switchSource, setSwitchSource] = useState<"profiles" | "templates">("profiles");
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -73,9 +73,9 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
         <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
         <button className="secondary-button" type="submit"><Plus size={16} aria-hidden />Eigen profiel maken</button>
       </form> : canConfigure ? <button className="secondary-button" type="button" onClick={(event) => open("rename", event.currentTarget)}><Pencil size={16} aria-hidden />Naam wijzigen</button> : null}
-      {copySources.length > 0 ? <button className="secondary-button" type="button" onClick={(event) => open("copy", event.currentTarget)}><Copy size={16} aria-hidden />Profiel kopiëren</button> : null}
+      {copyTargets.length > 0 ? <button className="secondary-button source-profile-copy-button" type="button" onClick={(event) => open("copy", event.currentTarget)}><Copy size={16} aria-hidden />Profiel kopiëren</button> : null}
     </div>
-    {!canConfigure ? <p className="source-profile-readonly-note">Als editor kun je de actieve configuratie bekijken en onafhankelijk kopiëren, maar niet wijzigen.</p> : null}
+    {!canConfigure ? <p className="source-profile-readonly-note">Als editor kun je profielen bekijken en kopiëren, maar niet wijzigen.</p> : null}
     <p className="source-profile-footnote">De huidige scanner gebruikt deze configuratie nog niet.</p>
     {feedback ? <p className="success-message" role="status">{feedback}</p> : null}
     {error && !modal ? <p className="form-message" role="alert">{error}</p> : null}
@@ -115,12 +115,12 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
         </form> : null}
         {modal === "copy" ? <form action={actions.copyProfile} className="source-profile-dialog-form">
           <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
-          <label>Profiel<select name="sourceLearningSpaceId" required defaultValue="">
-            <option value="" disabled>Kies een profiel</option>
-            {copySources.map((source) => <option key={source.learningSpaceId} value={source.learningSpaceId}>{source.profile.name} — {source.learningSpaceShortLabel}</option>)}
+          <div className="source-profile-readonly-field"><span>Bronprofiel</span><strong>{activeProfile.name}</strong></div>
+          <label>Toepassen op leeromgeving<select name="targetLearningSpaceId" required defaultValue={learningSpaceId}>
+            {copyTargets.map((target) => <option key={target.learningSpaceId} value={target.learningSpaceId}>{target.learningSpaceShortLabel} — {target.profile.name}</option>)}
           </select></label>
           <p>Er wordt een onafhankelijke kopie gemaakt. Latere wijzigingen aan het oorspronkelijke profiel hebben geen invloed op deze kopie.</p>
-          <ModalFooter cancel={close} submitLabel={canConfigure ? "Kopiëren en activeren" : "Kopiëren"} error={error} />
+          <ModalFooter cancel={close} submitLabel="Kopiëren" error={error} submitClassName="source-profile-copy-button" />
         </form> : null}
       </div>
     </div> : null}
@@ -133,12 +133,12 @@ export function displayProfileDescription(description: string): string {
     : description;
 }
 
-function ModalFooter({ cancel, submitLabel, error }: { cancel: () => void; submitLabel: string; error?: string }) {
+function ModalFooter({ cancel, submitLabel, error, submitClassName }: { cancel: () => void; submitLabel: string; error?: string; submitClassName?: string }) {
   return <>
     {error ? <p className="form-message" role="alert">{error}</p> : null}
     <div className="source-profile-dialog-actions">
       <button className="secondary-button" type="button" onClick={cancel}>Annuleren</button>
-      <button className="primary-button" type="submit">{submitLabel}</button>
+      <button className={`primary-button${submitClassName ? ` ${submitClassName}` : ""}`} type="submit">{submitLabel}</button>
     </div>
   </>;
 }
