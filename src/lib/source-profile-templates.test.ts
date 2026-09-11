@@ -81,6 +81,15 @@ describe("global source profile templates", () => {
     expect(templates.filter((template) => template.isDefault)).toHaveLength(1);
   });
 
+  it("sorts the current default first and remaining templates alphabetically", async () => {
+    await insertTemplate("zulu-template", "Zulu sjabloon");
+    await insertTemplate("alfa-template", "alfa sjabloon");
+    await setDefaultSourceProfileTemplate(superadmin, "zulu-template");
+    expect((await listSourceProfileTemplates(superadmin)).map((template) => template.name)).toEqual([
+      "Zulu sjabloon", "alfa sjabloon", "Standaard portfolio",
+    ]);
+  });
+
   it("keeps bootstrap idempotent without overwriting template data or a changed default", async () => {
     const database = await getDatabase();
     await insertTemplate("second-template", "Tweede sjabloon");

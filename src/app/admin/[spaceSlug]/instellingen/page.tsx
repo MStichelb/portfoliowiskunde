@@ -11,7 +11,7 @@ import { getSourceProfileAdminModel } from "@/lib/source-profiles";
 import { listSourceProfileTemplates } from "@/lib/source-profile-templates";
 
 import { saveLearningSpaceAction } from "../../actions";
-import { copySourceProfileAction, copySourceProfileTemplateAction, createOwnSourceProfileAction, renameSourceProfileAction, switchSourceProfileAction } from "./actions";
+import { copySelectedSourceProfileAction, copySourceProfileAction, copySourceProfileTemplateAction, createOwnSourceProfileAction, linkSourceProfileAction, renameSourceProfileAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +31,8 @@ export default async function LearningSpaceSettingsPage({ params, searchParams }
     {query.saved === "1" ? <p className="success-message save-feedback" role="status">Instellingen opgeslagen.</p> : null}
     {canConfigure ? <LearningSpaceSettingsForm space={space} canPermanentlyDelete={user.role === "superadmin"} action={saveLearningSpaceAction} /> : null}
     <SourceProfileCard key={`${sourceProfiles.activeProfile.id}:${sourceProfiles.activeProfile.name}:${query.profileSaved ?? query.profileError ?? ""}`} learningSpaceId={space.id} model={sourceProfiles} templates={templates} canConfigure={canConfigure} actions={{
-      switchProfile: switchSourceProfileAction,
+      linkProfile: linkSourceProfileAction,
+      copySelectedProfile: copySelectedSourceProfileAction,
       copyTemplate: copySourceProfileTemplateAction,
       createOwnProfile: createOwnSourceProfileAction,
       copyProfile: copySourceProfileAction,
@@ -51,6 +52,6 @@ function profileFeedback(value: string | undefined): string | undefined {
   if (value === "copiedInactive") return "Profiel gekopieerd. Een eigenaar moet het profiel nog activeren.";
   if (value === "templateCopied") return "Sjabloon gekopieerd naar een onafhankelijk profiel en geactiveerd.";
   if (value === "renamed") return "Profielnaam gewijzigd.";
-  if (value === "switched") return "Bronprofiel gewijzigd.";
+  if (value === "linked") return "Bronprofiel gekoppeld en actief gemaakt.";
   return undefined;
 }

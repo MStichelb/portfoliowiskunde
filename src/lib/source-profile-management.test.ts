@@ -83,9 +83,9 @@ describe("source profile management", () => {
     const execute = vi.spyOn(database, "execute");
 
     let profiles = await getManagedSourceProfiles(actors.managerBoth);
-    expect(execute).toHaveBeenCalledTimes(3);
+    expect(execute).toHaveBeenCalledTimes(4);
     expect(profiles.find((profile) => profile.id === profileFive.id)).toMatchObject({
-      usageCount: 1, isInactive: false, usages: [{ learningSpaceId: "space-5", learningSpaceShortLabel: "5" }],
+      usageCount: 1, isInactive: false, usages: [{ learningSpaceId: "space-5", learningSpaceShortLabel: "5" }], ownerNames: ["Mira Manager", "Olivia Owner"],
     });
 
     await database.execute({
@@ -93,7 +93,7 @@ describe("source profile management", () => {
       args: [profileSix.id],
     });
     profiles = await getManagedSourceProfiles(actors.managerBoth);
-    expect(profiles[0]).toMatchObject({ id: profileSix.id, usageCount: 2, isInactive: false });
+    expect(profiles.find((profile) => profile.id === profileSix.id)).toMatchObject({ usageCount: 2, isInactive: false });
     expect(profiles.find((profile) => profile.id === profileFive.id)).toMatchObject({
       managementLearningSpaceId: "space-5", usageCount: 0, isInactive: true, usages: [],
     });
@@ -101,6 +101,13 @@ describe("source profile management", () => {
     expect((await getSourceProfileAdminModel(actors.managerBoth, "space-5")).availableProfiles).toContainEqual(
       expect.objectContaining({ id: profileFive.id, usageCount: 0, isInactive: true }),
     );
+  });
+
+  it("sorts Standard portfolio first and all remaining profiles alphabetically regardless of usage", async () => {
+    await createAdditionalProfile("space-5", "Zulu profiel");
+    await createAdditionalProfile("space-5", "alfa profiel");
+    const profiles = await getManagedSourceProfiles(actors.owner);
+    expect(profiles.map((profile) => profile.name)).toEqual(["Standaard portfolio", "alfa profiel", "Zulu profiel"]);
   });
 
   it("formats at most three current usage labels and a remaining count", () => {

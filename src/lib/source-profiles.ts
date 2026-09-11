@@ -39,6 +39,7 @@ export interface AvailableSourceProfile extends SourceProfile {
   usageCount: number;
   isInactive: boolean;
   canRename: boolean;
+  ownerNames: string[];
 }
 
 export interface SourceProfileUsage {
@@ -117,14 +118,16 @@ export async function getSourceProfileCopyTargets(user: AppUser): Promise<Source
 
 export async function getManagedSourceProfiles(user: AppUser): Promise<ManagedSourceProfile[]> {
   const manageableIds = await getManageableLearningSpaceIds(user);
-  return getManagedSourceProfilesForManagementIds(manageableIds, new Set(await configurableLearningSpaceIds(user, manageableIds)));
+  return getManagedSourceProfilesForManagementIds(manageableIds, new Set(await configurableLearningSpaceIds(user, manageableIds)), true);
 }
 
-async function getManagedSourceProfilesForManagementIds(manageableSpaceIds: string[], configurableIds?: Set<string>): Promise<ManagedSourceProfile[]> {
+async function getManagedSourceProfilesForManagementIds(manageableSpaceIds: string[], configurableIds?: Set<string>, includeOwners = false): Promise<ManagedSourceProfile[]> {
   if (manageableSpaceIds.length === 0) return [];
   const placeholders = manageableSpaceIds.map(() => "?").join(", ");
-  const result = await (await getDatabase()).execute({
-    sql: `SELECT source_profiles.*,
+  const database = await getDatabase();
+  const [result, ownerResult] = await Promise.all([
+    database.execute({
+      sql: `SELECT source_profiles.*,
         management_space.name AS management_learning_space_name,
         management_space.short_label AS management_learning_space_short_label,
         usage_space.id AS usage_learning_space_id,
@@ -138,8 +141,25 @@ async function getManagedSourceProfilesForManagementIds(manageableSpaceIds: stri
       WHERE source_profiles.type = 'custom'
         AND source_profiles.management_learning_space_id IN (${placeholders})
       ORDER BY LOWER(source_profiles.name), source_profiles.id, usage_space.sort_order, usage_space.name, usage_space.id`,
-    args: manageableSpaceIds,
-  });
+      args: manageableSpaceIds,
+    }),
+    includeOwners ? database.execute({
+      sql: `SELECT learning_space_members.learning_space_id, users.display_name
+        FROM learning_space_members
+        JOIN users ON users.id = learning_space_members.user_id
+        WHERE learning_space_members.role = 'owner'
+          AND learning_space_members.learning_space_id IN (${placeholders})
+      ORDER BY learning_space_members.learning_space_id, LOWER(users.display_name), users.id`,
+      args: manageableSpaceIds,
+    }) : Promise.resolve({ rows: [] }),
+  ]);
+  const ownerNamesBySpace = new Map<string, string[]>();
+  for (const row of ownerResult.rows) {
+    const learningSpaceId = String(row.learning_space_id);
+    const names = ownerNamesBySpace.get(learningSpaceId) ?? [];
+    names.push(String(row.display_name));
+    ownerNamesBySpace.set(learningSpaceId, names);
+  }
   const profiles = new Map<string, ManagedSourceProfile>();
   for (const row of result.rows) {
     const id = String(row.id);
@@ -155,6 +175,7 @@ async function getManagedSourceProfilesForManagementIds(manageableSpaceIds: stri
         usageCount: 0,
         isInactive: true,
         canRename: configurableIds?.has(parsed.managementLearningSpaceId ?? "") ?? true,
+        ownerNames: ownerNamesBySpace.get(parsed.managementLearningSpaceId ?? "") ?? [],
       };
       profiles.set(id, profile);
     }
@@ -169,9 +190,13 @@ async function getManagedSourceProfilesForManagementIds(manageableSpaceIds: stri
     }
   }
   return [...profiles.values()].sort((first, second) =>
-    Number(first.isInactive) - Number(second.isInactive)
+    Number(!isStandardPortfolioName(first.name)) - Number(!isStandardPortfolioName(second.name))
       || first.name.localeCompare(second.name, "nl", { sensitivity: "base" })
       || first.id.localeCompare(second.id));
+}
+
+function isStandardPortfolioName(name: string): boolean {
+  return name.trim().toLocaleLowerCase("nl") === "standaard portfolio";
 }
 
 export async function switchActiveSourceProfile(user: AppUser, learningSpaceId: string, sourceProfileId: string): Promise<void> {

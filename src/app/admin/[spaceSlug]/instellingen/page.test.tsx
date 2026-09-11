@@ -43,7 +43,7 @@ vi.mock("@/app/components/source-profile-card", () => ({
   },
 }));
 vi.mock("./actions", () => ({
-  switchSourceProfileAction: vi.fn(), copySourceProfileTemplateAction: vi.fn(), createOwnSourceProfileAction: vi.fn(), copySourceProfileAction: vi.fn(), renameSourceProfileAction: vi.fn(),
+  linkSourceProfileAction: vi.fn(), copySelectedSourceProfileAction: vi.fn(), copySourceProfileTemplateAction: vi.fn(), createOwnSourceProfileAction: vi.fn(), copySourceProfileAction: vi.fn(), renameSourceProfileAction: vi.fn(),
 }));
 
 import LearningSpaceSettingsPage from "./page";

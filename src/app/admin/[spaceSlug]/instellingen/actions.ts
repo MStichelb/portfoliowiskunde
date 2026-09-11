@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { requireAdminUser } from "@/lib/auth";
 import { canManageLearningSpace, requireLearningSpaceConfiguration } from "@/lib/authorization";
 import { getLearningSpace } from "@/lib/repositories";
-import { copyActiveSourceProfileToLearningSpace, createOwnSourceProfile, renameSourceProfile, switchActiveSourceProfile } from "@/lib/source-profiles";
+import { copyActiveSourceProfileToLearningSpace, copySourceProfileToLearningSpace, createOwnSourceProfile, linkSourceProfileToLearningSpace, renameSourceProfile } from "@/lib/source-profiles";
 import { copySourceProfileTemplateToLearningSpace } from "@/lib/source-profile-templates";
 import { listManagedMemberships, removeManagedMembership, upsertManagedMembership } from "@/lib/user-management";
 
@@ -41,9 +41,17 @@ export async function removeLearningSpaceEditorAction(formData: FormData) {
   redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?memberSaved=1`);
 }
 
-export async function switchSourceProfileAction(formData: FormData) {
-  await runSourceProfileAction(formData, "switched", "switch", async (user, learningSpaceId) => {
-    await switchActiveSourceProfile(user, learningSpaceId, value(formData, "sourceProfileId"));
+export async function linkSourceProfileAction(formData: FormData) {
+  await runSourceProfileAction(formData, "linked", "switch", async (user, learningSpaceId) => {
+    await linkSourceProfileToLearningSpace(user, value(formData, "sourceProfileId"), learningSpaceId);
+  });
+}
+
+export async function copySelectedSourceProfileAction(formData: FormData) {
+  await runSourceProfileAction(formData, "copied", "switch", async (user, learningSpaceId) => {
+    await requireLearningSpaceConfiguration(user, learningSpaceId);
+    const result = await copySourceProfileToLearningSpace(user, value(formData, "sourceProfileId"), learningSpaceId);
+    if (!result.activated) throw new Error("De profielkopie kon niet worden geactiveerd.");
   });
 }
 
@@ -95,7 +103,7 @@ async function runSourceProfileAction(
   redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?profileSaved=${saved}`);
 }
 
-type SourceProfileSaved = "switched" | "created" | "copied" | "copiedInactive" | "templateCopied" | "renamed";
+type SourceProfileSaved = "linked" | "created" | "copied" | "copiedInactive" | "templateCopied" | "renamed";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();

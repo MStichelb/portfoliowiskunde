@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Link2, Pencil, Plus, RefreshCw, X } from "lucide-react";
+import { Copy, Link2, Pencil, Plus, RefreshCw, Settings2, X } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
@@ -11,14 +11,15 @@ import { sourceProfileUsageLabel } from "@/lib/source-profile-usage";
 export type SourceProfileModal = "switch" | "rename" | "copy";
 
 export interface SourceProfileCardActions {
-  switchProfile: (formData: FormData) => Promise<void>;
+  linkProfile: (formData: FormData) => Promise<void>;
+  copySelectedProfile: (formData: FormData) => Promise<void>;
   copyTemplate: (formData: FormData) => Promise<void>;
   createOwnProfile: (formData: FormData) => Promise<void>;
   copyProfile: (formData: FormData) => Promise<void>;
   renameProfile: (formData: FormData) => Promise<void>;
 }
 
-export function SourceProfileCard({ learningSpaceId, model, templates, canConfigure, actions, feedback, error, initialModal = null }: {
+export function SourceProfileCard({ learningSpaceId, model, templates, canConfigure, actions, feedback, error, initialModal = null, initialSelectedProfileId, initialSwitchSource = "profiles" }: {
   learningSpaceId: string;
   model: SourceProfileAdminModel;
   templates: SourceProfileTemplateSummary[];
@@ -27,13 +28,21 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
   feedback?: string;
   error?: string;
   initialModal?: SourceProfileModal | null;
+  initialSelectedProfileId?: string;
+  initialSwitchSource?: "profiles" | "templates";
 }) {
   const { activeProfile, availableProfiles, copyTargets } = model;
   const activeDetails = availableProfiles.find((profile) => profile.id === activeProfile.id) ?? null;
   const isShared = (activeDetails?.usageCount ?? 0) > 1;
   const [modal, setModal] = useState<SourceProfileModal | null>(() => allowedInitialModal(initialModal, activeProfile.type, copyTargets.length, canConfigure));
-  const [switchSource, setSwitchSource] = useState<"profiles" | "templates">("profiles");
+  const [switchSource, setSwitchSource] = useState<"profiles" | "templates">(initialSwitchSource);
+  const [selectedProfileId, setSelectedProfileId] = useState(() => {
+    if (availableProfiles.some((profile) => profile.id === initialSelectedProfileId)) return initialSelectedProfileId!;
+    if (availableProfiles.some((profile) => profile.id === activeProfile.id)) return activeProfile.id;
+    return availableProfiles[0]?.id ?? "";
+  });
   const [copyTargetId, setCopyTargetId] = useState(learningSpaceId);
+  const selectedProfile = availableProfiles.find((profile) => profile.id === selectedProfileId) ?? null;
   const selectedCopyTarget = copyTargets.find((target) => target.learningSpaceId === copyTargetId);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -69,9 +78,8 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
       <strong>{activeProfile.name}</strong>
       {isShared ? <span className="source-profile-shared-status"><Link2 size={15} aria-hidden />Gekoppeld aan {activeDetails!.usageCount} leeromgevingen</span> : null}
       {activeProfile.description ? <p>{displayProfileDescription(activeProfile.description)}</p> : null}
-      <small>Configuratieversie {activeProfile.config.configVersion}</small>
     </div>
-    <Link className="source-profile-management-link" href="/admin/bronprofielen">Bronprofielen {canConfigure ? "beheren" : "bekijken"}</Link>
+    <Link className="secondary-button link-button source-profile-management-link" href="/admin/bronprofielen"><Settings2 size={16} aria-hidden />Bronprofielen {canConfigure ? "beheren" : "bekijken"}</Link>
     <div className="source-profile-actions">
       {canConfigure ? <button className="secondary-button" type="button" onClick={(event) => open("switch", event.currentTarget)}><RefreshCw size={16} aria-hidden />Ander profiel kiezen</button> : null}
       {canConfigure && activeProfile.type === "built_in" ? <form action={actions.createOwnProfile}>
@@ -95,12 +103,17 @@ export function SourceProfileCard({ learningSpaceId, model, templates, canConfig
             <button type="button" className={switchSource === "profiles" ? "is-active" : ""} aria-pressed={switchSource === "profiles"} onClick={() => setSwitchSource("profiles")}>Eigen profielen</button>
             <button type="button" className={switchSource === "templates" ? "is-active" : ""} aria-pressed={switchSource === "templates"} onClick={() => setSwitchSource("templates")}>Sjablonen</button>
           </div>
-          {switchSource === "profiles" ? <form action={actions.switchProfile} className="source-profile-dialog-form">
+          {switchSource === "profiles" ? <form action={actions.copySelectedProfile} className="source-profile-dialog-form">
           <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
-          <label>Beschikbaar bronprofiel<select name="sourceProfileId" defaultValue={activeProfile.id} required>
-            {availableProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} — {sourceProfileUsageLabel(profile.usages, "inactief")}</option>)}
+          <label>Beschikbaar bronprofiel<select name="sourceProfileId" value={selectedProfileId} onChange={(event) => setSelectedProfileId(event.target.value)} required>
+            {availableProfiles.map((profile) => <option key={profile.id} value={profile.id}>{profile.name} — {profile.id === activeProfile.id ? "Huidig profiel" : sourceProfileUsageLabel(profile.usages, "inactief")}</option>)}
           </select></label>
-          <ModalFooter cancel={close} submitLabel="Activeren" error={error} />
+          {!selectedProfile ? <><p>Er zijn geen concrete profielen beschikbaar.</p><div className="source-profile-dialog-actions"><button className="secondary-button" type="button" onClick={close}>Sluiten</button></div></> : selectedProfile.id === activeProfile.id ? <><span className="active-source-badge">Huidig profiel</span>{error ? <p className="form-message" role="alert">{error}</p> : null}<div className="source-profile-dialog-actions"><button className="secondary-button" type="button" onClick={close}>Sluiten</button></div></> : <>
+            <p>Met <strong>Kopiëren</strong> wordt een onafhankelijk profiel gemaakt voor deze leeromgeving.</p>
+            {selectedProfile && selectedProfile.usageCount > 0 ? <div className="source-profile-shared-warning"><strong><Link2 size={16} aria-hidden />Gedeeld profiel</strong><p>Deze leeromgeving wordt bij <strong>Koppelen</strong> gekoppeld aan hetzelfde bronprofiel. Latere wijzigingen aan dit profiel gelden voor alle gekoppelde leeromgevingen.</p></div> : null}
+            {error ? <p className="form-message" role="alert">{error}</p> : null}
+            <div className="source-profile-dialog-actions source-profile-selection-actions"><button className="secondary-button" type="button" onClick={close}>Annuleren</button><button className="secondary-button" type="submit"><Copy size={16} aria-hidden />Kopiëren</button><button className="primary-button" type="submit" formAction={actions.linkProfile}><Link2 size={16} aria-hidden />Koppelen</button></div>
+          </>}
           </form> : <form action={actions.copyTemplate} className="source-profile-dialog-form">
             <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
             <label>Appbreed sjabloon<select name="templateId" required defaultValue="">

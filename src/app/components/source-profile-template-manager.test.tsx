@@ -18,7 +18,7 @@ describe("SourceProfileTemplateManager", () => {
     expect(markup).toContain("Appbrede sjablonen");
     expect(markup).toContain("Nieuw sjabloon");
     expect(markup).toContain("Standaard portfolio");
-    expect(markup).toContain("Configuratieversie 1");
+    expect(markup).not.toContain("Configuratieversie");
     expect(markup).toContain("Appbreed standaardsjabloon");
     expect(markup).toContain("Standaard");
     expect(markup).not.toContain("Gebruikt in:");

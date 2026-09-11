@@ -65,7 +65,6 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
       {templates.map((template) => <article className="source-profile-overview-card" key={template.id}>
         <div className="source-profile-overview-copy">
           <div className="source-profile-template-title"><div className="source-profile-overview-title"><Settings2 size={18} aria-hidden /><h3>{template.name}</h3></div>{template.isDefault ? <span className="active-source-badge">Standaard</span> : null}</div>
-          <small>Configuratieversie {template.configVersion}</small>
           {template.description ? <p>{template.description}</p> : null}
         </div>
         <div className="source-profile-card-actions">

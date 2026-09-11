@@ -39,12 +39,15 @@ describe("central source profile page", () => {
     expect(markup).toContain("Mijn bronprofielen");
     expect(markup).toContain("Gebruikt in:");
     expect(markup).toContain("4NW1, 5WET, 6WIS +1");
-    expect(markup).toContain("4 actieve leeromgevingen");
+    expect(markup).not.toContain("4 actieve leeromgevingen");
     expect(markup).toContain(role === "superadmin" ? "Beheren" : "Bekijken");
     expect(mocks.getManagedSourceProfiles).toHaveBeenCalledWith(expect.objectContaining({ role }));
     expect(markup).toContain(role === "superadmin" ? "Appbrede sjablonen" : "Sjablonen");
     expect(markup).not.toContain("Appbreed sjabloon");
-    expect(markup).toContain("Gedeeld door 4 leeromgevingen");
+    expect(markup).toContain('title="Gedeeld profiel"');
+    expect(markup).not.toContain("Gedeeld door 4 leeromgevingen");
+    expect(markup).not.toContain("Configuratieversie");
+    if (role === "teacher") expect(markup).toContain("Eigenaar: Mathias");
     expect(markup).toContain(role === "superadmin" ? "Koppelen" : "Kopiëren");
     expect(mocks.listSourceProfileTemplates).toHaveBeenCalledOnce();
   });
@@ -62,13 +65,14 @@ describe("central source profile page", () => {
   });
 
   it("shows inactive profiles and reopens only a server-authorized management target", async () => {
-    const inactive = profile({ id: "inactive", name: "Los profiel", usages: [], usageCount: 0, isInactive: true, canRename: false });
+    const inactive = profile({ id: "inactive", name: "Los profiel", usages: [], usageCount: 0, isInactive: true, canRename: false, ownerNames: ["Mathias", "Elias"] });
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
     mocks.getManagedSourceProfiles.mockResolvedValue([inactive]);
 
     const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ profile: inactive.id, error: "Naam bestaat al." }) }));
     expect(markup).toContain("Inactief");
-    expect(markup).toContain("0 actieve leeromgevingen");
+    expect(markup).not.toContain("0 actieve leeromgevingen");
+    expect(markup).toContain("Eigenaars: Mathias +1");
     expect(markup).toContain('role="dialog"');
     expect(markup).not.toContain('name="name"');
     expect(markup).toContain("dit profiel bekijken en kopiëren, maar niet wijzigen");
@@ -87,6 +91,7 @@ describe("central source profile page", () => {
     expect(manage).toContain("4NW1");
     expect(manage).toContain("Voor alle aanpassen");
     expect(manage).toContain('name="confirmShared"');
+    expect(manage).not.toContain("Configuratieversie");
     expect(manage).not.toContain("Doelleeromgeving");
     expect(manage).not.toContain("Koppelen aan leeromgeving");
 
@@ -117,7 +122,7 @@ function profile(overrides: Partial<ManagedSourceProfile> = {}): ManagedSourcePr
     config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, managementLearningSpaceId: "space-5",
     managementLearningSpaceName: "Vijfde jaar", managementLearningSpaceShortLabel: "5WIS",
     usages: labels.map((learningSpaceShortLabel, index) => ({ learningSpaceId: `space-${index}`, learningSpaceName: `Ruimte ${index}`, learningSpaceShortLabel })),
-    usageCount: 4, isInactive: false, canRename: true, createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z",
+    usageCount: 4, isInactive: false, canRename: true, ownerNames: ["Mathias"], createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z",
     ...overrides,
   };
 }

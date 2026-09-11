@@ -71,7 +71,7 @@ export async function listSourceProfileTemplates(user: AppUser): Promise<SourceP
       CASE WHEN source_profile_template_defaults.default_template_id = source_profile_templates.id THEN 1 ELSE 0 END AS is_default
     FROM source_profile_templates
     LEFT JOIN source_profile_template_defaults ON source_profile_template_defaults.singleton_id = 1
-    ORDER BY LOWER(source_profile_templates.name), source_profile_templates.id`);
+    ORDER BY is_default DESC, LOWER(source_profile_templates.name), source_profile_templates.id`);
   return result.rows.map((row) => ({
     id: String(row.id),
     name: String(row.name),

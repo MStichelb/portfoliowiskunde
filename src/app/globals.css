@@ -113,6 +113,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-profile-summary > p { margin: 2px 0 0; color: #52616a; }
 .source-profile-summary > small { margin-top: 4px; color: #68757b; }
 .source-profile-shared-status { display: inline-flex; width: fit-content; align-items: center; gap: 6px; color: #075c75; font-size: 13px; font-weight: 700; }
+.source-profile-shared-icon { display: inline-flex; align-items: center; color: #075c75; }
 .source-profile-shared-warning { display: grid; gap: 6px; margin-top: 16px; padding: 12px 14px; border: 1px solid #9fc5cc; border-radius: 4px; background: #eef8fa; color: #23454d; }
 .source-profile-shared-warning strong { display: flex; align-items: center; gap: 7px; }
 .source-profile-shared-warning p, .source-profile-shared-warning ul { margin: 0; }
@@ -124,7 +125,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-profile-actions button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 7px; }
 .source-profile-footnote { margin: 16px 0 0; color: #52616a; font-size: 13px; }
 .source-profile-readonly-note { margin: 10px 0 0; color: #68757b; font-size: 13px; }
-.source-profile-management-link { display: inline-block; margin-top: 14px; font-weight: 700; }
+.source-profile-management-link { display: inline-flex; width: fit-content; align-items: center; gap: 7px; margin-top: 14px; font-weight: 700; }
 .source-profile-dialog { width: min(500px, 100%); padding: 20px; border: 1px solid var(--admin-border); border-radius: 6px; background: var(--admin-surface); box-shadow: 0 12px 36px rgba(0,0,0,.22); }
 .source-profile-dialog-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .source-profile-dialog-heading h2 { margin: 0; font-size: 21px; }
@@ -147,6 +148,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-profile-choice-toggle button.is-active { background: #075c75; color: #fff; }
 .source-profile-dialog-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 2px; }
 .source-profile-dialog-actions button { min-height: 40px; }
+.source-profile-selection-actions { margin-top: 8px; padding-top: 10px; border-top: 1px solid #d5ddda; }
+.source-profile-rename-scope + .source-profile-dialog-actions, .source-profile-shared-confirm + .source-profile-dialog-actions { margin-top: -4px; }
 .source-profile-overview-heading { display: flex; align-items: start; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
 .source-profile-overview-heading h2 { margin-bottom: 5px; }
 .source-profile-overview-heading p { max-width: 720px; margin: 0; color: #52616a; }
