@@ -204,8 +204,10 @@ describe("global source profile templates", () => {
     await archiveSourceProfileTemplate(superadmin, template.id);
 
     expect((await listSourceProfileTemplates(superadmin)).map((item) => item.id)).not.toContain(template.id);
-    expect((await listSourceProfileTemplates(owner, { includeArchived: true })).map((item) => item.id)).not.toContain(template.id);
-    expect((await listSourceProfileTemplates(superadmin, { includeArchived: true })).find((item) => item.id === template.id)).toMatchObject({
+    expect((await listSourceProfileTemplates(owner, { archivedOnly: true })).map((item) => item.id)).not.toContain(template.id);
+    const archivedTemplates = await listSourceProfileTemplates(superadmin, { archivedOnly: true });
+    expect(archivedTemplates.map((item) => item.id)).toEqual([template.id]);
+    expect(archivedTemplates.find((item) => item.id === template.id)).toMatchObject({
       isArchived: true, archivedAt: expect.any(String), canArchive: false, isDefault: false,
     });
     await expect(copySourceProfileTemplateToLearningSpace(owner, template.id, "space-5")).rejects.toThrow("niet gevonden");
@@ -223,10 +225,22 @@ describe("global source profile templates", () => {
     expect((await listSourceProfileTemplates(superadmin)).find((item) => item.id === template.id)).toMatchObject({ isArchived: false, isDefault: false });
 
     await archiveSourceProfileTemplate(superadmin, template.id);
-    await createSourceProfileTemplate(superadmin, { name: "Herstelbaar sjabloon", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID });
+    await database.execute(`INSERT INTO source_profile_templates
+      (id, name, description, config_version, config_json, created_at, updated_at)
+      SELECT 'legacy-conflict', 'Herstelbaar sjabloon', description, config_version, config_json, created_at, updated_at
+      FROM source_profile_templates WHERE id = '${INITIAL_SOURCE_PROFILE_TEMPLATE_ID}'`);
     await expect(restoreSourceProfileTemplate(superadmin, template.id)).rejects.toThrow("bestaat al");
     await permanentlyDeleteSourceProfileTemplate(superadmin, template.id);
     expect((await database.execute({ sql: "SELECT 1 FROM source_profile_templates WHERE id = ?", args: [template.id] })).rows).toHaveLength(0);
+  });
+
+  it("reserves archived template names until permanent deletion", async () => {
+    const template = await createSourceProfileTemplate(superadmin, { name: " Gereserveerd sjabloon ", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID });
+    await archiveSourceProfileTemplate(superadmin, template.id);
+    await expect(createSourceProfileTemplate(superadmin, { name: "GERESERVEERD SJABLOON", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID })).rejects.toThrow("bestaat al");
+    await expect(updateSourceProfileTemplateMetadata(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, { name: " gereserveerd sjabloon " })).rejects.toThrow("bestaat al");
+    await permanentlyDeleteSourceProfileTemplate(superadmin, template.id);
+    await expect(createSourceProfileTemplate(superadmin, { name: "gereserveerd sjabloon", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID })).resolves.toMatchObject({ name: "gereserveerd sjabloon" });
   });
 
   it("protects the default and template lifecycle authorization while preserving concrete snapshots", async () => {

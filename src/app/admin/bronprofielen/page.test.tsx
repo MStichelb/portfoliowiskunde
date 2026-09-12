@@ -45,7 +45,7 @@ describe("central source profile page", () => {
     expect(markup).toContain("4NW1, 5WET, 6WIS +1");
     expect(markup).not.toContain("4 actieve leeromgevingen");
     expect(markup).toContain("Beheren");
-    expect(mocks.getSourceProfileOverview).toHaveBeenCalledWith(expect.objectContaining({ role }), { includeArchived: false });
+    expect(mocks.getSourceProfileOverview).toHaveBeenCalledWith(expect.objectContaining({ role }), { archivedOnly: false });
     expect(markup).toContain("Mijn bronprofielen");
     expect(markup).toContain(role === "superadmin" ? "Andere gebruikers" : "Uit leeromgevingen");
     expect(markup).toContain("Sjablonen");
@@ -167,13 +167,20 @@ describe("central source profile page", () => {
     mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [archived], editorAccessibleActiveProfiles: [], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [copyTarget()] });
 
     const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ archive: "1" }) }));
-    expect(mocks.getSourceProfileOverview).toHaveBeenCalledWith(expect.anything(), { includeArchived: true });
+    expect(mocks.getSourceProfileOverview).toHaveBeenCalledWith(expect.anything(), { archivedOnly: true });
     expect(markup).toContain("Gearchiveerd");
     expect(markup).toContain("Herstellen");
     expect(markup).toContain("Permanent verwijderen");
     expect(markup).not.toContain("Beheren");
     expect(markup).not.toContain("Kopiëren");
     expect(markup).not.toContain("Koppelen");
+  });
+
+  it("shows a clear empty state for an empty profile archive", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher"));
+    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [], editorAccessibleActiveProfiles: [], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [copyTarget()] });
+    const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ archive: "1" }) }));
+    expect(markup).toContain("Geen gearchiveerde bronprofielen.");
   });
 
   it("does not continue loading when admin authentication rejects a student", async () => {

@@ -101,9 +101,9 @@ export async function getActiveSourceProfileForLearningSpace(learningSpaceId: st
   return result.rows[0] ? sourceProfileFromRow(result.rows[0]) : null;
 }
 
-export async function getSourceProfileOverview(user: AppUser, options: { includeArchived?: boolean } = {}): Promise<SourceProfileOverview> {
+export async function getSourceProfileOverview(user: AppUser, options: { archivedOnly?: boolean } = {}): Promise<SourceProfileOverview> {
   if (!canAccessAdmin(user)) throw new AuthorizationError("Bronprofielen zijn alleen beschikbaar voor actieve beheerders.");
-  const [targetRows, profileRows] = await Promise.all([getSourceProfileTargetRows(user), getVisibleSourceProfileRows(user, options.includeArchived === true)]);
+  const [targetRows, profileRows] = await Promise.all([getSourceProfileTargetRows(user), getVisibleSourceProfileRows(user, options.archivedOnly === true)]);
   const targets = sourceProfileTargetReadModel(targetRows);
   const profiles = sourceProfileDetailsFromRows(profileRows, user, targets.copyTargets.length > 0, targets.linkTargetsByOwner);
   const otherUserProfiles = user.role === "superadmin"
@@ -281,7 +281,7 @@ function sourceProfileFromRow(row: DatabaseRow): SourceProfile {
   };
 }
 
-async function getVisibleSourceProfileRows(user: AppUser, includeArchived: boolean): Promise<DatabaseRow[]> {
+async function getVisibleSourceProfileRows(user: AppUser, archivedOnly: boolean): Promise<DatabaseRow[]> {
   const visibility = user.role === "superadmin" ? { sql: "", args: [] } : {
     sql: `AND (source_profiles.owner_user_id = ? OR EXISTS (
       SELECT 1 FROM learning_space_source_profiles AS visible_assignment
@@ -293,7 +293,7 @@ async function getVisibleSourceProfileRows(user: AppUser, includeArchived: boole
         AND visible_space.is_active = 1 AND visible_space.archived_at IS NULL
     ))`, args: [user.id, user.id],
   };
-  const archiveScope = includeArchived ? "" : "AND source_profiles.archived_at IS NULL";
+  const archiveScope = archivedOnly ? "AND source_profiles.archived_at IS NOT NULL" : "AND source_profiles.archived_at IS NULL";
   const result = await (await getDatabase()).execute({
     sql: `${sourceProfileDetailsSelect()} WHERE source_profiles.type = 'custom' ${archiveScope} ${visibility.sql}
       ORDER BY LOWER(source_profiles.name), source_profiles.id, usage_space.sort_order, usage_space.name, usage_space.id`,

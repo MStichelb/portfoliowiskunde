@@ -65,10 +65,10 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
         <h2 id="source-profile-templates-heading">Appbrede sjablonen</h2>
         <p>Sjablonen zijn vertrekpunten voor nieuwe, onafhankelijke bronprofielen en zijn nooit rechtstreeks actief in een leeromgeving.</p>
       </div>
-      {canManage ? <div className="source-profile-heading-controls"><ArchiveVisibilityToggle checked={showArchive} href={showArchive ? "/admin/bronprofielen?tab=templates" : "/admin/bronprofielen?tab=templates&templateArchive=1"} /><button className="primary-button source-profile-template-create" type="button" onClick={(event) => open("create", null, event.currentTarget)}><Plus size={16} aria-hidden />Nieuw sjabloon</button></div> : null}
+      {canManage ? <div className="source-profile-heading-controls"><ArchiveVisibilityToggle checked={showArchive} href={showArchive ? "/admin/bronprofielen?tab=templates" : "/admin/bronprofielen?tab=templates&templateArchive=1"} />{showArchive ? null : <button className="primary-button source-profile-template-create" type="button" onClick={(event) => open("create", null, event.currentTarget)}><Plus size={16} aria-hidden />Nieuw sjabloon</button>}</div> : null}
     </div>
     <p className="source-profile-template-note">Wijzigingen aan een sjabloon hebben geen invloed op bestaande bronprofielen. Alleen nieuwe kopieën gebruiken de aangepaste versie.</p>
-    <div className="source-profile-overview-list">
+    {templates.length === 0 ? <p className="empty-state">{showArchive ? "Geen gearchiveerde sjablonen." : "Er zijn momenteel geen bronprofielsjablonen."}</p> : <div className="source-profile-overview-list">
       {templates.map((template) => <article className="source-profile-overview-card" key={template.id}>
         <div className="source-profile-overview-copy">
           <div className="source-profile-template-title"><div className="source-profile-overview-title"><Settings2 size={18} aria-hidden /><h3>{template.name}</h3></div>{template.isArchived ? <span className="source-profile-archived-badge">Gearchiveerd</span> : template.isDefault ? <span className="active-source-badge">Standaard</span> : null}</div>
@@ -79,7 +79,7 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
           {copyTargets.length > 0 ? <button className="secondary-button source-profile-copy-button" type="button" onClick={(event) => open("copy", template.id, event.currentTarget)}><Copy size={16} aria-hidden />Kopiëren</button> : null}
         </div>}
       </article>)}
-    </div>
+    </div>}
 
     {modal ? <div className="confirm-backdrop" role="presentation">
       <div className="source-profile-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>

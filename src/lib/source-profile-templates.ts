@@ -68,15 +68,15 @@ export function getSourceProfileTemplateConfig(template: SourceProfileTemplate):
   return template.config;
 }
 
-export async function listSourceProfileTemplates(user: AppUser, options: { includeArchived?: boolean } = {}): Promise<SourceProfileTemplateSummary[]> {
+export async function listSourceProfileTemplates(user: AppUser, options: { archivedOnly?: boolean } = {}): Promise<SourceProfileTemplateSummary[]> {
   if (!canAccessAdmin(user)) throw new AuthorizationError("Bronprofielsjablonen zijn alleen beschikbaar voor actieve beheerders.");
-  const includeArchived = user.role === "superadmin" && options.includeArchived === true;
+  const archivedOnly = user.role === "superadmin" && options.archivedOnly === true;
   const result = await (await getDatabase()).execute(`SELECT source_profile_templates.id, source_profile_templates.name,
       source_profile_templates.description, source_profile_templates.config_version, source_profile_templates.archived_at,
       CASE WHEN source_profile_template_defaults.default_template_id = source_profile_templates.id THEN 1 ELSE 0 END AS is_default
     FROM source_profile_templates
     LEFT JOIN source_profile_template_defaults ON source_profile_template_defaults.singleton_id = 1
-    ${includeArchived ? "" : "WHERE source_profile_templates.archived_at IS NULL"}
+    WHERE source_profile_templates.archived_at ${archivedOnly ? "IS NOT NULL" : "IS NULL"}
     ORDER BY is_default DESC, LOWER(source_profile_templates.name), source_profile_templates.id`);
   return result.rows.map((row) => ({
     id: String(row.id),
@@ -312,7 +312,7 @@ async function validatedUniqueTemplateMetadata(
   if (!parsedDescription.success) throw new Error(parsedDescription.error.issues[0]?.message ?? "Ongeldige sjabloonbeschrijving.");
   const duplicate = await (await getDatabase()).execute({
     sql: `SELECT 1 FROM source_profile_templates
-      WHERE archived_at IS NULL AND LOWER(TRIM(name)) = LOWER(?) AND (? IS NULL OR id <> ?) LIMIT 1`,
+      WHERE LOWER(TRIM(name)) = LOWER(?) AND (? IS NULL OR id <> ?) LIMIT 1`,
     args: [parsedName.data, excludeTemplateId ?? null, excludeTemplateId ?? null],
   });
   if (duplicate.rows[0]) throw new Error("Er bestaat al een appbreed bronprofielsjabloon met deze naam.");
@@ -321,7 +321,7 @@ async function validatedUniqueTemplateMetadata(
 
 async function availableTemplateCopyName(sourceName: string): Promise<string> {
   const prefix = "Kopie van ";
-  const names = (await (await getDatabase()).execute("SELECT name FROM source_profile_templates WHERE archived_at IS NULL")).rows
+  const names = (await (await getDatabase()).execute("SELECT name FROM source_profile_templates")).rows
     .map((row) => String(row.name).trim().toLocaleLowerCase("nl"));
   for (let number = 1; number <= names.length + 1; number += 1) {
     const suffix = number === 1 ? "" : ` (${number})`;

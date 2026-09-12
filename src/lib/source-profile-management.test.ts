@@ -187,7 +187,9 @@ describe("source profile ownership and access", () => {
 
     await archiveSourceProfile(actors.owner, inactive.id);
     expect((await getSourceProfileOverview(actors.owner)).ownedProfiles.map((profile) => profile.id)).not.toContain(inactive.id);
-    const archived = (await getSourceProfileOverview(actors.owner, { includeArchived: true })).ownedProfiles.find((profile) => profile.id === inactive.id);
+    const archiveProfiles = (await getSourceProfileOverview(actors.owner, { archivedOnly: true })).ownedProfiles;
+    expect(archiveProfiles.map((profile) => profile.id)).toEqual([inactive.id]);
+    const archived = archiveProfiles.find((profile) => profile.id === inactive.id);
     expect(archived).toMatchObject({ isArchived: true, archivedAt: expect.any(String), canRename: false, canCopy: false, canLink: false, canArchive: false });
     await expect(copySourceProfileToLearningSpace(actors.owner, inactive.id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
     await expect(linkSourceProfileToLearningSpace(actors.owner, inactive.id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
@@ -204,10 +206,25 @@ describe("source profile ownership and access", () => {
     expect((await getSourceProfileOverview(actors.owner)).ownedProfiles.map((profile) => profile.id)).toContain(inactive.id);
 
     await archiveSourceProfile(actors.owner, inactive.id);
-    await createProfile("space-5", actors.owner.id, "Herstelbaar", false);
+    await database.execute({ sql: "UPDATE source_profiles SET name = 'Herstelbaar' WHERE id = ?", args: [profileFiveId] });
     await expect(restoreSourceProfile(actors.owner, inactive.id)).rejects.toThrow("al een bronprofiel");
     await permanentlyDeleteSourceProfile(actors.owner, inactive.id);
     expect((await database.execute({ sql: "SELECT 1 FROM source_profiles WHERE id = ?", args: [inactive.id] })).rows).toHaveLength(0);
+  });
+
+  it("reserves normalized archived profile names until permanent deletion", async () => {
+    const archived = await createProfile("space-5", actors.owner.id, " Gereserveerd ", false);
+    await archiveSourceProfile(actors.owner, archived.id);
+    await expect(createProfile("space-5", actors.owner.id, "GERESERVEERD", false)).rejects.toThrow("al een bronprofiel");
+    await expect(renameManagedSourceProfile(actors.owner, profileFiveId, " gereserveerd ")).rejects.toThrow("al een bronprofiel");
+
+    const copyName = await createProfile("space-5", actors.owner.id, "Kopie van Standaard portfolio", false);
+    await archiveSourceProfile(actors.owner, copyName.id);
+    const copied = await copySourceProfileToLearningSpace(actors.owner, profileFiveId, "space-5");
+    expect(copied.profile.name).toBe("Kopie van Standaard portfolio (2)");
+
+    await permanentlyDeleteSourceProfile(actors.owner, archived.id);
+    await expect(createProfile("space-5", actors.owner.id, "gereserveerd", false)).resolves.toMatchObject({ name: "gereserveerd" });
   });
 
   it("lets superadmin administer an unused foreign profile but never bypass usage integrity", async () => {

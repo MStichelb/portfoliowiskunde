@@ -11,7 +11,6 @@ export async function uniqueSourceProfileName(ownerUserId: string, value: string
   const duplicate = await (await getDatabase()).execute({
     sql: `SELECT 1 FROM source_profiles
       WHERE type = 'custom' AND owner_user_id = ? AND LOWER(TRIM(name)) = LOWER(?)
-        AND archived_at IS NULL
         AND (? IS NULL OR id <> ?)
       LIMIT 1`,
     args: [ownerUserId, name, excludeProfileId ?? null, excludeProfileId ?? null],
@@ -24,7 +23,7 @@ export async function availableSourceProfileName(ownerUserId: string, value: str
   const parsed = sourceProfileNameSchema.safeParse(value);
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Ongeldige profielnaam.");
   const names = (await (await getDatabase()).execute({
-    sql: "SELECT name FROM source_profiles WHERE type = 'custom' AND owner_user_id = ? AND archived_at IS NULL",
+    sql: "SELECT name FROM source_profiles WHERE type = 'custom' AND owner_user_id = ?",
     args: [ownerUserId],
   })).rows.map((row) => String(row.name).trim().toLocaleLowerCase("nl"));
   for (let number = 1; number <= names.length + 1; number += 1) {

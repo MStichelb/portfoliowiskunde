@@ -22,8 +22,8 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
   const showArchive = query.archive === "1";
   const showTemplateArchive = user.role === "superadmin" && query.templateArchive === "1";
   const [overview, templates] = await Promise.all([
-    getSourceProfileOverview(user, { includeArchived: showArchive }),
-    listSourceProfileTemplates(user, { includeArchived: showTemplateArchive }),
+    getSourceProfileOverview(user, { archivedOnly: showArchive }),
+    listSourceProfileTemplates(user, { archivedOnly: showTemplateArchive }),
   ]);
   const relatedProfiles = user.role === "superadmin" ? overview.otherUserProfiles : overview.editorAccessibleActiveProfiles;
   const profiles = [...overview.ownedProfiles, ...relatedProfiles];
@@ -38,13 +38,13 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
       <div><h2 id="owned-source-profiles-heading">Mijn bronprofielen</h2><p>Bekijk en beheer alle bronprofielen waarvan jij eigenaar bent, ook wanneer ze inactief zijn.</p></div>
       <div className="source-profile-heading-controls"><span className="source-role-badge">{overview.ownedProfiles.length} {overview.ownedProfiles.length === 1 ? "profiel" : "profielen"}</span><ArchiveVisibilityToggle checked={showArchive} href={showArchive ? "/admin/bronprofielen" : "/admin/bronprofielen?archive=1"} /></div>
     </div>
-    <ProfileList profiles={overview.ownedProfiles} showOwner={false} empty="Je hebt momenteel geen eigen bronprofielen." />
+    <ProfileList profiles={overview.ownedProfiles} showOwner={false} empty={showArchive ? "Geen gearchiveerde bronprofielen." : "Je hebt momenteel geen eigen bronprofielen."} />
   </section>;
 
   const editorSection = <section className="source-profile-tab-section" aria-labelledby="editor-source-profiles-heading">
     <div className="source-profile-overview-heading"><div><h2 id="editor-source-profiles-heading">{user.role === "superadmin" ? "Bronprofielen van andere gebruikers" : "Bronprofielen uit leeromgevingen"}</h2><p>{user.role === "superadmin" ? "Bekijk concrete bronprofielen van andere eigenaars binnen de globale beheerscope." : "Actieve profielen uit leeromgevingen waar je editor bent. Deze profielen blijven eigendom van een collega en zijn alleen te bekijken of onafhankelijk te kopiëren."}</p></div></div>
     {user.role === "superadmin" ? <div className="source-profile-related-controls"><SourceProfileOwnerFilter owners={overview.otherProfileOwners} selectedOwnerId={selectedOwnerId} /><ArchiveVisibilityToggle checked={showArchive} href={relatedArchiveHref(showArchive, selectedOwnerId)} /></div> : null}
-    <ProfileList profiles={visibleRelatedProfiles} showOwner empty={user.role === "superadmin" ? "Er zijn geen bronprofielen van andere gebruikers voor deze filter." : "Je hebt momenteel geen actieve foreign bronprofielen via editor-leeromgevingen."} />
+    <ProfileList profiles={visibleRelatedProfiles} showOwner empty={user.role === "superadmin" && showArchive ? "Geen gearchiveerde bronprofielen van andere gebruikers." : user.role === "superadmin" ? "Er zijn geen bronprofielen van andere gebruikers voor deze filter." : "Je hebt momenteel geen actieve foreign bronprofielen via editor-leeromgevingen."} />
   </section>;
 
   const templateSection = <SourceProfileTemplateManager key={`${query.templateSaved ?? ""}:${query.templateError ?? ""}:${query.templateModal ?? ""}:${query.template ?? ""}`} templates={templates} copyTargets={overview.copyTargets} canManage={user.role === "superadmin"} showArchive={showTemplateArchive} actions={{ create: createSourceProfileTemplateAction, update: updateSourceProfileTemplateAction, duplicate: duplicateSourceProfileTemplateAction, setDefault: setDefaultSourceProfileTemplateAction, copy: copyManagedSourceProfileTemplateAction, archive: archiveSourceProfileTemplateAction, restore: restoreSourceProfileTemplateAction, permanentlyDelete: permanentlyDeleteSourceProfileTemplateAction }} initialModal={templateModal(query.templateModal)} initialTemplateId={query.template} error={query.templateError} />;

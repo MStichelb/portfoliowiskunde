@@ -102,13 +102,18 @@ describe("SourceProfileTemplateManager", () => {
     expect(markup).toContain("Permanent verwijderen");
     expect(markup).not.toContain("Beheren");
     expect(markup).not.toContain("Kopiëren");
+    expect(markup).not.toContain("Nieuw sjabloon");
     expect(renderManager("manage", "template-archived", undefined, true, true, true)).not.toContain('role="dialog"');
+  });
+
+  it("shows a clear empty state for an empty template archive", () => {
+    expect(renderManager(null, undefined, undefined, true, true, true, true)).toContain("Geen gearchiveerde sjablonen.");
   });
 });
 
-function renderManager(initialModal: SourceProfileTemplateModal | null = null, initialTemplateId?: string, error?: string, canManage = true, hasCopyTargets = true, archivedOnly = false): string {
+function renderManager(initialModal: SourceProfileTemplateModal | null = null, initialTemplateId?: string, error?: string, canManage = true, hasCopyTargets = true, archivedOnly = false, empty = false): string {
   return renderToStaticMarkup(<SourceProfileTemplateManager
-    templates={archivedOnly ? [
+    templates={empty ? [] : archivedOnly ? [
       { id: "template-archived", name: "Oud sjabloon", description: null, configVersion: 1, isDefault: false, archivedAt: "2026-09-12T00:00:00.000Z", isArchived: true, canArchive: false },
     ] : [
       { id: "template-1", name: "Standaard portfolio", description: "Appbreed standaardsjabloon", configVersion: 1, isDefault: true, archivedAt: null, isArchived: false, canArchive: false },
