@@ -6,6 +6,12 @@ const rootDirectory = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   resolve: {
-    alias: { "@": path.resolve(rootDirectory, "src") },
+  alias: {
+    "@": path.resolve(import.meta.dirname, "src"),
+    "server-only": path.resolve(
+      import.meta.dirname,
+      "src/test/server-only.ts",
+    ),
   },
-});
+},
+}); 
