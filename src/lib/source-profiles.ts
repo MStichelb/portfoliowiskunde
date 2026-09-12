@@ -30,6 +30,7 @@ export interface SourceProfile {
   config: SourceProfileConfig;
   managementLearningSpaceId: string | null;
   ownerUserId: string | null;
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -41,10 +42,12 @@ export interface AvailableSourceProfile extends SourceProfile {
   usages: SourceProfileUsage[];
   usageCount: number;
   isInactive: boolean;
+  isArchived: boolean;
   access: SourceProfileAccess;
   canRename: boolean;
   canCopy: boolean;
   canLink: boolean;
+  canArchive: boolean;
   linkTargets: SourceProfileCopyTarget[];
 }
 
@@ -92,15 +95,15 @@ export async function getActiveSourceProfileForLearningSpace(learningSpaceId: st
   const result = await (await getDatabase()).execute({
     sql: `SELECT source_profiles.* FROM learning_space_source_profiles
       INNER JOIN source_profiles ON source_profiles.id = learning_space_source_profiles.source_profile_id
-      WHERE learning_space_source_profiles.learning_space_id = ?`,
+      WHERE learning_space_source_profiles.learning_space_id = ? AND source_profiles.archived_at IS NULL`,
     args: [learningSpaceId],
   });
   return result.rows[0] ? sourceProfileFromRow(result.rows[0]) : null;
 }
 
-export async function getSourceProfileOverview(user: AppUser): Promise<SourceProfileOverview> {
+export async function getSourceProfileOverview(user: AppUser, options: { includeArchived?: boolean } = {}): Promise<SourceProfileOverview> {
   if (!canAccessAdmin(user)) throw new AuthorizationError("Bronprofielen zijn alleen beschikbaar voor actieve beheerders.");
-  const [targetRows, profileRows] = await Promise.all([getSourceProfileTargetRows(user), getVisibleSourceProfileRows(user)]);
+  const [targetRows, profileRows] = await Promise.all([getSourceProfileTargetRows(user), getVisibleSourceProfileRows(user, options.includeArchived === true)]);
   const targets = sourceProfileTargetReadModel(targetRows);
   const profiles = sourceProfileDetailsFromRows(profileRows, user, targets.copyTargets.length > 0, targets.linkTargetsByOwner);
   const otherUserProfiles = user.role === "superadmin"
@@ -120,7 +123,7 @@ export async function getSourceProfileForLearningSpaceCard(user: AppUser, learni
   const result = await (await getDatabase()).execute({
     sql: `${sourceProfileDetailsSelect()} WHERE source_profiles.id = (
       SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = ?
-    ) ORDER BY usage_space.sort_order, usage_space.name, usage_space.id`,
+    ) AND source_profiles.archived_at IS NULL ORDER BY usage_space.sort_order, usage_space.name, usage_space.id`,
     args: [learningSpaceId],
   });
   const profile = sourceProfileDetailsFromRows(result.rows, user, false, new Map(), true)[0];
@@ -210,6 +213,41 @@ export async function renameManagedSourceProfile(user: AppUser, sourceProfileId:
   await renameAllowedSourceProfile(profile, name);
 }
 
+export async function archiveSourceProfile(user: AppUser, sourceProfileId: string): Promise<void> {
+  const profile = await requireLifecycleSourceProfile(user, sourceProfileId);
+  if (profile.archivedAt) throw new Error("Dit bronprofiel is al gearchiveerd.");
+  if (await sourceProfileUsageCount(profile.id) > 0) throw new Error("Een gebruikt bronprofiel kan niet worden gearchiveerd.");
+  const now = new Date().toISOString();
+  await (await getDatabase()).execute({
+    sql: `UPDATE source_profiles SET archived_at = ?, updated_at = ?
+      WHERE id = ? AND archived_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM learning_space_source_profiles WHERE source_profile_id = source_profiles.id)`,
+    args: [now, now, profile.id],
+  });
+}
+
+export async function restoreSourceProfile(user: AppUser, sourceProfileId: string): Promise<void> {
+  const profile = await requireLifecycleSourceProfile(user, sourceProfileId);
+  if (!profile.archivedAt) throw new Error("Alleen een gearchiveerd bronprofiel kan worden hersteld.");
+  if (!profile.ownerUserId) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+  await uniqueSourceProfileName(profile.ownerUserId, profile.name, profile.id);
+  await (await getDatabase()).execute({
+    sql: "UPDATE source_profiles SET archived_at = NULL, updated_at = ? WHERE id = ? AND archived_at IS NOT NULL",
+    args: [new Date().toISOString(), profile.id],
+  });
+}
+
+export async function permanentlyDeleteSourceProfile(user: AppUser, sourceProfileId: string): Promise<void> {
+  const profile = await requireLifecycleSourceProfile(user, sourceProfileId);
+  if (!profile.archivedAt) throw new Error("Alleen een gearchiveerd bronprofiel kan permanent worden verwijderd.");
+  if (await sourceProfileUsageCount(profile.id) > 0) throw new Error("Een gebruikt bronprofiel kan niet permanent worden verwijderd.");
+  await (await getDatabase()).execute({
+    sql: `DELETE FROM source_profiles WHERE id = ? AND type = 'custom' AND archived_at IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM learning_space_source_profiles WHERE source_profile_id = source_profiles.id)`,
+    args: [profile.id],
+  });
+}
+
 export function getSourceProfileConfig(profile: SourceProfile): SourceProfileConfig {
   return profile.config;
 }
@@ -238,11 +276,12 @@ function sourceProfileFromRow(row: DatabaseRow): SourceProfile {
     id: String(row.id), type, name: String(row.name), description: row.description == null ? null : String(row.description),
     config: parseStoredSourceProfileConfig(Number(row.config_version), String(row.config_json)),
     managementLearningSpaceId: row.management_learning_space_id == null ? null : String(row.management_learning_space_id),
-    ownerUserId, createdAt: String(row.created_at), updatedAt: String(row.updated_at),
+    ownerUserId, archivedAt: row.archived_at == null ? null : String(row.archived_at),
+    createdAt: String(row.created_at), updatedAt: String(row.updated_at),
   };
 }
 
-async function getVisibleSourceProfileRows(user: AppUser): Promise<DatabaseRow[]> {
+async function getVisibleSourceProfileRows(user: AppUser, includeArchived: boolean): Promise<DatabaseRow[]> {
   const visibility = user.role === "superadmin" ? { sql: "", args: [] } : {
     sql: `AND (source_profiles.owner_user_id = ? OR EXISTS (
       SELECT 1 FROM learning_space_source_profiles AS visible_assignment
@@ -250,11 +289,13 @@ async function getVisibleSourceProfileRows(user: AppUser): Promise<DatabaseRow[]
       JOIN learning_spaces AS visible_space ON visible_space.id = visible_assignment.learning_space_id
       WHERE visible_assignment.source_profile_id = source_profiles.id
         AND visible_membership.user_id = ? AND visible_membership.role = 'editor'
+        AND source_profiles.archived_at IS NULL
         AND visible_space.is_active = 1 AND visible_space.archived_at IS NULL
     ))`, args: [user.id, user.id],
   };
+  const archiveScope = includeArchived ? "" : "AND source_profiles.archived_at IS NULL";
   const result = await (await getDatabase()).execute({
-    sql: `${sourceProfileDetailsSelect()} WHERE source_profiles.type = 'custom' ${visibility.sql}
+    sql: `${sourceProfileDetailsSelect()} WHERE source_profiles.type = 'custom' ${archiveScope} ${visibility.sql}
       ORDER BY LOWER(source_profiles.name), source_profiles.id, usage_space.sort_order, usage_space.name, usage_space.id`,
     args: visibility.args,
   });
@@ -289,7 +330,8 @@ function sourceProfileDetailsFromRows(
       if (!parsed) continue;
       const access: SourceProfileAccess = user.role === "superadmin" ? "superadmin"
         : parsed.ownerUserId === user.id ? "owner" : contextual ? "context" : "editor";
-      const canMutate = access === "owner" || access === "superadmin";
+      const isArchived = parsed.archivedAt !== null;
+      const canMutate = !isArchived && (access === "owner" || access === "superadmin");
       const linkTargets = canMutate && parsed.ownerUserId
         ? (linkTargetsByOwner.get(parsed.ownerUserId) ?? []).filter((target) => target.profile.id !== parsed.id)
         : [];
@@ -298,10 +340,11 @@ function sourceProfileDetailsFromRows(
         managementLearningSpaceName: row.management_learning_space_name == null ? null : String(row.management_learning_space_name),
         managementLearningSpaceShortLabel: row.management_learning_space_short_label == null ? null : String(row.management_learning_space_short_label),
         ownerName: row.owner_name == null ? null : String(row.owner_name),
-        usages: [], usageCount: 0, isInactive: true, access,
+        usages: [], usageCount: 0, isInactive: true, isArchived, access,
         canRename: canMutate,
         canCopy: parsed.type === "custom" && hasCopyTargets && (canMutate || access === "editor"),
         canLink: parsed.type === "custom" && linkTargets.length > 0,
+        canArchive: canMutate,
         linkTargets,
       };
       profiles.set(id, profile);
@@ -313,6 +356,7 @@ function sourceProfileDetailsFromRows(
       });
       profile.usageCount = profile.usages.length;
       profile.isInactive = false;
+      profile.canArchive = false;
     }
   }
   return [...profiles.values()].sort(compareSourceProfiles);
@@ -331,7 +375,7 @@ function sourceProfileOwnerOptions(profiles: ManagedSourceProfile[]): SourceProf
 
 async function requireVisibleSourceProfile(user: AppUser, sourceProfileId: string): Promise<SourceProfile> {
   if (!canAccessAdmin(user)) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
-  const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [sourceProfileId] });
+  const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profiles WHERE id = ? AND archived_at IS NULL", args: [sourceProfileId] });
   if (!result.rows[0]) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
   const profile = sourceProfileFromRow(result.rows[0]);
   if (profile.type === "built_in") throw new AuthorizationError("Bronprofiel niet beschikbaar.");
@@ -351,10 +395,21 @@ async function requireVisibleSourceProfile(user: AppUser, sourceProfileId: strin
 
 async function requireOwnedSourceProfile(user: AppUser, sourceProfileId: string): Promise<SourceProfile> {
   if (!canAccessAdmin(user)) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
-  const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [sourceProfileId] });
+  const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profiles WHERE id = ? AND archived_at IS NULL", args: [sourceProfileId] });
   if (!result.rows[0]) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
   const profile = sourceProfileFromRow(result.rows[0]);
   if (profile.type === "built_in" || (user.role !== "superadmin" && profile.ownerUserId !== user.id)) {
+    throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+  }
+  return profile;
+}
+
+async function requireLifecycleSourceProfile(user: AppUser, sourceProfileId: string): Promise<SourceProfile> {
+  if (!canAccessAdmin(user)) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+  const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [sourceProfileId] });
+  if (!result.rows[0]) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+  const profile = sourceProfileFromRow(result.rows[0]);
+  if (profile.type !== "custom" || (user.role !== "superadmin" && profile.ownerUserId !== user.id)) {
     throw new AuthorizationError("Bronprofiel niet beschikbaar.");
   }
   return profile;
@@ -410,7 +465,8 @@ async function getSourceProfileTargetRows(user: AppUser): Promise<DatabaseRow[]>
       JOIN source_profiles AS active_profile ON active_profile.id = learning_space_source_profiles.source_profile_id
       LEFT JOIN learning_space_members AS target_owner ON target_owner.learning_space_id = learning_spaces.id
         AND target_owner.role = 'owner'
-      WHERE learning_spaces.is_active = 1 AND learning_spaces.archived_at IS NULL ${scope.sql}
+      WHERE learning_spaces.is_active = 1 AND learning_spaces.archived_at IS NULL
+        AND active_profile.archived_at IS NULL ${scope.sql}
       ORDER BY learning_spaces.sort_order, learning_spaces.name, target_owner.user_id`,
     args: scope.args,
   })).rows;
@@ -458,7 +514,7 @@ async function createIndependentCopy(source: SourceProfile, managementLearningSp
       VALUES (?, 'custom', ?, ?, ?, ?, ?, ?, ?, ?)`,
     args: [id, name, source.description, config.configVersion, JSON.stringify(config), now, now, managementLearningSpaceId, ownerUserId],
   }, ...(activate ? [assignmentStatement(managementLearningSpaceId, id, now)] : [])]);
-  return { id, type: "custom", name, description: source.description, config, managementLearningSpaceId, ownerUserId, createdAt: now, updatedAt: now };
+  return { id, type: "custom", name, description: source.description, config, managementLearningSpaceId, ownerUserId, archivedAt: null, createdAt: now, updatedAt: now };
 }
 
 async function renameAllowedSourceProfile(profile: SourceProfile, name: string): Promise<void> {

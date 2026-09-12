@@ -19,6 +19,7 @@ import {
 } from "./source-profile-config";
 import { getActiveSourceProfileForLearningSpace } from "./source-profiles";
 import {
+  archiveSourceProfileTemplate,
   cloneSourceProfileTemplateToLearningSpace,
   copySourceProfileTemplateToLearningSpace,
   createSourceProfileTemplate,
@@ -27,6 +28,8 @@ import {
   getDefaultSourceProfileTemplate,
   getSourceProfileTemplateConfig,
   listSourceProfileTemplates,
+  permanentlyDeleteSourceProfileTemplate,
+  restoreSourceProfileTemplate,
   setDefaultSourceProfileTemplate,
   updateSourceProfileTemplateMetadata,
 } from "./source-profile-templates";
@@ -196,12 +199,62 @@ describe("global source profile templates", () => {
     await expect(updateSourceProfileTemplateMetadata(superadmin, created.id, { name: "a".repeat(81) })).rejects.toThrow("maximaal 80");
   });
 
+  it("archives non-default templates and excludes them from normal lists and copy flows", async () => {
+    const template = await createSourceProfileTemplate(superadmin, { name: "Oud sjabloon", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID });
+    await archiveSourceProfileTemplate(superadmin, template.id);
+
+    expect((await listSourceProfileTemplates(superadmin)).map((item) => item.id)).not.toContain(template.id);
+    expect((await listSourceProfileTemplates(owner, { includeArchived: true })).map((item) => item.id)).not.toContain(template.id);
+    expect((await listSourceProfileTemplates(superadmin, { includeArchived: true })).find((item) => item.id === template.id)).toMatchObject({
+      isArchived: true, archivedAt: expect.any(String), canArchive: false, isDefault: false,
+    });
+    await expect(copySourceProfileTemplateToLearningSpace(owner, template.id, "space-5")).rejects.toThrow("niet gevonden");
+    await expect(duplicateSourceProfileTemplate(superadmin, template.id)).rejects.toThrow("niet gevonden");
+    await expect(setDefaultSourceProfileTemplate(superadmin, template.id)).rejects.toThrow("niet gevonden");
+  });
+
+  it("restores without becoming default, checks active name conflicts and deletes only from archive", async () => {
+    const database = await getDatabase();
+    const template = await createSourceProfileTemplate(superadmin, { name: "Herstelbaar sjabloon", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID });
+    await expect(permanentlyDeleteSourceProfileTemplate(superadmin, template.id)).rejects.toThrow("Alleen een gearchiveerd");
+    await archiveSourceProfileTemplate(superadmin, template.id);
+    await restoreSourceProfileTemplate(superadmin, template.id);
+    expect((await getDefaultSourceProfileTemplate()).id).toBe(INITIAL_SOURCE_PROFILE_TEMPLATE_ID);
+    expect((await listSourceProfileTemplates(superadmin)).find((item) => item.id === template.id)).toMatchObject({ isArchived: false, isDefault: false });
+
+    await archiveSourceProfileTemplate(superadmin, template.id);
+    await createSourceProfileTemplate(superadmin, { name: "Herstelbaar sjabloon", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID });
+    await expect(restoreSourceProfileTemplate(superadmin, template.id)).rejects.toThrow("bestaat al");
+    await permanentlyDeleteSourceProfileTemplate(superadmin, template.id);
+    expect((await database.execute({ sql: "SELECT 1 FROM source_profile_templates WHERE id = ?", args: [template.id] })).rows).toHaveLength(0);
+  });
+
+  it("protects the default and template lifecycle authorization while preserving concrete snapshots", async () => {
+    const database = await getDatabase();
+    await expect(archiveSourceProfileTemplate(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID)).rejects.toThrow("standaardsjabloon");
+    await expect(permanentlyDeleteSourceProfileTemplate(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID)).rejects.toThrow();
+    await expect(archiveSourceProfileTemplate(owner, INITIAL_SOURCE_PROFILE_TEMPLATE_ID)).rejects.toThrow("Alleen een hoofdbeheerder");
+    await expect(restoreSourceProfileTemplate(editor, INITIAL_SOURCE_PROFILE_TEMPLATE_ID)).rejects.toThrow("Alleen een hoofdbeheerder");
+    await expect(permanentlyDeleteSourceProfileTemplate(owner, INITIAL_SOURCE_PROFILE_TEMPLATE_ID)).rejects.toThrow("Alleen een hoofdbeheerder");
+
+    const template = await createSourceProfileTemplate(superadmin, { name: "Snapshotbasis", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID });
+    const profile = await copySourceProfileTemplateToLearningSpace(owner, template.id, "space-5");
+    const snapshotBefore = (await database.execute({ sql: "SELECT config_json FROM source_profiles WHERE id = ?", args: [profile.id] })).rows[0].config_json;
+    await archiveSourceProfileTemplate(superadmin, template.id);
+    await permanentlyDeleteSourceProfileTemplate(superadmin, template.id);
+    expect((await database.execute({ sql: "SELECT config_json FROM source_profiles WHERE id = ?", args: [profile.id] })).rows[0].config_json).toBe(snapshotBefore);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(profile.id);
+  });
+
   it("guards every template mutation against teacher role escalation and foreign ids", async () => {
     const mutations = [
       () => createSourceProfileTemplate(owner, { name: "Verboden" }),
       () => updateSourceProfileTemplateMetadata(editor, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, { name: "Verboden" }),
       () => duplicateSourceProfileTemplate(owner, INITIAL_SOURCE_PROFILE_TEMPLATE_ID),
       () => setDefaultSourceProfileTemplate(editor, INITIAL_SOURCE_PROFILE_TEMPLATE_ID),
+      () => archiveSourceProfileTemplate(owner, INITIAL_SOURCE_PROFILE_TEMPLATE_ID),
+      () => restoreSourceProfileTemplate(editor, INITIAL_SOURCE_PROFILE_TEMPLATE_ID),
+      () => permanentlyDeleteSourceProfileTemplate(owner, INITIAL_SOURCE_PROFILE_TEMPLATE_ID),
     ];
     for (const mutation of mutations) await expect(mutation()).rejects.toThrow("Alleen een hoofdbeheerder");
     await expect(listSourceProfileTemplates(owner)).resolves.toHaveLength(1);

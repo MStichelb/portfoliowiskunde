@@ -22,6 +22,7 @@ export interface SourceProfileTemplate {
   name: string;
   description: string | null;
   config: SourceProfileConfig;
+  archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -37,6 +38,9 @@ export interface SourceProfileTemplateSummary {
   description: string | null;
   configVersion: number;
   isDefault: boolean;
+  archivedAt: string | null;
+  isArchived: boolean;
+  canArchive: boolean;
 }
 
 export interface SourceProfileTemplateMetadataInput {
@@ -55,7 +59,7 @@ export async function getDefaultSourceProfileTemplate(): Promise<SourceProfileTe
   const result = await (await getDatabase()).execute(`SELECT source_profile_templates.*
     FROM source_profile_template_defaults
     JOIN source_profile_templates ON source_profile_templates.id = source_profile_template_defaults.default_template_id
-    WHERE source_profile_template_defaults.singleton_id = 1`);
+    WHERE source_profile_template_defaults.singleton_id = 1 AND source_profile_templates.archived_at IS NULL`);
   if (!result.rows[0]) throw new Error("Er is geen geldig standaard-bronprofielsjabloon ingesteld.");
   return sourceProfileTemplateFromRow(result.rows[0]);
 }
@@ -64,13 +68,15 @@ export function getSourceProfileTemplateConfig(template: SourceProfileTemplate):
   return template.config;
 }
 
-export async function listSourceProfileTemplates(user: AppUser): Promise<SourceProfileTemplateSummary[]> {
+export async function listSourceProfileTemplates(user: AppUser, options: { includeArchived?: boolean } = {}): Promise<SourceProfileTemplateSummary[]> {
   if (!canAccessAdmin(user)) throw new AuthorizationError("Bronprofielsjablonen zijn alleen beschikbaar voor actieve beheerders.");
+  const includeArchived = user.role === "superadmin" && options.includeArchived === true;
   const result = await (await getDatabase()).execute(`SELECT source_profile_templates.id, source_profile_templates.name,
-      source_profile_templates.description, source_profile_templates.config_version,
+      source_profile_templates.description, source_profile_templates.config_version, source_profile_templates.archived_at,
       CASE WHEN source_profile_template_defaults.default_template_id = source_profile_templates.id THEN 1 ELSE 0 END AS is_default
     FROM source_profile_templates
     LEFT JOIN source_profile_template_defaults ON source_profile_template_defaults.singleton_id = 1
+    ${includeArchived ? "" : "WHERE source_profile_templates.archived_at IS NULL"}
     ORDER BY is_default DESC, LOWER(source_profile_templates.name), source_profile_templates.id`);
   return result.rows.map((row) => ({
     id: String(row.id),
@@ -78,6 +84,9 @@ export async function listSourceProfileTemplates(user: AppUser): Promise<SourceP
     description: row.description == null ? null : String(row.description),
     configVersion: Number(row.config_version),
     isDefault: Number(row.is_default) === 1,
+    archivedAt: row.archived_at == null ? null : String(row.archived_at),
+    isArchived: row.archived_at != null,
+    canArchive: user.role === "superadmin" && Number(row.is_default) !== 1 && row.archived_at == null,
   }));
 }
 
@@ -137,6 +146,43 @@ export async function setDefaultSourceProfileTemplate(user: AppUser, templateId:
   });
 }
 
+export async function archiveSourceProfileTemplate(user: AppUser, templateId: string): Promise<void> {
+  requireSourceProfileTemplateManagement(user);
+  const template = await getLifecycleSourceProfileTemplate(templateId);
+  if (template.archivedAt) throw new Error("Dit bronprofielsjabloon is al gearchiveerd.");
+  if (await isDefaultSourceProfileTemplate(template.id)) throw new Error("Het huidige standaardsjabloon kan niet worden gearchiveerd.");
+  const now = new Date().toISOString();
+  await (await getDatabase()).execute({
+    sql: `UPDATE source_profile_templates SET archived_at = ?, updated_at = ?
+      WHERE id = ? AND archived_at IS NULL
+        AND NOT EXISTS (SELECT 1 FROM source_profile_template_defaults WHERE default_template_id = source_profile_templates.id)`,
+    args: [now, now, template.id],
+  });
+}
+
+export async function restoreSourceProfileTemplate(user: AppUser, templateId: string): Promise<void> {
+  requireSourceProfileTemplateManagement(user);
+  const template = await getLifecycleSourceProfileTemplate(templateId);
+  if (!template.archivedAt) throw new Error("Alleen een gearchiveerd bronprofielsjabloon kan worden hersteld.");
+  await validatedUniqueTemplateMetadata({ name: template.name, description: template.description }, template.id);
+  await (await getDatabase()).execute({
+    sql: "UPDATE source_profile_templates SET archived_at = NULL, updated_at = ? WHERE id = ? AND archived_at IS NOT NULL",
+    args: [new Date().toISOString(), template.id],
+  });
+}
+
+export async function permanentlyDeleteSourceProfileTemplate(user: AppUser, templateId: string): Promise<void> {
+  requireSourceProfileTemplateManagement(user);
+  const template = await getLifecycleSourceProfileTemplate(templateId);
+  if (!template.archivedAt) throw new Error("Alleen een gearchiveerd bronprofielsjabloon kan permanent worden verwijderd.");
+  if (await isDefaultSourceProfileTemplate(template.id)) throw new Error("Het huidige standaardsjabloon kan niet permanent worden verwijderd.");
+  await (await getDatabase()).execute({
+    sql: `DELETE FROM source_profile_templates WHERE id = ? AND archived_at IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM source_profile_template_defaults WHERE default_template_id = source_profile_templates.id)`,
+    args: [template.id],
+  });
+}
+
 export async function cloneSourceProfileTemplateToLearningSpace(
   template: SourceProfileTemplate,
   learningSpaceId: string,
@@ -165,6 +211,7 @@ export function prepareSourceProfileTemplateClone(
     config,
     managementLearningSpaceId: learningSpaceId,
     ownerUserId,
+    archivedAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -212,15 +259,30 @@ function sourceProfileTemplateFromRow(row: DatabaseRow): SourceProfileTemplate {
     name: String(row.name),
     description: row.description == null ? null : String(row.description),
     config: parseStoredSourceProfileConfig(Number(row.config_version), String(row.config_json)),
+    archivedAt: row.archived_at == null ? null : String(row.archived_at),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };
 }
 
 async function getSourceProfileTemplate(templateId: string): Promise<SourceProfileTemplate> {
+  const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profile_templates WHERE id = ? AND archived_at IS NULL", args: [templateId] });
+  if (!result.rows[0]) throw new Error("Bronprofielsjabloon niet gevonden.");
+  return sourceProfileTemplateFromRow(result.rows[0]);
+}
+
+async function getLifecycleSourceProfileTemplate(templateId: string): Promise<SourceProfileTemplate> {
   const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profile_templates WHERE id = ?", args: [templateId] });
   if (!result.rows[0]) throw new Error("Bronprofielsjabloon niet gevonden.");
   return sourceProfileTemplateFromRow(result.rows[0]);
+}
+
+async function isDefaultSourceProfileTemplate(templateId: string): Promise<boolean> {
+  const result = await (await getDatabase()).execute({
+    sql: "SELECT 1 FROM source_profile_template_defaults WHERE singleton_id = 1 AND default_template_id = ?",
+    args: [templateId],
+  });
+  return Boolean(result.rows[0]);
 }
 
 async function insertIndependentTemplateSnapshot(
@@ -237,7 +299,7 @@ async function insertIndependentTemplateSnapshot(
       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     args: [id, metadata.name, metadata.description, config.configVersion, JSON.stringify(config), now, now],
   });
-  return { id, name: metadata.name, description: metadata.description, config, createdAt: now, updatedAt: now };
+  return { id, name: metadata.name, description: metadata.description, config, archivedAt: null, createdAt: now, updatedAt: now };
 }
 
 async function validatedUniqueTemplateMetadata(
@@ -250,7 +312,7 @@ async function validatedUniqueTemplateMetadata(
   if (!parsedDescription.success) throw new Error(parsedDescription.error.issues[0]?.message ?? "Ongeldige sjabloonbeschrijving.");
   const duplicate = await (await getDatabase()).execute({
     sql: `SELECT 1 FROM source_profile_templates
-      WHERE LOWER(TRIM(name)) = LOWER(?) AND (? IS NULL OR id <> ?) LIMIT 1`,
+      WHERE archived_at IS NULL AND LOWER(TRIM(name)) = LOWER(?) AND (? IS NULL OR id <> ?) LIMIT 1`,
     args: [parsedName.data, excludeTemplateId ?? null, excludeTemplateId ?? null],
   });
   if (duplicate.rows[0]) throw new Error("Er bestaat al een appbreed bronprofielsjabloon met deze naam.");
@@ -259,7 +321,7 @@ async function validatedUniqueTemplateMetadata(
 
 async function availableTemplateCopyName(sourceName: string): Promise<string> {
   const prefix = "Kopie van ";
-  const names = (await (await getDatabase()).execute("SELECT name FROM source_profile_templates")).rows
+  const names = (await (await getDatabase()).execute("SELECT name FROM source_profile_templates WHERE archived_at IS NULL")).rows
     .map((row) => String(row.name).trim().toLocaleLowerCase("nl"));
   for (let number = 1; number <= names.length + 1; number += 1) {
     const suffix = number === 1 ? "" : ` (${number})`;

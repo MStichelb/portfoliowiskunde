@@ -130,7 +130,10 @@ describe("Google Drive LearningSpace migration", () => {
     const exerciseColumns = (await database.execute("PRAGMA table_info(exercises)")).rows.map((row) => row.name);
     expect(exerciseColumns).toEqual(expect.arrayContaining(["custom_note", "note_position", "note_label"]));
     const sourceProfileColumns = (await database.execute("PRAGMA table_info(source_profiles)")).rows.map((row) => row.name);
-    expect(sourceProfileColumns).toContain("owner_user_id");
+    expect(sourceProfileColumns).toEqual(expect.arrayContaining(["owner_user_id", "archived_at"]));
+    expect((await database.execute("PRAGMA table_info(source_profile_templates)")).rows.map((row) => row.name)).toContain("archived_at");
+    expect((await database.execute("SELECT archived_at FROM source_profiles")).rows.every((row) => row.archived_at === null)).toBe(true);
+    expect((await database.execute("SELECT archived_at FROM source_profile_templates")).rows.every((row) => row.archived_at === null)).toBe(true);
     expect((await database.execute("SELECT COUNT(*) AS count FROM source_profiles WHERE type = 'custom' AND owner_user_id IS NULL")).rows[0].count).toBe(0);
     expect((await database.execute("SELECT owner_user_id FROM source_profiles WHERE type = 'built_in'")).rows[0].owner_user_id).toBeNull();
     expect((await database.execute("PRAGMA table_info(individual_learning_space_access)")).rows.map((row) => row.name))
@@ -143,12 +146,38 @@ describe("Google Drive LearningSpace migration", () => {
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '030_exercise_notes'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '031_exercise_note_labels'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '037_source_profile_ownership'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '038_source_profile_lifecycle'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT id, role, status FROM users WHERE id = 'user-legacy-superadmin'")).rows[0]).toMatchObject({
       role: "superadmin", status: "active",
     });
     expect((await database.execute("SELECT owner_user_id, provider, status FROM storage_connections")).rows).toEqual([
       expect.objectContaining({ owner_user_id: "user-legacy-superadmin", provider: "onedrive", status: "disconnected" }),
     ]);
+  });
+
+  it("adds nullable source profile lifecycle columns on upgrade without changing existing rows", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-source-profile-lifecycle-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 37)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-11T10:00:00.000Z"] },
+      ], "write");
+    }
+    const profilesBefore = (await legacy.execute("SELECT id, name, config_json FROM source_profiles ORDER BY id")).rows;
+    const templatesBefore = (await legacy.execute("SELECT id, name, config_json FROM source_profile_templates ORDER BY id")).rows;
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT id, name, config_json FROM source_profiles ORDER BY id")).rows).toEqual(profilesBefore);
+    expect((await upgraded.execute("SELECT id, name, config_json FROM source_profile_templates ORDER BY id")).rows).toEqual(templatesBefore);
+    expect((await upgraded.execute("SELECT archived_at FROM source_profiles")).rows.every((row) => row.archived_at === null)).toBe(true);
+    expect((await upgraded.execute("SELECT archived_at FROM source_profile_templates")).rows.every((row) => row.archived_at === null)).toBe(true);
+    expect((await upgraded.execute("SELECT version FROM schema_migrations WHERE version = '038_source_profile_lifecycle'")).rows).toHaveLength(1);
   });
 
   it("assigns deterministic source profile owners on upgrade without changing usage or profile snapshots", async () => {

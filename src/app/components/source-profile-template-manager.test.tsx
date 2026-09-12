@@ -10,6 +10,9 @@ const actions: SourceProfileTemplateActions = {
   duplicate: async () => undefined,
   setDefault: async () => undefined,
   copy: async () => undefined,
+  archive: async () => undefined,
+  restore: async () => undefined,
+  permanentlyDelete: async () => undefined,
 };
 
 describe("SourceProfileTemplateManager", () => {
@@ -48,6 +51,8 @@ describe("SourceProfileTemplateManager", () => {
     expect(markup).toContain("Naam bestaat al.");
     expect(markup.match(/<form/g)).toHaveLength(1);
     expect(markup.match(/role="alert"/g)).toHaveLength(1);
+    expect(markup).toContain("Archiveren");
+    expect(markup).toContain("lucide-archive");
   });
 
   it("shows the explicit no-propagation confirmation before changing the default", () => {
@@ -88,19 +93,33 @@ describe("SourceProfileTemplateManager", () => {
     expect(markup).not.toContain("Kopiëren");
     expect(markup).not.toContain('role="dialog"');
   });
+
+  it("shows archived templates only with restore/delete lifecycle actions", () => {
+    const markup = renderManager(null, undefined, undefined, true, true, true);
+    expect(markup).toContain("Toon archief");
+    expect(markup).toContain("Gearchiveerd");
+    expect(markup).toContain("Herstellen");
+    expect(markup).toContain("Permanent verwijderen");
+    expect(markup).not.toContain("Beheren");
+    expect(markup).not.toContain("Kopiëren");
+    expect(renderManager("manage", "template-archived", undefined, true, true, true)).not.toContain('role="dialog"');
+  });
 });
 
-function renderManager(initialModal: SourceProfileTemplateModal | null = null, initialTemplateId?: string, error?: string, canManage = true, hasCopyTargets = true): string {
+function renderManager(initialModal: SourceProfileTemplateModal | null = null, initialTemplateId?: string, error?: string, canManage = true, hasCopyTargets = true, archivedOnly = false): string {
   return renderToStaticMarkup(<SourceProfileTemplateManager
-    templates={[
-      { id: "template-1", name: "Standaard portfolio", description: "Appbreed standaardsjabloon", configVersion: 1, isDefault: true },
-      { id: "template-2", name: "Eigen basis", description: null, configVersion: 1, isDefault: false },
+    templates={archivedOnly ? [
+      { id: "template-archived", name: "Oud sjabloon", description: null, configVersion: 1, isDefault: false, archivedAt: "2026-09-12T00:00:00.000Z", isArchived: true, canArchive: false },
+    ] : [
+      { id: "template-1", name: "Standaard portfolio", description: "Appbreed standaardsjabloon", configVersion: 1, isDefault: true, archivedAt: null, isArchived: false, canArchive: false },
+      { id: "template-2", name: "Eigen basis", description: null, configVersion: 1, isDefault: false, archivedAt: null, isArchived: false, canArchive: true },
     ]}
     copyTargets={hasCopyTargets ? [{ learningSpaceId: "space-6", learningSpaceName: "Zesde jaar", learningSpaceShortLabel: "6WIS", profile: {
       id: "profile-6", type: "custom", name: "Huidig profiel", description: null, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
-      managementLearningSpaceId: "space-6", ownerUserId: "owner", createdAt: "2026-09-10", updatedAt: "2026-09-10",
+      managementLearningSpaceId: "space-6", ownerUserId: "owner", archivedAt: null, createdAt: "2026-09-10", updatedAt: "2026-09-10",
     }, canConfigure: true }] : []}
     canManage={canManage}
+    showArchive={archivedOnly}
     actions={actions}
     initialModal={initialModal}
     initialTemplateId={initialTemplateId}

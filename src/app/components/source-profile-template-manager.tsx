@@ -1,10 +1,13 @@
 "use client";
 
-import { Copy, Pencil, Plus, Settings2, X } from "lucide-react";
+import { Archive, Copy, Pencil, Plus, RotateCcw, Settings2, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import type { SourceProfileTemplateSummary } from "@/lib/source-profile-templates";
 import type { SourceProfileCopyTarget } from "@/lib/source-profiles";
+
+import { ArchiveVisibilityToggle } from "./archive-visibility-toggle";
+import { ConfirmActionButton } from "./confirm-action-button";
 
 export type SourceProfileTemplateModal = "create" | "manage" | "default" | "copy";
 
@@ -14,12 +17,16 @@ export interface SourceProfileTemplateActions {
   duplicate: (formData: FormData) => Promise<void>;
   setDefault: (formData: FormData) => Promise<void>;
   copy: (formData: FormData) => Promise<void>;
+  archive: (formData: FormData) => Promise<void>;
+  restore: (formData: FormData) => Promise<void>;
+  permanentlyDelete: (formData: FormData) => Promise<void>;
 }
 
-export function SourceProfileTemplateManager({ templates, copyTargets, canManage, actions, initialModal = null, initialTemplateId, error }: {
+export function SourceProfileTemplateManager({ templates, copyTargets, canManage, showArchive = false, actions, initialModal = null, initialTemplateId, error }: {
   templates: SourceProfileTemplateSummary[];
   copyTargets: SourceProfileCopyTarget[];
   canManage: boolean;
+  showArchive?: boolean;
   actions: SourceProfileTemplateActions;
   initialModal?: SourceProfileTemplateModal | null;
   initialTemplateId?: string;
@@ -58,19 +65,19 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
         <h2 id="source-profile-templates-heading">Appbrede sjablonen</h2>
         <p>Sjablonen zijn vertrekpunten voor nieuwe, onafhankelijke bronprofielen en zijn nooit rechtstreeks actief in een leeromgeving.</p>
       </div>
-      {canManage ? <button className="primary-button source-profile-template-create" type="button" onClick={(event) => open("create", null, event.currentTarget)}><Plus size={16} aria-hidden />Nieuw sjabloon</button> : null}
+      {canManage ? <div className="source-profile-heading-controls"><ArchiveVisibilityToggle checked={showArchive} href={showArchive ? "/admin/bronprofielen?tab=templates" : "/admin/bronprofielen?tab=templates&templateArchive=1"} /><button className="primary-button source-profile-template-create" type="button" onClick={(event) => open("create", null, event.currentTarget)}><Plus size={16} aria-hidden />Nieuw sjabloon</button></div> : null}
     </div>
     <p className="source-profile-template-note">Wijzigingen aan een sjabloon hebben geen invloed op bestaande bronprofielen. Alleen nieuwe kopieën gebruiken de aangepaste versie.</p>
     <div className="source-profile-overview-list">
       {templates.map((template) => <article className="source-profile-overview-card" key={template.id}>
         <div className="source-profile-overview-copy">
-          <div className="source-profile-template-title"><div className="source-profile-overview-title"><Settings2 size={18} aria-hidden /><h3>{template.name}</h3></div>{template.isDefault ? <span className="active-source-badge">Standaard</span> : null}</div>
+          <div className="source-profile-template-title"><div className="source-profile-overview-title"><Settings2 size={18} aria-hidden /><h3>{template.name}</h3></div>{template.isArchived ? <span className="source-profile-archived-badge">Gearchiveerd</span> : template.isDefault ? <span className="active-source-badge">Standaard</span> : null}</div>
           {template.description ? <p>{template.description}</p> : null}
         </div>
-        <div className="source-profile-card-actions">
+        {template.isArchived ? <div className="source-profile-card-actions"><form action={actions.restore}><input type="hidden" name="templateId" value={template.id} /><button className="secondary-button restore-button" type="submit"><RotateCcw size={16} aria-hidden />Herstellen</button></form><ConfirmActionButton action={actions.permanentlyDelete} fields={{ templateId: template.id }} className="danger-button" label={<><Trash2 size={16} aria-hidden />Permanent verwijderen</>} confirmTitle="Sjabloon permanent verwijderen?" confirmText="Dit sjabloon wordt definitief verwijderd. Bestaande bronprofielen blijven ongewijzigd. Deze actie kan niet ongedaan worden gemaakt." confirmLabel="Permanent verwijderen" /></div> : <div className="source-profile-card-actions">
           {canManage ? <button className="secondary-button source-profile-manage-button" type="button" onClick={(event) => open("manage", template.id, event.currentTarget)}><Pencil size={16} aria-hidden />Beheren</button> : null}
           {copyTargets.length > 0 ? <button className="secondary-button source-profile-copy-button" type="button" onClick={(event) => open("copy", template.id, event.currentTarget)}><Copy size={16} aria-hidden />Kopiëren</button> : null}
-        </div>
+        </div>}
       </article>)}
     </div>
 
@@ -103,6 +110,7 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
               <button className="secondary-button" type="submit" formAction={actions.duplicate}><Copy size={16} aria-hidden />Sjabloon dupliceren</button>
               <div><button className="secondary-button" type="button" onClick={close}>Annuleren</button><button className="primary-button" type="submit">Opslaan</button></div>
             </div>
+            {selected.canArchive ? <div className="source-profile-lifecycle-zone"><button className="secondary-button" type="submit" formAction={actions.archive}><Archive size={16} aria-hidden />Archiveren</button></div> : null}
           </form>
         </> : null}
         {modal === "default" && selected ? <form action={actions.setDefault} className="source-profile-dialog-form">
@@ -150,6 +158,6 @@ function allowedInitialModal(
   if (modal === "copy" && !canCopy) return { modal: null, templateId: null };
   if (modal === "create") return { modal, templateId: null };
   const template = templates.find((candidate) => candidate.id === templateId);
-  if (!template || !modal || (modal === "default" && template.isDefault)) return { modal: null, templateId: null };
+  if (!template || template.isArchived || !modal || (modal === "default" && template.isDefault)) return { modal: null, templateId: null };
   return { modal, templateId: template.id };
 }

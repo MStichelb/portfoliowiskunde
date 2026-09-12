@@ -5,34 +5,49 @@ const mocks = vi.hoisted(() => ({
   renameManagedSourceProfile: vi.fn(),
   copySourceProfileToLearningSpace: vi.fn(),
   linkSourceProfileToLearningSpace: vi.fn(),
+  archiveSourceProfile: vi.fn(),
+  restoreSourceProfile: vi.fn(),
+  permanentlyDeleteSourceProfile: vi.fn(),
   copySourceProfileTemplateToLearningSpace: vi.fn(),
   createSourceProfileTemplate: vi.fn(),
   updateSourceProfileTemplateMetadata: vi.fn(),
   duplicateSourceProfileTemplate: vi.fn(),
   setDefaultSourceProfileTemplate: vi.fn(),
+  archiveSourceProfileTemplate: vi.fn(),
+  restoreSourceProfileTemplate: vi.fn(),
+  permanentlyDeleteSourceProfileTemplate: vi.fn(),
   revalidatePath: vi.fn(),
   redirect: vi.fn((destination: string) => { throw new Error(`NEXT_REDIRECT:${destination}`); }),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
-vi.mock("@/lib/source-profiles", () => ({ renameManagedSourceProfile: mocks.renameManagedSourceProfile, copySourceProfileToLearningSpace: mocks.copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace: mocks.linkSourceProfileToLearningSpace }));
+vi.mock("@/lib/source-profiles", () => ({ renameManagedSourceProfile: mocks.renameManagedSourceProfile, copySourceProfileToLearningSpace: mocks.copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace: mocks.linkSourceProfileToLearningSpace, archiveSourceProfile: mocks.archiveSourceProfile, restoreSourceProfile: mocks.restoreSourceProfile, permanentlyDeleteSourceProfile: mocks.permanentlyDeleteSourceProfile }));
 vi.mock("@/lib/source-profile-templates", () => ({
   copySourceProfileTemplateToLearningSpace: mocks.copySourceProfileTemplateToLearningSpace,
   createSourceProfileTemplate: mocks.createSourceProfileTemplate,
   updateSourceProfileTemplateMetadata: mocks.updateSourceProfileTemplateMetadata,
   duplicateSourceProfileTemplate: mocks.duplicateSourceProfileTemplate,
   setDefaultSourceProfileTemplate: mocks.setDefaultSourceProfileTemplate,
+  archiveSourceProfileTemplate: mocks.archiveSourceProfileTemplate,
+  restoreSourceProfileTemplate: mocks.restoreSourceProfileTemplate,
+  permanentlyDeleteSourceProfileTemplate: mocks.permanentlyDeleteSourceProfileTemplate,
 }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 
 import {
+  archiveManagedSourceProfileAction,
+  archiveSourceProfileTemplateAction,
   copyManagedSourceProfileAction,
   copyManagedSourceProfileTemplateAction,
   createSourceProfileTemplateAction,
   duplicateSourceProfileTemplateAction,
   linkManagedSourceProfileAction,
+  permanentlyDeleteManagedSourceProfileAction,
+  permanentlyDeleteSourceProfileTemplateAction,
   renameManagedSourceProfileAction,
+  restoreManagedSourceProfileAction,
+  restoreSourceProfileTemplateAction,
   setDefaultSourceProfileTemplateAction,
   updateSourceProfileTemplateAction,
 } from "./actions";
@@ -49,6 +64,12 @@ describe("central source profile actions", () => {
     mocks.updateSourceProfileTemplateMetadata.mockResolvedValue(undefined);
     mocks.duplicateSourceProfileTemplate.mockResolvedValue(undefined);
     mocks.setDefaultSourceProfileTemplate.mockResolvedValue(undefined);
+    mocks.archiveSourceProfile.mockResolvedValue(undefined);
+    mocks.restoreSourceProfile.mockResolvedValue(undefined);
+    mocks.permanentlyDeleteSourceProfile.mockResolvedValue(undefined);
+    mocks.archiveSourceProfileTemplate.mockResolvedValue(undefined);
+    mocks.restoreSourceProfileTemplate.mockResolvedValue(undefined);
+    mocks.permanentlyDeleteSourceProfileTemplate.mockResolvedValue(undefined);
   });
 
   it("routes independent central copies through authenticated domain helpers", async () => {
@@ -125,6 +146,27 @@ describe("central source profile actions", () => {
     await expect(renameManagedSourceProfileAction(form("foreign", "Naam"))).rejects.toThrow("profile=foreign");
     expect(mocks.redirect).toHaveBeenCalledWith(expect.stringContaining("error=Bronprofiel%20niet%20beschikbaar."));
     expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("routes profile lifecycle actions through authenticated domain guards", async () => {
+    const data = form("profile-1", "");
+    await expect(archiveManagedSourceProfileAction(data)).rejects.toThrow("saved=archived");
+    await expect(restoreManagedSourceProfileAction(data)).rejects.toThrow("saved=restored");
+    await expect(permanentlyDeleteManagedSourceProfileAction(data)).rejects.toThrow("saved=deleted");
+    expect(mocks.archiveSourceProfile).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "profile-1");
+    expect(mocks.restoreSourceProfile).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "profile-1");
+    expect(mocks.permanentlyDeleteSourceProfile).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "profile-1");
+  });
+
+  it("routes template lifecycle actions and keeps archive visible after restore/delete", async () => {
+    const data = templateForm("template-1");
+    await expect(archiveSourceProfileTemplateAction(data)).rejects.toThrow("templateSaved=archived");
+    await expect(restoreSourceProfileTemplateAction(data)).rejects.toThrow("templateSaved=restored");
+    await expect(permanentlyDeleteSourceProfileTemplateAction(data)).rejects.toThrow("templateSaved=deleted");
+    expect(mocks.archiveSourceProfileTemplate).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "template-1");
+    expect(mocks.restoreSourceProfileTemplate).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "template-1");
+    expect(mocks.permanentlyDeleteSourceProfileTemplate).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "template-1");
+    expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("templateArchive=1"));
   });
 });
 

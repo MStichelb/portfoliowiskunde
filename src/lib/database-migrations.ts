@@ -930,6 +930,15 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX source_profiles_owner_index ON source_profiles(owner_user_id, type)",
     ],
   },
+  {
+    version: "038_source_profile_lifecycle",
+    statements: [
+      "ALTER TABLE source_profiles ADD COLUMN archived_at TEXT",
+      "ALTER TABLE source_profile_templates ADD COLUMN archived_at TEXT",
+      "CREATE INDEX source_profiles_archive_index ON source_profiles(archived_at, owner_user_id, type)",
+      "CREATE INDEX source_profile_templates_archive_index ON source_profile_templates(archived_at, name)",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

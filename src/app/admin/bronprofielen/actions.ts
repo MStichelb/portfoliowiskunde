@@ -4,14 +4,29 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdminUser } from "@/lib/auth";
-import { copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace, renameManagedSourceProfile } from "@/lib/source-profiles";
+import { archiveSourceProfile, copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace, permanentlyDeleteSourceProfile, renameManagedSourceProfile, restoreSourceProfile } from "@/lib/source-profiles";
 import {
+  archiveSourceProfileTemplate,
   copySourceProfileTemplateToLearningSpace,
   createSourceProfileTemplate,
   duplicateSourceProfileTemplate,
+  permanentlyDeleteSourceProfileTemplate,
+  restoreSourceProfileTemplate,
   setDefaultSourceProfileTemplate,
   updateSourceProfileTemplateMetadata,
 } from "@/lib/source-profile-templates";
+
+export async function archiveManagedSourceProfileAction(formData: FormData): Promise<never> {
+  return runProfileLifecycleAction(formData, "archived", archiveSourceProfile, false);
+}
+
+export async function restoreManagedSourceProfileAction(formData: FormData): Promise<never> {
+  return runProfileLifecycleAction(formData, "restored", restoreSourceProfile, true);
+}
+
+export async function permanentlyDeleteManagedSourceProfileAction(formData: FormData): Promise<never> {
+  return runProfileLifecycleAction(formData, "deleted", permanentlyDeleteSourceProfile, true);
+}
 
 export async function copyManagedSourceProfileAction(formData: FormData): Promise<never> {
   const user = await requireAdminUser();
@@ -90,6 +105,54 @@ export async function setDefaultSourceProfileTemplateAction(formData: FormData):
   return runTemplateAction(formData, "default", "default", async (user, templateId) => {
     await setDefaultSourceProfileTemplate(user, templateId);
   });
+}
+
+export async function archiveSourceProfileTemplateAction(formData: FormData): Promise<never> {
+  return runTemplateLifecycleAction(formData, "archived", archiveSourceProfileTemplate, false);
+}
+
+export async function restoreSourceProfileTemplateAction(formData: FormData): Promise<never> {
+  return runTemplateLifecycleAction(formData, "restored", restoreSourceProfileTemplate, true);
+}
+
+export async function permanentlyDeleteSourceProfileTemplateAction(formData: FormData): Promise<never> {
+  return runTemplateLifecycleAction(formData, "deleted", permanentlyDeleteSourceProfileTemplate, true);
+}
+
+async function runProfileLifecycleAction(
+  formData: FormData,
+  saved: "archived" | "restored" | "deleted",
+  mutation: (user: Awaited<ReturnType<typeof requireAdminUser>>, sourceProfileId: string) => Promise<void>,
+  showArchive: boolean,
+): Promise<never> {
+  const user = await requireAdminUser();
+  const sourceProfileId = value(formData, "sourceProfileId");
+  try {
+    await mutation(user, sourceProfileId);
+  } catch (error) {
+    const archive = showArchive ? "&archive=1" : "";
+    redirect(`/admin/bronprofielen?error=${encodeURIComponent(error instanceof Error ? error.message : "De bronprofiellifecycle kon niet worden uitgevoerd.")}${archive}`);
+  }
+  revalidatePath("/admin/bronprofielen");
+  redirect(`/admin/bronprofielen?saved=${saved}${showArchive ? "&archive=1" : ""}`);
+}
+
+async function runTemplateLifecycleAction(
+  formData: FormData,
+  saved: "archived" | "restored" | "deleted",
+  mutation: (user: Awaited<ReturnType<typeof requireAdminUser>>, templateId: string) => Promise<void>,
+  showArchive: boolean,
+): Promise<never> {
+  const user = await requireAdminUser();
+  const templateId = value(formData, "templateId");
+  try {
+    await mutation(user, templateId);
+  } catch (error) {
+    const archive = showArchive ? "&templateArchive=1" : "";
+    redirect(`/admin/bronprofielen?tab=templates&templateError=${encodeURIComponent(error instanceof Error ? error.message : "De sjabloonlifecycle kon niet worden uitgevoerd.")}${archive}`);
+  }
+  revalidatePath("/admin/bronprofielen");
+  redirect(`/admin/bronprofielen?tab=templates&templateSaved=${saved}${showArchive ? "&templateArchive=1" : ""}`);
 }
 
 async function runTemplateAction(

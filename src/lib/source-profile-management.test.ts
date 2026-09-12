@@ -11,6 +11,7 @@ import { createUser, type AppUser } from "./identity";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, BUILT_IN_DEFAULT_SOURCE_PROFILE_ID } from "./source-profile-config";
 import { cloneSourceProfileTemplateToLearningSpace, getDefaultSourceProfileTemplate } from "./source-profile-templates";
 import {
+  archiveSourceProfile,
   canCopySourceProfile,
   copySourceProfileToLearningSpace,
   createOwnSourceProfile,
@@ -19,8 +20,10 @@ import {
   getSourceProfileForLearningSpaceCard,
   getSourceProfileOverview,
   linkSourceProfileToLearningSpace,
+  permanentlyDeleteSourceProfile,
   renameManagedSourceProfile,
   renameSourceProfile,
+  restoreSourceProfile,
   sourceProfileUsageLabel,
   switchActiveSourceProfile,
 } from "./source-profiles";
@@ -173,6 +176,51 @@ describe("source profile ownership and access", () => {
     expect(first.profile.name).toBe("Kopie van Standaard portfolio");
     expect(second.profile.name).toBe("Kopie van Standaard portfolio (2)");
     await expect(renameManagedSourceProfile(actors.owner, second.profile.id, ` ${first.profile.name.toUpperCase()} `)).rejects.toThrow("al een bronprofiel");
+  });
+
+  it("archives only unused owned profiles and excludes them from normal reads and selectors", async () => {
+    const inactive = await createProfile("space-5", actors.owner.id, "Oud profiel", false);
+    await expect(archiveSourceProfile(actors.pureEditor, inactive.id)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(archiveSourceProfile(actors.viewer, inactive.id)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(archiveSourceProfile(actors.ownerEditor, inactive.id)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(archiveSourceProfile(actors.owner, profileFiveId)).rejects.toThrow("gebruikt bronprofiel");
+
+    await archiveSourceProfile(actors.owner, inactive.id);
+    expect((await getSourceProfileOverview(actors.owner)).ownedProfiles.map((profile) => profile.id)).not.toContain(inactive.id);
+    const archived = (await getSourceProfileOverview(actors.owner, { includeArchived: true })).ownedProfiles.find((profile) => profile.id === inactive.id);
+    expect(archived).toMatchObject({ isArchived: true, archivedAt: expect.any(String), canRename: false, canCopy: false, canLink: false, canArchive: false });
+    await expect(copySourceProfileToLearningSpace(actors.owner, inactive.id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(linkSourceProfileToLearningSpace(actors.owner, inactive.id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it("restores without activation, blocks active name conflicts and permanently deletes only archived rows", async () => {
+    const database = await getDatabase();
+    const inactive = await createProfile("space-5", actors.owner.id, "Herstelbaar", false);
+    await expect(permanentlyDeleteSourceProfile(actors.owner, inactive.id)).rejects.toThrow("Alleen een gearchiveerd");
+    await archiveSourceProfile(actors.owner, inactive.id);
+    const activeBefore = (await getActiveSourceProfileForLearningSpace("space-5"))!.id;
+    await restoreSourceProfile(actors.owner, inactive.id);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))!.id).toBe(activeBefore);
+    expect((await getSourceProfileOverview(actors.owner)).ownedProfiles.map((profile) => profile.id)).toContain(inactive.id);
+
+    await archiveSourceProfile(actors.owner, inactive.id);
+    await createProfile("space-5", actors.owner.id, "Herstelbaar", false);
+    await expect(restoreSourceProfile(actors.owner, inactive.id)).rejects.toThrow("al een bronprofiel");
+    await permanentlyDeleteSourceProfile(actors.owner, inactive.id);
+    expect((await database.execute({ sql: "SELECT 1 FROM source_profiles WHERE id = ?", args: [inactive.id] })).rows).toHaveLength(0);
+  });
+
+  it("lets superadmin administer an unused foreign profile but never bypass usage integrity", async () => {
+    const database = await getDatabase();
+    const inactive = await createProfile("space-5", actors.owner.id, "Administratief oud", false);
+    await archiveSourceProfile(actors.superadmin, inactive.id);
+    await restoreSourceProfile(actors.superadmin, inactive.id);
+    await archiveSourceProfile(actors.superadmin, inactive.id);
+    await permanentlyDeleteSourceProfile(actors.superadmin, inactive.id);
+
+    await database.execute({ sql: "UPDATE source_profiles SET archived_at = ? WHERE id = ?", args: ["2026-09-12T00:00:00.000Z", profileFiveId] });
+    await expect(permanentlyDeleteSourceProfile(actors.superadmin, profileFiveId)).rejects.toThrow("gebruikt bronprofiel");
+    expect((await database.execute({ sql: "SELECT 1 FROM source_profiles WHERE id = ?", args: [profileFiveId] })).rows).toHaveLength(1);
   });
 
   it("preserves shared usage and makes a split copy owned by the current user", async () => {

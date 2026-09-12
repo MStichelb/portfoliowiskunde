@@ -59,6 +59,7 @@ function renderCard(canConfigure: boolean, usages: AvailableSourceProfile["usage
     config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
     managementLearningSpaceId: "space-5",
     ownerUserId: "owner",
+    archivedAt: null,
     createdAt: "2026-09-10T00:00:00.000Z",
     updatedAt: "2026-09-10T00:00:00.000Z",
     managementLearningSpaceName: "Vijfde jaar",
@@ -67,10 +68,12 @@ function renderCard(canConfigure: boolean, usages: AvailableSourceProfile["usage
     usages,
     usageCount: usages.length,
     isInactive: usages.length === 0,
+    isArchived: false,
     access: canConfigure ? "owner" : "editor",
     canRename: canConfigure,
     canCopy: canConfigure,
     canLink: canConfigure,
+    canArchive: canConfigure && usages.length === 0,
     linkTargets: [],
   };
   return renderToStaticMarkup(<SourceProfileCard profile={profile} canConfigure={canConfigure} />);

@@ -22,6 +22,8 @@ vi.mock("./actions", () => ({
   renameManagedSourceProfileAction: vi.fn(), createSourceProfileTemplateAction: vi.fn(), updateSourceProfileTemplateAction: vi.fn(),
   duplicateSourceProfileTemplateAction: vi.fn(), setDefaultSourceProfileTemplateAction: vi.fn(), copyManagedSourceProfileAction: vi.fn(),
   copyManagedSourceProfileTemplateAction: vi.fn(), linkManagedSourceProfileAction: vi.fn(),
+  archiveManagedSourceProfileAction: vi.fn(), restoreManagedSourceProfileAction: vi.fn(), permanentlyDeleteManagedSourceProfileAction: vi.fn(),
+  archiveSourceProfileTemplateAction: vi.fn(), restoreSourceProfileTemplateAction: vi.fn(), permanentlyDeleteSourceProfileTemplateAction: vi.fn(),
 }));
 
 import SourceProfilesPage from "./page";
@@ -43,7 +45,7 @@ describe("central source profile page", () => {
     expect(markup).toContain("4NW1, 5WET, 6WIS +1");
     expect(markup).not.toContain("4 actieve leeromgevingen");
     expect(markup).toContain("Beheren");
-    expect(mocks.getSourceProfileOverview).toHaveBeenCalledWith(expect.objectContaining({ role }));
+    expect(mocks.getSourceProfileOverview).toHaveBeenCalledWith(expect.objectContaining({ role }), { includeArchived: false });
     expect(markup).toContain("Mijn bronprofielen");
     expect(markup).toContain(role === "superadmin" ? "Andere gebruikers" : "Uit leeromgevingen");
     expect(markup).toContain("Sjablonen");
@@ -156,6 +158,24 @@ describe("central source profile page", () => {
     expect(markup).not.toContain("Bronprofiel koppelen");
   });
 
+  it("shows archived profiles only on request with restore and permanent-delete actions", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher"));
+    const archived = profile({
+      id: "archived", name: "Oud profiel", usages: [], usageCount: 0, isInactive: true,
+      archivedAt: "2026-09-12T00:00:00.000Z", isArchived: true, canRename: false, canCopy: false, canLink: false, canArchive: false, linkTargets: [],
+    });
+    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [archived], editorAccessibleActiveProfiles: [], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [copyTarget()] });
+
+    const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ archive: "1" }) }));
+    expect(mocks.getSourceProfileOverview).toHaveBeenCalledWith(expect.anything(), { includeArchived: true });
+    expect(markup).toContain("Gearchiveerd");
+    expect(markup).toContain("Herstellen");
+    expect(markup).toContain("Permanent verwijderen");
+    expect(markup).not.toContain("Beheren");
+    expect(markup).not.toContain("Kopiëren");
+    expect(markup).not.toContain("Koppelen");
+  });
+
   it("does not continue loading when admin authentication rejects a student", async () => {
     mocks.requireAdminUser.mockRejectedValue(new Error("NEXT_REDIRECT:/admin/login"));
     await expect(SourceProfilesPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("NEXT_REDIRECT");
@@ -195,7 +215,7 @@ function profile(overrides: Partial<ManagedSourceProfile> = {}): ManagedSourcePr
     config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, managementLearningSpaceId: "space-5", ownerUserId: "teacher", ownerName: "Mathias",
     managementLearningSpaceName: "Vijfde jaar", managementLearningSpaceShortLabel: "5WIS",
     usages: labels.map((learningSpaceShortLabel, index) => ({ learningSpaceId: `space-${index}`, learningSpaceName: `Ruimte ${index}`, learningSpaceShortLabel })),
-    usageCount: 4, isInactive: false, access: "owner", canRename: true, canCopy: true, canLink: true, linkTargets: [copyTarget()], createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z",
+    usageCount: 4, isInactive: false, isArchived: false, access: "owner", canRename: true, canCopy: true, canLink: true, canArchive: false, linkTargets: [copyTarget()], archivedAt: null, createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z",
     ...overrides,
   };
 }
@@ -205,14 +225,14 @@ function user(role: "teacher" | "superadmin"): AppUser {
 }
 
 function template() {
-  return { id: "template-1", name: "Standaard portfolio", description: "Appbreed sjabloon", configVersion: 1, isDefault: true };
+  return { id: "template-1", name: "Standaard portfolio", description: "Appbreed sjabloon", configVersion: 1, isDefault: true, archivedAt: null, isArchived: false, canArchive: false };
 }
 
 function copyTarget(): SourceProfileCopyTarget {
   return {
     learningSpaceId: "space-5", learningSpaceName: "Vijfde jaar", learningSpaceShortLabel: "5WIS",
     profile: { id: "active-5", name: "Standaard portfolio", type: "custom", description: null, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
-      managementLearningSpaceId: "space-5", ownerUserId: "teacher", createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z" }, canConfigure: true,
+      managementLearningSpaceId: "space-5", ownerUserId: "teacher", archivedAt: null, createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z" }, canConfigure: true,
   };
 }
 
@@ -220,6 +240,6 @@ function otherOwnerCopyTarget(): SourceProfileCopyTarget {
   return {
     learningSpaceId: "space-6", learningSpaceName: "Zesde jaar", learningSpaceShortLabel: "6WIS",
     profile: { id: "active-6", name: "Profiel andere eigenaar", type: "custom" as const, description: null, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
-      managementLearningSpaceId: "space-6", ownerUserId: "other-owner", createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z" }, canConfigure: true,
+      managementLearningSpaceId: "space-6", ownerUserId: "other-owner", archivedAt: null, createdAt: "2026-09-10T00:00:00.000Z", updatedAt: "2026-09-10T00:00:00.000Z" }, canConfigure: true,
   };
 }
