@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   renameManagedSourceProfile: vi.fn(),
+  saveManagedSourceProfile: vi.fn(),
+  updateManagedSourceProfileGlobalResources: vi.fn(),
   copySourceProfileToLearningSpace: vi.fn(),
   linkSourceProfileToLearningSpace: vi.fn(),
   archiveSourceProfile: vi.fn(),
@@ -11,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   copySourceProfileTemplateToLearningSpace: vi.fn(),
   createSourceProfileTemplate: vi.fn(),
   updateSourceProfileTemplateMetadata: vi.fn(),
+  updateSourceProfileTemplateGlobalResources: vi.fn(),
   duplicateSourceProfileTemplate: vi.fn(),
   setDefaultSourceProfileTemplate: vi.fn(),
   archiveSourceProfileTemplate: vi.fn(),
@@ -21,11 +24,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
-vi.mock("@/lib/source-profiles", () => ({ renameManagedSourceProfile: mocks.renameManagedSourceProfile, copySourceProfileToLearningSpace: mocks.copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace: mocks.linkSourceProfileToLearningSpace, archiveSourceProfile: mocks.archiveSourceProfile, restoreSourceProfile: mocks.restoreSourceProfile, permanentlyDeleteSourceProfile: mocks.permanentlyDeleteSourceProfile }));
+vi.mock("@/lib/source-profiles", () => ({ renameManagedSourceProfile: mocks.renameManagedSourceProfile, saveManagedSourceProfile: mocks.saveManagedSourceProfile, updateManagedSourceProfileGlobalResources: mocks.updateManagedSourceProfileGlobalResources, copySourceProfileToLearningSpace: mocks.copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace: mocks.linkSourceProfileToLearningSpace, archiveSourceProfile: mocks.archiveSourceProfile, restoreSourceProfile: mocks.restoreSourceProfile, permanentlyDeleteSourceProfile: mocks.permanentlyDeleteSourceProfile }));
 vi.mock("@/lib/source-profile-templates", () => ({
   copySourceProfileTemplateToLearningSpace: mocks.copySourceProfileTemplateToLearningSpace,
   createSourceProfileTemplate: mocks.createSourceProfileTemplate,
   updateSourceProfileTemplateMetadata: mocks.updateSourceProfileTemplateMetadata,
+  updateSourceProfileTemplateGlobalResources: mocks.updateSourceProfileTemplateGlobalResources,
   duplicateSourceProfileTemplate: mocks.duplicateSourceProfileTemplate,
   setDefaultSourceProfileTemplate: mocks.setDefaultSourceProfileTemplate,
   archiveSourceProfileTemplate: mocks.archiveSourceProfileTemplate,
@@ -48,8 +52,11 @@ import {
   renameManagedSourceProfileAction,
   restoreManagedSourceProfileAction,
   restoreSourceProfileTemplateAction,
+  saveManagedSourceProfileAction,
   setDefaultSourceProfileTemplateAction,
   updateSourceProfileTemplateAction,
+  updateManagedSourceProfileGlobalResourcesAction,
+  updateSourceProfileTemplateGlobalResourcesAction,
 } from "./actions";
 
 describe("central source profile actions", () => {
@@ -57,6 +64,9 @@ describe("central source profile actions", () => {
     vi.clearAllMocks();
     mocks.requireAdminUser.mockResolvedValue({ id: "superadmin", role: "superadmin", status: "active" });
     mocks.renameManagedSourceProfile.mockResolvedValue(undefined);
+    mocks.saveManagedSourceProfile.mockResolvedValue({ mode: "all", profile: { id: "profile-1" } });
+    mocks.updateManagedSourceProfileGlobalResources.mockResolvedValue(undefined);
+    mocks.updateSourceProfileTemplateGlobalResources.mockResolvedValue(undefined);
     mocks.copySourceProfileToLearningSpace.mockResolvedValue({ profile: { id: "copy" }, activated: true });
     mocks.linkSourceProfileToLearningSpace.mockResolvedValue(undefined);
     mocks.copySourceProfileTemplateToLearningSpace.mockResolvedValue(undefined);
@@ -130,6 +140,29 @@ describe("central source profile actions", () => {
     expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("template=foreign"));
   });
 
+  it("saves profile name and resources through one authenticated action and supports split-copy mode", async () => {
+    const data = new FormData();
+    data.set("sourceProfileId", "profile-1");
+    data.set("name", " Nieuwe naam ");
+    data.set("resourcesJson", JSON.stringify([{ id: "manual", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic" }]));
+    data.set("saveMode", "all");
+    await expect(saveManagedSourceProfileAction(data)).rejects.toThrow("saved=profileUpdated");
+    expect(mocks.saveManagedSourceProfile).toHaveBeenLastCalledWith(expect.objectContaining({ id: "superadmin" }), "profile-1", expect.objectContaining({
+      name: "Nieuwe naam",
+      mode: "all",
+      targetLearningSpaceId: undefined,
+    }));
+
+    mocks.saveManagedSourceProfile.mockResolvedValueOnce({ mode: "copy", profile: { id: "copy" } });
+    data.set("saveMode", "copy");
+    data.set("targetLearningSpaceId", "space-5");
+    await expect(saveManagedSourceProfileAction(data)).rejects.toThrow("saved=profileSplit");
+    expect(mocks.saveManagedSourceProfile).toHaveBeenLastCalledWith(expect.objectContaining({ id: "superadmin" }), "profile-1", expect.objectContaining({
+      mode: "copy",
+      targetLearningSpaceId: "space-5",
+    }));
+  });
+
   it("uses the authenticated user and redirects after a successful rename", async () => {
     await expect(renameManagedSourceProfileAction(form("profile-1", " Nieuwe naam "))).rejects.toThrow("saved=renamed");
     expect(mocks.renameManagedSourceProfile).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "profile-1", "Nieuwe naam", undefined);
@@ -168,6 +201,23 @@ describe("central source profile actions", () => {
     expect(mocks.permanentlyDeleteSourceProfileTemplate).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "template-1");
     expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("templateArchive=1"));
   });
+
+  it("updates concrete profile global resources through the authenticated write path", async () => {
+    const form = new FormData();
+    form.set("sourceProfileId", "profile-1");
+    form.set("resourcesJson", JSON.stringify([{ id: "manual", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic" }]));
+    await expect(updateManagedSourceProfileGlobalResourcesAction(form)).rejects.toThrow("NEXT_REDIRECT:/admin/bronprofielen?saved=resourcesUpdated");
+    expect(mocks.updateManagedSourceProfileGlobalResources).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "profile-1", expect.any(Array), undefined);
+  });
+
+  it("updates template global resources through the superadmin write path", async () => {
+    const form = new FormData();
+    form.set("templateId", "template-1");
+    form.set("resourcesJson", JSON.stringify([{ id: "manual", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic" }]));
+    await expect(updateSourceProfileTemplateGlobalResourcesAction(form)).rejects.toThrow("NEXT_REDIRECT:/admin/bronprofielen?templateSaved=resourcesUpdated");
+    expect(mocks.updateSourceProfileTemplateGlobalResources).toHaveBeenCalledWith(expect.objectContaining({ id: "superadmin" }), "template-1", expect.any(Array));
+  });
+
 });
 
 function form(sourceProfileId: string, name: string): FormData {

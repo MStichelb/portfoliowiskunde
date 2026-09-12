@@ -11,7 +11,10 @@ import {
   INITIAL_SOURCE_PROFILE_TEMPLATE_ID,
   INITIAL_SOURCE_PROFILE_TEMPLATE_NAME,
   INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP,
+  globalResourceListSchema,
+  parseSourceProfileConfig,
   parseStoredSourceProfileConfig,
+  type GlobalResourceConfig,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
 import { availableSourceProfileName, uniqueSourceProfileName } from "@/lib/source-profile-name";
@@ -37,6 +40,7 @@ export interface SourceProfileTemplateSummary {
   name: string;
   description: string | null;
   configVersion: number;
+  config?: SourceProfileConfig;
   isDefault: boolean;
   archivedAt: string | null;
   isArchived: boolean;
@@ -68,11 +72,12 @@ export function getSourceProfileTemplateConfig(template: SourceProfileTemplate):
   return template.config;
 }
 
-export async function listSourceProfileTemplates(user: AppUser, options: { archivedOnly?: boolean } = {}): Promise<SourceProfileTemplateSummary[]> {
+export async function listSourceProfileTemplates(user: AppUser, options: { archivedOnly?: boolean; includeConfig?: boolean } = {}): Promise<SourceProfileTemplateSummary[]> {
   if (!canAccessAdmin(user)) throw new AuthorizationError("Bronprofielsjablonen zijn alleen beschikbaar voor actieve beheerders.");
   const archivedOnly = user.role === "superadmin" && options.archivedOnly === true;
+  const includeConfig = options.includeConfig === true;
   const result = await (await getDatabase()).execute(`SELECT source_profile_templates.id, source_profile_templates.name,
-      source_profile_templates.description, source_profile_templates.config_version, source_profile_templates.archived_at,
+      source_profile_templates.description, source_profile_templates.config_version${includeConfig ? ", source_profile_templates.config_json" : ""}, source_profile_templates.archived_at,
       CASE WHEN source_profile_template_defaults.default_template_id = source_profile_templates.id THEN 1 ELSE 0 END AS is_default
     FROM source_profile_templates
     LEFT JOIN source_profile_template_defaults ON source_profile_template_defaults.singleton_id = 1
@@ -83,6 +88,7 @@ export async function listSourceProfileTemplates(user: AppUser, options: { archi
     name: String(row.name),
     description: row.description == null ? null : String(row.description),
     configVersion: Number(row.config_version),
+    ...(includeConfig ? { config: parseStoredSourceProfileConfig(Number(row.config_version), String(row.config_json)) } : {}),
     isDefault: Number(row.is_default) === 1,
     archivedAt: row.archived_at == null ? null : String(row.archived_at),
     isArchived: row.archived_at != null,
@@ -124,6 +130,21 @@ export async function updateSourceProfileTemplateMetadata(
   await (await getDatabase()).execute({
     sql: "UPDATE source_profile_templates SET name = ?, description = ?, updated_at = ? WHERE id = ?",
     args: [metadata.name, metadata.description, new Date().toISOString(), templateId],
+  });
+}
+
+export async function updateSourceProfileTemplateGlobalResources(
+  user: AppUser,
+  templateId: string,
+  resources: unknown,
+): Promise<void> {
+  requireSourceProfileTemplateManagement(user);
+  const template = await getSourceProfileTemplate(templateId);
+  const globalResources: GlobalResourceConfig[] = globalResourceListSchema.parse(resources);
+  const config = parseSourceProfileConfig({ ...template.config, globalResources });
+  await (await getDatabase()).execute({
+    sql: "UPDATE source_profile_templates SET config_version = ?, config_json = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL",
+    args: [config.configVersion, JSON.stringify(config), new Date().toISOString(), template.id],
   });
 }
 

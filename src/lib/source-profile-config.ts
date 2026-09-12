@@ -28,6 +28,26 @@ export const globalResourceIcons = [
   "external-link",
   "youtube",
   "calculator",
+  "astroid",
+  "land-plot",
+  "drafting-compass",
+  "brain",
+  "flask-conical",
+  "key-round",
+  "star",
+  "shapes",
+  "notebook-pen",
+  "pencil",
+  "paperclip",
+  "scroll-text",
+  "map",
+  "book-search",
+  "sparkles",
+  "clapperboard",
+  "monitor-play",
+  "puzzle",
+  "file-clock",
+  "map-pinned",
 ] as const;
 
 const globalResourceIdSchema = z.string().trim()
@@ -111,6 +131,37 @@ export type GlobalResourceKind = typeof globalResourceKinds[number];
 export type GlobalResourceFileExtension = typeof globalResourceFileExtensions[number];
 export type GlobalResourceFileMatchOperator = typeof globalResourceFileMatchOperators[number];
 export type GlobalResourceIcon = typeof globalResourceIcons[number];
+
+export const globalResourceSelectableIcons = [
+  "file-text",
+  "lightbulb",
+  "circle-check-big",
+  "book-open",
+  "link",
+  "external-link",
+  "calculator",
+  "astroid",
+  "land-plot",
+  "drafting-compass",
+  "brain",
+  "flask-conical",
+  "key-round",
+  "star",
+  "shapes",
+  "notebook-pen",
+  "pencil",
+  "paperclip",
+  "scroll-text",
+  "map",
+  "book-search",
+  "sparkles",
+  "clapperboard",
+  "monitor-play",
+  "puzzle",
+  "file-clock",
+  "map-pinned",
+] as const satisfies readonly GlobalResourceIcon[];
+
 export type GlobalResourceFileRecognition = z.infer<typeof globalResourceFileRecognitionSchema>;
 export type GlobalResourceConfig = z.infer<typeof globalResourceConfigSchema>;
 export type SourceFileGlobalResource = z.infer<typeof sourceFileGlobalResourceSchema>;

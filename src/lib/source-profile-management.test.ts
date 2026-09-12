@@ -22,10 +22,12 @@ import {
   linkSourceProfileToLearningSpace,
   permanentlyDeleteSourceProfile,
   renameManagedSourceProfile,
+  saveManagedSourceProfile,
   renameSourceProfile,
   restoreSourceProfile,
   sourceProfileUsageLabel,
   switchActiveSourceProfile,
+  updateManagedSourceProfileGlobalResources,
 } from "./source-profiles";
 import { setIndividualLearningSpaceAccess, upsertManagedMembership } from "./user-management";
 
@@ -293,6 +295,62 @@ describe("source profile ownership and access", () => {
     expect(sourceProfileUsageLabel([])).toBe("Inactief");
     expect(sourceProfileUsageLabel(usages)).toBe("4NW1, 5WET, 6WIS +1");
   });
+  it("saves name and resources together and can split a shared profile into an owner-preserving copy", async () => {
+    await saveManagedSourceProfile(actors.owner, profileFiveId, {
+      name: "Samen opgeslagen",
+      resources: [{ id: "formula", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic" }],
+      mode: "all",
+    });
+    expect(await getActiveSourceProfileForLearningSpace("space-5")).toMatchObject({
+      name: "Samen opgeslagen",
+      config: { globalResources: [expect.objectContaining({ id: "formula", label: "Formularium" })] },
+    });
+
+    await upsertManagedMembership("space-6", actors.owner.id, "owner");
+    await linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6");
+
+    await expect(saveManagedSourceProfile(actors.owner, profileFiveId, {
+      name: "Zonder keuze",
+      resources: [],
+      mode: "copy",
+    })).rejects.toThrow("Kies voor welke leeromgeving");
+
+    const split = await saveManagedSourceProfile(actors.owner, profileFiveId, {
+      name: "Alleen vijf",
+      resources: [{ id: "local", kind: "external_link", label: "Alleen vijf", icon: "link", order: 10, semanticRole: "generic" }],
+      mode: "copy",
+      targetLearningSpaceId: "space-5",
+    });
+    expect(split.mode).toBe("copy");
+    expect(split.profile.ownerUserId).toBe(actors.owner.id);
+    expect(split.profile.name).toBe("Alleen vijf");
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))).toMatchObject({
+      id: split.profile.id,
+      name: "Alleen vijf",
+      config: { globalResources: [expect.objectContaining({ id: "local" })] },
+    });
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))).toMatchObject({
+      id: profileFiveId,
+      config: { globalResources: [expect.objectContaining({ id: "formula" })] },
+    });
+  });
+
+  it("updates global resources only for the owner or superadmin and confirms shared impact", async () => {
+    await expect(updateManagedSourceProfileGlobalResources(actors.pureEditor, profileFiveId, [])).rejects.toBeInstanceOf(AuthorizationError);
+    await updateManagedSourceProfileGlobalResources(actors.owner, profileFiveId, [{
+      id: "formula", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic",
+    }]);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.config.globalResources).toEqual([
+      expect.objectContaining({ id: "formula", kind: "external_link", label: "Formularium" }),
+    ]);
+
+    await upsertManagedMembership("space-6", actors.owner.id, "owner");
+    await linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6");
+    await expect(updateManagedSourceProfileGlobalResources(actors.owner, profileFiveId, [])).rejects.toThrow("gedeelde profiel");
+    await updateManagedSourceProfileGlobalResources(actors.owner, profileFiveId, [], "all");
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.config.globalResources).toEqual([]);
+  });
+
 });
 
 async function createProfile(learningSpaceId: string, ownerUserId: string, name: string, activate: boolean) {

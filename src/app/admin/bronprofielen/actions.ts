@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdminUser } from "@/lib/auth";
-import { archiveSourceProfile, copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace, permanentlyDeleteSourceProfile, renameManagedSourceProfile, restoreSourceProfile } from "@/lib/source-profiles";
+import { archiveSourceProfile, copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace, permanentlyDeleteSourceProfile, renameManagedSourceProfile, restoreSourceProfile, saveManagedSourceProfile, updateManagedSourceProfileGlobalResources } from "@/lib/source-profiles";
 import {
   archiveSourceProfileTemplate,
   copySourceProfileTemplateToLearningSpace,
@@ -13,6 +13,7 @@ import {
   permanentlyDeleteSourceProfileTemplate,
   restoreSourceProfileTemplate,
   setDefaultSourceProfileTemplate,
+  updateSourceProfileTemplateGlobalResources,
   updateSourceProfileTemplateMetadata,
 } from "@/lib/source-profile-templates";
 
@@ -63,6 +64,45 @@ export async function copyManagedSourceProfileTemplateAction(formData: FormData)
   redirect("/admin/bronprofielen?saved=templateCopied");
 }
 
+export async function updateManagedSourceProfileGlobalResourcesAction(formData: FormData): Promise<never> {
+  const user = await requireAdminUser();
+  const sourceProfileId = value(formData, "sourceProfileId");
+  try {
+    await updateManagedSourceProfileGlobalResources(
+      user,
+      sourceProfileId,
+      parseResources(formData),
+      value(formData, "confirmShared") === "all" ? "all" : undefined,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "De globale documenten konden niet worden opgeslagen.";
+    redirect(`/admin/bronprofielen?profile=${encodeURIComponent(sourceProfileId)}&error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath("/admin/bronprofielen");
+  redirect("/admin/bronprofielen?saved=resourcesUpdated");
+}
+
+export async function saveManagedSourceProfileAction(formData: FormData): Promise<never> {
+  const user = await requireAdminUser();
+  const sourceProfileId = value(formData, "sourceProfileId");
+  const mode = value(formData, "saveMode") === "copy" ? "copy" : "all";
+  let saved: "profileUpdated" | "profileSplit";
+  try {
+    const result = await saveManagedSourceProfile(user, sourceProfileId, {
+      name: value(formData, "name"),
+      resources: parseResources(formData),
+      mode,
+      targetLearningSpaceId: value(formData, "targetLearningSpaceId") || undefined,
+    });
+    saved = result.mode === "copy" ? "profileSplit" : "profileUpdated";
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Het bronprofiel kon niet worden opgeslagen.";
+    redirect(`/admin/bronprofielen?profile=${encodeURIComponent(sourceProfileId)}&error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath("/admin/bronprofielen");
+  redirect(`/admin/bronprofielen?saved=${saved}`);
+}
+
 export async function renameManagedSourceProfileAction(formData: FormData): Promise<never> {
   const user = await requireAdminUser();
   const sourceProfileId = value(formData, "sourceProfileId");
@@ -92,6 +132,12 @@ export async function updateSourceProfileTemplateAction(formData: FormData): Pro
       name: value(formData, "name"),
       description: value(formData, "description"),
     });
+  });
+}
+
+export async function updateSourceProfileTemplateGlobalResourcesAction(formData: FormData): Promise<never> {
+  return runTemplateAction(formData, "resourcesUpdated", "manage", async (user, templateId) => {
+    await updateSourceProfileTemplateGlobalResources(user, templateId, parseResources(formData));
   });
 }
 
@@ -157,7 +203,7 @@ async function runTemplateLifecycleAction(
 
 async function runTemplateAction(
   formData: FormData,
-  saved: "created" | "updated" | "duplicated" | "default",
+  saved: "created" | "updated" | "duplicated" | "default" | "resourcesUpdated",
   errorModal: "create" | "manage" | "default",
   mutation: (user: Awaited<ReturnType<typeof requireAdminUser>>, templateId: string) => Promise<void>,
 ): Promise<never> {
@@ -176,4 +222,10 @@ async function runTemplateAction(
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();
+}
+
+function parseResources(formData: FormData): unknown {
+  const raw = value(formData, "resourcesJson");
+  if (!raw) throw new Error("Globale documenten ontbreken.");
+  try { return JSON.parse(raw) as unknown; } catch { throw new Error("Globale documenten hebben een ongeldig formaat."); }
 }

@@ -14,6 +14,7 @@ import {
   BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
   GLOBAL_RESOURCE_LIMIT,
   LEGACY_GLOBAL_RESOURCE_CONFIGS,
+  globalResourceSelectableIcons,
   parseSourceProfileConfig,
   parseStoredSourceProfileConfig,
 } from "./source-profile-config";
@@ -68,6 +69,24 @@ describe("source profile config", () => {
       expect.objectContaining({ id: "geogebra", kind: "external_link" }),
     ]);
     expect(config.globalResources[1]).not.toHaveProperty("url");
+  });
+
+
+
+  it("supports the expanded icon picker while keeping legacy youtube configs readable", () => {
+    expect(globalResourceSelectableIcons).toHaveLength(27);
+    expect(globalResourceSelectableIcons).toContain("map-pinned");
+    expect(globalResourceSelectableIcons).not.toContain("youtube");
+
+    const parsed = parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1" },
+      globalResources: [
+        { id: "legacy-video", kind: "external_link", label: "Video", icon: "youtube", order: 10, semanticRole: "generic" },
+        { id: "cards", kind: "external_link", label: "Locatiekaart", icon: "map-pinned", order: 20, semanticRole: "generic" },
+      ],
+    });
+    expect(parsed.globalResources.map((resource) => resource.icon)).toEqual(["youtube", "map-pinned"]);
   });
 
   it("enforces global resource limits, unique ids/orders and strict source-file recognition", () => {

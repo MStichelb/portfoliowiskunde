@@ -7,6 +7,12 @@ import type { ManagedSourceProfile, SourceProfileCopyTarget } from "@/lib/source
 
 const mocks = vi.hoisted(() => ({ requireAdminUser: vi.fn(), getSourceProfileOverview: vi.fn(), listSourceProfileTemplates: vi.fn() }));
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+  }),
+}));
+
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/source-profiles", () => ({
   getSourceProfileOverview: mocks.getSourceProfileOverview,
@@ -19,11 +25,12 @@ vi.mock("@/app/components/source-profile-owner-filter", () => ({
     <label>Gebruiker<select defaultValue={selectedOwnerId ?? ""}><option value="">Alle gebruikers</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select></label>,
 }));
 vi.mock("./actions", () => ({
-  renameManagedSourceProfileAction: vi.fn(), createSourceProfileTemplateAction: vi.fn(), updateSourceProfileTemplateAction: vi.fn(),
+  renameManagedSourceProfileAction: vi.fn(), saveManagedSourceProfileAction: vi.fn(), createSourceProfileTemplateAction: vi.fn(), updateSourceProfileTemplateAction: vi.fn(),
   duplicateSourceProfileTemplateAction: vi.fn(), setDefaultSourceProfileTemplateAction: vi.fn(), copyManagedSourceProfileAction: vi.fn(),
   copyManagedSourceProfileTemplateAction: vi.fn(), linkManagedSourceProfileAction: vi.fn(),
   archiveManagedSourceProfileAction: vi.fn(), restoreManagedSourceProfileAction: vi.fn(), permanentlyDeleteManagedSourceProfileAction: vi.fn(),
   archiveSourceProfileTemplateAction: vi.fn(), restoreSourceProfileTemplateAction: vi.fn(), permanentlyDeleteSourceProfileTemplateAction: vi.fn(),
+  updateManagedSourceProfileGlobalResourcesAction: vi.fn(), updateSourceProfileTemplateGlobalResourcesAction: vi.fn(),
 }));
 
 import SourceProfilesPage from "./page";
@@ -99,6 +106,12 @@ describe("central source profile page", () => {
     expect(markup).toContain("Eigenaar: Collega");
     expect(markup).toContain("Bekijken");
     expect(markup).toContain("source-profile-tab-section");
+    const viewMarkup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ tab: "editor", profile: foreign.id }) }));
+    expect(viewMarkup).toContain("Bronprofiel bekijken");
+    expect(viewMarkup).toContain("Globale documenten");
+    expect(viewMarkup).toContain("Opgaven");
+    expect(viewMarkup).toContain("PDF");
+    expect(viewMarkup).not.toContain("Globale documenten opslaan");
     expect(markup).not.toContain("TipTopPortfolio");
     expect(markup).not.toContain(`linkProfile=${foreign.id}`);
   });
@@ -122,11 +135,11 @@ describe("central source profile page", () => {
     });
 
     const manage = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ profile: "profile-1" }) }));
-    expect(manage).toContain("Dit profiel is gedeeld");
-    expect(manage).toContain("4NW1");
-    expect(manage).toContain("Voor alle aanpassen");
-    expect(manage).toContain('name="confirmShared"');
-    expect(manage).toContain("source-profile-shared-confirm");
+    expect(manage).toContain("Bronprofiel beheren");
+    expect(manage).toContain("Opslaan");
+    expect(manage).toContain("4NW1, 5WET, 6WIS, EXTRA");
+    expect(manage).not.toContain('name="confirmShared"');
+    expect(manage).not.toContain("source-profile-shared-confirm");
     expect(manage).not.toContain("Configuratieversie");
     expect(manage).not.toContain("Doelleeromgeving");
     expect(manage).not.toContain("Koppelen aan leeromgeving");
@@ -137,7 +150,7 @@ describe("central source profile page", () => {
     expect(copy).toContain("Doelleeromgeving");
     expect(copy).toContain("5WIS — Standaard portfolio");
     expect(copy).toContain("6WIS — Profiel andere eigenaar");
-    expect(copy).not.toContain("Voor alle aanpassen");
+    expect(copy).not.toContain("Voor alle opslaan");
 
     const link = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ linkProfile: "profile-1" }) }));
     expect(link).toContain("Bronprofiel koppelen");
@@ -171,6 +184,13 @@ describe("central source profile page", () => {
     expect(markup).toContain("Gearchiveerd");
     expect(markup).toContain("Herstellen");
     expect(markup).toContain("Permanent verwijderen");
+    expect(markup).toContain("Bekijken");
+    expect(markup).toContain(`archive=1&amp;profile=${archived.id}`);
+    const viewMarkup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ archive: "1", profile: archived.id }) }));
+    expect(viewMarkup).toContain("Bronprofiel bekijken");
+    expect(viewMarkup).toContain("Globale documenten");
+    expect(viewMarkup).toContain("Eindoplossingen");
+    expect(viewMarkup).not.toContain("Globale documenten opslaan");
     expect(markup).not.toContain("Beheren");
     expect(markup).not.toContain("Kopiëren");
     expect(markup).not.toContain("Koppelen");

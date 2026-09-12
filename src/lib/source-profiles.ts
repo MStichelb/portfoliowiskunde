@@ -12,7 +12,10 @@ import {
   BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_NAME,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP,
+  globalResourceListSchema,
+  parseSourceProfileConfig,
   parseStoredSourceProfileConfig,
+  type GlobalResourceConfig,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
 import { availableSourceProfileName, uniqueSourceProfileName } from "@/lib/source-profile-name";
@@ -86,6 +89,12 @@ export interface SourceProfileCopyResult {
 }
 
 export type SourceProfileRenameScope = "all" | "current";
+export type ManagedSourceProfileSaveMode = "all" | "copy";
+
+export interface ManagedSourceProfileSaveResult {
+  mode: ManagedSourceProfileSaveMode;
+  profile: SourceProfile;
+}
 
 export async function ensureBuiltInDefaultSourceProfile(): Promise<void> {
   await (await getDatabase()).batch(builtInDefaultSourceProfileBootstrapStatements());
@@ -211,6 +220,74 @@ export async function renameManagedSourceProfile(user: AppUser, sourceProfileId:
   const usageCount = await sourceProfileUsageCount(profile.id);
   if (usageCount > 1 && confirmShared !== "all") throw new Error("Bevestig dat je dit profiel voor alle gekoppelde leeromgevingen wilt aanpassen.");
   await renameAllowedSourceProfile(profile, name);
+}
+
+export async function updateManagedSourceProfileGlobalResources(
+  user: AppUser,
+  sourceProfileId: string,
+  resources: unknown,
+  confirmShared?: "all",
+): Promise<void> {
+  const profile = await requireOwnedSourceProfile(user, sourceProfileId);
+  const usageCount = await sourceProfileUsageCount(profile.id);
+  if (usageCount > 1 && confirmShared !== "all") throw new Error("Bevestig dat je dit gedeelde profiel voor alle gekoppelde leeromgevingen wilt aanpassen.");
+  const globalResources: GlobalResourceConfig[] = globalResourceListSchema.parse(resources);
+  const config = parseSourceProfileConfig({ ...profile.config, globalResources });
+  await (await getDatabase()).execute({
+    sql: "UPDATE source_profiles SET config_version = ?, config_json = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL",
+    args: [config.configVersion, JSON.stringify(config), new Date().toISOString(), profile.id],
+  });
+}
+
+export async function saveManagedSourceProfile(
+  user: AppUser,
+  sourceProfileId: string,
+  input: {
+    name: string;
+    resources: unknown;
+    mode: ManagedSourceProfileSaveMode;
+    targetLearningSpaceId?: string;
+  },
+): Promise<ManagedSourceProfileSaveResult> {
+  const profile = await requireOwnedSourceProfile(user, sourceProfileId);
+  if (profile.type !== "custom" || !profile.ownerUserId) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
+
+  const usageCount = await sourceProfileUsageCount(profile.id);
+  const globalResources: GlobalResourceConfig[] = globalResourceListSchema.parse(input.resources);
+  const config = parseSourceProfileConfig({ ...profile.config, globalResources });
+
+  if (input.mode === "copy") {
+    if (usageCount <= 1) throw new Error("Een onafhankelijke kopie vanuit deze bewerkflow is alleen nodig voor een gedeeld bronprofiel.");
+    const targetLearningSpaceId = input.targetLearningSpaceId?.trim();
+    if (!targetLearningSpaceId) throw new Error("Kies voor welke leeromgeving je een onafhankelijke kopie wilt maken.");
+
+    const assignment = await (await getDatabase()).execute({
+      sql: "SELECT 1 FROM learning_space_source_profiles WHERE learning_space_id = ? AND source_profile_id = ?",
+      args: [targetLearningSpaceId, profile.id],
+    });
+    if (!assignment.rows[0]) throw new AuthorizationError("De gekozen leeromgeving gebruikt dit gedeelde bronprofiel niet.");
+
+    await requireProfileOwnerTarget(profile, targetLearningSpaceId);
+    const draftSource: SourceProfile = { ...profile, config };
+    const copy = await createIndependentCopy(draftSource, targetLearningSpaceId, input.name, profile.ownerUserId, true);
+    return { mode: "copy", profile: copy };
+  }
+
+  if (usageCount > 1 && input.mode !== "all") {
+    throw new Error("Kies of je dit gedeelde profiel voor alle gekoppelde leeromgevingen of als onafhankelijke kopie wilt opslaan.");
+  }
+
+  const validName = await uniqueSourceProfileName(profile.ownerUserId, input.name, profile.id);
+  const now = new Date().toISOString();
+  await (await getDatabase()).batch([{
+    sql: "UPDATE source_profiles SET name = ?, config_version = ?, config_json = ?, updated_at = ? WHERE id = ? AND type = 'custom' AND archived_at IS NULL",
+    args: [validName, config.configVersion, JSON.stringify(config), now, profile.id],
+  }]);
+
+  return {
+    mode: "all",
+    profile: { ...profile, name: validName, config, updatedAt: now },
+  };
 }
 
 export async function archiveSourceProfile(user: AppUser, sourceProfileId: string): Promise<void> {

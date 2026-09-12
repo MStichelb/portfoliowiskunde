@@ -7,6 +7,7 @@ import { SourceProfileTemplateManager, type SourceProfileTemplateActions, type S
 const actions: SourceProfileTemplateActions = {
   create: async () => undefined,
   update: async () => undefined,
+  updateResources: async () => undefined,
   duplicate: async () => undefined,
   setDefault: async () => undefined,
   copy: async () => undefined,
@@ -49,7 +50,9 @@ describe("SourceProfileTemplateManager", () => {
     expect(markup).toContain("Sjabloon dupliceren");
     expect(markup).toContain("Als standaard instellen");
     expect(markup).toContain("Naam bestaat al.");
-    expect(markup.match(/<form/g)).toHaveLength(1);
+    expect(markup.match(/<form/g)).toHaveLength(2);
+    expect(markup).toContain("Globale documenten");
+    expect(markup).toContain("Opgaven");
     expect(markup.match(/role="alert"/g)).toHaveLength(1);
     expect(markup).toContain("Archiveren");
     expect(markup).toContain("lucide-archive");
@@ -114,10 +117,10 @@ describe("SourceProfileTemplateManager", () => {
 function renderManager(initialModal: SourceProfileTemplateModal | null = null, initialTemplateId?: string, error?: string, canManage = true, hasCopyTargets = true, archivedOnly = false, empty = false): string {
   return renderToStaticMarkup(<SourceProfileTemplateManager
     templates={empty ? [] : archivedOnly ? [
-      { id: "template-archived", name: "Oud sjabloon", description: null, configVersion: 1, isDefault: false, archivedAt: "2026-09-12T00:00:00.000Z", isArchived: true, canArchive: false },
+      { id: "template-archived", name: "Oud sjabloon", description: null, configVersion: 1, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, isDefault: false, archivedAt: "2026-09-12T00:00:00.000Z", isArchived: true, canArchive: false },
     ] : [
-      { id: "template-1", name: "Standaard portfolio", description: "Appbreed standaardsjabloon", configVersion: 1, isDefault: true, archivedAt: null, isArchived: false, canArchive: false },
-      { id: "template-2", name: "Eigen basis", description: null, configVersion: 1, isDefault: false, archivedAt: null, isArchived: false, canArchive: true },
+      { id: "template-1", name: "Standaard portfolio", description: "Appbreed standaardsjabloon", configVersion: 1, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, isDefault: true, archivedAt: null, isArchived: false, canArchive: false },
+      { id: "template-2", name: "Eigen basis", description: null, configVersion: 1, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, isDefault: false, archivedAt: null, isArchived: false, canArchive: true },
     ]}
     copyTargets={hasCopyTargets ? [{ learningSpaceId: "space-6", learningSpaceName: "Zesde jaar", learningSpaceShortLabel: "6WIS", profile: {
       id: "profile-6", type: "custom", name: "Huidig profiel", description: null, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,

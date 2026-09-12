@@ -48,3 +48,16 @@ C1 ondersteunt twee resourcevormen. Een `source_file` verwijst naar een bestand 
 De standaardconfig bevat een declaratieve spiegel van de huidige globale legacyresources: **Opgaven**, **Hints** en **Eindoplossingen**. Oude opgeslagen V1-configs zonder `globalResources` worden door de getypeerde parser automatisch met deze legacydefinities genormaliseerd. Daardoor is geen databasemigratie nodig en blijven bestaande snapshots geldig. De scanner blijft tot C4 zelf de autoritatieve bron voor de daadwerkelijke herkenning.
 
 Binnen één profiel moeten resource-ID's en volgordewaarden uniek zijn. De config accepteert maximaal tien resources en blijft strict gevalideerd; externe links bevatten nadrukkelijk geen profielbrede URL. Latere C2/C3-stappen bouwen hier de beheer-UI en portfolio-specifieke externe links op voort, zonder het interne resourcecontract opnieuw te definiëren.
+
+## Globale documenten (C2)
+
+Een bronprofiel kan maximaal tien globale documenten definiëren. Het beheer gebeurt centraal bij het concrete bronprofiel of, voor superadmins, bij een appbreed sjabloon. Per definitie zijn label, icoon, volgorde en semantische rol instelbaar. Een document uit de bron bevat daarnaast een eenvoudige bestandsnaamregel en toegelaten bestandstypes. Een externe-linkdefinitie legt in C2 alleen de knop en semantiek vast; de concrete URL per portfolio volgt in C3.
+
+Wijzigingen aan een gedeeld concreet bronprofiel vereisen expliciete bevestiging en gelden voor alle gekoppelde leeromgevingen. Wijzigingen aan een sjabloon werken nooit terug op reeds gemaakte concrete profielen. C2 bewaart alleen configuratie: de scanner gebruikt deze regels nog niet; profielgestuurde herkenning volgt in C4/E.
+
+
+## Beheerflow globale documenten
+
+Concrete bronprofielen bewaren profielnaam en globale documenten in één beheerflow. De beheerder slaat beide samen op via de vaste knop bovenaan het dialoogvenster. Sluiten met lokale wijzigingen vraagt expliciet of de wijzigingen moeten worden opgeslagen, genegeerd of verder bewerkt.
+
+Bij een gedeeld concreet profiel wordt pas bij opslaan een impactkeuze gevraagd. De beheerder kan de wijzigingen voor alle gekoppelde leeromgevingen opslaan, of één gekoppelde leeromgeving afsplitsen naar een onafhankelijke kopie. Zo'n split-kopie behoudt de oorspronkelijke profieleigenaar, wordt alleen in de gekozen leeromgeving actief en laat het gedeelde origineel voor de overige leeromgevingen onaangeraakt.

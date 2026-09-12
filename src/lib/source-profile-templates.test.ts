@@ -31,6 +31,7 @@ import {
   permanentlyDeleteSourceProfileTemplate,
   restoreSourceProfileTemplate,
   setDefaultSourceProfileTemplate,
+  updateSourceProfileTemplateGlobalResources,
   updateSourceProfileTemplateMetadata,
 } from "./source-profile-templates";
 
@@ -355,6 +356,21 @@ describe("global source profile templates", () => {
     await expect(createLearningSpace(spaceInput("unknown-default"))).rejects.toThrow();
     await expect(getAdminLearningSpaceBySlug("unknown-default")).resolves.toBeNull();
   });
+  it("updates template global resources only for superadmin and keeps future snapshots independent", async () => {
+    await expect(updateSourceProfileTemplateGlobalResources(owner, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, [])).rejects.toThrow();
+    await updateSourceProfileTemplateGlobalResources(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, [{
+      id: "formula", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic",
+    }]);
+    const updated = await getDefaultSourceProfileTemplate();
+    expect(updated.config.globalResources).toEqual([expect.objectContaining({ id: "formula", kind: "external_link" })]);
+
+    const clone = await cloneSourceProfileTemplateToLearningSpace(updated, "space-5", owner.id);
+    await updateSourceProfileTemplateGlobalResources(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, []);
+    expect(clone.config.globalResources).toHaveLength(1);
+    expect((await getDefaultSourceProfileTemplate()).config.globalResources).toEqual([]);
+  });
+
+
 });
 
 describe("migration 036", () => {

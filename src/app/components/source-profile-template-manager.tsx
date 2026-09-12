@@ -7,6 +7,7 @@ import type { SourceProfileTemplateSummary } from "@/lib/source-profile-template
 import type { SourceProfileCopyTarget } from "@/lib/source-profiles";
 
 import { ArchiveVisibilityToggle } from "./archive-visibility-toggle";
+import { SourceProfileGlobalResourcesEditor } from "./source-profile-global-resources-editor";
 import { ConfirmActionButton } from "./confirm-action-button";
 
 export type SourceProfileTemplateModal = "create" | "manage" | "default" | "copy";
@@ -14,6 +15,7 @@ export type SourceProfileTemplateModal = "create" | "manage" | "default" | "copy
 export interface SourceProfileTemplateActions {
   create: (formData: FormData) => Promise<void>;
   update: (formData: FormData) => Promise<void>;
+  updateResources: (formData: FormData) => Promise<void>;
   duplicate: (formData: FormData) => Promise<void>;
   setDefault: (formData: FormData) => Promise<void>;
   copy: (formData: FormData) => Promise<void>;
@@ -82,7 +84,7 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
     </div>}
 
     {modal ? <div className="confirm-backdrop" role="presentation">
-      <div className="source-profile-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <div className={`source-profile-dialog${modal === "manage" ? " source-profile-dialog-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="source-profile-dialog-heading">
           <h2 id={titleId}>{modalTitle(modal)}</h2>
           <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
@@ -112,6 +114,7 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
             </div>
             {selected.canArchive ? <div className="source-profile-lifecycle-zone"><button className="secondary-button" type="submit" formAction={actions.archive}><Archive size={16} aria-hidden />Archiveren</button></div> : null}
           </form>
+          <SourceProfileGlobalResourcesEditor resources={selected.config?.globalResources ?? []} action={actions.updateResources} ownerIdField="templateId" ownerId={selected.id} />
         </> : null}
         {modal === "default" && selected ? <form action={actions.setDefault} className="source-profile-dialog-form">
           <input type="hidden" name="templateId" value={selected.id} />
