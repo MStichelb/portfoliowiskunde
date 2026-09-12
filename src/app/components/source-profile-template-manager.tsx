@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, Plus, Settings2, X } from "lucide-react";
+import { Copy, Pencil, Plus, Settings2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import type { SourceProfileTemplateSummary } from "@/lib/source-profile-templates";
@@ -68,7 +68,7 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
           {template.description ? <p>{template.description}</p> : null}
         </div>
         <div className="source-profile-card-actions">
-          {canManage ? <button className="secondary-button source-profile-manage-button" type="button" onClick={(event) => open("manage", template.id, event.currentTarget)}>Beheren</button> : null}
+          {canManage ? <button className="secondary-button source-profile-manage-button" type="button" onClick={(event) => open("manage", template.id, event.currentTarget)}><Pencil size={16} aria-hidden />Beheren</button> : null}
           {copyTargets.length > 0 ? <button className="secondary-button source-profile-copy-button" type="button" onClick={(event) => open("copy", template.id, event.currentTarget)}><Copy size={16} aria-hidden />Kopiëren</button> : null}
         </div>
       </article>)}

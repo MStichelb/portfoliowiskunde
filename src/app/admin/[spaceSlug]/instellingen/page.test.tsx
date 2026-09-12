@@ -7,7 +7,6 @@ import type { LearningSpace } from "@/lib/repositories";
 const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   canConfigureLearningSpace: vi.fn(),
-  canManageLearningSpace: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
   getSourceProfileForLearningSpaceCard: vi.fn(),
   settingsForm: vi.fn(),
@@ -17,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
-vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: mocks.canConfigureLearningSpace, canManageLearningSpace: mocks.canManageLearningSpace }));
+vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: mocks.canConfigureLearningSpace }));
 vi.mock("@/lib/repositories", () => ({ getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug }));
 vi.mock("@/lib/source-profiles", () => ({ getSourceProfileForLearningSpaceCard: mocks.getSourceProfileForLearningSpaceCard }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
@@ -48,7 +47,6 @@ describe("LearningSpace settings page", () => {
     vi.clearAllMocks();
     mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
     mocks.canConfigureLearningSpace.mockResolvedValue(true);
-    mocks.canManageLearningSpace.mockResolvedValue(true);
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
     mocks.getSourceProfileForLearningSpaceCard.mockResolvedValue({ id: "profile-1", name: "Standaard portfolio" });
   });
@@ -90,18 +88,17 @@ describe("LearningSpace settings page", () => {
     expect(archivedMarkup).not.toContain("Actieve bron");
   });
 
-  it("lets an editor view only the source profile card", async () => {
+  it("does not let an editor open the owner-only settings route", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
     mocks.canConfigureLearningSpace.mockResolvedValue(false);
 
-    const markup = renderToStaticMarkup(await LearningSpaceSettingsPage({
+    await expect(LearningSpaceSettingsPage({
       params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({}),
-    }));
+    })).rejects.toThrow("NEXT_NOT_FOUND");
 
-    expect(markup).toContain("Bronprofiel: Standaard portfolio");
-    expect(markup).not.toContain("Instellingenformulier");
-    expect(markup).not.toContain("Actieve bron");
-    expect(mocks.sourceProfileCard).toHaveBeenCalledWith(expect.objectContaining({ canConfigure: false }));
+    expect(mocks.settingsForm).not.toHaveBeenCalled();
+    expect(mocks.sourceProfileCard).not.toHaveBeenCalled();
+    expect(mocks.getSourceProfileForLearningSpaceCard).not.toHaveBeenCalled();
   });
 
   it("passes no profile mutation flows into the read-only card", async () => {
@@ -116,7 +113,7 @@ describe("LearningSpace settings page", () => {
 
   it("does not open settings for a user without configuration rights", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
-    mocks.canManageLearningSpace.mockResolvedValue(false);
+    mocks.canConfigureLearningSpace.mockResolvedValue(false);
 
     await expect(LearningSpaceSettingsPage({
       params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({}),

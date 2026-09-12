@@ -21,6 +21,7 @@ describe("SourceProfileTemplateManager", () => {
     expect(markup).not.toContain("Configuratieversie");
     expect(markup).toContain("Appbreed standaardsjabloon");
     expect(markup).toContain("Standaard");
+    expect(markup).toContain("lucide-pencil");
     expect(markup).not.toContain("Gebruikt in:");
     expect(markup).not.toContain('role="dialog"');
   });

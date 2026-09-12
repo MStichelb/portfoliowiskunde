@@ -67,7 +67,14 @@ export interface SourceProfileCopyTarget {
 export interface SourceProfileOverview {
   ownedProfiles: ManagedSourceProfile[];
   editorAccessibleActiveProfiles: ManagedSourceProfile[];
+  otherUserProfiles: ManagedSourceProfile[];
+  otherProfileOwners: SourceProfileOwnerOption[];
   copyTargets: SourceProfileCopyTarget[];
+}
+
+export interface SourceProfileOwnerOption {
+  id: string;
+  label: string;
 }
 
 export interface SourceProfileCopyResult {
@@ -96,9 +103,14 @@ export async function getSourceProfileOverview(user: AppUser): Promise<SourcePro
   const [targetRows, profileRows] = await Promise.all([getSourceProfileTargetRows(user), getVisibleSourceProfileRows(user)]);
   const targets = sourceProfileTargetReadModel(targetRows);
   const profiles = sourceProfileDetailsFromRows(profileRows, user, targets.copyTargets.length > 0, targets.linkTargetsByOwner);
+  const otherUserProfiles = user.role === "superadmin"
+    ? profiles.filter((profile) => profile.ownerUserId !== user.id)
+    : [];
   return {
-    ownedProfiles: profiles.filter((profile) => profile.access === "owner" || profile.access === "superadmin"),
+    ownedProfiles: profiles.filter((profile) => profile.ownerUserId === user.id),
     editorAccessibleActiveProfiles: profiles.filter((profile) => profile.access === "editor"),
+    otherUserProfiles,
+    otherProfileOwners: sourceProfileOwnerOptions(otherUserProfiles),
     copyTargets: targets.copyTargets,
   };
 }
@@ -123,7 +135,7 @@ export async function getSourceProfileCopyTargets(user: AppUser): Promise<Source
 
 export async function getManagedSourceProfiles(user: AppUser): Promise<ManagedSourceProfile[]> {
   const overview = await getSourceProfileOverview(user);
-  return [...overview.ownedProfiles, ...overview.editorAccessibleActiveProfiles];
+  return [...overview.ownedProfiles, ...overview.editorAccessibleActiveProfiles, ...overview.otherUserProfiles];
 }
 
 export async function canCopySourceProfile(user: AppUser, sourceProfileId: string): Promise<boolean> {
@@ -304,6 +316,17 @@ function sourceProfileDetailsFromRows(
     }
   }
   return [...profiles.values()].sort(compareSourceProfiles);
+}
+
+function sourceProfileOwnerOptions(profiles: ManagedSourceProfile[]): SourceProfileOwnerOption[] {
+  const owners = new Map<string, SourceProfileOwnerOption>();
+  for (const profile of profiles) {
+    if (!profile.ownerUserId) continue;
+    owners.set(profile.ownerUserId, { id: profile.ownerUserId, label: profile.ownerName ?? profile.ownerUserId });
+  }
+  return [...owners.values()].sort((left, right) =>
+    left.label.localeCompare(right.label, "nl-BE", { sensitivity: "base" }) || left.id.localeCompare(right.id),
+  );
 }
 
 async function requireVisibleSourceProfile(user: AppUser, sourceProfileId: string): Promise<SourceProfile> {

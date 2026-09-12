@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LearningSpace, LearningSpaceSource } from "@/lib/repositories";
 
@@ -11,8 +11,10 @@ vi.mock("@/lib/repositories", () => ({
   getLatestSyncSummary: vi.fn(),
   getOpenErrorThreadCount: vi.fn(),
 }));
+vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: vi.fn() }));
 
 import { getLatestSyncSummary, getOpenErrorThreadCount } from "@/lib/repositories";
+import { canConfigureLearningSpace } from "@/lib/authorization";
 import { AdminSpaceHeader } from "./admin-space-header";
 
 const mirror: LearningSpaceSource = {
@@ -29,6 +31,10 @@ const space: LearningSpace = {
 };
 
 describe("shared LearningSpace admin header", () => {
+  beforeEach(() => {
+    vi.mocked(canConfigureLearningSpace).mockResolvedValue(true);
+  });
+
   it("shows the agreed heading, mirror warning, report count, sync and compact navigation", async () => {
     vi.mocked(getLatestSyncSummary).mockResolvedValue({
       startedAt: "2026-08-20T12:00:00.000Z", finishedAt: "2026-08-20T12:01:00.000Z", portfolioCount: 3,
@@ -46,5 +52,19 @@ describe("shared LearningSpace admin header", () => {
     expect(markup).toContain("Nu synchroniseren");
     expect(markup).not.toContain("space-switcher");
     expect(markup).not.toContain(">Foutmeldingen</a></div>");
+  });
+
+  it("hides Instellingen from an editor while keeping it for an owner", async () => {
+    vi.mocked(getLatestSyncSummary).mockResolvedValue(null);
+    vi.mocked(getOpenErrorThreadCount).mockResolvedValue(0);
+    const teacher = { id: "teacher", displayName: "Teacher", firstName: null, lastName: null, email: null, role: "teacher" as const, status: "active" as const, classGroupOverrideId: null };
+
+    vi.mocked(canConfigureLearningSpace).mockResolvedValueOnce(false);
+    const editorMarkup = renderToStaticMarkup(await AdminSpaceHeader({ current: space, section: "portfolios", user: teacher }));
+    expect(editorMarkup).not.toContain("Instellingen");
+
+    vi.mocked(canConfigureLearningSpace).mockResolvedValueOnce(true);
+    const ownerMarkup = renderToStaticMarkup(await AdminSpaceHeader({ current: space, section: "portfolios", user: teacher }));
+    expect(ownerMarkup).toContain("Instellingen");
   });
 });

@@ -80,7 +80,23 @@ describe("source profile ownership and access", () => {
       expect(overview.editorAccessibleActiveProfiles.map((profile) => profile.id)).not.toContain(inactiveOwned.id);
     }
     expect(await getSourceProfileOverview(actors.viewer)).toMatchObject({ ownedProfiles: [], editorAccessibleActiveProfiles: [], copyTargets: [] });
+    const superadminOverview = await getSourceProfileOverview(actors.superadmin);
+    expect(superadminOverview.ownedProfiles).toEqual([]);
+    expect(superadminOverview.editorAccessibleActiveProfiles).toEqual([]);
+    expect(superadminOverview.otherUserProfiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([profileFiveId, profileSixId, inactiveOwned.id]));
+    expect(superadminOverview.otherProfileOwners).toEqual([
+      { id: actors.ownerEditor.id, label: "Mira Owner Editor" },
+      { id: actors.owner.id, label: "Olivia Owner" },
+    ]);
     expect((await getManagedSourceProfiles(actors.superadmin)).map((profile) => profile.id)).toEqual(expect.arrayContaining([profileFiveId, profileSixId, inactiveOwned.id]));
+  });
+
+  it("separates a superadmin's personal profiles from profiles of other owners", async () => {
+    const ownProfile = await createProfile("space-5", actors.superadmin.id, "Eigen adminprofiel", false);
+    const overview = await getSourceProfileOverview(actors.superadmin);
+    expect(overview.ownedProfiles.map((profile) => profile.id)).toEqual([ownProfile.id]);
+    expect(overview.otherUserProfiles.map((profile) => profile.id)).not.toContain(ownProfile.id);
+    expect(overview.otherUserProfiles.every((profile) => profile.ownerUserId !== actors.superadmin.id)).toBe(true);
   });
 
   it("uses the same ownership model centrally and in the read-only LearningSpace card", async () => {
@@ -135,12 +151,12 @@ describe("source profile ownership and access", () => {
     expect(inactiveProfile.linkTargets.map((target) => target.learningSpaceId)).toEqual(["space-5"]);
     expect(inactiveProfile.canLink).toBe(true);
 
-    const adminProfile = (await getSourceProfileOverview(actors.superadmin)).ownedProfiles.find((profile) => profile.id === profileFiveId)!;
+    const adminProfile = (await getSourceProfileOverview(actors.superadmin)).otherUserProfiles.find((profile) => profile.id === profileFiveId)!;
     expect(adminProfile.linkTargets).toEqual([]);
     await expect(linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6")).rejects.toThrow("profieleigenaar ook eigenaar");
 
     await upsertManagedMembership("space-6", actors.owner.id, "owner");
-    const refreshed = (await getSourceProfileOverview(actors.superadmin)).ownedProfiles.find((profile) => profile.id === profileFiveId)!;
+    const refreshed = (await getSourceProfileOverview(actors.superadmin)).otherUserProfiles.find((profile) => profile.id === profileFiveId)!;
     expect(refreshed.linkTargets.map((target) => target.learningSpaceId)).toEqual(["space-6"]);
     await linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6");
     expect((await getActiveSourceProfileForLearningSpace("space-6"))?.id).toBe(profileFiveId);

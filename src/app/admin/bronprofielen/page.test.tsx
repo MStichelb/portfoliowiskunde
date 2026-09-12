@@ -14,6 +14,10 @@ vi.mock("@/lib/source-profiles", () => ({
     usages.length === 0 ? inactiveLabel : `${usages.slice(0, 3).map((usage) => usage.learningSpaceShortLabel).join(", ")}${usages.length > 3 ? ` +${usages.length - 3}` : ""}`,
 }));
 vi.mock("@/lib/source-profile-templates", () => ({ listSourceProfileTemplates: mocks.listSourceProfileTemplates }));
+vi.mock("@/app/components/source-profile-owner-filter", () => ({
+  SourceProfileOwnerFilter: ({ owners, selectedOwnerId }: { owners: Array<{ id: string; label: string }>; selectedOwnerId: string | null }) =>
+    <label>Gebruiker<select defaultValue={selectedOwnerId ?? ""}><option value="">Alle gebruikers</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select></label>,
+}));
 vi.mock("./actions", () => ({
   renameManagedSourceProfileAction: vi.fn(), createSourceProfileTemplateAction: vi.fn(), updateSourceProfileTemplateAction: vi.fn(),
   duplicateSourceProfileTemplateAction: vi.fn(), setDefaultSourceProfileTemplateAction: vi.fn(), copyManagedSourceProfileAction: vi.fn(),
@@ -25,23 +29,23 @@ import SourceProfilesPage from "./page";
 describe("central source profile page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [profile()], editorAccessibleActiveProfiles: [], copyTargets: [copyTarget()] });
+    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [profile()], editorAccessibleActiveProfiles: [], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [copyTarget()] });
     mocks.listSourceProfileTemplates.mockResolvedValue([template()]);
   });
 
   it.each(["teacher", "superadmin"] as const)("is accessible to a %s and shows current usage", async (role) => {
     mocks.requireAdminUser.mockResolvedValue(user(role));
-    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [profile({ access: role === "superadmin" ? "superadmin" : "owner" })], editorAccessibleActiveProfiles: [], copyTargets: [copyTarget()] });
+    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [profile({ ownerUserId: role, access: role === "superadmin" ? "superadmin" : "owner" })], editorAccessibleActiveProfiles: [], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [copyTarget()] });
     const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({}) }));
 
-    expect(markup).toContain(role === "superadmin" ? "Alle bronprofielen" : "Mijn bronprofielen");
+    expect(markup).toContain("Mijn bronprofielen");
     expect(markup).toContain("Gebruikt in:");
     expect(markup).toContain("4NW1, 5WET, 6WIS +1");
     expect(markup).not.toContain("4 actieve leeromgevingen");
     expect(markup).toContain("Beheren");
     expect(mocks.getSourceProfileOverview).toHaveBeenCalledWith(expect.objectContaining({ role }));
     expect(markup).toContain("Mijn bronprofielen");
-    expect(markup).toContain("Bronprofielen uit leeromgevingen");
+    expect(markup).toContain(role === "superadmin" ? "Andere gebruikers" : "Uit leeromgevingen");
     expect(markup).toContain("Sjablonen");
     expect(markup).not.toContain("Bronprofielen uit leeromgevingen</h2>");
     expect(markup).not.toContain("Appbreed sjabloon");
@@ -68,7 +72,7 @@ describe("central source profile page", () => {
   it("shows inactive profiles and reopens only a server-authorized management target", async () => {
     const inactive = profile({ id: "inactive", name: "Los profiel", usages: [], usageCount: 0, isInactive: true });
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
-    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [inactive], editorAccessibleActiveProfiles: [], copyTargets: [copyTarget()] });
+    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [inactive], editorAccessibleActiveProfiles: [], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [copyTarget()] });
 
     const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ profile: inactive.id, error: "Naam bestaat al." }) }));
     expect(markup).toContain("Inactief");
@@ -85,10 +89,11 @@ describe("central source profile page", () => {
   it("separates editor-accessible active profiles from owned profiles and keeps them read-only", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
     const foreign = profile({ id: "foreign", name: "Profiel collega", ownerUserId: "colleague", ownerName: "Collega", access: "editor", canRename: false, canLink: false, linkTargets: [] });
-    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [profile()], editorAccessibleActiveProfiles: [foreign], copyTargets: [copyTarget()] });
+    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [profile()], editorAccessibleActiveProfiles: [foreign], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [copyTarget()] });
 
     const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ tab: "editor" }) }));
     expect(markup).toContain("Bronprofielen uit leeromgevingen</h2>");
+    expect(markup).toContain("Uit leeromgevingen");
     expect(markup).toContain("Eigenaar: Collega");
     expect(markup).toContain("Bekijken");
     expect(markup).toContain("source-profile-tab-section");
@@ -99,7 +104,7 @@ describe("central source profile page", () => {
   it("shows no copy entrypoint to a pure editor without an owner target", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher"));
     const foreign = profile({ id: "foreign", name: "Profiel collega", ownerUserId: "colleague", ownerName: "Collega", access: "editor", canRename: false, canCopy: false, canLink: false, linkTargets: [] });
-    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [], editorAccessibleActiveProfiles: [foreign], copyTargets: [] });
+    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [], editorAccessibleActiveProfiles: [foreign], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [] });
 
     const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ tab: "editor", copyProfile: foreign.id }) }));
     expect(markup).toContain("Profiel collega");
@@ -111,7 +116,7 @@ describe("central source profile page", () => {
   it("keeps manage, copy and link in separate modals with explicit shared behavior", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
     mocks.getSourceProfileOverview.mockResolvedValue({
-      ownedProfiles: [profile()], editorAccessibleActiveProfiles: [], copyTargets: [copyTarget(), otherOwnerCopyTarget()],
+      ownedProfiles: [profile({ ownerUserId: "superadmin" })], editorAccessibleActiveProfiles: [], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [copyTarget(), otherOwnerCopyTarget()],
     });
 
     const manage = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ profile: "profile-1" }) }));
@@ -145,7 +150,7 @@ describe("central source profile page", () => {
   it("hides linking and refuses to open an empty link modal without owner-compatible targets", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
     const unlinkable = profile({ canLink: false, linkTargets: [] });
-    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [unlinkable], editorAccessibleActiveProfiles: [], copyTargets: [copyTarget()] });
+    mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [unlinkable], editorAccessibleActiveProfiles: [], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [copyTarget()] });
     const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ linkProfile: unlinkable.id }) }));
     expect(markup).not.toContain(`linkProfile=${unlinkable.id}`);
     expect(markup).not.toContain("Bronprofiel koppelen");
@@ -155,6 +160,31 @@ describe("central source profile page", () => {
     mocks.requireAdminUser.mockRejectedValue(new Error("NEXT_REDIRECT:/admin/login"));
     await expect(SourceProfilesPage({ searchParams: Promise.resolve({}) })).rejects.toThrow("NEXT_REDIRECT");
     expect(mocks.getSourceProfileOverview).not.toHaveBeenCalled();
+  });
+
+  it("separates superadmin-owned profiles from other users and filters the latter by owner", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
+    const own = profile({ id: "admin-own", name: "Eigen adminprofiel", ownerUserId: "superadmin", ownerName: "Admin", access: "superadmin" });
+    const olivia = profile({ id: "olivia-profile", name: "Olivia profiel", ownerUserId: "olivia", ownerName: "Olivia", access: "superadmin" });
+    const zeno = profile({ id: "zeno-profile", name: "Zeno profiel", ownerUserId: "zeno", ownerName: "Zeno", access: "superadmin" });
+    mocks.getSourceProfileOverview.mockResolvedValue({
+      ownedProfiles: [own], editorAccessibleActiveProfiles: [], otherUserProfiles: [olivia, zeno],
+      otherProfileOwners: [{ id: "olivia", label: "Olivia" }, { id: "zeno", label: "Zeno" }], copyTargets: [copyTarget()],
+    });
+
+    const ownMarkup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({}) }));
+    expect(ownMarkup).toContain("Eigen adminprofiel");
+    expect(ownMarkup).not.toContain("Olivia profiel");
+    expect(ownMarkup).toContain("Andere gebruikers");
+    expect(ownMarkup).not.toContain("Uit leeromgevingen");
+
+    const filteredMarkup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ tab: "editor", owner: "olivia" }) }));
+    expect(filteredMarkup).toContain("Bronprofielen van andere gebruikers");
+    expect(filteredMarkup).toContain("Alle gebruikers");
+    expect(filteredMarkup).toContain("Olivia profiel");
+    expect(filteredMarkup).toContain("Eigenaar: Olivia");
+    expect(filteredMarkup).not.toContain("Zeno profiel");
+    expect(filteredMarkup).not.toContain("Eigen adminprofiel");
   });
 });
 
