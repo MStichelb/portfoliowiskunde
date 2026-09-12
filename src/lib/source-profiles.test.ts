@@ -12,6 +12,8 @@ import { createLearningSpace } from "./repositories";
 import {
   BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
+  GLOBAL_RESOURCE_LIMIT,
+  LEGACY_GLOBAL_RESOURCE_CONFIGS,
   parseSourceProfileConfig,
   parseStoredSourceProfileConfig,
 } from "./source-profile-config";
@@ -41,6 +43,49 @@ describe("source profile config", () => {
     expect(() => parseSourceProfileConfig({ configVersion: 1, scanner: {} })).toThrow();
     expect(() => parseStoredSourceProfileConfig(1, "not-json")).toThrow();
     expect(() => parseStoredSourceProfileConfig(2, JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG))).toThrow();
+  });
+
+  it("normalizes legacy V1 config without global resources to the legacy resource definitions", () => {
+    expect(parseSourceProfileConfig({ configVersion: 1, scanner: { convention: "legacy_portfolio_v1" } })).toEqual(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    expect(LEGACY_GLOBAL_RESOURCE_CONFIGS.map((resource) => resource.label)).toEqual(["Opgaven", "Hints", "Eindoplossingen"]);
+  });
+
+  it("accepts source-file and external-link global resource definitions without storing portfolio URLs in the profile", () => {
+    const config = parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1" },
+      globalResources: [
+        {
+          id: "theory", kind: "source_file", label: "Theorie", icon: "book-open", order: 10, semanticRole: "generic",
+          recognition: { target: "file_name", operator: "contains", value: "theorie", fileExtensions: ["pdf"] },
+        },
+        { id: "geogebra", kind: "external_link", label: "GeoGebra", icon: "external-link", order: 20, semanticRole: "generic" },
+      ],
+    });
+
+    expect(config.globalResources).toEqual([
+      expect.objectContaining({ id: "theory", kind: "source_file", recognition: expect.objectContaining({ caseSensitive: false }) }),
+      expect.objectContaining({ id: "geogebra", kind: "external_link" }),
+    ]);
+    expect(config.globalResources[1]).not.toHaveProperty("url");
+  });
+
+  it("enforces global resource limits, unique ids/orders and strict source-file recognition", () => {
+    const base = { configVersion: 1, scanner: { convention: "legacy_portfolio_v1" } } as const;
+    const resource = (index: number) => ({
+      id: `resource-${index}`, kind: "external_link" as const, label: `Resource ${index}`, icon: "link" as const, order: index, semanticRole: "generic" as const,
+    });
+
+    expect(() => parseSourceProfileConfig({ ...base, globalResources: Array.from({ length: GLOBAL_RESOURCE_LIMIT + 1 }, (_, index) => resource(index)) })).toThrow();
+    expect(() => parseSourceProfileConfig({ ...base, globalResources: [resource(1), { ...resource(2), id: "resource-1" }] })).toThrow();
+    expect(() => parseSourceProfileConfig({ ...base, globalResources: [resource(1), { ...resource(2), order: 1 }] })).toThrow();
+    expect(() => parseSourceProfileConfig({
+      ...base,
+      globalResources: [{
+        id: "bad-file", kind: "source_file", label: "Fout", icon: "file-text", order: 1, semanticRole: "generic",
+        recognition: { target: "file_name", operator: "contains", value: "x", fileExtensions: [] },
+      }],
+    })).toThrow();
   });
 });
 

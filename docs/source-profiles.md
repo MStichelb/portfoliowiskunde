@@ -36,3 +36,15 @@ Hernoemen van een gedeeld profiel vereist een expliciete impactbevestiging van d
 De scanner leest deze configuratie nog niet: profiel-, template-, default-, kopieer- en koppelacties starten geen synchronisatie en sync en indexering blijven exact de bestaande implementatie gebruiken. Latere fases voegen terminologie, resources en scannerregels toe zonder het interne portfolio-domein of de read-only bronprincipes te wijzigen.
 
 Voor volgende beheerfases geldt een impactonderscheid: presentatie- en terminologiewijzigingen zijn laag-risico configuratie, terwijl bronherkenningsregels bepalen hoe bestanden en mappen inhoudelijk worden geïnterpreteerd. Wijzigingen aan zulke regels moeten daarom een duidelijke waarschuwing krijgen en, waar haalbaar, vóór toepassing een preview of dry-run van de gevolgen tonen. Templatewijzigingen propageren nooit stilzwijgend naar bestaande profielen. Die waarschuwing en preview maken nog geen deel uit van B3.1.
+
+## C1 — Globale resources in de profielconfiguratie
+
+De V1-config bevat vanaf C1 een getypeerde lijst `globalResources` met maximaal tien globale resources per bronprofiel. Dit is voorlopig uitsluitend configuratiemodel: de bestaande scanner en publieke documentknoppen lezen deze lijst nog niet. Het legacy scannergedrag blijft dus ongewijzigd tot C4.
+
+Een globale resource heeft een stabiele slug-ID, zichtbaar label, gecureerd icoon, expliciete volgorde en een interne semantische rol (`assignment`, `hint`, `final_answer`, `worked_solution` of `generic`). De semantische rol is technische domeininformatie en hoeft later niet als vrij instelbaar begrip in de leraren-UI te verschijnen.
+
+C1 ondersteunt twee resourcevormen. Een `source_file` verwijst naar een bestand dat later door de scanner in de portfolioroot wordt herkend via een eenvoudige bestandsnaamregel (`starts_with`, `contains` of `ends_with`) en een beperkte lijst ondersteunde bestandsextensies. Een `external_link` definieert alleen de globale knop/identiteit; de concrete URL hoort bewust niet in het bronprofiel, omdat die vanaf C3 per portfolio wordt ingesteld.
+
+De standaardconfig bevat een declaratieve spiegel van de huidige globale legacyresources: **Opgaven**, **Hints** en **Eindoplossingen**. Oude opgeslagen V1-configs zonder `globalResources` worden door de getypeerde parser automatisch met deze legacydefinities genormaliseerd. Daardoor is geen databasemigratie nodig en blijven bestaande snapshots geldig. De scanner blijft tot C4 zelf de autoritatieve bron voor de daadwerkelijke herkenning.
+
+Binnen één profiel moeten resource-ID's en volgordewaarden uniek zijn. De config accepteert maximaal tien resources en blijft strict gevalideerd; externe links bevatten nadrukkelijk geen profielbrede URL. Latere C2/C3-stappen bouwen hier de beheer-UI en portfolio-specifieke externe links op voort, zonder het interne resourcecontract opnieuw te definiëren.
