@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, parseSourceProfileConfig, type SourceProfileConfig } from "../source-profile-config";
+import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, parseSourceProfileConfig, type ExerciseMode, type SourceProfileConfig } from "../source-profile-config";
 import { LocalFilesystemProvider } from "./local-filesystem-provider";
 import { indexSource } from "./portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./provider";
@@ -398,7 +398,7 @@ describe("portfolio indexer", () => {
       ]);
     });
 
-    it("laat een bestandsnaamregel een ambigu oefeningnummer niet stil verlengen", async () => {
+    it("past een bestandsnaamregel niet toe op een oefeningsbestand", async () => {
       const config = profileConfig(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources, [{
         id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 10, semanticRole: "worked_solution",
         location: { scope: "alongside_exercise" },
@@ -407,10 +407,7 @@ describe("portfolio indexer", () => {
       }]);
       const [portfolio] = await indexSource(exerciseFilesProvider(["PF1-Oef3uitwerking.png"]), config);
       expect(portfolio.sections[0]?.exercises ?? []).toHaveLength(0);
-      expect(portfolio.warnings).toContainEqual(expect.objectContaining({
-        path: "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden/PF1-Oef3uitwerking.png",
-        message: expect.stringContaining("Oefeningnummer kon niet eenduidig worden bepaald"),
-      }));
+      expect(portfolio.warnings).toHaveLength(0);
     });
 
     it("houdt een beschrijvende vervolgnaam bij het langste geldige oefeningnummer wanneer er een echte grens staat", async () => {
@@ -432,7 +429,7 @@ describe("portfolio indexer", () => {
         id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 10, semanticRole: "worked_solution",
         location: { scope: "alongside_exercise" }, recognition: { target: "fallback", fileExtensions: ["png"] },
         allowMultiple: true, displayMode: "collapsible_group",
-      }], { numberLocation: "after_text", marker: "Vraag" });
+      }], { exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Vraag" });
       const [markerPortfolio] = await indexSource(exerciseFilesProvider(["reeks-Vraag12b.png"]), afterVraag);
       expect(markerPortfolio.sections[0].exercises[0].code).toBe("12b");
 
@@ -440,7 +437,7 @@ describe("portfolio indexer", () => {
         id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 10, semanticRole: "worked_solution",
         location: { scope: "alongside_exercise" }, recognition: { target: "fallback", fileExtensions: ["png"] },
         allowMultiple: true, displayMode: "collapsible_group",
-      }], { numberLocation: "start", marker: "" });
+      }], { exerciseMode: "files_and_directories", numberLocation: "start", marker: "" });
       const [startPortfolio] = await indexSource(exerciseFilesProvider(["7a.png"]), atStart);
       expect(startPortfolio.sections[0].exercises[0].code).toBe("7a");
     });
@@ -563,6 +560,130 @@ describe("portfolio indexer", () => {
       expect(portfolio.sections[0].exercises[0].code).toBe("3a");
       expect(portfolio.sections[0].exercises[0].assets.map((asset) => asset.fileName)).toEqual(["opgave.pdf", "uitwerking vervolg.png", "uitwerking.png"].sort((a, b) => a.localeCompare(b, "nl")));
     });
+
+    it("herkent in mixed mode file- en directory-oefeningen met strikt gescheiden contextregels", async () => {
+      const [portfolio] = await indexSource(locationAwareExerciseProvider(), locationAwareConfig("files_and_directories"));
+
+      expect(portfolio.sections[0].exercises.map((exercise) => [
+        exercise.code,
+        exercise.assets.map((asset) => [asset.resourceId, asset.fileName]),
+      ])).toEqual([
+        ["1", [["worked", "Oef1-uitwerking.png"]]],
+        ["2", [
+          ["worked", "uitwerking.png"],
+          ["hints", "hints.jpg"],
+          ["alternative", "alternatief.png"],
+        ]],
+      ]);
+      expect(portfolio.warnings).toHaveLength(0);
+    });
+
+    it("laat files-only uitsluitend oefeningsbestanden indexeren", async () => {
+      const [portfolio] = await indexSource(locationAwareExerciseProvider(), locationAwareConfig("files"));
+      expect(portfolio.sections[0].exercises.map((exercise) => exercise.code)).toEqual(["1"]);
+      expect(portfolio.sections[0].exercises[0].assets.map((asset) => asset.resourceId)).toEqual(["worked"]);
+    });
+
+    it("laat directories-only uitsluitend oefeningsmappen indexeren", async () => {
+      const [portfolio] = await indexSource(locationAwareExerciseProvider(), locationAwareConfig("directories"));
+      expect(portfolio.sections[0].exercises.map((exercise) => exercise.code)).toEqual(["2"]);
+      expect(portfolio.sections[0].exercises[0].assets.map((asset) => asset.resourceId)).toEqual(["worked", "hints", "alternative"]);
+    });
+
+    it("houdt fallbackherkenning lokaal binnen de oefeningscontext", async () => {
+      const config = profileConfig([], [{
+        id: "file-fallback", kind: "source_file", label: "Bestandsfallback", icon: "file-text", order: 10, semanticRole: "generic",
+        location: { scope: "alongside_exercise" },
+        recognition: { file: { target: "fallback" }, directory: null, fileExtensions: ["png", "jpg"] },
+        allowMultiple: true, displayMode: "collapsible_group",
+      }], { exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Oef" });
+      const [portfolio] = await indexSource(locationAwareExerciseProvider(), config);
+
+      expect(portfolio.sections[0].exercises.map((exercise) => exercise.code)).toEqual(["1"]);
+      expect(portfolio.sections[0].exercises[0].assets.map((asset) => asset.fileName)).toEqual(["Oef1-uitwerking.png"]);
+    });
+
+    it("herkent directe resources voor file-oefeningen via tekst na het oefeningnummer", async () => {
+      const config = profileConfig([], [{
+        id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 10, semanticRole: "worked_solution",
+        location: { scope: "alongside_exercise" },
+        recognition: { file: { target: "after_exercise_number", operator: "exact", value: "-uitwerking", caseSensitive: false }, directory: null, fileExtensions: ["png"] },
+        allowMultiple: false, displayMode: "collapsible_group",
+      }], { exerciseMode: "files", numberLocation: "after_text", marker: "Oef" });
+      const [portfolio] = await indexSource(exerciseFilesProvider(["Oef3-uitwerking.png", "Oef4-uitwerking.png"]), config);
+
+      expect(portfolio.sections[0].exercises.map((exercise) => [exercise.code, exercise.assets[0].resourceId])).toEqual([
+        ["3", "worked"],
+        ["4", "worked"],
+      ]);
+    });
+
+    it("koppelt genummerde resources in een vaste submap aan file-oefeningen via fallback", async () => {
+      const config = profileConfig([], [{
+        id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 10, semanticRole: "worked_solution",
+        location: { scope: "subdirectory", subdirectory: "Uitwerkingen" },
+        recognition: { file: { target: "fallback" }, directory: null, fileExtensions: ["png"] },
+        allowMultiple: false, displayMode: "collapsible_group",
+      }], { exerciseMode: "files", numberLocation: "after_text", marker: "Oef" });
+      const [portfolio] = await indexSource(fileExerciseSubdirectoryProvider(["Oef3.png", "Oef4.png"]), config);
+
+      expect(portfolio.sections[0].exercises.map((exercise) => [exercise.code, exercise.assets[0].relativePath])).toEqual([
+        ["3", "Portfolio X - Bestandoefeningen/Uitwerkingen/Oef3.png"],
+        ["4", "Portfolio X - Bestandoefeningen/Uitwerkingen/Oef4.png"],
+      ]);
+      expect(portfolio.warnings).toHaveLength(0);
+    });
+
+    it("koppelt een ongenummerd submapbestand niet op basis van nabijheid aan een file-oefening", async () => {
+      const config = profileConfig([], [{
+        id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 10, semanticRole: "worked_solution",
+        location: { scope: "subdirectory", subdirectory: "Uitwerkingen" },
+        recognition: { file: { target: "fallback" }, directory: null, fileExtensions: ["png"] },
+        allowMultiple: false, displayMode: "collapsible_group",
+      }], { exerciseMode: "files", numberLocation: "after_text", marker: "Oef" });
+      const [portfolio] = await indexSource(fileExerciseSubdirectoryProvider(["uitwerking.png"]), config);
+
+      expect(portfolio.sections[0].exercises).toHaveLength(0);
+      expect(portfolio.warnings).toHaveLength(0);
+    });
+
+    it("ondersteunt tekst na oefeningnummer binnen een oefeningsmap", async () => {
+      const config = profileConfig([], [{
+        id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 10, semanticRole: "worked_solution",
+        location: { scope: "alongside_exercise" },
+        recognition: { file: null, directory: { target: "after_exercise_number", operator: "exact", value: "-uitwerking", caseSensitive: false }, fileExtensions: ["png"] },
+        allowMultiple: false, displayMode: "collapsible_group",
+      }], { exerciseMode: "directories", numberLocation: "after_text", marker: "Oef" });
+      const [portfolio] = await indexSource(directoryExerciseProvider({ direct: ["Oef3-uitwerking.png"] }), config);
+
+      expect(portfolio.sections[0].exercises[0].code).toBe("3");
+      expect(portfolio.sections[0].exercises[0].assets[0]).toMatchObject({ resourceId: "worked", fileName: "Oef3-uitwerking.png" });
+    });
+
+    it("herkent een resource in een submap van een oefeningsmap", async () => {
+      const config = profileConfig([], [{
+        id: "hints", kind: "source_file", label: "Hints", icon: "lightbulb", order: 10, semanticRole: "hint",
+        location: { scope: "subdirectory", subdirectory: "assets" },
+        recognition: { file: null, directory: { target: "file_name", operator: "exact", value: "hint", caseSensitive: false }, fileExtensions: ["jpg"] },
+        allowMultiple: false, displayMode: "collapsible_each",
+      }], { exerciseMode: "directories", numberLocation: "after_text", marker: "Oef" });
+      const [portfolio] = await indexSource(directoryExerciseProvider({ assets: ["hint.jpg"] }), config);
+
+      expect(portfolio.sections[0].exercises[0].assets[0]).toMatchObject({ resourceId: "hints", relativePath: "Portfolio X - Mapoefeningen/Oef3/assets/hint.jpg" });
+    });
+
+    it("laat een directory-fallback geen file-oefening kapen", async () => {
+      const config = profileConfig([], [{
+        id: "directory-fallback", kind: "source_file", label: "Mapfallback", icon: "file-text", order: 10, semanticRole: "generic",
+        location: { scope: "alongside_exercise" },
+        recognition: { file: null, directory: { target: "fallback" }, fileExtensions: ["png", "jpg"] },
+        allowMultiple: true, displayMode: "collapsible_group",
+      }], { exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Oef" });
+      const [portfolio] = await indexSource(locationAwareExerciseProvider(), config);
+
+      expect(portfolio.sections[0].exercises.map((exercise) => exercise.code)).toEqual(["2"]);
+      expect(portfolio.sections[0].exercises[0].assets.map((asset) => asset.fileName)).toEqual(["alternatief.png", "hints.jpg", "uitwerking.png"]);
+    });
   });
 
   it("indexeert Portfolio X en koppelt PFX-assets zonder speciale infrastructuur", async () => {
@@ -663,7 +784,7 @@ describe("portfolio indexer", () => {
 function profileConfig(
   globalResources: SourceProfileConfig["globalResources"],
   exerciseResources?: unknown,
-  exerciseScanner: SourceProfileConfig["scanner"]["exercise"] = { numberLocation: "after_text", marker: "Oef" },
+  exerciseScanner: SourceProfileConfig["scanner"]["exercise"] = { exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Oef" },
 ): SourceProfileConfig {
   return parseSourceProfileConfig({
     configVersion: 1,
@@ -671,6 +792,102 @@ function profileConfig(
     globalResources,
     ...(exerciseResources ? { exerciseResources } : {}),
   });
+}
+
+function locationAwareConfig(exerciseMode: ExerciseMode): SourceProfileConfig {
+  return profileConfig([], [
+    {
+      id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 10, semanticRole: "worked_solution",
+      location: { scope: "alongside_exercise" },
+      recognition: {
+        file: { target: "after_exercise_number", operator: "exact", value: "-uitwerking", caseSensitive: false },
+        directory: { target: "file_name", operator: "exact", value: "uitwerking", caseSensitive: false },
+        fileExtensions: ["png"],
+      },
+      allowMultiple: false, displayMode: "collapsible_group",
+    },
+    {
+      id: "hints", kind: "source_file", label: "Hints", icon: "lightbulb", order: 20, semanticRole: "hint",
+      location: { scope: "alongside_exercise" },
+      recognition: {
+        file: { target: "after_exercise_number", operator: "exact", value: "-hints", caseSensitive: false },
+        directory: { target: "file_name", operator: "exact", value: "hints", caseSensitive: false },
+        fileExtensions: ["jpg"],
+      },
+      allowMultiple: false, displayMode: "collapsible_each",
+    },
+    {
+      id: "alternative", kind: "source_file", label: "Alternatief", icon: "shapes", order: 30, semanticRole: "alternative_solution",
+      location: { scope: "alongside_exercise" },
+      recognition: {
+        file: { target: "after_exercise_number", operator: "exact", value: "-alternatief", caseSensitive: false },
+        directory: { target: "file_name", operator: "exact", value: "alternatief", caseSensitive: false },
+        fileExtensions: ["png"],
+      },
+      allowMultiple: false, displayMode: "collapsible_group",
+    },
+  ], { exerciseMode, numberLocation: "after_text", marker: "Oef" });
+}
+
+function locationAwareExerciseProvider(): StorageProvider {
+  const portfolioPath = "Portfolio X - Contextafhankelijk";
+  const exercisePath = `${portfolioPath}/Oef2`;
+  return {
+    id: "location-aware-exercises",
+    async list(relativePath = "") {
+      if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+      if (relativePath === portfolioPath) return [
+        { name: "Oef1-uitwerking.png", relativePath: `${portfolioPath}/Oef1-uitwerking.png`, kind: "file" },
+        { name: "Oef2", relativePath: exercisePath, kind: "directory" },
+      ];
+      if (relativePath === exercisePath) return [
+        { name: "uitwerking.png", relativePath: `${exercisePath}/uitwerking.png`, kind: "file" },
+        { name: "hints.jpg", relativePath: `${exercisePath}/hints.jpg`, kind: "file" },
+        { name: "alternatief.png", relativePath: `${exercisePath}/alternatief.png`, kind: "file" },
+      ];
+      return [];
+    },
+    async readFile() { return Buffer.from(""); },
+  };
+}
+
+function fileExerciseSubdirectoryProvider(resourceFileNames: readonly string[]): StorageProvider {
+  const portfolioPath = "Portfolio X - Bestandoefeningen";
+  const resourcePath = `${portfolioPath}/Uitwerkingen`;
+  return {
+    id: "file-exercise-subdirectory",
+    async list(relativePath = "") {
+      if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+      if (relativePath === portfolioPath) return [
+        { name: "Oef3.png", relativePath: `${portfolioPath}/Oef3.png`, kind: "file" },
+        { name: "Oef4.png", relativePath: `${portfolioPath}/Oef4.png`, kind: "file" },
+        { name: "Uitwerkingen", relativePath: resourcePath, kind: "directory" },
+      ];
+      if (relativePath === resourcePath) return resourceFileNames.map((name) => ({ name, relativePath: `${resourcePath}/${name}`, kind: "file" as const }));
+      return [];
+    },
+    async readFile() { return Buffer.from(""); },
+  };
+}
+
+function directoryExerciseProvider(files: { direct?: readonly string[]; assets?: readonly string[] }): StorageProvider {
+  const portfolioPath = "Portfolio X - Mapoefeningen";
+  const exercisePath = `${portfolioPath}/Oef3`;
+  const assetsPath = `${exercisePath}/assets`;
+  return {
+    id: "directory-exercise-context",
+    async list(relativePath = "") {
+      if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+      if (relativePath === portfolioPath) return [{ name: "Oef3", relativePath: exercisePath, kind: "directory" }];
+      if (relativePath === exercisePath) return [
+        ...(files.direct ?? []).map((name) => ({ name, relativePath: `${exercisePath}/${name}`, kind: "file" as const })),
+        ...(files.assets ? [{ name: "assets", relativePath: assetsPath, kind: "directory" as const }] : []),
+      ];
+      if (relativePath === assetsPath) return (files.assets ?? []).map((name) => ({ name, relativePath: `${assetsPath}/${name}`, kind: "file" as const }));
+      return [];
+    },
+    async readFile() { return Buffer.from(""); },
+  };
 }
 
 function exerciseFilesProvider(fileNames: string[]): StorageProvider {

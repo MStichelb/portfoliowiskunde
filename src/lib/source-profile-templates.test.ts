@@ -383,7 +383,7 @@ describe("global source profile templates", () => {
     const updated = await getDefaultSourceProfileTemplate();
     expect(updated).toMatchObject({ name: "Aangepast sjabloon", description: "Nieuwe beschrijving" });
     expect(updated.config.globalResources).toEqual([expect.objectContaining({ id: "formula" })]);
-    expect(updated.config.scanner.exercise).toEqual({ numberLocation: "after_text", marker: "Vraag" });
+    expect(updated.config.scanner.exercise).toEqual({ exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Vraag" });
     expect(updated.config.exerciseResources).toEqual([expect.objectContaining({ id: "assignment-part", semanticRole: "assignment", allowMultiple: false, displayMode: "always" })]);
   });
 

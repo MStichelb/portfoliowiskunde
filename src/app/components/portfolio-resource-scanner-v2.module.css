@@ -11,3 +11,106 @@
   font-weight: 700;
   line-height: 1.2;
 }
+
+.scannerControls {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.twoColumnControls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  align-items: end;
+}
+
+.control {
+  width: 100%;
+  height: 40px;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: 1px solid #9ab0ad;
+  border-radius: 4px;
+  padding: 8px 10px;
+  background: #fff;
+  color: #17222b;
+  font: inherit;
+}
+
+.control:focus-visible {
+  outline: 2px solid #d69c35;
+  outline-offset: 2px;
+}
+
+.stackedField {
+  display: grid;
+  width: 100%;
+  gap: 0.35rem;
+}
+
+.labelWithInfo,
+.toggleWithInfo {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.inlineInfo {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: #52666d;
+  cursor: help;
+}
+
+.toggleWithInfo :global(button:disabled) {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.contextRule {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.15rem 0;
+}
+
+.contextRule + .contextRule {
+  margin-top: 0.35rem;
+  padding-top: 0.8rem;
+}
+
+.contextRuleTitle {
+  color: #314149;
+  font-size: 0.82rem;
+}
+
+.missingRule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  color: #52616a;
+  font-size: 0.86rem;
+}
+
+.readonlyContextRule {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.readonlyContextRule + .readonlyContextRule {
+  margin-top: 0.45rem;
+}
+
+.readonlyContextRule b {
+  color: #52616a;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 640px) {
+  .twoColumnControls {
+    grid-template-columns: 1fr;
+  }
+}

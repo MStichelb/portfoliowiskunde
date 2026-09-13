@@ -215,7 +215,11 @@ describe("persistIndex", () => {
       order: 5,
       semanticRole: "hint",
       location: { scope: "alongside_exercise" },
-      recognition: { target: "after_exercise_number", operator: "starts_with", value: "-hint", caseSensitive: false, fileExtensions: ["png"] },
+      recognition: {
+        file: { target: "after_exercise_number", operator: "starts_with", value: "-hint", caseSensitive: false },
+        directory: null,
+        fileExtensions: ["png"],
+      },
       allowMultiple: true,
       displayMode: "collapsible_each",
     });

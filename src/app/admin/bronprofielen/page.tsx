@@ -67,7 +67,10 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
         <div className="source-profile-central-usage"><strong>{selectedProfile.name}</strong><span>{selectedProfile.isInactive ? "Inactief" : `Gebruikt in: ${sourceProfileUsageLabel(selectedProfile.usages)}`}</span>{selectedProfile.ownerName ? <small>Eigenaar: {selectedProfile.ownerName}</small> : null}</div>
         <div className="source-profile-dialog-form"><p>Je kunt dit profiel bekijken{selectedProfile.canCopy ? " en onafhankelijk kopiëren" : ""}, maar niet wijzigen of koppelen.</p></div>
         <SourceProfileGlobalResourcesViewer resources={selectedProfile.config.globalResources} />
-        <SourceProfileExerciseResourcesViewer resources={selectedProfile.config.exerciseResources} />
+        <SourceProfileExerciseResourcesViewer
+          resources={selectedProfile.config.exerciseResources}
+          exerciseMode={selectedProfile.config.scanner.exercise.exerciseMode}
+        />
         <div className="source-profile-dialog-actions"><Link className="secondary-button link-button" href="/admin/bronprofielen">Sluiten</Link></div>
       </div></div> : null}
 

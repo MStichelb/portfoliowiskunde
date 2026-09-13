@@ -7,8 +7,7 @@ import type { SourceProfileTemplateSummary } from "@/lib/source-profile-template
 import type { SourceProfileCopyTarget } from "@/lib/source-profiles";
 
 import { ArchiveVisibilityToggle } from "./archive-visibility-toggle";
-import { SourceProfileExerciseResourcesEditor } from "./source-profile-exercise-resources-editor";
-import { SourceProfileExerciseScannerEditor } from "./source-profile-exercise-scanner-editor";
+import { SourceProfileExerciseConfigurationEditors } from "./source-profile-exercise-configuration-editors";
 import { SourceProfileGlobalResourcesEditor } from "./source-profile-global-resources-editor";
 import { ConfirmActionButton } from "./confirm-action-button";
 
@@ -128,16 +127,13 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
               ownerId={selected.id}
               embedded
             />
-            <SourceProfileExerciseScannerEditor
-              scanner={selected.config?.scanner.exercise ?? { numberLocation: "after_text", marker: "Oef" }}
-              editorKey={selected.id}
-              embedded
-            />
-            <SourceProfileExerciseResourcesEditor
+            <SourceProfileExerciseConfigurationEditors
+              key={selected.id}
+              scanner={selected.config?.scanner.exercise ?? { exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Oef" }}
               resources={selected.config?.exerciseResources ?? []}
               ownerIdField="templateId"
               ownerId={selected.id}
-              embedded
+              editorKey={selected.id}
             />
 
           </div>

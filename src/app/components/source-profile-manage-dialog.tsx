@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 
 import type { ManagedSourceProfile } from "@/lib/source-profiles";
 
-import { SourceProfileExerciseResourcesEditor } from "./source-profile-exercise-resources-editor";
-import { SourceProfileExerciseScannerEditor } from "./source-profile-exercise-scanner-editor";
+import { SourceProfileExerciseConfigurationEditors } from "./source-profile-exercise-configuration-editors";
 import { SourceProfileGlobalResourcesEditor } from "./source-profile-global-resources-editor";
 
 type ServerAction = (formData: FormData) => void | Promise<void>;
@@ -119,19 +118,15 @@ const leave = useCallback(() => {
             onDirtyChange={setGlobalResourcesDirty}
           />
 
-          <SourceProfileExerciseScannerEditor
+          <SourceProfileExerciseConfigurationEditors
+            key={profile.id}
             scanner={profile.config.scanner.exercise}
-            editorKey={profile.id}
-            embedded
-            onDirtyChange={setExerciseScannerDirty}
-          />
-
-          <SourceProfileExerciseResourcesEditor
             resources={profile.config.exerciseResources}
             ownerIdField="sourceProfileId"
             ownerId={profile.id}
-            embedded
-            onDirtyChange={setExerciseResourcesDirty}
+            editorKey={profile.id}
+            onScannerDirtyChange={setExerciseScannerDirty}
+            onResourcesDirtyChange={setExerciseResourcesDirty}
           />
 
         </div>

@@ -7,6 +7,8 @@ import type {
 } from "@/lib/domain";
 import type { ExerciseScannerConfig } from "@/lib/source-profile-config";
 
+type ExerciseNumberScannerConfig = Pick<ExerciseScannerConfig, "numberLocation" | "marker">;
+
 const PORTFOLIO_ID_SOURCE = "(?:\\d+[a-z]*|[a-z]+)";
 const PORTFOLIO_DIRECTORY = new RegExp(`^portfolio\\s+(${PORTFOLIO_ID_SOURCE})\\s*-\\s*(.+)$`, "i");
 const PORTFOLIO_DOCUMENT_PREFIX = new RegExp(`^portfolio\\s+(${PORTFOLIO_ID_SOURCE})(?=\\s|-|\\.|$)`, "i");
@@ -90,7 +92,7 @@ export function parseSectionDirectory(name: string): ParsedSectionDirectory | nu
 
 export function findExerciseNumberCandidates(
   stem: string,
-  config: ExerciseScannerConfig,
+  config: ExerciseNumberScannerConfig,
 ): ExerciseNumberCandidate[] {
   const starts = exerciseNumberStarts(stem, config);
   const candidates: ExerciseNumberCandidate[] = [];
@@ -117,7 +119,7 @@ export function findExerciseNumberCandidates(
   return candidates.sort((left, right) => right.consumedLength - left.consumedLength || left.exerciseCode.localeCompare(right.exerciseCode, "nl"));
 }
 
-export function parseExerciseDirectoryIdentity(name: string, config: ExerciseScannerConfig): ParsedExerciseIdentity | null {
+export function parseExerciseDirectoryIdentity(name: string, config: ExerciseNumberScannerConfig): ParsedExerciseIdentity | null {
   const exact = findExerciseNumberCandidates(name.trim(), config).filter((candidate) => candidate.remainder.trim() === "");
   if (exact.length === 0) return null;
   const longest = exact[0];
@@ -125,7 +127,7 @@ export function parseExerciseDirectoryIdentity(name: string, config: ExerciseSca
   return { exerciseNumber: longest.exerciseNumber, exerciseSuffix: longest.exerciseSuffix, exerciseCode: longest.exerciseCode };
 }
 
-function exerciseNumberStarts(stem: string, config: ExerciseScannerConfig): number[] {
+function exerciseNumberStarts(stem: string, config: ExerciseNumberScannerConfig): number[] {
   if (config.numberLocation === "start") return [0];
   const marker = config.marker.trim();
   if (!marker) return [];

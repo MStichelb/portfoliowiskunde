@@ -19,12 +19,16 @@ import {
   BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
   firstExerciseResourceBySemanticRole,
   firstSourceFileGlobalResourceBySemanticRole,
+  exerciseModeIncludesDirectories,
+  exerciseModeIncludesFiles,
   sortExerciseResources,
   sortGlobalResources,
   exerciseResourceFileExtensions,
   type ExerciseResourceConfig,
   type ExerciseResourceFileExtension,
   type ExerciseResourceFileNameMatchOperator,
+  type ExerciseResourceFileContextRecognition,
+  type ExerciseResourceDirectoryContextRecognition,
   type ExerciseScannerConfig,
   type GlobalResourceFileMatchOperator,
   type SourceFileGlobalResource,
@@ -86,7 +90,7 @@ async function indexPortfolio(
   const hintsDocument = hintsResource ? matchedGlobalResources.get(hintsResource.id) : undefined;
   const finalSolutionsDocument = finalAnswerResource ? matchedGlobalResources.get(finalAnswerResource.id) : undefined;
 
-  const contexts = await discoverExerciseContexts(provider, directory, entries);
+  const contexts = await discoverExerciseContexts(provider, directory, entries, exerciseResources, scanner);
   const sections = await Promise.all(contexts.map((context) => indexExerciseContext(
     provider,
     context,
@@ -139,12 +143,21 @@ async function discoverExerciseContexts(
   provider: StorageProvider,
   portfolioDirectory: StorageEntry,
   rootEntries: readonly StorageEntry[],
+  exerciseResources: readonly ExerciseResourceConfig[],
+  scanner: ExerciseScannerConfig,
 ): Promise<ExerciseContext[]> {
   const directSections = sectionContexts(rootEntries);
   if (directSections.length > 0) return directSections;
 
   const legacyContainer = rootEntries.find((entry) => entry.kind === "directory" && canonicalName(entry.name) === "uitwerkingen");
   if (legacyContainer) {
+    const configuredAsFileResourceSubdirectory = exerciseModeIncludesFiles(scanner.exerciseMode) && exerciseResources.some((resource) =>
+      resource.recognition.file
+      && resource.location.scope !== "alongside_exercise"
+      && canonicalName(resource.location.subdirectory) === canonicalName(legacyContainer.name));
+    if (configuredAsFileResourceSubdirectory) {
+      return [{ order: 0, title: "Oefeningen", relativePath: portfolioDirectory.relativePath, implicit: true }];
+    }
     const legacyEntries = [...await provider.list(legacyContainer.relativePath)].sort(compareEntries);
     const legacySections = sectionContexts(legacyEntries);
     if (legacySections.length > 0) return legacySections;
@@ -258,16 +271,20 @@ async function collectExerciseFiles(
     files.push({ file, location, subdirectory, directoryIdentity });
   };
 
-  for (const entry of entries) if (entry.kind === "file") add(entry, "alongside", null, null);
-  await collectConfiguredSubdirectoryFiles(provider, entries, configuredSubdirectories, null, add);
+  if (exerciseModeIncludesFiles(scanner.exerciseMode)) {
+    for (const entry of entries) if (entry.kind === "file") add(entry, "alongside", null, null);
+    await collectConfiguredSubdirectoryFiles(provider, entries, configuredSubdirectories, null, add);
+  }
 
-  for (const entry of entries) {
-    if (entry.kind !== "directory") continue;
-    const identity = parseExerciseDirectoryIdentity(entry.name, scanner);
-    if (!identity) continue;
-    const exerciseEntries = [...await provider.list(entry.relativePath)].sort(compareEntries);
-    for (const child of exerciseEntries) if (child.kind === "file") add(child, "alongside", null, identity);
-    await collectConfiguredSubdirectoryFiles(provider, exerciseEntries, configuredSubdirectories, identity, add);
+  if (exerciseModeIncludesDirectories(scanner.exerciseMode)) {
+    for (const entry of entries) {
+      if (entry.kind !== "directory") continue;
+      const identity = parseExerciseDirectoryIdentity(entry.name, scanner);
+      if (!identity) continue;
+      const exerciseEntries = [...await provider.list(entry.relativePath)].sort(compareEntries);
+      for (const child of exerciseEntries) if (child.kind === "file") add(child, "alongside", null, identity);
+      await collectConfiguredSubdirectoryFiles(provider, exerciseEntries, configuredSubdirectories, identity, add);
+    }
   }
 
   return files.sort((left, right) => compareEntries(left.file, right.file));
@@ -307,13 +324,15 @@ function matchExerciseFile(
     if (!matchesResourceLocation(resource, candidate)) continue;
 
     if (directoryIdentity) {
-      if (resource.recognition.target === "fallback") {
+      const recognition = resource.recognition.directory;
+      if (!recognition) continue;
+      if (recognition.target === "fallback") {
         matches.push({ resource, identity: directoryIdentity, priority: 1, consumedLength: directoryIdentity.exerciseCode.length, remainder: "", hasBoundaryAfterNumber: true });
-      } else if (resource.recognition.target === "file_name" && matchesText(descriptor.stem, resource.recognition)) {
+      } else if (recognition.target === "file_name" && matchesText(descriptor.stem, recognition)) {
         matches.push({ resource, identity: directoryIdentity, priority: 2, consumedLength: directoryIdentity.exerciseCode.length, remainder: "", hasBoundaryAfterNumber: true });
-      } else if (resource.recognition.target === "after_exercise_number") {
+      } else if (recognition.target === "after_exercise_number") {
         for (const parsed of findExerciseNumberCandidates(descriptor.stem, scanner).filter((item) => item.exerciseCode === directoryIdentity.exerciseCode)) {
-          if (matchesText(parsed.remainder, resource.recognition)) {
+          if (matchesText(parsed.remainder, recognition)) {
             matches.push({ resource, identity: directoryIdentity, priority: 2, consumedLength: parsed.consumedLength, remainder: parsed.remainder, hasBoundaryAfterNumber: parsed.hasBoundaryAfterNumber });
           }
         }
@@ -321,12 +340,12 @@ function matchExerciseFile(
       continue;
     }
 
+    const recognition = resource.recognition.file;
+    if (!recognition) continue;
     for (const parsed of filenameCandidates) {
-      if (resource.recognition.target === "fallback") {
+      if (recognition.target === "fallback") {
         matches.push({ resource, identity: parsed, priority: 1, consumedLength: parsed.consumedLength, remainder: parsed.remainder, hasBoundaryAfterNumber: parsed.hasBoundaryAfterNumber });
-      } else if (resource.recognition.target === "after_exercise_number" && matchesText(parsed.remainder, resource.recognition)) {
-        matches.push({ resource, identity: parsed, priority: 2, consumedLength: parsed.consumedLength, remainder: parsed.remainder, hasBoundaryAfterNumber: parsed.hasBoundaryAfterNumber });
-      } else if (resource.recognition.target === "file_name" && matchesText(descriptor.stem, resource.recognition)) {
+      } else if (matchesText(parsed.remainder, recognition)) {
         matches.push({ resource, identity: parsed, priority: 2, consumedLength: parsed.consumedLength, remainder: parsed.remainder, hasBoundaryAfterNumber: parsed.hasBoundaryAfterNumber });
       }
     }
@@ -334,7 +353,9 @@ function matchExerciseFile(
 
   if (matches.length === 0) {
     if (directoryIdentity || filenameCandidates.length > 0) {
-      const supportedExtension = resources.some((resource) => resource.recognition.fileExtensions.includes(extension) && matchesResourceLocation(resource, candidate));
+      const supportedExtension = resources.some((resource) => resource.recognition.fileExtensions.includes(extension)
+        && matchesResourceLocation(resource, candidate)
+        && recognitionForCandidate(resource, candidate));
       if (supportedExtension) warnings.push({ severity: "warning", path: candidate.file.relativePath, message: "Oefeningsbestand herkend, maar het past bij geen onderdeelregel van het bronprofiel." });
     }
     return null;
@@ -370,6 +391,13 @@ function matchExerciseFile(
     message: `Oefeningnummer kon niet eenduidig worden bepaald (${identities.map((item) => item.identity.exerciseCode).join(", ")}). Pas de onderdeelregel of bestandsnaam aan.`,
   });
   return null;
+}
+
+function recognitionForCandidate(
+  resource: ExerciseResourceConfig,
+  candidate: LocatedExerciseFile,
+): ExerciseResourceFileContextRecognition | ExerciseResourceDirectoryContextRecognition | null {
+  return candidate.directoryIdentity ? resource.recognition.directory : resource.recognition.file;
 }
 
 function matchesResourceLocation(resource: ExerciseResourceConfig, candidate: LocatedExerciseFile): boolean {

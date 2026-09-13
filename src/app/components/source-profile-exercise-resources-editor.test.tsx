@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "@/lib/source-profile-config";
-import { SourceProfileExerciseResourcesEditor, SourceProfileExerciseResourcesViewer } from "./source-profile-exercise-resources-editor";
+import { SourceProfileExerciseRecognitionFields, SourceProfileExerciseResourcesEditor, SourceProfileExerciseResourcesViewer } from "./source-profile-exercise-resources-editor";
 
 const action = async () => undefined;
 
@@ -31,7 +31,7 @@ describe("SourceProfileExerciseResourcesEditor", () => {
     const markup = renderToStaticMarkup(<SourceProfileExerciseResourcesEditor
       resources={[
         { ...base, id: "exercise-assignment", label: "Opgavebestand", semanticRole: "assignment" },
-        { ...base, id: "exercise-final-answer", label: "Antwoordbestand", semanticRole: "final_answer", order: base.order + 10, recognition: { target: "after_exercise_number", operator: "starts_with", value: "antwoord", caseSensitive: false, fileExtensions: ["pdf"] } },
+        { ...base, id: "exercise-final-answer", label: "Antwoordbestand", semanticRole: "final_answer", order: base.order + 10, recognition: { file: { target: "after_exercise_number", operator: "starts_with", value: "antwoord", caseSensitive: false }, directory: null, fileExtensions: ["pdf"] } },
       ]}
       action={action}
       ownerIdField="sourceProfileId"
@@ -49,19 +49,116 @@ describe("SourceProfileExerciseResourcesEditor", () => {
       label: "Hint",
       semanticRole: "hint" as const,
       location: { scope: "subdirectory" as const, subdirectory: "assets" },
-      recognition: { target: "after_exercise_number" as const, operator: "starts_with" as const, value: "-hint", caseSensitive: true, fileExtensions: ["png" as const] },
+      recognition: { file: { target: "after_exercise_number" as const, operator: "starts_with" as const, value: "-hint", caseSensitive: true }, directory: null, fileExtensions: ["png" as const] },
       allowMultiple: true,
       displayMode: "collapsible_each" as const,
     };
     const viewerMarkup = renderToStaticMarkup(<SourceProfileExerciseResourcesViewer resources={[resource]} />);
 
-    expect(viewerMarkup).toContain("In submap");
+    expect(viewerMarkup).toContain("In een submap");
     expect(viewerMarkup).toContain("assets");
-    expect(viewerMarkup).toContain("Na oefeningnummer");
+    expect(viewerMarkup).toContain("Tekst na oefeningnummer");
     expect(viewerMarkup).toContain("-hint");
     expect(viewerMarkup).toContain("Meerdere toegestaan");
     expect(viewerMarkup).toContain("Inklapbaar per bestand");
     expect(viewerMarkup).toContain("PNG");
+  });
+
+  it("serializes an exact recognition rule with the one-file invariant", () => {
+    const base = BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources[0];
+    const markup = renderToStaticMarkup(<SourceProfileExerciseResourcesEditor
+      resources={[{
+        ...base,
+        recognition: { file: { target: "after_exercise_number", operator: "exact", value: "uitwerking", caseSensitive: false }, directory: null, fileExtensions: ["pdf"] },
+        allowMultiple: true,
+      }]}
+      action={action}
+      ownerIdField="sourceProfileId"
+      ownerId="profile-1"
+    />);
+
+    expect(markup).toContain('&quot;operator&quot;:&quot;exact&quot;');
+    expect(markup).toContain('&quot;allowMultiple&quot;:false');
+  });
+
+  it("shows only the active recognition context and keeps a dormant exact rule from forcing one file", () => {
+    const base = BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources[0];
+    const resource = {
+      ...base,
+      recognition: {
+        file: { target: "after_exercise_number" as const, operator: "starts_with" as const, value: "-uitwerking", caseSensitive: false },
+        directory: { target: "file_name" as const, operator: "exact" as const, value: "uitwerking", caseSensitive: false },
+        fileExtensions: ["png" as const],
+      },
+      allowMultiple: true,
+    };
+    const filesMarkup = renderToStaticMarkup(<SourceProfileExerciseResourcesViewer resources={[resource]} exerciseMode="files" />);
+    const directoriesMarkup = renderToStaticMarkup(<SourceProfileExerciseResourcesViewer resources={[resource]} exerciseMode="directories" />);
+    const editorMarkup = renderToStaticMarkup(<SourceProfileExerciseResourcesEditor
+      resources={[resource]}
+      action={action}
+      ownerIdField="sourceProfileId"
+      ownerId="profile-1"
+      exerciseMode="files"
+    />);
+
+    expect(filesMarkup).toContain("Oefeningen als bestand");
+    expect(filesMarkup).not.toContain("Oefeningen als map");
+    expect(directoriesMarkup).toContain("Oefeningen als map");
+    expect(directoriesMarkup).not.toContain("Oefeningen als bestand</b>");
+    expect(editorMarkup).toContain('&quot;allowMultiple&quot;:true');
+  });
+
+  it("does not invent a missing second context rule", () => {
+    const resource = {
+      ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources[1],
+      recognition: {
+        file: null,
+        directory: { target: "file_name" as const, operator: "starts_with" as const, value: "uitwerking", caseSensitive: false },
+        fileExtensions: ["png" as const],
+      },
+    };
+    const markup = renderToStaticMarkup(<SourceProfileExerciseResourcesViewer resources={[resource]} />);
+
+    expect(resource.recognition.file).toBeNull();
+    expect(markup).toContain("Nog geen herkenningsregel ingesteld");
+  });
+
+  it("offers only context-valid targets and shows both blocks in mixed mode", () => {
+    const resource = {
+      ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources[0],
+      recognition: {
+        file: { target: "after_exercise_number" as const, operator: "starts_with" as const, value: "-uitwerking", caseSensitive: false },
+        directory: { target: "file_name" as const, operator: "starts_with" as const, value: "uitwerking", caseSensitive: false },
+        fileExtensions: ["png" as const],
+      },
+    };
+    const renderFields = (exerciseMode: "files" | "directories" | "files_and_directories") => renderToStaticMarkup(
+      <SourceProfileExerciseRecognitionFields resource={resource} exerciseMode={exerciseMode} onChange={() => undefined} />,
+    );
+
+    const filesMarkup = renderFields("files");
+    expect(filesMarkup).toContain("Tekst na oefeningnummer");
+    expect(filesMarkup).not.toContain("Bestandsnaam");
+
+    const directoriesMarkup = renderFields("directories");
+    expect(directoriesMarkup).toContain("Bestandsnaam");
+    expect(directoriesMarkup).toContain("Tekst na oefeningnummer");
+
+    const mixedMarkup = renderFields("files_and_directories");
+    expect(mixedMarkup).toContain("Voor oefeningen als bestand");
+    expect(mixedMarkup).toContain("Voor oefeningen als map");
+  });
+
+  it("uses context-aware labels for the resource location", () => {
+    const resource = { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources[0], location: { scope: "alongside_and_subdirectory" as const, subdirectory: "assets" } };
+    const filesMarkup = renderToStaticMarkup(<SourceProfileExerciseResourcesViewer resources={[resource]} exerciseMode="files" />);
+    const directoriesMarkup = renderToStaticMarkup(<SourceProfileExerciseResourcesViewer resources={[resource]} exerciseMode="directories" />);
+    const mixedMarkup = renderToStaticMarkup(<SourceProfileExerciseResourcesViewer resources={[resource]} exerciseMode="files_and_directories" />);
+
+    expect(filesMarkup).toContain("Bij de oefening of in een submap");
+    expect(directoriesMarkup).toContain("In de map of een submap van de oefening");
+    expect(mixedMarkup).toContain("Direct bij de oefening of in een submap");
   });
 
   it("embeds in the combined profile form without creating a nested form", () => {

@@ -95,11 +95,15 @@ describe("source profile config", () => {
     expect(config.exerciseResources).toEqual([
       expect.objectContaining({
         id: "model", semanticRole: "worked_solution", location: { scope: "alongside_exercise" },
-        recognition: { target: "fallback", fileExtensions: ["png"] }, allowMultiple: true, displayMode: "collapsible_group",
+        recognition: { file: { target: "fallback" }, directory: { target: "fallback" }, fileExtensions: ["png"] }, allowMultiple: true, displayMode: "collapsible_group",
       }),
       expect.objectContaining({
         id: "alternative", semanticRole: "alternative_solution", location: { scope: "alongside_exercise" },
-        recognition: { target: "after_exercise_number", operator: "starts_with", value: "-alt", caseSensitive: false, fileExtensions: ["pdf", "jpg"] },
+        recognition: {
+          file: { target: "after_exercise_number", operator: "starts_with", value: "-alt", caseSensitive: false },
+          directory: { target: "after_exercise_number", operator: "starts_with", value: "-alt", caseSensitive: false },
+          fileExtensions: ["pdf", "jpg"],
+        },
         allowMultiple: true, displayMode: "collapsible_group",
       }),
     ]);
@@ -107,15 +111,80 @@ describe("source profile config", () => {
 
   it("normaliseert de oefeningsscanner en valideert de marker alleen wanneer die nodig is", () => {
     expect(parseSourceProfileConfig({ configVersion: 1, scanner: { convention: "legacy_portfolio_v1" } }).scanner.exercise)
-      .toEqual({ numberLocation: "after_text", marker: "Oef" });
+      .toEqual({ exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Oef" });
     expect(parseSourceProfileConfig({
       configVersion: 1,
       scanner: { convention: "legacy_portfolio_v1", exercise: { numberLocation: "start", marker: "" } },
-    }).scanner.exercise).toEqual({ numberLocation: "start", marker: "" });
+    }).scanner.exercise).toEqual({ exerciseMode: "files_and_directories", numberLocation: "start", marker: "" });
     expect(() => parseSourceProfileConfig({
       configVersion: 1,
       scanner: { convention: "legacy_portfolio_v1", exercise: { numberLocation: "after_text", marker: "" } },
     })).toThrow("Vul de tekst in die vóór het oefeningsnummer staat.");
+  });
+
+  it("bewaart contextregels dormant bij een moduswissel en valideert alleen actieve exact-regels", () => {
+    const resource = {
+      id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 10, semanticRole: "worked_solution",
+      location: { scope: "alongside_exercise" },
+      recognition: {
+        file: { target: "after_exercise_number", operator: "starts_with", value: "-uitwerking", caseSensitive: false },
+        directory: { target: "file_name", operator: "exact", value: "uitwerking", caseSensitive: false },
+        fileExtensions: ["png"],
+      },
+      allowMultiple: true,
+      displayMode: "collapsible_group",
+    };
+    const filesOnly = parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1", exercise: { exerciseMode: "files", numberLocation: "after_text", marker: "Oef" } },
+      globalResources: [],
+      exerciseResources: [resource],
+    });
+
+    expect(filesOnly.exerciseResources[0].recognition.directory).toMatchObject({ target: "file_name", operator: "exact", value: "uitwerking" });
+    expect(() => parseSourceProfileConfig({
+      ...filesOnly,
+      scanner: { ...filesOnly.scanner, exercise: { ...filesOnly.scanner.exercise, exerciseMode: "files_and_directories" } },
+    })).toThrow("Bij een exacte actieve herkenningsregel kan maar één bestand worden toegestaan.");
+  });
+
+  it("weigert een herkenningstarget in de verkeerde context server-side", () => {
+    expect(() => parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1", exercise: { exerciseMode: "files", numberLocation: "after_text", marker: "Oef" } },
+      globalResources: [],
+      exerciseResources: [{
+        id: "invalid", kind: "source_file", label: "Fout", icon: "file-text", order: 10, semanticRole: "generic",
+        location: { scope: "alongside_exercise" },
+        recognition: {
+          file: { target: "file_name", operator: "contains", value: "fout", caseSensitive: false },
+          directory: null,
+          fileExtensions: ["png"],
+        },
+        allowMultiple: false,
+        displayMode: "always",
+      }],
+    })).toThrow();
+  });
+
+  it("aanvaardt tekst na oefeningnummer in de directorycontext", () => {
+    const config = parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1", exercise: { exerciseMode: "directories", numberLocation: "after_text", marker: "Oef" } },
+      globalResources: [],
+      exerciseResources: [{
+        id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 10, semanticRole: "worked_solution",
+        location: { scope: "alongside_exercise" },
+        recognition: {
+          file: null,
+          directory: { target: "after_exercise_number", operator: "starts_with", value: "-uitwerking", caseSensitive: false },
+          fileExtensions: ["png"],
+        },
+        allowMultiple: true,
+        displayMode: "collapsible_group",
+      }],
+    });
+    expect(config.exerciseResources[0].recognition.directory).toMatchObject({ target: "after_exercise_number", value: "-uitwerking" });
   });
 
   it("accepteert locatie, meerdere bestanden, weergave en meerdere fallbacks die runtime per bestand worden afgetoetst", () => {
@@ -158,7 +227,7 @@ describe("source profile config", () => {
 
     expect(config.exerciseResources[0]).toMatchObject({
       id: "exercise-hint",
-      recognition: { target: "file_name", operator: "ends_with", value: "-hint", caseSensitive: false, fileExtensions: ["png", "jpg"] },
+      recognition: { file: null, directory: { target: "file_name", operator: "ends_with", value: "-hint", caseSensitive: false }, fileExtensions: ["png", "jpg"] },
     });
     expect(() => parseSourceProfileConfig({
       configVersion: 1,

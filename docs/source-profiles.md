@@ -92,7 +92,7 @@ Concrete bronprofielen bewaren profielnaam, globale documenten en onderdelen per
 
 Een profielwijziging start ook in D geen automatische synchronisatie. Wijzigingen aan de legacy-koppeling of toegelaten extensies worden bij de eerstvolgende synchronisatie toegepast. De volledige generalisatie naar vrije herkenningsregels, meer resourcevormen en generieke persistente exercise assets blijft expliciet scope van E — Scanner v2.
 
-## E1–E5 — Scanner v2
+## E1–E6 — Scanner v2
 
 Scanner v2 maakt herkenning, classificatie en persistence profielgestuurd, maar houdt de bestanden zelf als source of truth. De actieve profielconfiguratie wordt één keer vóór het indexeren geladen en expliciet aan de indexer doorgegeven. Dezelfde bronstructuur en hetzelfde profiel leveren daardoor deterministisch hetzelfde resultaat op.
 
@@ -104,14 +104,14 @@ Een individueel portfolio kan wel of geen tussentitels/onderdelen hebben. Direct
 
 ### Oefeningen herkennen
 
-Een bronprofiel configureert alleen **waar het oefeningsnummer begint**:
+Een bronprofiel configureert **hoe oefeningen voorkomen** (`bestanden`, `mappen` of `bestanden en mappen`) en waar het oefeningsnummer begint:
 
 - `Na tekst`, standaard na `Oef`; de tekst is vrij aanpasbaar, bijvoorbeeld `Vraag` of `Ex`;
 - `Aan begin van naam`.
 
 De scanner ondersteunt de vaste nummergrammatica die voor de portfolio's nodig is: een hoofdnummer, optioneel één letter en optioneel aansluitende cijfers, bijvoorbeeld `3`, `12`, `3a`, `12b` en `3a1`. Een puntnotatie zoals `3.1` wordt bewust niet als standaard bestandsnaamformaat ingevoerd. Haakjes zoals `(1)` en `(2)` behoren niet tot de oefeningsidentiteit: `Oef3a(1).png` blijft oefening `3a`. Zulke toevoegingen kunnen gewoon deel uitmaken van meerdere bestanden/stappen die alfabetisch worden gesorteerd.
 
-Bestanden **en** mappen kunnen automatisch oefeningen vormen; daar is geen aparte schakelaar voor. Een mapnaam moet het oefeningsnummer eenduidig bevatten en mag na het nummer geen andere tekst meer hebben, bijvoorbeeld `Oef3a/`. Binnen zo'n oefeningsmap kunnen onderdelen vervolgens via gewone bestandsnaamregels (`opgave.pdf`, `uitwerking.png`, ...) worden gevonden.
+Ontbreekt `exerciseMode` in een bestaand profiel, dan geldt backward compatible `bestanden en mappen`. Een mapnaam moet het oefeningsnummer eenduidig bevatten en mag na het nummer geen andere tekst meer hebben, bijvoorbeeld `Oef3a/`. Binnen zo'n oefeningsmap kunnen onderdelen vervolgens via gewone bestandsnaamregels (`opgave.pdf`, `uitwerking.png`, ...) worden gevonden. Niet-actieve contextregels blijven opgeslagen, zodat tijdelijk wisselen van modus geen configuratie verwijdert.
 
 Nummerherkenning en onderdeelherkenning werken samen om letterambiguïteit te vermijden. Voor `Oef3uitwerking.png` zijn technisch zowel `3` + `uitwerking` als `3u` + `itwerking` kandidaten. Als de onderdeelregel zegt dat de tekst na het oefeningsnummer met `uitwerking` begint, blijft alleen oefening `3` geldig. `Oef3auitwerking.png` en `Oef3auitwerkingvervolg.png` kunnen op dezelfde manier eenduidig als oefening `3a` worden herkend. Als de ingestelde regels geen eenduidige keuze toelaten, waarschuwt de scanner en kiest hij niets.
 
@@ -127,15 +127,15 @@ Elke exercise-resource heeft naast ID, label, icoon, volgorde en semantische rol
 
 De huidige contextmap is de portfoliomap wanneer het portfolio geen onderdelen heeft, of de map `nummer - titel` wanneer het portfolio wel onderdelen heeft. Bij een expliciete oefeningsmap is `Bij de oefening` de oefeningsmap zelf. Er wordt in E niet willekeurig recursief door alle submappen gezocht.
 
-**Herkenningsregel** heeft drie vormen:
+**Herkenningsregel** is contextafhankelijk en heeft drie vormen:
 
-- `Tekst na oefeningnummer`: `Begint met`, `Bevat` of `Is exact`; dit is de voorkeursroute voor bestanden zoals `PF1-Oef3a-alt(1).png`;
-- `Bestandsnaam`: dezelfde eenvoudige tekstoperatoren op de volledige naam zonder extensie; vooral nuttig binnen een oefeningsmap; bestaande profielen met een oudere `ends_with`-regel blijven leesbaar, maar nieuwe regels bieden die optie niet aan;
+- `Tekst na oefeningnummer`: voor oefeningsbestanden én, wanneer de bestandsnaam binnen een oefeningsmap zelf een oefeningnummer bevat, voor mapoefeningen; `Begint met`, `Bevat` of `Is exact`; dit is de voorkeursroute voor bestanden zoals `PF1-Oef3a-alt(1).png`;
+- `Bestandsnaam`: alleen wanneer een bovenliggende oefeningsmap de oefeningidentiteit al bepaalt; dezelfde eenvoudige tekstoperatoren worden dan toegepast op de volledige naam zonder extensie; bestaande profielen met een oudere `ends_with`-regel blijven leesbaar, maar nieuwe regels bieden die optie niet aan;
 - `Standaard / overige bestanden`: fallback die pas wordt gebruikt wanneer geen specifiekere regel voor hetzelfde bestand overeenkomt.
 
-Specifieke regels hebben dus voorrang op fallbackregels. Hierdoor kan `PF1-Oef3a-alt.png` eerst als Alternatieve uitwerking worden geclassificeerd en niet tegelijk als gewone Uitwerking. Als twee regels met dezelfde prioriteit hetzelfde bestand claimen, wordt geen `first match wins` toegepast: er volgt een conflictwaarschuwing en het bestand wordt niet gekoppeld. Meerdere fallbackresources zijn toegestaan wanneer locatie, bestandstype of andere context ze eenduidig houdt; als ze werkelijk hetzelfde bestand claimen, geldt dezelfde conflictregel.
+Zonder bovenliggende oefeningsmap moet ieder resourcebestand eerst zelf via zijn bestandsnaam naar een oefeningnummer kunnen worden herleid. Dat geldt ook in een vaste submap: `Uitwerkingen/Oef3.png` kan via een fallback bij oefening 3 horen, maar `Uitwerkingen/uitwerking.png` wordt nooit op basis van nabijheid aan een oefening gekoppeld. Bestands- en mapregels worden nooit onderling vergeleken. Specifieke regels hebben binnen hun eigen context voorrang op fallbackregels. Hierdoor kan `PF1-Oef3a-alt.png` eerst als Alternatieve uitwerking worden geclassificeerd en niet tegelijk als gewone Uitwerking. Als twee actieve regels met dezelfde prioriteit binnen dezelfde context hetzelfde bestand claimen, wordt geen `first match wins` toegepast: er volgt een conflictwaarschuwing en het bestand wordt niet gekoppeld. Meerdere fallbackresources zijn toegestaan wanneer locatie, bestandstype of andere context ze eenduidig houdt; als ze werkelijk hetzelfde bestand claimen, geldt dezelfde conflictregel. Oude enkelvoudige regels worden bij het lezen naar hun bestaande context gemapt; een ontbrekende tweede regel wordt niet verzonnen.
 
-**Meerdere bestanden toestaan** is een toggle per onderdeel. Staat die aan, dan worden alle eenduidige matches alfabetisch op bestandsnaam gekoppeld en in die volgorde genummerd. Scanner v2 probeert `(1)`, `(2)`, `vervolg`, enz. niet als aparte semantische staptaal te interpreteren. Staat de toggle uit en matchen meerdere bestanden, dan kiest de scanner niets en meldt hij een conflict. Defaults: Opgave en Eindoplossing één bestand; Uitwerking, Alternatieve uitwerking, Hint, Uitleg en Overig meerdere bestanden.
+**Meerdere bestanden toestaan** is een toggle per onderdeel. Staat die aan, dan worden alle eenduidige matches alfabetisch op bestandsnaam gekoppeld en in die volgorde genummerd. Scanner v2 probeert `(1)`, `(2)`, `vervolg`, enz. niet als aparte semantische staptaal te interpreteren. Staat de toggle uit en matchen meerdere bestanden, dan kiest de scanner niets en meldt hij een conflict. Een actieve exacte regel dwingt deze optie uit; een exacte regel in een tijdelijk inactieve context doet dat niet. Defaults: Opgave en Eindoplossing één bestand; Uitwerking, Alternatieve uitwerking, Hint, Uitleg en Overig meerdere bestanden.
 
 **Weergave** wordt nu al in het bronprofiel opgeslagen met drie waarden: `Altijd zichtbaar`, `Inklapbaar als geheel` en `Inklapbaar per bestand`. Opgave/Eindoplossing krijgen standaard `Altijd zichtbaar`, Hint `Inklapbaar per bestand`, en de overige meervoudige onderdelen `Inklapbaar als geheel`. E bewaart deze intentie in het readmodel; de volledige leerlingpresentatie van alle generieke oefeningsonderdelen wordt bewust later gebouwd.
 

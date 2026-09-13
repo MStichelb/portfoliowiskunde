@@ -28,6 +28,7 @@ export const exerciseResourceFileNameMatchOperators = ["starts_with", "contains"
 export const exerciseResourceLocationScopes = ["alongside_exercise", "subdirectory", "alongside_and_subdirectory"] as const;
 export const exerciseResourceDisplayModes = ["always", "collapsible_group", "collapsible_each"] as const;
 export const exerciseNumberLocations = ["after_text", "start"] as const;
+export const exerciseModes = ["files", "directories", "files_and_directories"] as const;
 export const globalResourceIcons = [
   "file-text",
   "lightbulb",
@@ -119,6 +120,7 @@ export const globalResourceConfigSchema = z.discriminatedUnion("kind", [
 ]);
 
 export const exerciseScannerSchema = z.object({
+  exerciseMode: z.enum(exerciseModes).default("files_and_directories"),
   numberLocation: z.enum(exerciseNumberLocations).default("after_text"),
   marker: z.string().trim().max(40, "De tekst vóór het oefeningsnummer mag maximaal 40 tekens bevatten.").default("Oef"),
 }).strict().superRefine((value, ctx) => {
@@ -141,7 +143,6 @@ const exerciseResourceMatchValueSchema = z.string().trim()
 
 export const exerciseResourceFallbackRecognitionSchema = z.object({
   target: z.literal("fallback"),
-  fileExtensions: exerciseResourceFileExtensionsSchema,
 }).strict();
 
 export const exerciseResourceAfterNumberRecognitionSchema = z.object({
@@ -149,7 +150,6 @@ export const exerciseResourceAfterNumberRecognitionSchema = z.object({
   operator: z.enum(exerciseResourceMatchOperators),
   value: exerciseResourceMatchValueSchema,
   caseSensitive: z.boolean().default(false),
-  fileExtensions: exerciseResourceFileExtensionsSchema,
 }).strict();
 
 export const exerciseResourceFileRecognitionSchema = z.object({
@@ -157,14 +157,28 @@ export const exerciseResourceFileRecognitionSchema = z.object({
   operator: z.enum(exerciseResourceFileNameMatchOperators),
   value: exerciseResourceMatchValueSchema,
   caseSensitive: z.boolean().default(false),
-  fileExtensions: exerciseResourceFileExtensionsSchema,
 }).strict();
 
-export const exerciseResourceRecognitionSchema = z.discriminatedUnion("target", [
+export const exerciseResourceFileContextRecognitionSchema = z.discriminatedUnion("target", [
+  exerciseResourceFallbackRecognitionSchema,
+  exerciseResourceAfterNumberRecognitionSchema,
+]);
+
+export const exerciseResourceDirectoryContextRecognitionSchema = z.discriminatedUnion("target", [
   exerciseResourceFallbackRecognitionSchema,
   exerciseResourceAfterNumberRecognitionSchema,
   exerciseResourceFileRecognitionSchema,
 ]);
+
+export const exerciseResourceRecognitionSchema = z.object({
+  file: exerciseResourceFileContextRecognitionSchema.nullable(),
+  directory: exerciseResourceDirectoryContextRecognitionSchema.nullable(),
+  fileExtensions: exerciseResourceFileExtensionsSchema,
+}).strict().superRefine((value, ctx) => {
+  if (!value.file && !value.directory) {
+    ctx.addIssue({ code: "custom", message: "Stel minstens één herkenningsregel in." });
+  }
+});
 
 export const exerciseResourceLocationSchema = z.discriminatedUnion("scope", [
   z.object({ scope: z.literal("alongside_exercise") }).strict(),
@@ -239,6 +253,7 @@ export type ExerciseResourceFileNameMatchOperator = typeof exerciseResourceFileN
 export type ExerciseResourceLocationScope = typeof exerciseResourceLocationScopes[number];
 export type ExerciseResourceDisplayMode = typeof exerciseResourceDisplayModes[number];
 export type ExerciseNumberLocation = typeof exerciseNumberLocations[number];
+export type ExerciseMode = typeof exerciseModes[number];
 export type GlobalResourceIcon = typeof globalResourceIcons[number];
 
 export const globalResourceSelectableIcons = [
@@ -276,6 +291,8 @@ export type GlobalResourceConfig = z.infer<typeof globalResourceConfigSchema>;
 export type SourceFileGlobalResource = z.infer<typeof sourceFileGlobalResourceSchema>;
 export type ExternalLinkGlobalResource = z.infer<typeof externalLinkGlobalResourceSchema>;
 export type ExerciseScannerConfig = z.infer<typeof exerciseScannerSchema>;
+export type ExerciseResourceFileContextRecognition = z.infer<typeof exerciseResourceFileContextRecognitionSchema>;
+export type ExerciseResourceDirectoryContextRecognition = z.infer<typeof exerciseResourceDirectoryContextRecognitionSchema>;
 export type ExerciseResourceRecognition = z.infer<typeof exerciseResourceRecognitionSchema>;
 export type ExerciseResourceLocation = z.infer<typeof exerciseResourceLocationSchema>;
 export type ExerciseResourceConfig = z.infer<typeof exerciseResourceConfigSchema>;
@@ -337,7 +354,11 @@ export const LEGACY_EXERCISE_RESOURCE_CONFIGS: ExerciseResourceConfig[] = [
     order: 10,
     semanticRole: "worked_solution",
     location: { scope: "alongside_exercise" },
-    recognition: { target: "fallback", fileExtensions: ["pdf", "png", "jpg", "jpeg"] },
+    recognition: {
+      file: { target: "fallback" },
+      directory: { target: "fallback" },
+      fileExtensions: ["pdf", "png", "jpg", "jpeg"],
+    },
     allowMultiple: true,
     displayMode: "collapsible_group",
   },
@@ -350,10 +371,8 @@ export const LEGACY_EXERCISE_RESOURCE_CONFIGS: ExerciseResourceConfig[] = [
     semanticRole: "alternative_solution",
     location: { scope: "alongside_exercise" },
     recognition: {
-      target: "after_exercise_number",
-      operator: "starts_with",
-      value: "-alt",
-      caseSensitive: false,
+      file: { target: "after_exercise_number", operator: "starts_with", value: "-alt", caseSensitive: false },
+      directory: { target: "after_exercise_number", operator: "starts_with", value: "-alt", caseSensitive: false },
       fileExtensions: ["pdf", "png", "jpg", "jpeg"],
     },
     allowMultiple: true,
@@ -362,6 +381,7 @@ export const LEGACY_EXERCISE_RESOURCE_CONFIGS: ExerciseResourceConfig[] = [
 ];
 
 export const DEFAULT_EXERCISE_SCANNER_CONFIG: ExerciseScannerConfig = {
+  exerciseMode: "files_and_directories",
   numberLocation: "after_text",
   marker: "Oef",
 };
@@ -374,7 +394,22 @@ export const sourceProfileConfigV1Schema = z.object({
   }).strict(),
   globalResources: globalResourceListSchema.default(() => LEGACY_GLOBAL_RESOURCE_CONFIGS.map(cloneGlobalResourceConfig)),
   exerciseResources: exerciseResourceListSchema.default(() => LEGACY_EXERCISE_RESOURCE_CONFIGS.map(cloneExerciseResourceConfig)),
-}).strict();
+}).strict().superRefine((config, ctx) => {
+  for (const [index, resource] of config.exerciseResources.entries()) {
+    const activeRules = config.scanner.exercise.exerciseMode === "files"
+      ? [resource.recognition.file]
+      : config.scanner.exercise.exerciseMode === "directories"
+        ? [resource.recognition.directory]
+        : [resource.recognition.file, resource.recognition.directory];
+    if (resource.allowMultiple && activeRules.some((rule) => rule?.target !== "fallback" && rule?.operator === "exact")) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["exerciseResources", index, "allowMultiple"],
+        message: "Bij een exacte actieve herkenningsregel kan maar één bestand worden toegestaan.",
+      });
+    }
+  }
+});
 
 export type SourceProfileConfigV1 = z.infer<typeof sourceProfileConfigV1Schema>;
 export type SourceProfileConfig = SourceProfileConfigV1;
@@ -439,7 +474,8 @@ function cloneExerciseResourceConfig(resource: ExerciseResourceConfig): Exercise
     ...resource,
     location: { ...resource.location },
     recognition: {
-      ...resource.recognition,
+      file: resource.recognition.file ? { ...resource.recognition.file } : null,
+      directory: resource.recognition.directory ? { ...resource.recognition.directory } : null,
       fileExtensions: [...resource.recognition.fileExtensions],
     },
   };
@@ -455,10 +491,23 @@ function normalizeLegacyExerciseResourceInput(input: unknown): unknown {
   const extensions = Array.isArray(rawRecognition.fileExtensions) ? rawRecognition.fileExtensions : ["pdf", "png", "jpg", "jpeg"];
 
   let recognition: unknown = rawRecognition;
-  if (rawRecognition.target === "legacy_solution_file") {
-    recognition = semanticRole === "alternative_solution"
-      ? { target: "after_exercise_number", operator: "starts_with", value: "-alt", caseSensitive: false, fileExtensions: extensions }
-      : { target: "fallback", fileExtensions: extensions };
+  if (!("file" in rawRecognition) && !("directory" in rawRecognition)) {
+    const legacyRule = rawRecognition.target === "legacy_solution_file"
+      ? semanticRole === "alternative_solution"
+        ? { target: "after_exercise_number", operator: "starts_with", value: "-alt", caseSensitive: false }
+        : { target: "fallback" }
+      : stripLegacyRecognitionExtensions(rawRecognition);
+
+    if (legacyRule.target === "after_exercise_number") {
+      // Before E6 the same after-number rule was evaluated for both exercise
+      // files and files inside an exercise directory.
+      recognition = { file: legacyRule, directory: { ...legacyRule }, fileExtensions: extensions };
+    } else if (legacyRule.target === "file_name") {
+      recognition = { file: null, directory: legacyRule, fileExtensions: extensions };
+    } else if (legacyRule.target === "fallback") {
+      // The old fallback was active for both file- and directory-based exercises.
+      recognition = { file: { target: "fallback" }, directory: { target: "fallback" }, fileExtensions: extensions };
+    }
   }
 
   const allowMultiple = typeof source.allowMultiple === "boolean"
@@ -481,3 +530,16 @@ function normalizeLegacyExerciseResourceInput(input: unknown): unknown {
   };
 }
 
+function stripLegacyRecognitionExtensions(recognition: Record<string, unknown>): Record<string, unknown> {
+  const rule = { ...recognition };
+  delete rule.fileExtensions;
+  return rule;
+}
+
+export function exerciseModeIncludesFiles(mode: ExerciseMode): boolean {
+  return mode === "files" || mode === "files_and_directories";
+}
+
+export function exerciseModeIncludesDirectories(mode: ExerciseMode): boolean {
+  return mode === "directories" || mode === "files_and_directories";
+}
