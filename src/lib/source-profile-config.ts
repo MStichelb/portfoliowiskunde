@@ -14,11 +14,20 @@ export const GLOBAL_RESOURCE_LIMIT = 10;
 export const GLOBAL_RESOURCE_LABEL_MAX_LENGTH = 40;
 export const GLOBAL_RESOURCE_ID_MAX_LENGTH = 48;
 export const GLOBAL_RESOURCE_MATCH_VALUE_MAX_LENGTH = 120;
+export const EXERCISE_RESOURCE_LIMIT = 10;
 
 export const globalResourceSemanticRoles = ["assignment", "hint", "final_answer", "worked_solution", "generic"] as const;
+export const exerciseResourceSemanticRoles = ["assignment", "final_answer", "worked_solution", "alternative_solution", "hint", "explanation", "generic"] as const;
+export const exerciseResourceKinds = ["source_file"] as const;
+export const exerciseResourceFileExtensions = ["pdf", "png", "jpg", "jpeg"] as const;
 export const globalResourceKinds = ["source_file", "external_link"] as const;
 export const globalResourceFileExtensions = ["pdf", "png", "jpg", "jpeg", "docx"] as const;
 export const globalResourceFileMatchOperators = ["starts_with", "contains", "ends_with"] as const;
+export const exerciseResourceMatchOperators = ["starts_with", "contains", "exact"] as const;
+export const exerciseResourceFileNameMatchOperators = ["starts_with", "contains", "exact", "ends_with"] as const;
+export const exerciseResourceLocationScopes = ["alongside_exercise", "subdirectory", "alongside_and_subdirectory"] as const;
+export const exerciseResourceDisplayModes = ["always", "collapsible_group", "collapsible_each"] as const;
+export const exerciseNumberLocations = ["after_text", "start"] as const;
 export const globalResourceIcons = [
   "file-text",
   "lightbulb",
@@ -66,7 +75,7 @@ export const globalResourceFileRecognitionSchema = z.object({
     .min(1, "Herkenningswaarde is verplicht.")
     .max(GLOBAL_RESOURCE_MATCH_VALUE_MAX_LENGTH, `Herkenningswaarde mag maximaal ${GLOBAL_RESOURCE_MATCH_VALUE_MAX_LENGTH} tekens bevatten.`),
   caseSensitive: z.boolean().default(false),
-  fileExtensions: z.array(z.enum(globalResourceFileExtensions)).min(1, "Kies minstens één bestandstype."),
+  fileExtensions: z.array(z.enum(globalResourceFileExtensions)).min(1, "Kies minstens één toegestaan bestandstype."),
 }).strict().superRefine((value, ctx) => {
   const uniqueExtensions = new Set(value.fileExtensions);
   if (uniqueExtensions.size !== value.fileExtensions.length) {
@@ -109,6 +118,81 @@ export const globalResourceConfigSchema = z.discriminatedUnion("kind", [
   externalLinkGlobalResourceSchema,
 ]);
 
+export const exerciseScannerSchema = z.object({
+  numberLocation: z.enum(exerciseNumberLocations).default("after_text"),
+  marker: z.string().trim().max(40, "De tekst vóór het oefeningsnummer mag maximaal 40 tekens bevatten.").default("Oef"),
+}).strict().superRefine((value, ctx) => {
+  if (value.numberLocation === "after_text" && !value.marker) {
+    ctx.addIssue({ code: "custom", path: ["marker"], message: "Vul de tekst in die vóór het oefeningsnummer staat." });
+  }
+});
+
+const exerciseResourceFileExtensionsSchema = z.array(z.enum(exerciseResourceFileExtensions))
+  .min(1, "Kies minstens één toegestaan bestandstype.")
+  .superRefine((extensions, ctx) => {
+    if (new Set(extensions).size !== extensions.length) {
+      ctx.addIssue({ code: "custom", message: "Bestandstypes mogen niet dubbel voorkomen." });
+    }
+  });
+
+const exerciseResourceMatchValueSchema = z.string().trim()
+  .min(1, "Herkenningstekst is verplicht.")
+  .max(GLOBAL_RESOURCE_MATCH_VALUE_MAX_LENGTH, `Herkenningstekst mag maximaal ${GLOBAL_RESOURCE_MATCH_VALUE_MAX_LENGTH} tekens bevatten.`);
+
+export const exerciseResourceFallbackRecognitionSchema = z.object({
+  target: z.literal("fallback"),
+  fileExtensions: exerciseResourceFileExtensionsSchema,
+}).strict();
+
+export const exerciseResourceAfterNumberRecognitionSchema = z.object({
+  target: z.literal("after_exercise_number"),
+  operator: z.enum(exerciseResourceMatchOperators),
+  value: exerciseResourceMatchValueSchema,
+  caseSensitive: z.boolean().default(false),
+  fileExtensions: exerciseResourceFileExtensionsSchema,
+}).strict();
+
+export const exerciseResourceFileRecognitionSchema = z.object({
+  target: z.literal("file_name"),
+  operator: z.enum(exerciseResourceFileNameMatchOperators),
+  value: exerciseResourceMatchValueSchema,
+  caseSensitive: z.boolean().default(false),
+  fileExtensions: exerciseResourceFileExtensionsSchema,
+}).strict();
+
+export const exerciseResourceRecognitionSchema = z.discriminatedUnion("target", [
+  exerciseResourceFallbackRecognitionSchema,
+  exerciseResourceAfterNumberRecognitionSchema,
+  exerciseResourceFileRecognitionSchema,
+]);
+
+export const exerciseResourceLocationSchema = z.discriminatedUnion("scope", [
+  z.object({ scope: z.literal("alongside_exercise") }).strict(),
+  z.object({
+    scope: z.literal("subdirectory"),
+    subdirectory: z.string().trim().min(1, "Vul een submap in.").max(80, "De submap mag maximaal 80 tekens bevatten.")
+      .refine((value) => !/[\\/]/.test(value) && value !== "." && value !== "..", "Gebruik één mapnaam zonder / of \\.")
+  }).strict(),
+  z.object({
+    scope: z.literal("alongside_and_subdirectory"),
+    subdirectory: z.string().trim().min(1, "Vul een submap in.").max(80, "De submap mag maximaal 80 tekens bevatten.")
+      .refine((value) => !/[\\/]/.test(value) && value !== "." && value !== "..", "Gebruik één mapnaam zonder / of \\.")
+  }).strict(),
+]);
+
+export const exerciseResourceConfigSchema = z.preprocess((input) => normalizeLegacyExerciseResourceInput(input), z.object({
+  id: globalResourceBaseShape.id,
+  kind: z.literal("source_file"),
+  label: globalResourceBaseShape.label,
+  icon: globalResourceBaseShape.icon,
+  order: globalResourceBaseShape.order,
+  semanticRole: z.enum(exerciseResourceSemanticRoles).default("generic"),
+  location: exerciseResourceLocationSchema,
+  recognition: exerciseResourceRecognitionSchema,
+  allowMultiple: z.boolean(),
+  displayMode: z.enum(exerciseResourceDisplayModes),
+}).strict());
+
 export const globalResourceListSchema = z.array(globalResourceConfigSchema)
   .max(GLOBAL_RESOURCE_LIMIT, `Een bronprofiel kan maximaal ${GLOBAL_RESOURCE_LIMIT} globale resources bevatten.`)
   .superRefine((resources, ctx) => {
@@ -126,10 +210,35 @@ export const globalResourceListSchema = z.array(globalResourceConfigSchema)
     }
   });
 
+export const exerciseResourceListSchema = z.array(exerciseResourceConfigSchema)
+  .max(EXERCISE_RESOURCE_LIMIT, `Een bronprofiel kan maximaal ${EXERCISE_RESOURCE_LIMIT} onderdelen per oefening bevatten.`)
+  .superRefine((resources, ctx) => {
+    const ids = new Set<string>();
+    const orders = new Set<number>();
+    for (const [index, resource] of resources.entries()) {
+      if (ids.has(resource.id)) {
+        ctx.addIssue({ code: "custom", path: [index, "id"], message: "Resource-id moet uniek zijn binnen het bronprofiel." });
+      }
+      ids.add(resource.id);
+      if (orders.has(resource.order)) {
+        ctx.addIssue({ code: "custom", path: [index, "order"], message: "Resourcevolgorde moet uniek zijn binnen het bronprofiel." });
+      }
+      orders.add(resource.order);
+    }
+  });
+
 export type GlobalResourceSemanticRole = typeof globalResourceSemanticRoles[number];
+export type ExerciseResourceSemanticRole = typeof exerciseResourceSemanticRoles[number];
+export type ExerciseResourceKind = typeof exerciseResourceKinds[number];
+export type ExerciseResourceFileExtension = typeof exerciseResourceFileExtensions[number];
 export type GlobalResourceKind = typeof globalResourceKinds[number];
 export type GlobalResourceFileExtension = typeof globalResourceFileExtensions[number];
 export type GlobalResourceFileMatchOperator = typeof globalResourceFileMatchOperators[number];
+export type ExerciseResourceMatchOperator = typeof exerciseResourceMatchOperators[number];
+export type ExerciseResourceFileNameMatchOperator = typeof exerciseResourceFileNameMatchOperators[number];
+export type ExerciseResourceLocationScope = typeof exerciseResourceLocationScopes[number];
+export type ExerciseResourceDisplayMode = typeof exerciseResourceDisplayModes[number];
+export type ExerciseNumberLocation = typeof exerciseNumberLocations[number];
 export type GlobalResourceIcon = typeof globalResourceIcons[number];
 
 export const globalResourceSelectableIcons = [
@@ -166,6 +275,10 @@ export type GlobalResourceFileRecognition = z.infer<typeof globalResourceFileRec
 export type GlobalResourceConfig = z.infer<typeof globalResourceConfigSchema>;
 export type SourceFileGlobalResource = z.infer<typeof sourceFileGlobalResourceSchema>;
 export type ExternalLinkGlobalResource = z.infer<typeof externalLinkGlobalResourceSchema>;
+export type ExerciseScannerConfig = z.infer<typeof exerciseScannerSchema>;
+export type ExerciseResourceRecognition = z.infer<typeof exerciseResourceRecognitionSchema>;
+export type ExerciseResourceLocation = z.infer<typeof exerciseResourceLocationSchema>;
+export type ExerciseResourceConfig = z.infer<typeof exerciseResourceConfigSchema>;
 
 export const LEGACY_GLOBAL_RESOURCE_CONFIGS: GlobalResourceConfig[] = [
   {
@@ -215,12 +328,52 @@ export const LEGACY_GLOBAL_RESOURCE_CONFIGS: GlobalResourceConfig[] = [
   },
 ];
 
+export const LEGACY_EXERCISE_RESOURCE_CONFIGS: ExerciseResourceConfig[] = [
+  {
+    id: "worked-solution",
+    kind: "source_file",
+    label: "Uitwerking",
+    icon: "notebook-pen",
+    order: 10,
+    semanticRole: "worked_solution",
+    location: { scope: "alongside_exercise" },
+    recognition: { target: "fallback", fileExtensions: ["pdf", "png", "jpg", "jpeg"] },
+    allowMultiple: true,
+    displayMode: "collapsible_group",
+  },
+  {
+    id: "alternative-solution",
+    kind: "source_file",
+    label: "Alternatieve uitwerking",
+    icon: "shapes",
+    order: 20,
+    semanticRole: "alternative_solution",
+    location: { scope: "alongside_exercise" },
+    recognition: {
+      target: "after_exercise_number",
+      operator: "starts_with",
+      value: "-alt",
+      caseSensitive: false,
+      fileExtensions: ["pdf", "png", "jpg", "jpeg"],
+    },
+    allowMultiple: true,
+    displayMode: "collapsible_group",
+  },
+];
+
+export const DEFAULT_EXERCISE_SCANNER_CONFIG: ExerciseScannerConfig = {
+  numberLocation: "after_text",
+  marker: "Oef",
+};
+
 export const sourceProfileConfigV1Schema = z.object({
   configVersion: z.literal(1),
   scanner: z.object({
     convention: z.literal("legacy_portfolio_v1"),
+    exercise: exerciseScannerSchema.default(() => ({ ...DEFAULT_EXERCISE_SCANNER_CONFIG })),
   }).strict(),
   globalResources: globalResourceListSchema.default(() => LEGACY_GLOBAL_RESOURCE_CONFIGS.map(cloneGlobalResourceConfig)),
+  exerciseResources: exerciseResourceListSchema.default(() => LEGACY_EXERCISE_RESOURCE_CONFIGS.map(cloneExerciseResourceConfig)),
 }).strict();
 
 export type SourceProfileConfigV1 = z.infer<typeof sourceProfileConfigV1Schema>;
@@ -228,8 +381,9 @@ export type SourceProfileConfig = SourceProfileConfigV1;
 
 export const BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG: SourceProfileConfigV1 = {
   configVersion: 1,
-  scanner: { convention: "legacy_portfolio_v1" },
+  scanner: { convention: "legacy_portfolio_v1", exercise: { ...DEFAULT_EXERCISE_SCANNER_CONFIG } },
   globalResources: LEGACY_GLOBAL_RESOURCE_CONFIGS.map(cloneGlobalResourceConfig),
+  exerciseResources: LEGACY_EXERCISE_RESOURCE_CONFIGS.map(cloneExerciseResourceConfig),
 };
 
 export const BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON = JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
@@ -249,6 +403,26 @@ export function sortGlobalResources(resources: readonly GlobalResourceConfig[]):
   return [...resources].sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
 }
 
+export function firstSourceFileGlobalResourceBySemanticRole(
+  resources: readonly GlobalResourceConfig[],
+  semanticRole: GlobalResourceSemanticRole,
+): SourceFileGlobalResource | null {
+  return sortGlobalResources(resources).find(
+    (resource): resource is SourceFileGlobalResource => resource.kind === "source_file" && resource.semanticRole === semanticRole,
+  ) ?? null;
+}
+
+export function sortExerciseResources(resources: readonly ExerciseResourceConfig[]): ExerciseResourceConfig[] {
+  return [...resources].sort((left, right) => left.order - right.order || left.id.localeCompare(right.id));
+}
+
+export function firstExerciseResourceBySemanticRole(
+  resources: readonly ExerciseResourceConfig[],
+  semanticRole: ExerciseResourceSemanticRole,
+): ExerciseResourceConfig | null {
+  return sortExerciseResources(resources).find((resource) => resource.semanticRole === semanticRole) ?? null;
+}
+
 function cloneGlobalResourceConfig(resource: GlobalResourceConfig): GlobalResourceConfig {
   if (resource.kind === "external_link") return { ...resource };
   return {
@@ -259,3 +433,51 @@ function cloneGlobalResourceConfig(resource: GlobalResourceConfig): GlobalResour
     },
   };
 }
+
+function cloneExerciseResourceConfig(resource: ExerciseResourceConfig): ExerciseResourceConfig {
+  return {
+    ...resource,
+    location: { ...resource.location },
+    recognition: {
+      ...resource.recognition,
+      fileExtensions: [...resource.recognition.fileExtensions],
+    },
+  };
+}
+
+function normalizeLegacyExerciseResourceInput(input: unknown): unknown {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const source = input as Record<string, unknown>;
+  const semanticRole = typeof source.semanticRole === "string" ? source.semanticRole : "generic";
+  const rawRecognition = source.recognition && typeof source.recognition === "object" && !Array.isArray(source.recognition)
+    ? source.recognition as Record<string, unknown>
+    : {};
+  const extensions = Array.isArray(rawRecognition.fileExtensions) ? rawRecognition.fileExtensions : ["pdf", "png", "jpg", "jpeg"];
+
+  let recognition: unknown = rawRecognition;
+  if (rawRecognition.target === "legacy_solution_file") {
+    recognition = semanticRole === "alternative_solution"
+      ? { target: "after_exercise_number", operator: "starts_with", value: "-alt", caseSensitive: false, fileExtensions: extensions }
+      : { target: "fallback", fileExtensions: extensions };
+  }
+
+  const allowMultiple = typeof source.allowMultiple === "boolean"
+    ? source.allowMultiple
+    : ["worked_solution", "alternative_solution", "hint", "explanation", "generic"].includes(semanticRole);
+  const displayMode = typeof source.displayMode === "string"
+    ? source.displayMode
+    : semanticRole === "assignment" || semanticRole === "final_answer"
+      ? "always"
+      : semanticRole === "hint"
+        ? "collapsible_each"
+        : "collapsible_group";
+
+  return {
+    ...source,
+    location: source.location ?? { scope: "alongside_exercise" },
+    recognition,
+    allowMultiple,
+    displayMode,
+  };
+}
+

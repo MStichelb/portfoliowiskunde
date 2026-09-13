@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   revalidatePath: vi.fn(),
   setPortfolioCardColor: vi.fn(),
   setPortfolioCustomMessage: vi.fn(),
+  setPortfolioExternalLinks: vi.fn(),
   setPortfolioPublication: vi.fn(),
   setPortfolioTheme: vi.fn(),
   setPortfolioTitle: vi.fn(),
@@ -26,18 +27,19 @@ vi.mock("@/lib/repositories", async (importOriginal) => ({
   getAdminPortfolioAny: mocks.getAdminPortfolioAny,
   setPortfolioCardColor: mocks.setPortfolioCardColor,
   setPortfolioCustomMessage: mocks.setPortfolioCustomMessage,
+  setPortfolioExternalLinks: mocks.setPortfolioExternalLinks,
   setPortfolioPublication: mocks.setPortfolioPublication,
   setPortfolioTheme: mocks.setPortfolioTheme,
   setPortfolioTitle: mocks.setPortfolioTitle,
 }));
 
-import { savePortfolioAction } from "./actions";
+import { savePortfolioAction, savePortfolioExternalLinksAction } from "./actions";
 
 describe("savePortfolioAction custom message", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAdminUser.mockResolvedValue({ id: "teacher", role: "teacher", status: "active" });
-    mocks.getAdminPortfolioAny.mockResolvedValue({ learningSpaceId: "space-5", publishFrom: null, publishUntil: null });
+    mocks.getAdminPortfolioAny.mockResolvedValue({ id: "portfolio-1", learningSpaceId: "space-5", publishFrom: null, publishUntil: null, globalResources: [] });
   });
 
   it("slaat plain multiline tekst en positie mee op via de bestaande settingsflow", async () => {
@@ -68,6 +70,46 @@ describe("savePortfolioAction custom message", () => {
     expect(mocks.setPortfolioTheme).toHaveBeenCalledWith("portfolio-1", "space-5", "theme-other-space");
     expect(mocks.setPortfolioTitle).not.toHaveBeenCalled();
     expect(mocks.setPortfolioCustomMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("savePortfolioExternalLinksAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requireAdminUser.mockResolvedValue({ id: "teacher", role: "teacher", status: "active" });
+    mocks.getAdminPortfolioAny.mockResolvedValue({
+      id: "portfolio-1",
+      learningSpaceId: "space-5",
+      globalResources: [
+        { id: "video", kind: "external_link", label: "Video", icon: "monitor-play", semanticRole: "generic", documentKind: null, url: null, available: false },
+        { id: "geogebra", kind: "external_link", label: "GeoGebra", icon: "external-link", semanticRole: "generic", documentKind: null, url: null, available: false },
+      ],
+    });
+  });
+
+  it("bewaart alleen de externe resources uit het actieve bronprofiel en maakt lege waarden null", async () => {
+    const formData = new FormData();
+    formData.set("portfolioId", "portfolio-1");
+    formData.set("externalLink:video", " https://example.com/uitleg ");
+    formData.set("externalLink:geogebra", "   ");
+    formData.set("externalLink:manipulated", "https://evil.example/test");
+
+    await savePortfolioExternalLinksAction(formData);
+
+    expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.objectContaining({ id: "teacher" }), "space-5");
+    expect(mocks.setPortfolioExternalLinks).toHaveBeenCalledWith("portfolio-1", [
+      { resourceId: "video", url: "https://example.com/uitleg" },
+      { resourceId: "geogebra", url: null },
+    ]);
+  });
+
+  it("weigert niet-http(s)-URL's voordat iets wordt opgeslagen", async () => {
+    const formData = new FormData();
+    formData.set("portfolioId", "portfolio-1");
+    formData.set("externalLink:video", "javascript:alert(1)");
+
+    await expect(savePortfolioExternalLinksAction(formData)).rejects.toThrow("geldige http(s)-URL");
+    expect(mocks.setPortfolioExternalLinks).not.toHaveBeenCalled();
   });
 });
 

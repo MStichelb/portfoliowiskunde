@@ -12,7 +12,9 @@ import { createLearningSpace } from "./repositories";
 import {
   BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
+  EXERCISE_RESOURCE_LIMIT,
   GLOBAL_RESOURCE_LIMIT,
+  LEGACY_EXERCISE_RESOURCE_CONFIGS,
   LEGACY_GLOBAL_RESOURCE_CONFIGS,
   globalResourceSelectableIcons,
   parseSourceProfileConfig,
@@ -46,9 +48,10 @@ describe("source profile config", () => {
     expect(() => parseStoredSourceProfileConfig(2, JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG))).toThrow();
   });
 
-  it("normalizes legacy V1 config without global resources to the legacy resource definitions", () => {
+  it("normalizes legacy V1 config without resource lists to both legacy resource definitions", () => {
     expect(parseSourceProfileConfig({ configVersion: 1, scanner: { convention: "legacy_portfolio_v1" } })).toEqual(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
     expect(LEGACY_GLOBAL_RESOURCE_CONFIGS.map((resource) => resource.label)).toEqual(["Opgaven", "Hints", "Eindoplossingen"]);
+    expect(LEGACY_EXERCISE_RESOURCE_CONFIGS.map((resource) => resource.label)).toEqual(["Uitwerking", "Alternatieve uitwerking"]);
   });
 
   it("accepts source-file and external-link global resource definitions without storing portfolio URLs in the profile", () => {
@@ -71,6 +74,121 @@ describe("source profile config", () => {
     expect(config.globalResources[1]).not.toHaveProperty("url");
   });
 
+
+
+  it("upgradet realistische legacy exercise resources naar het nieuwe herkenningsmodel", () => {
+    const config = parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1" },
+      exerciseResources: [
+        {
+          id: "model", kind: "source_file", label: "Modeluitwerking", icon: "circle-check-big", order: 10, semanticRole: "worked_solution",
+          recognition: { target: "legacy_solution_file", fileExtensions: ["png"] },
+        },
+        {
+          id: "alternative", kind: "source_file", label: "Andere aanpak", icon: "shapes", order: 20, semanticRole: "alternative_solution",
+          recognition: { target: "legacy_solution_file", fileExtensions: ["pdf", "jpg"] },
+        },
+      ],
+    });
+
+    expect(config.exerciseResources).toEqual([
+      expect.objectContaining({
+        id: "model", semanticRole: "worked_solution", location: { scope: "alongside_exercise" },
+        recognition: { target: "fallback", fileExtensions: ["png"] }, allowMultiple: true, displayMode: "collapsible_group",
+      }),
+      expect.objectContaining({
+        id: "alternative", semanticRole: "alternative_solution", location: { scope: "alongside_exercise" },
+        recognition: { target: "after_exercise_number", operator: "starts_with", value: "-alt", caseSensitive: false, fileExtensions: ["pdf", "jpg"] },
+        allowMultiple: true, displayMode: "collapsible_group",
+      }),
+    ]);
+  });
+
+  it("normaliseert de oefeningsscanner en valideert de marker alleen wanneer die nodig is", () => {
+    expect(parseSourceProfileConfig({ configVersion: 1, scanner: { convention: "legacy_portfolio_v1" } }).scanner.exercise)
+      .toEqual({ numberLocation: "after_text", marker: "Oef" });
+    expect(parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1", exercise: { numberLocation: "start", marker: "" } },
+    }).scanner.exercise).toEqual({ numberLocation: "start", marker: "" });
+    expect(() => parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1", exercise: { numberLocation: "after_text", marker: "" } },
+    })).toThrow("Vul de tekst in die vóór het oefeningsnummer staat.");
+  });
+
+  it("accepteert locatie, meerdere bestanden, weergave en meerdere fallbacks die runtime per bestand worden afgetoetst", () => {
+    const config = parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1", exercise: { numberLocation: "after_text", marker: "Oef" } },
+      exerciseResources: [{
+        id: "exercise-hint", kind: "source_file", label: "Hint", icon: "lightbulb", order: 10, semanticRole: "hint",
+        location: { scope: "subdirectory", subdirectory: "assets" },
+        recognition: { target: "after_exercise_number", operator: "starts_with", value: "-hint", caseSensitive: false, fileExtensions: ["png"] },
+        allowMultiple: true,
+        displayMode: "collapsible_each",
+      }],
+    });
+    expect(config.exerciseResources[0]).toMatchObject({
+      location: { scope: "subdirectory", subdirectory: "assets" }, allowMultiple: true, displayMode: "collapsible_each",
+    });
+
+    const fallback = (id: string, order: number, extension: "pdf" | "png") => ({
+      id, kind: "source_file" as const, label: id, icon: "file-text" as const, order, semanticRole: "generic" as const,
+      location: { scope: "alongside_exercise" as const }, recognition: { target: "fallback" as const, fileExtensions: [extension] },
+      allowMultiple: true, displayMode: "collapsible_group" as const,
+    });
+    expect(parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1" },
+      exerciseResources: [fallback("one", 10, "pdf"), fallback("two", 20, "png")],
+    }).exerciseResources).toHaveLength(2);
+  });
+
+  it("accepts Scanner v2 filename rules for exercise resources and defaults case sensitivity safely", () => {
+    const config = parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1" },
+      exerciseResources: [{
+        id: "exercise-hint", kind: "source_file", label: "Hint", icon: "lightbulb", order: 10, semanticRole: "hint",
+        recognition: { target: "file_name", operator: "ends_with", value: "-hint", fileExtensions: ["png", "jpg"] },
+      }],
+    });
+
+    expect(config.exerciseResources[0]).toMatchObject({
+      id: "exercise-hint",
+      recognition: { target: "file_name", operator: "ends_with", value: "-hint", caseSensitive: false, fileExtensions: ["png", "jpg"] },
+    });
+    expect(() => parseSourceProfileConfig({
+      configVersion: 1,
+      scanner: { convention: "legacy_portfolio_v1" },
+      exerciseResources: [{
+        id: "bad-hint", kind: "source_file", label: "Hint", icon: "lightbulb", order: 10, semanticRole: "hint",
+        recognition: { target: "file_name", operator: "contains", value: "hint", fileExtensions: [] },
+      }],
+    })).toThrow();
+  });
+
+  it("enforces exercise resource limits, unique ids/orders and at least one allowed extension", () => {
+    const base = { configVersion: 1, scanner: { convention: "legacy_portfolio_v1" } } as const;
+    const resource = (index: number) => ({
+      id: `exercise-resource-${index}`, kind: "source_file" as const, label: `Resource ${index}`, icon: "file-text" as const,
+      order: index, semanticRole: "generic" as const,
+      location: { scope: "alongside_exercise" as const },
+      recognition: { target: "file_name" as const, operator: "starts_with" as const, value: `resource-${index}`, caseSensitive: false, fileExtensions: ["pdf" as const] },
+      allowMultiple: true,
+      displayMode: "collapsible_group" as const,
+    });
+
+    expect(() => parseSourceProfileConfig({ ...base, exerciseResources: Array.from({ length: EXERCISE_RESOURCE_LIMIT + 1 }, (_, index) => resource(index)) })).toThrow();
+    expect(() => parseSourceProfileConfig({ ...base, exerciseResources: [resource(1), { ...resource(2), id: "exercise-resource-1" }] })).toThrow();
+    expect(() => parseSourceProfileConfig({ ...base, exerciseResources: [resource(1), { ...resource(2), order: 1 }] })).toThrow();
+    expect(() => parseSourceProfileConfig({
+      ...base,
+      exerciseResources: [{ ...resource(1), recognition: { target: "file_name", operator: "starts_with", value: "resource-1", caseSensitive: false, fileExtensions: [] } }],
+    })).toThrow();
+  });
 
 
   it("supports the expanded icon picker while keeping legacy youtube configs readable", () => {

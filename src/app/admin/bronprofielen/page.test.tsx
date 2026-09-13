@@ -25,12 +25,12 @@ vi.mock("@/app/components/source-profile-owner-filter", () => ({
     <label>Gebruiker<select defaultValue={selectedOwnerId ?? ""}><option value="">Alle gebruikers</option>{owners.map((owner) => <option key={owner.id} value={owner.id}>{owner.label}</option>)}</select></label>,
 }));
 vi.mock("./actions", () => ({
-  renameManagedSourceProfileAction: vi.fn(), saveManagedSourceProfileAction: vi.fn(), createSourceProfileTemplateAction: vi.fn(), updateSourceProfileTemplateAction: vi.fn(),
+  renameManagedSourceProfileAction: vi.fn(), saveManagedSourceProfileAction: vi.fn(), createSourceProfileTemplateAction: vi.fn(), saveSourceProfileTemplateAction: vi.fn(),
   duplicateSourceProfileTemplateAction: vi.fn(), setDefaultSourceProfileTemplateAction: vi.fn(), copyManagedSourceProfileAction: vi.fn(),
   copyManagedSourceProfileTemplateAction: vi.fn(), linkManagedSourceProfileAction: vi.fn(),
   archiveManagedSourceProfileAction: vi.fn(), restoreManagedSourceProfileAction: vi.fn(), permanentlyDeleteManagedSourceProfileAction: vi.fn(),
   archiveSourceProfileTemplateAction: vi.fn(), restoreSourceProfileTemplateAction: vi.fn(), permanentlyDeleteSourceProfileTemplateAction: vi.fn(),
-  updateManagedSourceProfileGlobalResourcesAction: vi.fn(), updateSourceProfileTemplateGlobalResourcesAction: vi.fn(),
+  updateManagedSourceProfileGlobalResourcesAction: vi.fn(),
 }));
 
 import SourceProfilesPage from "./page";
@@ -110,6 +110,8 @@ describe("central source profile page", () => {
     expect(viewMarkup).toContain("Bronprofiel bekijken");
     expect(viewMarkup).toContain("Globale documenten");
     expect(viewMarkup).toContain("Opgaven");
+    expect(viewMarkup).toContain("Onderdelen per oefening");
+    expect(viewMarkup).toContain("Alternatieve uitwerking");
     expect(viewMarkup).toContain("PDF");
     expect(viewMarkup).not.toContain("Globale documenten opslaan");
     expect(markup).not.toContain("TipTopPortfolio");
@@ -138,6 +140,8 @@ describe("central source profile page", () => {
     expect(manage).toContain("Bronprofiel beheren");
     expect(manage).toContain("Opslaan");
     expect(manage).toContain("4NW1, 5WET, 6WIS, EXTRA");
+    expect(manage).toContain("Onderdelen per oefening");
+    expect(manage).toContain('name="exerciseResourcesJson"');
     expect(manage).not.toContain('name="confirmShared"');
     expect(manage).not.toContain("source-profile-shared-confirm");
     expect(manage).not.toContain("Configuratieversie");
@@ -190,6 +194,8 @@ describe("central source profile page", () => {
     expect(viewMarkup).toContain("Bronprofiel bekijken");
     expect(viewMarkup).toContain("Globale documenten");
     expect(viewMarkup).toContain("Eindoplossingen");
+    expect(viewMarkup).toContain("Onderdelen per oefening");
+    expect(viewMarkup).toContain("Uitwerking");
     expect(viewMarkup).not.toContain("Globale documenten opslaan");
     expect(markup).not.toContain("Beheren");
     expect(markup).not.toContain("Kopiëren");

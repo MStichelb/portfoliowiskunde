@@ -75,6 +75,61 @@ describe("manual LearningSpace source switching", () => {
     expect((await getAdminPortfolios("space-5"))[0].id).toBe(before.id);
   });
 
+  it("switches safely when two sources expose the same provider source IDs and paths", async () => {
+    await setupDatabase();
+    const { primary, mirror } = await configureDualSource();
+    const sharedIdentity = { sourceIdPrefix: "shared-provider-id", sourceVersion: "primary-v1" };
+    await persistIndex(await indexSource(portfolioProvider("primary-collision", sharedIdentity)), "onedrive", "space-5", { sourceId: primary.id });
+
+    const database = await getDatabase();
+    const before = (await database.execute(`SELECT id, source_id, relative_path, source_version, is_indexed, missing_since
+      FROM source_resource_assets WHERE learning_space_id = 'space-5' AND resource_scope = 'exercise' ORDER BY id`)).rows;
+    expect(before).toHaveLength(1);
+    const assetId = String(before[0].id);
+    expect(before[0]).toMatchObject({
+      source_id: "shared-provider-id:PF1-Oef1.png",
+      source_version: "primary-v1",
+      is_indexed: 1,
+      missing_since: null,
+    });
+
+    const switched = await switchLearningSpaceSource("space-5", mirror.id, true, providerDependencies(portfolioProvider("mirror-collision", {
+      sourceIdPrefix: "shared-provider-id",
+      sourceVersion: "mirror-v1",
+    }), "2026-08-21T13:39:00.000Z"));
+    expect(switched.switched).toBe(true);
+    expect((await getActiveLearningSpaceSource("space-5"))?.id).toBe(mirror.id);
+
+    const afterMirror = (await database.execute(`SELECT id, source_id, relative_path, source_version, is_indexed, missing_since
+      FROM source_resource_assets WHERE learning_space_id = 'space-5' AND resource_scope = 'exercise' ORDER BY id`)).rows;
+    expect(afterMirror).toHaveLength(1);
+    expect(afterMirror[0]).toMatchObject({
+      id: assetId,
+      source_id: "shared-provider-id:PF1-Oef1.png",
+      source_version: "mirror-v1",
+      is_indexed: 1,
+      missing_since: null,
+    });
+
+    const switchedBack = await switchLearningSpaceSource("space-5", primary.id, true, providerDependencies(portfolioProvider("primary-return-collision", {
+      sourceIdPrefix: "shared-provider-id",
+      sourceVersion: "primary-v2",
+    })));
+    expect(switchedBack.switched).toBe(true);
+    expect((await getActiveLearningSpaceSource("space-5"))?.id).toBe(primary.id);
+
+    const afterPrimary = (await database.execute(`SELECT id, source_id, relative_path, source_version, is_indexed, missing_since
+      FROM source_resource_assets WHERE learning_space_id = 'space-5' AND resource_scope = 'exercise' ORDER BY id`)).rows;
+    expect(afterPrimary).toHaveLength(1);
+    expect(afterPrimary[0]).toMatchObject({
+      id: assetId,
+      source_id: "shared-provider-id:PF1-Oef1.png",
+      source_version: "primary-v2",
+      is_indexed: 1,
+      missing_since: null,
+    });
+  });
+
   it("requires explicit confirmation for content differences without treating them as a hard error", async () => {
     await setupDatabase();
     const { primary, mirror } = await configureDualSource();
@@ -184,16 +239,21 @@ function providerDependencies(provider: StorageProvider, mirrorCompletedAt?: str
   };
 }
 
-function portfolioProvider(prefix: string, options: { omitExercise?: boolean } = {}): StorageProvider {
+function portfolioProvider(
+  prefix: string,
+  options: { omitExercise?: boolean; sourceIdPrefix?: string; sourceVersion?: string } = {},
+): StorageProvider {
   const portfolio = "Portfolio 1 - Functies";
   const solutions = `${portfolio}/Uitwerkingen`;
   const section = `${solutions}/1 - Basis`;
+  const sourceIdPrefix = options.sourceIdPrefix ?? prefix;
+  const sourceVersion = options.sourceVersion ?? `${prefix}-v1`;
   const file = (relativePath: string): StorageEntry => ({
     name: relativePath.split("/").at(-1)!, relativePath,
-    sourceId: `${prefix}:${relativePath.split("/").at(-1)}`, kind: "file",
-    lastModifiedAt: "2026-08-21T12:00:00.000Z", sourceVersion: `${prefix}-v1`,
+    sourceId: `${sourceIdPrefix}:${relativePath.split("/").at(-1)}`, kind: "file",
+    lastModifiedAt: "2026-08-21T12:00:00.000Z", sourceVersion,
   });
-  const directory = (relativePath: string): StorageEntry => ({ name: relativePath.split("/").at(-1)!, relativePath, sourceId: `${prefix}:${relativePath}`, kind: "directory" });
+  const directory = (relativePath: string): StorageEntry => ({ name: relativePath.split("/").at(-1)!, relativePath, sourceId: `${sourceIdPrefix}:${relativePath}`, kind: "directory" });
   const tree: Record<string, StorageEntry[]> = {
     "": [directory(portfolio)],
     [portfolio]: [file(`${portfolio}/Portfolio 1 - Functies.pdf`), file(`${portfolio}/Eindoplossingen portfolio 1.pdf`), directory(solutions)],

@@ -11,9 +11,13 @@ import {
   INITIAL_SOURCE_PROFILE_TEMPLATE_ID,
   INITIAL_SOURCE_PROFILE_TEMPLATE_NAME,
   INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP,
+  exerciseResourceListSchema,
+  exerciseScannerSchema,
   globalResourceListSchema,
   parseSourceProfileConfig,
   parseStoredSourceProfileConfig,
+  type ExerciseResourceConfig,
+  type ExerciseScannerConfig,
   type GlobalResourceConfig,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
@@ -119,6 +123,31 @@ export async function createSourceProfileTemplate(
   return insertIndependentTemplateSnapshot(source, metadata);
 }
 
+export async function saveSourceProfileTemplate(
+  user: AppUser,
+  templateId: string,
+  input: SourceProfileTemplateMetadataInput & { resources: unknown; exerciseScanner: unknown; exerciseResources: unknown },
+): Promise<void> {
+  requireSourceProfileTemplateManagement(user);
+  const template = await getSourceProfileTemplate(templateId);
+  const metadata = await validatedUniqueTemplateMetadata(input, templateId);
+  const globalResources: GlobalResourceConfig[] = globalResourceListSchema.parse(input.resources);
+  const exerciseScanner: ExerciseScannerConfig = exerciseScannerSchema.parse(input.exerciseScanner);
+  const exerciseResources: ExerciseResourceConfig[] = exerciseResourceListSchema.parse(input.exerciseResources);
+  const config = parseSourceProfileConfig({
+    ...template.config,
+    scanner: { ...template.config.scanner, exercise: exerciseScanner },
+    globalResources,
+    exerciseResources,
+  });
+  await (await getDatabase()).execute({
+    sql: `UPDATE source_profile_templates
+      SET name = ?, description = ?, config_version = ?, config_json = ?, updated_at = ?
+      WHERE id = ? AND archived_at IS NULL`,
+    args: [metadata.name, metadata.description, config.configVersion, JSON.stringify(config), new Date().toISOString(), template.id],
+  });
+}
+
 export async function updateSourceProfileTemplateMetadata(
   user: AppUser,
   templateId: string,
@@ -142,6 +171,21 @@ export async function updateSourceProfileTemplateGlobalResources(
   const template = await getSourceProfileTemplate(templateId);
   const globalResources: GlobalResourceConfig[] = globalResourceListSchema.parse(resources);
   const config = parseSourceProfileConfig({ ...template.config, globalResources });
+  await (await getDatabase()).execute({
+    sql: "UPDATE source_profile_templates SET config_version = ?, config_json = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL",
+    args: [config.configVersion, JSON.stringify(config), new Date().toISOString(), template.id],
+  });
+}
+
+export async function updateSourceProfileTemplateExerciseResources(
+  user: AppUser,
+  templateId: string,
+  resources: unknown,
+): Promise<void> {
+  requireSourceProfileTemplateManagement(user);
+  const template = await getSourceProfileTemplate(templateId);
+  const exerciseResources: ExerciseResourceConfig[] = exerciseResourceListSchema.parse(resources);
+  const config = parseSourceProfileConfig({ ...template.config, exerciseResources });
   await (await getDatabase()).execute({
     sql: "UPDATE source_profile_templates SET config_version = ?, config_json = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL",
     args: [config.configVersion, JSON.stringify(config), new Date().toISOString(), template.id],

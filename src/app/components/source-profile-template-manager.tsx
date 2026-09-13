@@ -1,12 +1,14 @@
 "use client";
 
-import { Archive, Copy, Pencil, Plus, RotateCcw, Settings2, Trash2, X } from "lucide-react";
+import { Archive, Copy, Pencil, Plus, RotateCcw, Save, Settings2, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import type { SourceProfileTemplateSummary } from "@/lib/source-profile-templates";
 import type { SourceProfileCopyTarget } from "@/lib/source-profiles";
 
 import { ArchiveVisibilityToggle } from "./archive-visibility-toggle";
+import { SourceProfileExerciseResourcesEditor } from "./source-profile-exercise-resources-editor";
+import { SourceProfileExerciseScannerEditor } from "./source-profile-exercise-scanner-editor";
 import { SourceProfileGlobalResourcesEditor } from "./source-profile-global-resources-editor";
 import { ConfirmActionButton } from "./confirm-action-button";
 
@@ -14,8 +16,7 @@ export type SourceProfileTemplateModal = "create" | "manage" | "default" | "copy
 
 export interface SourceProfileTemplateActions {
   create: (formData: FormData) => Promise<void>;
-  update: (formData: FormData) => Promise<void>;
-  updateResources: (formData: FormData) => Promise<void>;
+  save: (formData: FormData) => Promise<void>;
   duplicate: (formData: FormData) => Promise<void>;
   setDefault: (formData: FormData) => Promise<void>;
   copy: (formData: FormData) => Promise<void>;
@@ -84,10 +85,14 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
     </div>}
 
     {modal ? <div className="confirm-backdrop" role="presentation">
-      <div className={`source-profile-dialog${modal === "manage" ? " source-profile-dialog-wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
-        <div className="source-profile-dialog-heading">
+      <div className={`source-profile-dialog${modal === "manage" ? " source-profile-dialog-wide source-profile-manage-dialog" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
+        <div className={`source-profile-dialog-heading${modal === "manage" ? " source-profile-dialog-heading-sticky" : ""}`}>
           <h2 id={titleId}>{modalTitle(modal)}</h2>
-          <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
+          {modal === "manage" && selected ? <div className="source-profile-dialog-heading-actions">
+            <button className="secondary-button" type="submit" form={`source-profile-template-manage-${selected.id}`} formAction={actions.duplicate}><Copy size={16} aria-hidden />Dupliceren</button>
+            <button className="primary-button" type="submit" form={`source-profile-template-manage-${selected.id}`}><Save size={16} aria-hidden />Opslaan</button>
+            <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
+          </div> : <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>}
         </div>
         {modal === "create" ? <form action={actions.create} className="source-profile-dialog-form">
           <label>Naam<input name="name" maxLength={80} required /></label>
@@ -99,23 +104,44 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
           <TemplateError error={error} />
           <DialogActions cancel={close} submitLabel="Sjabloon maken" />
         </form> : null}
-        {modal === "manage" && selected ? <>
-          <form action={actions.update} className="source-profile-dialog-form">
-            <input type="hidden" name="templateId" value={selected.id} />
-            <label>Naam<input name="name" defaultValue={selected.name} maxLength={80} required /></label>
-            <label>Beschrijving (optioneel)<textarea name="description" defaultValue={selected.description ?? ""} maxLength={240} rows={3} /></label>
-            <div className="source-profile-template-default-state">
-              {selected.isDefault ? <span className="active-source-badge">Standaard</span> : <button className="secondary-button" type="button" onClick={() => setModal("default")}>Als standaard instellen</button>}
+        {modal === "manage" && selected ? <form
+          id={`source-profile-template-manage-${selected.id}`}
+          action={actions.save}
+          className="source-profile-template-manage-form"
+        >
+          <input type="hidden" name="templateId" value={selected.id} />
+          <div className="source-profile-manage-content">
+            <div className="source-profile-dialog-form source-profile-main-fields">
+              <label>Naam<input name="name" defaultValue={selected.name} maxLength={80} required /></label>
+              <label>Beschrijving (optioneel)<textarea name="description" defaultValue={selected.description ?? ""} maxLength={240} rows={3} /></label>
+              <div className="source-profile-template-default-state">
+                {selected.isDefault ? <span className="active-source-badge">Standaard</span> : <button className="secondary-button" type="button" onClick={() => setModal("default")}>Als standaard instellen</button>}
+                {selected.canArchive ? <button className="secondary-button" type="submit" formAction={actions.archive}><Archive size={16} aria-hidden />Archiveren</button> : null}
+              </div>
             </div>
+
             <TemplateError error={error} />
-            <div className="source-profile-template-dialog-actions">
-              <button className="secondary-button" type="submit" formAction={actions.duplicate}><Copy size={16} aria-hidden />Sjabloon dupliceren</button>
-              <div><button className="secondary-button" type="button" onClick={close}>Annuleren</button><button className="primary-button" type="submit">Opslaan</button></div>
-            </div>
-            {selected.canArchive ? <div className="source-profile-lifecycle-zone"><button className="secondary-button" type="submit" formAction={actions.archive}><Archive size={16} aria-hidden />Archiveren</button></div> : null}
-          </form>
-          <SourceProfileGlobalResourcesEditor resources={selected.config?.globalResources ?? []} action={actions.updateResources} ownerIdField="templateId" ownerId={selected.id} />
-        </> : null}
+
+            <SourceProfileGlobalResourcesEditor
+              resources={selected.config?.globalResources ?? []}
+              ownerIdField="templateId"
+              ownerId={selected.id}
+              embedded
+            />
+            <SourceProfileExerciseScannerEditor
+              scanner={selected.config?.scanner.exercise ?? { numberLocation: "after_text", marker: "Oef" }}
+              editorKey={selected.id}
+              embedded
+            />
+            <SourceProfileExerciseResourcesEditor
+              resources={selected.config?.exerciseResources ?? []}
+              ownerIdField="templateId"
+              ownerId={selected.id}
+              embedded
+            />
+
+          </div>
+        </form> : null}
         {modal === "default" && selected ? <form action={actions.setDefault} className="source-profile-dialog-form">
           <input type="hidden" name="templateId" value={selected.id} />
           <p>Dit sjabloon wordt voortaan gebruikt als basis voor nieuwe leeromgevingen. Bestaande leeromgevingen en bronprofielen worden niet aangepast.</p>

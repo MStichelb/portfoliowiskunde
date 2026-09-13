@@ -2,9 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { ZodError } from "zod";
 
 import { requireAdminUser } from "@/lib/auth";
-import { archiveSourceProfile, copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace, permanentlyDeleteSourceProfile, renameManagedSourceProfile, restoreSourceProfile, saveManagedSourceProfile, updateManagedSourceProfileGlobalResources } from "@/lib/source-profiles";
+import { archiveSourceProfile, copySourceProfileToLearningSpace, linkSourceProfileToLearningSpace, permanentlyDeleteSourceProfile, renameManagedSourceProfile, restoreSourceProfile, saveManagedSourceProfile, updateManagedSourceProfileExerciseResources, updateManagedSourceProfileGlobalResources } from "@/lib/source-profiles";
 import {
   archiveSourceProfileTemplate,
   copySourceProfileTemplateToLearningSpace,
@@ -12,7 +13,9 @@ import {
   duplicateSourceProfileTemplate,
   permanentlyDeleteSourceProfileTemplate,
   restoreSourceProfileTemplate,
+  saveSourceProfileTemplate,
   setDefaultSourceProfileTemplate,
+  updateSourceProfileTemplateExerciseResources,
   updateSourceProfileTemplateGlobalResources,
   updateSourceProfileTemplateMetadata,
 } from "@/lib/source-profile-templates";
@@ -75,11 +78,29 @@ export async function updateManagedSourceProfileGlobalResourcesAction(formData: 
       value(formData, "confirmShared") === "all" ? "all" : undefined,
     );
   } catch (error) {
-    const message = error instanceof Error ? error.message : "De globale documenten konden niet worden opgeslagen.";
+    const message = actionErrorMessage(error, "De globale documenten konden niet worden opgeslagen.");
     redirect(`/admin/bronprofielen?profile=${encodeURIComponent(sourceProfileId)}&error=${encodeURIComponent(message)}`);
   }
   revalidatePath("/admin/bronprofielen");
   redirect("/admin/bronprofielen?saved=resourcesUpdated");
+}
+
+export async function updateManagedSourceProfileExerciseResourcesAction(formData: FormData): Promise<never> {
+  const user = await requireAdminUser();
+  const sourceProfileId = value(formData, "sourceProfileId");
+  try {
+    await updateManagedSourceProfileExerciseResources(
+      user,
+      sourceProfileId,
+      parseExerciseResources(formData),
+      value(formData, "confirmShared") === "all" ? "all" : undefined,
+    );
+  } catch (error) {
+    const message = actionErrorMessage(error, "De onderdelen per oefening konden niet worden opgeslagen.");
+    redirect(`/admin/bronprofielen?profile=${encodeURIComponent(sourceProfileId)}&error=${encodeURIComponent(message)}`);
+  }
+  revalidatePath("/admin/bronprofielen");
+  redirect("/admin/bronprofielen?saved=exerciseResourcesUpdated");
 }
 
 export async function saveManagedSourceProfileAction(formData: FormData): Promise<never> {
@@ -91,12 +112,14 @@ export async function saveManagedSourceProfileAction(formData: FormData): Promis
     const result = await saveManagedSourceProfile(user, sourceProfileId, {
       name: value(formData, "name"),
       resources: parseResources(formData),
+      exerciseScanner: parseExerciseScanner(formData),
+      exerciseResources: parseExerciseResources(formData),
       mode,
       targetLearningSpaceId: value(formData, "targetLearningSpaceId") || undefined,
     });
     saved = result.mode === "copy" ? "profileSplit" : "profileUpdated";
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Het bronprofiel kon niet worden opgeslagen.";
+    const message = actionErrorMessage(error, "Het bronprofiel kon niet worden opgeslagen.");
     redirect(`/admin/bronprofielen?profile=${encodeURIComponent(sourceProfileId)}&error=${encodeURIComponent(message)}`);
   }
   revalidatePath("/admin/bronprofielen");
@@ -126,6 +149,18 @@ export async function createSourceProfileTemplateAction(formData: FormData): Pro
   });
 }
 
+export async function saveSourceProfileTemplateAction(formData: FormData): Promise<never> {
+  return runTemplateAction(formData, "updated", "manage", async (user, templateId) => {
+    await saveSourceProfileTemplate(user, templateId, {
+      name: value(formData, "name"),
+      description: value(formData, "description") || null,
+      resources: parseResources(formData),
+      exerciseScanner: parseExerciseScanner(formData),
+      exerciseResources: parseExerciseResources(formData),
+    });
+  });
+}
+
 export async function updateSourceProfileTemplateAction(formData: FormData): Promise<never> {
   return runTemplateAction(formData, "updated", "manage", async (user, templateId) => {
     await updateSourceProfileTemplateMetadata(user, templateId, {
@@ -138,6 +173,12 @@ export async function updateSourceProfileTemplateAction(formData: FormData): Pro
 export async function updateSourceProfileTemplateGlobalResourcesAction(formData: FormData): Promise<never> {
   return runTemplateAction(formData, "resourcesUpdated", "manage", async (user, templateId) => {
     await updateSourceProfileTemplateGlobalResources(user, templateId, parseResources(formData));
+  });
+}
+
+export async function updateSourceProfileTemplateExerciseResourcesAction(formData: FormData): Promise<never> {
+  return runTemplateAction(formData, "exerciseResourcesUpdated", "manage", async (user, templateId) => {
+    await updateSourceProfileTemplateExerciseResources(user, templateId, parseExerciseResources(formData));
   });
 }
 
@@ -203,7 +244,7 @@ async function runTemplateLifecycleAction(
 
 async function runTemplateAction(
   formData: FormData,
-  saved: "created" | "updated" | "duplicated" | "default" | "resourcesUpdated",
+  saved: "created" | "updated" | "duplicated" | "default" | "resourcesUpdated" | "exerciseResourcesUpdated",
   errorModal: "create" | "manage" | "default",
   mutation: (user: Awaited<ReturnType<typeof requireAdminUser>>, templateId: string) => Promise<void>,
 ): Promise<never> {
@@ -212,12 +253,17 @@ async function runTemplateAction(
   try {
     await mutation(user, templateId);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Het bronprofielsjabloon kon niet worden gewijzigd.";
+    const message = actionErrorMessage(error, "Het bronprofielsjabloon kon niet worden gewijzigd.");
     const target = templateId ? `&template=${encodeURIComponent(templateId)}` : "";
     redirect(`/admin/bronprofielen?templateModal=${errorModal}${target}&templateError=${encodeURIComponent(message)}`);
   }
   revalidatePath("/admin/bronprofielen");
   redirect(`/admin/bronprofielen?templateSaved=${saved}`);
+}
+
+function actionErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof ZodError) return error.issues[0]?.message ?? fallback;
+  return error instanceof Error ? error.message : fallback;
 }
 
 function value(formData: FormData, key: string): string {
@@ -229,3 +275,16 @@ function parseResources(formData: FormData): unknown {
   if (!raw) throw new Error("Globale documenten ontbreken.");
   try { return JSON.parse(raw) as unknown; } catch { throw new Error("Globale documenten hebben een ongeldig formaat."); }
 }
+
+function parseExerciseScanner(formData: FormData): unknown {
+  const raw = value(formData, "exerciseScannerJson");
+  if (!raw) throw new Error("Instellingen voor oefeningsherkenning ontbreken.");
+  try { return JSON.parse(raw) as unknown; } catch { throw new Error("Instellingen voor oefeningsherkenning hebben een ongeldig formaat."); }
+}
+
+function parseExerciseResources(formData: FormData): unknown {
+  const raw = value(formData, "exerciseResourcesJson");
+  if (!raw) throw new Error("Onderdelen per oefening ontbreken.");
+  try { return JSON.parse(raw) as unknown; } catch { throw new Error("Onderdelen per oefening hebben een ongeldig formaat."); }
+}
+

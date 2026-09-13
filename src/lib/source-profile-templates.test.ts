@@ -30,7 +30,9 @@ import {
   listSourceProfileTemplates,
   permanentlyDeleteSourceProfileTemplate,
   restoreSourceProfileTemplate,
+  saveSourceProfileTemplate,
   setDefaultSourceProfileTemplate,
+  updateSourceProfileTemplateExerciseResources,
   updateSourceProfileTemplateGlobalResources,
   updateSourceProfileTemplateMetadata,
 } from "./source-profile-templates";
@@ -356,6 +358,35 @@ describe("global source profile templates", () => {
     await expect(createLearningSpace(spaceInput("unknown-default"))).rejects.toThrow();
     await expect(getAdminLearningSpaceBySlug("unknown-default")).resolves.toBeNull();
   });
+  it("saves template metadata and both resource groups atomically through the combined manage flow", async () => {
+    await expect(saveSourceProfileTemplate(owner, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, {
+      name: "Verboden",
+      description: null,
+      resources: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources,
+      exerciseScanner: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.exercise,
+      exerciseResources: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources,
+    })).rejects.toThrow();
+
+    await saveSourceProfileTemplate(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, {
+      name: "Aangepast sjabloon",
+      description: "Nieuwe beschrijving",
+      resources: [{
+        id: "formula", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic",
+      }],
+      exerciseScanner: { numberLocation: "after_text", marker: "Vraag" },
+      exerciseResources: [{
+        id: "assignment-part", kind: "source_file", label: "Opgave", icon: "file-text", order: 10, semanticRole: "assignment",
+        recognition: { target: "legacy_solution_file", fileExtensions: ["pdf"] },
+      }],
+    });
+
+    const updated = await getDefaultSourceProfileTemplate();
+    expect(updated).toMatchObject({ name: "Aangepast sjabloon", description: "Nieuwe beschrijving" });
+    expect(updated.config.globalResources).toEqual([expect.objectContaining({ id: "formula" })]);
+    expect(updated.config.scanner.exercise).toEqual({ numberLocation: "after_text", marker: "Vraag" });
+    expect(updated.config.exerciseResources).toEqual([expect.objectContaining({ id: "assignment-part", semanticRole: "assignment", allowMultiple: false, displayMode: "always" })]);
+  });
+
   it("updates template global resources only for superadmin and keeps future snapshots independent", async () => {
     await expect(updateSourceProfileTemplateGlobalResources(owner, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, [])).rejects.toThrow();
     await updateSourceProfileTemplateGlobalResources(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, [{
@@ -368,6 +399,25 @@ describe("global source profile templates", () => {
     await updateSourceProfileTemplateGlobalResources(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, []);
     expect(clone.config.globalResources).toHaveLength(1);
     expect((await getDefaultSourceProfileTemplate()).config.globalResources).toEqual([]);
+  });
+
+
+  it("updates template exercise resources only for superadmin and keeps future snapshots independent", async () => {
+    const resources = [{
+      id: "model-solution", kind: "source_file" as const, label: "Modeluitwerking", icon: "circle-check-big" as const,
+      order: 10, semanticRole: "worked_solution" as const,
+      recognition: { target: "legacy_solution_file" as const, fileExtensions: ["png" as const] },
+    }];
+
+    await expect(updateSourceProfileTemplateExerciseResources(owner, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, resources)).rejects.toThrow();
+    await updateSourceProfileTemplateExerciseResources(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, resources);
+    const updated = await getDefaultSourceProfileTemplate();
+    expect(updated.config.exerciseResources).toEqual([expect.objectContaining({ id: "model-solution", label: "Modeluitwerking" })]);
+
+    const clone = await cloneSourceProfileTemplateToLearningSpace(updated, "space-5", owner.id);
+    await updateSourceProfileTemplateExerciseResources(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, []);
+    expect(clone.config.exerciseResources).toHaveLength(1);
+    expect((await getDefaultSourceProfileTemplate()).config.exerciseResources).toEqual([]);
   });
 
 

@@ -9,8 +9,10 @@ const mocks = vi.hoisted(() => ({
   getThemes: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NEXT_NOT_FOUND"); }),
   portfolioForm: vi.fn(),
+  externalLinksForm: vi.fn(),
   requireAdminUser: vi.fn(),
   savePortfolioAction: vi.fn(),
+  savePortfolioExternalLinksAction: vi.fn(),
   saveSectionPublicationAction: vi.fn(),
 }));
 
@@ -25,6 +27,7 @@ vi.mock("@/lib/repositories", () => ({
 }));
 vi.mock("../../../actions", () => ({
   savePortfolioAction: mocks.savePortfolioAction,
+  savePortfolioExternalLinksAction: mocks.savePortfolioExternalLinksAction,
   saveSectionPublicationAction: mocks.saveSectionPublicationAction,
 }));
 vi.mock("@/app/components/admin-space-header", () => ({ AdminSpaceHeader: () => <div>Beheerheader</div> }));
@@ -35,6 +38,12 @@ vi.mock("@/app/components/portfolio-publication-form", () => ({
   },
 }));
 vi.mock("@/app/components/portfolio-document-links", () => ({ PortfolioDocumentLinks: () => <div>Documenten</div> }));
+vi.mock("@/app/components/portfolio-external-links-form", () => ({
+  PortfolioExternalLinksForm: (props: unknown) => {
+    mocks.externalLinksForm(props);
+    return <div>Externe links instellen</div>;
+  },
+}));
 vi.mock("@/app/components/publication-status", () => ({ PublicationStatus: () => <span>Status</span> }));
 vi.mock("@/app/components/section-publication-form", () => ({ SectionPublicationForm: () => <div>Onderdeelinstellingen</div> }));
 vi.mock("@/app/components/exercise-bulk-table", () => ({ ExerciseBulkTable: () => <div>Oefeningen</div> }));
@@ -50,7 +59,9 @@ describe("LearningSpace portfolio settings page", () => {
     mocks.getAdminPortfolio.mockResolvedValue({
       id: "portfolio-1", code: "1", title: "Goniometrie", detectedTitle: "Goniometrie", cardColor: "#E7EEF2",
       visible: true, limited: false, publishFrom: null, publishUntil: null, customText: "Bericht", customTextPosition: "above_documents",
-      themeId: "theme-analysis", effectiveStatus: { state: "visible" }, hintsDocumentPath: null, sections: [],
+      themeId: "theme-analysis", effectiveStatus: { state: "visible" }, hintsDocumentPath: null,
+      globalResources: [{ id: "video", kind: "external_link", label: "Video", icon: "monitor-play", semanticRole: "generic", documentKind: null, url: null, available: false }],
+      sections: [],
     });
     mocks.getPortfolioWarnings.mockResolvedValue([]);
     mocks.getThemes.mockResolvedValue([{ id: "theme-analysis", learningSpaceId: "space-5", name: "Analyse", sortOrder: 1 }]);
@@ -65,6 +76,12 @@ describe("LearningSpace portfolio settings page", () => {
       action: mocks.savePortfolioAction,
     }));
     expect(markup).toContain("Gecombineerd instellingenformulier");
+    expect(mocks.externalLinksForm).toHaveBeenCalledWith(expect.objectContaining({
+      portfolioId: "portfolio-1",
+      resources: [expect.objectContaining({ id: "video", kind: "external_link" })],
+      action: mocks.savePortfolioExternalLinksAction,
+    }));
+    expect(markup).toContain("Externe links instellen");
     expect(markup).not.toContain("Thema opslaan");
   });
 });

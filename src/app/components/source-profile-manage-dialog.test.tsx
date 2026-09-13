@@ -15,7 +15,7 @@ vi.mock("next/navigation", () => ({
 const action = async () => undefined;
 
 describe("SourceProfileManageDialog", () => {
-  it("uses one sticky save flow for the profile name and global resources", () => {
+  it("uses one sticky save flow for the profile name, global resources and exercise resources", () => {
     const markup = renderToStaticMarkup(<SourceProfileManageDialog
       profile={profile({ usageCount: 1, usages: [usage("space-5", "5WIS")] })}
       saveAction={action}
@@ -26,9 +26,27 @@ describe("SourceProfileManageDialog", () => {
     expect(markup).toContain("Profielnaam");
     expect(markup).toContain("Globale documenten");
     expect(markup).toContain('name="resourcesJson"');
+    expect(markup).toContain("Oefeningen herkennen");
+    expect(markup).toContain('name="exerciseScannerJson"');
+    expect(markup).toContain("Onderdelen per oefening");
+    expect(markup).toContain('name="exerciseResourcesJson"');
     expect(markup).toContain("Opslaan");
     expect(markup).not.toContain("Globale documenten opslaan");
+    expect(markup).not.toContain("Oefeningsdocumenten opslaan");
     expect(markup).not.toContain(">Annuleren<");
+  });
+
+
+  it("places the archive action in the sticky top bar when archiving is allowed", () => {
+    const markup = renderToStaticMarkup(<SourceProfileManageDialog
+      profile={profile({ canArchive: true, usageCount: 1, usages: [usage("space-5", "5WIS")] })}
+      saveAction={action}
+      archiveAction={action}
+    />);
+
+    expect(markup).toContain("Archiveren");
+    expect(markup.indexOf("Archiveren")).toBeLessThan(markup.indexOf("source-profile-manage-content"));
+    expect(markup).not.toContain("source-profile-lifecycle-zone");
   });
 
   it("does not render the old shared checkbox in the base manage dialog", () => {

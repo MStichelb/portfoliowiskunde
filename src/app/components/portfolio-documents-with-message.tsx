@@ -1,17 +1,18 @@
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
+import type { PortfolioGlobalResource } from "@/lib/repositories";
 
 import { PortfolioDocumentLinks } from "./portfolio-document-links";
 
 export function PortfolioDocumentsWithMessage({
   portfolioId,
   spaceSlug,
-  hasHints,
+  resources,
   customText,
   customTextPosition,
 }: {
   portfolioId: string;
   spaceSlug: string;
-  hasHints: boolean;
+  resources: readonly PortfolioGlobalResource[];
   customText: string | null;
   customTextPosition: PortfolioCustomTextPosition;
 }) {
@@ -21,7 +22,7 @@ export function PortfolioDocumentsWithMessage({
 
   return <>
     {customTextPosition === "above_documents" ? message : null}
-    <PortfolioDocumentLinks portfolioId={portfolioId} spaceSlug={spaceSlug} hasHints={hasHints} />
+    <PortfolioDocumentLinks portfolioId={portfolioId} spaceSlug={spaceSlug} resources={resources} />
     {customTextPosition === "below_documents" ? message : null}
   </>;
 }

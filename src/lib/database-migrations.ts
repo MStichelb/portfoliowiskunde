@@ -939,6 +939,48 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX source_profile_templates_archive_index ON source_profile_templates(archived_at, name)",
     ],
   },
+  {
+    version: "039_portfolio_external_links",
+    statements: [
+      `CREATE TABLE portfolio_external_links (
+        portfolio_id TEXT NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+        resource_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(portfolio_id, resource_id)
+      )`,
+    ],
+  },
+  {
+    version: "040_generic_source_resource_assets",
+    statements: [
+      `CREATE TABLE source_resource_assets (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        portfolio_id TEXT NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+        exercise_id TEXT REFERENCES exercises(id) ON DELETE CASCADE,
+        resource_scope TEXT NOT NULL CHECK(resource_scope IN ('portfolio', 'exercise')),
+        resource_id TEXT NOT NULL,
+        semantic_role TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        extension TEXT NOT NULL,
+        step INTEGER NOT NULL DEFAULT 1,
+        last_modified_at TEXT,
+        source_version TEXT,
+        is_indexed INTEGER NOT NULL DEFAULT 1,
+        missing_since TEXT,
+        archived_at TEXT,
+        last_seen_at TEXT NOT NULL,
+        CHECK((resource_scope = 'portfolio' AND exercise_id IS NULL) OR (resource_scope = 'exercise' AND exercise_id IS NOT NULL)),
+        UNIQUE(learning_space_id, resource_scope, resource_id, source_id)
+      )`,
+      "CREATE INDEX source_resource_assets_portfolio_index ON source_resource_assets(portfolio_id, resource_scope, resource_id, is_indexed)",
+      "CREATE INDEX source_resource_assets_exercise_index ON source_resource_assets(exercise_id, resource_id, is_indexed)",
+      "CREATE INDEX source_resource_assets_source_index ON source_resource_assets(learning_space_id, source_id)",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

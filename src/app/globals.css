@@ -171,7 +171,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-profile-template-create { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 7px; }
 .source-profile-template-note { margin: 0 0 16px; padding: 11px 13px; border-radius: 4px; background: #f7f1e9; color: #5f4c39; }
 .source-profile-template-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
-.source-profile-template-default-state { display: flex; justify-content: flex-start; }
+.source-profile-template-default-state { display: flex; align-items: center; justify-content: flex-start; gap: 8px; flex-wrap: wrap; }
+.source-profile-template-default-state > button { display: inline-flex; align-items: center; gap: 7px; }
 .source-profile-template-dialog-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-top: 2px; }
 .source-profile-template-dialog-actions > button, .source-profile-template-dialog-actions > div, .source-profile-template-dialog-actions > div > button { min-height: 40px; }
 .source-profile-template-dialog-actions > button, .source-profile-template-dialog-actions > div { display: flex; align-items: center; gap: 8px; }
@@ -551,8 +552,8 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .admin-space-archive-icon { display: inline-flex; align-items: center; color: #65716c; }
 .admin-space-card > strong { color: #405058; font-size: 15px; }
 .admin-space-role-icon { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; color: #53636b; }
-.admin-space-owner { display: inline-flex; align-items: center; gap: 6px; color: #52616a; font-size: 14px; }
-.admin-space-owner svg { flex: 0 0 auto; }
+.admin-space-owner, .learning-space-owner { display: inline-flex; align-items: center; gap: 6px; color: #52616a; font-size: 14px; }
+.admin-space-owner svg, .learning-space-owner svg { flex: 0 0 auto; }
 .admin-space-details { display: grid; gap: 5px; margin: 6px 0 0; padding-top: 9px; border-top: 1px solid rgba(82,97,106,.22); color: #52616a; font-size: 13px; }
 .admin-space-details > div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; }
 .admin-space-details dt { font-weight: 700; }
@@ -566,6 +567,14 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .admin-document-button:hover, .admin-document-button:focus-visible { border-color: #763b46; background: #f8edef; }
 .document-actions-prominent { margin-top: 22px; }
 .portfolio-custom-message { max-width: 720px; margin: 16px 0; color: #314149; line-height: 1.55; white-space: pre-line; }
+.portfolio-external-links-form { display: grid; gap: 14px; margin-top: 22px; padding-top: 20px; border-top: 1px solid #e0e5e2; }
+.portfolio-external-links-heading h3 { margin: 0 0 4px; }
+.portfolio-external-links-heading p { margin: 0; color: #52616a; }
+.portfolio-external-link-fields { display: grid; gap: 12px; max-width: 760px; }
+.portfolio-external-link-fields label { display: grid; gap: 6px; color: #314149; font-size: 14px; font-weight: 700; }
+.portfolio-external-link-fields label > span { display: inline-flex; align-items: center; gap: 7px; }
+.portfolio-external-link-fields input { width: 100%; min-height: 42px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px 10px; color: #17222b; font: inherit; }
+.portfolio-external-links-form > button { width: fit-content; }
 .compact-back-button { display: inline-flex; align-items: center; gap: 7px; width: fit-content; margin-bottom: 26px; text-decoration: none; }
 .exercise-page-heading { margin-bottom: 22px; }
 .exercise-page-heading p:last-child { margin-bottom: 0; color: #52616a; font-size: 18px; }
@@ -1092,6 +1101,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-profile-dialog-heading-actions { display: flex; align-items: center; gap: 8px; }
 .source-profile-dialog-heading-actions > button { height: 40px; min-height: 40px; box-sizing: border-box; }
 .source-profile-dialog-heading-actions .primary-button { display: inline-flex; align-items: center; gap: 7px; }
+.source-profile-dialog-heading-actions .secondary-button { display: inline-flex; align-items: center; gap: 7px; }
 .source-profile-dialog-heading-actions .icon-button { width: 40px; min-width: 40px; padding: 0; }
 .source-profile-manage-content { padding-top: 10px; }
 .source-profile-manage-dialog .source-profile-central-usage { margin-top: 0; }

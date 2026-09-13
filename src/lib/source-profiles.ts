@@ -12,9 +12,13 @@ import {
   BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_NAME,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP,
+  exerciseResourceListSchema,
+  exerciseScannerSchema,
   globalResourceListSchema,
   parseSourceProfileConfig,
   parseStoredSourceProfileConfig,
+  type ExerciseResourceConfig,
+  type ExerciseScannerConfig,
   type GlobalResourceConfig,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
@@ -239,12 +243,31 @@ export async function updateManagedSourceProfileGlobalResources(
   });
 }
 
+export async function updateManagedSourceProfileExerciseResources(
+  user: AppUser,
+  sourceProfileId: string,
+  resources: unknown,
+  confirmShared?: "all",
+): Promise<void> {
+  const profile = await requireOwnedSourceProfile(user, sourceProfileId);
+  const usageCount = await sourceProfileUsageCount(profile.id);
+  if (usageCount > 1 && confirmShared !== "all") throw new Error("Bevestig dat je dit gedeelde profiel voor alle gekoppelde leeromgevingen wilt aanpassen.");
+  const exerciseResources: ExerciseResourceConfig[] = exerciseResourceListSchema.parse(resources);
+  const config = parseSourceProfileConfig({ ...profile.config, exerciseResources });
+  await (await getDatabase()).execute({
+    sql: "UPDATE source_profiles SET config_version = ?, config_json = ?, updated_at = ? WHERE id = ? AND archived_at IS NULL",
+    args: [config.configVersion, JSON.stringify(config), new Date().toISOString(), profile.id],
+  });
+}
+
 export async function saveManagedSourceProfile(
   user: AppUser,
   sourceProfileId: string,
   input: {
     name: string;
     resources: unknown;
+    exerciseScanner?: unknown;
+    exerciseResources?: unknown;
     mode: ManagedSourceProfileSaveMode;
     targetLearningSpaceId?: string;
   },
@@ -254,7 +277,18 @@ export async function saveManagedSourceProfile(
 
   const usageCount = await sourceProfileUsageCount(profile.id);
   const globalResources: GlobalResourceConfig[] = globalResourceListSchema.parse(input.resources);
-  const config = parseSourceProfileConfig({ ...profile.config, globalResources });
+  const exerciseScanner: ExerciseScannerConfig = input.exerciseScanner === undefined
+    ? profile.config.scanner.exercise
+    : exerciseScannerSchema.parse(input.exerciseScanner);
+  const exerciseResources: ExerciseResourceConfig[] = input.exerciseResources === undefined
+    ? profile.config.exerciseResources
+    : exerciseResourceListSchema.parse(input.exerciseResources);
+  const config = parseSourceProfileConfig({
+    ...profile.config,
+    scanner: { ...profile.config.scanner, exercise: exerciseScanner },
+    globalResources,
+    exerciseResources,
+  });
 
   if (input.mode === "copy") {
     if (usageCount <= 1) throw new Error("Een onafhankelijke kopie vanuit deze bewerkflow is alleen nodig voor een gedeeld bronprofiel.");

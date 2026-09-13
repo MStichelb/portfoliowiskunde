@@ -6,8 +6,7 @@ import { SourceProfileTemplateManager, type SourceProfileTemplateActions, type S
 
 const actions: SourceProfileTemplateActions = {
   create: async () => undefined,
-  update: async () => undefined,
-  updateResources: async () => undefined,
+  save: async () => undefined,
   duplicate: async () => undefined,
   setDefault: async () => undefined,
   copy: async () => undefined,
@@ -46,16 +45,29 @@ describe("SourceProfileTemplateManager", () => {
   it("opens manage with metadata, duplicate and default actions without nested forms", () => {
     const markup = renderManager("manage", "template-2", "Naam bestaat al.");
     expect(markup).toContain("Bronprofielsjabloon beheren");
+    expect(markup).toContain("source-profile-dialog-heading-sticky");
+    expect(markup).toContain("lucide-save");
+    expect(markup).toContain("lucide-copy");
+    expect(markup).not.toContain("Sjabloon dupliceren");
     expect(markup).toContain('value="Eigen basis"');
-    expect(markup).toContain("Sjabloon dupliceren");
+    expect(markup).toContain(">Dupliceren<");
     expect(markup).toContain("Als standaard instellen");
     expect(markup).toContain("Naam bestaat al.");
-    expect(markup.match(/<form/g)).toHaveLength(2);
+    expect(markup.match(/<form/g)).toHaveLength(1);
     expect(markup).toContain("Globale documenten");
     expect(markup).toContain("Opgaven");
+    expect(markup).toContain("Oefeningen herkennen");
+    expect(markup).toContain('name="exerciseScannerJson"');
+    expect(markup).toContain("Onderdelen per oefening");
+    expect(markup).not.toContain("Globale documenten opslaan");
+    expect(markup).not.toContain("Onderdelen opslaan");
+    expect(markup).toContain("Alternatieve uitwerking");
+    expect(markup).toContain('name="exerciseResourcesJson"');
     expect(markup.match(/role="alert"/g)).toHaveLength(1);
     expect(markup).toContain("Archiveren");
     expect(markup).toContain("lucide-archive");
+    expect(markup).toMatch(/source-profile-template-default-state[\s\S]*Als standaard instellen[\s\S]*Archiveren/);
+    expect(markup).not.toContain("source-profile-lifecycle-zone");
   });
 
   it("shows the explicit no-propagation confirmation before changing the default", () => {

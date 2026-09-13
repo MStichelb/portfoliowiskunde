@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   getAdminAsset: vi.fn(),
   getPublicPortfolioDocument: vi.fn(),
   getAdminPortfolioDocument: vi.fn(),
+  getPublicResourceAsset: vi.fn(),
+  getAdminResourceAsset: vi.fn(),
   getStorageProvider: vi.fn(),
 }));
 
@@ -25,17 +27,22 @@ vi.mock("@/lib/repositories", () => ({
   getAdminAsset: mocks.getAdminAsset,
   getPublicPortfolioDocument: mocks.getPublicPortfolioDocument,
   getAdminPortfolioDocument: mocks.getAdminPortfolioDocument,
+  getPublicResourceAsset: mocks.getPublicResourceAsset,
+  getAdminResourceAsset: mocks.getAdminResourceAsset,
 }));
 vi.mock("@/lib/storage", () => ({ getStorageProvider: mocks.getStorageProvider }));
 
 import { GET as getAdminPortfolioDocument, HEAD as headAdminPortfolioDocument } from "./admin/portfolio-assets/[id]/[kind]/route";
+import { GET as getAdminResource, HEAD as headAdminResource } from "./admin/resource-assets/[id]/route";
 import { GET as getAdminSolution } from "./admin/solution-assets/[id]/route";
 import { GET as getPublicPortfolioDocument } from "./portfolio-assets/[id]/[kind]/route";
+import { GET as getPublicResource, HEAD as headPublicResource } from "./resource-assets/[id]/route";
 import { GET as getPublicSolution, HEAD as headPublicSolution } from "./solution-assets/[id]/route";
 
 const space = { id: "space-google", slug: "google" };
 const solution = { learningSpaceId: space.id, sourceId: "source-id", fileName: "PF1-Oef1.png", extension: "png" };
-const document = { learningSpaceId: space.id, sourceId: "document-id", fileName: "Portfolio 1.pdf" };
+const document = { learningSpaceId: space.id, sourceId: "document-id", fileName: "Portfolio 1.pdf", extension: "pdf" };
+const resource = { learningSpaceId: space.id, sourceId: "resource-id", fileName: "PF1-Oef1-hint.jpg", extension: "jpg" };
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -77,6 +84,22 @@ describe("asset route authorization before provider access", () => {
     const response = await getAdminSolution(request(), solutionContext());
     expect(response.status).toBe(401);
     expect(mocks.getAdminAsset).not.toHaveBeenCalled();
+    expect(mocks.getStorageProvider).not.toHaveBeenCalled();
+  });
+
+  it("does not open the provider for a hidden generic student resource", async () => {
+    mocks.getPublicResourceAsset.mockResolvedValue(null);
+    const response = await getPublicResource(request(), resourceContext());
+    expect(response.status).toBe(404);
+    expect(mocks.getPublicResourceAsset).toHaveBeenCalledWith("resource-asset-id", space.id);
+    expect(mocks.getStorageProvider).not.toHaveBeenCalled();
+  });
+
+  it("denies an unauthenticated generic admin resource before lookup", async () => {
+    mocks.getAuthenticatedUser.mockResolvedValue(null);
+    const response = await getAdminResource(request(), resourceContext());
+    expect(response.status).toBe(401);
+    expect(mocks.getAdminResourceAsset).not.toHaveBeenCalled();
     expect(mocks.getStorageProvider).not.toHaveBeenCalled();
   });
 
@@ -143,6 +166,56 @@ describe("asset route streaming", () => {
     expect((await headAdminPortfolioDocument(request("google", "HEAD"), portfolioContext())).body).toBeNull();
     expect(provider.openFile).toHaveBeenCalledTimes(4);
   });
+
+  it("serves non-PDF portfolio documents with the MIME type from their extension", async () => {
+    const provider = streamingProvider("google-drive");
+    const pngDocument = { learningSpaceId: space.id, sourceId: "hint-image", fileName: "dit is een tip.png", extension: "png" };
+    mocks.getPublicPortfolioDocument.mockResolvedValue(pngDocument);
+    mocks.getAdminPortfolioDocument.mockResolvedValue(pngDocument);
+    mocks.getStorageProvider.mockResolvedValue(provider);
+
+    const publicResponse = await getPublicPortfolioDocument(request(), portfolioContext("hints"));
+    const adminResponse = await getAdminPortfolioDocument(request(), portfolioContext("hints"));
+
+    expect(publicResponse.status).toBe(200);
+    expect(publicResponse.headers.get("content-type")).toBe("image/png");
+    expect(adminResponse.status).toBe(200);
+    expect(adminResponse.headers.get("content-type")).toBe("image/png");
+  });
+
+  it("serves DOCX source resources with the configured Office MIME type", async () => {
+    const provider = streamingProvider("onedrive");
+    const docxResource = { learningSpaceId: space.id, sourceId: "worksheet-source", fileName: "Werkblad.docx", extension: "docx" };
+    mocks.getPublicResourceAsset.mockResolvedValue(docxResource);
+    mocks.getStorageProvider.mockResolvedValue(provider);
+
+    const response = await getPublicResource(request(), resourceContext());
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+  });
+
+  it("streams generic public and admin resources with MIME type and HEAD support", async () => {
+    const provider = streamingProvider("onedrive");
+    mocks.getPublicResourceAsset.mockResolvedValue(resource);
+    mocks.getAdminResourceAsset.mockResolvedValue(resource);
+    mocks.getStorageProvider.mockResolvedValue(provider);
+
+    const publicResponse = await getPublicResource(request(), resourceContext());
+    const publicHead = await headPublicResource(request("google", "HEAD"), resourceContext());
+    const adminResponse = await getAdminResource(request(), resourceContext());
+    const adminHead = await headAdminResource(request("google", "HEAD"), resourceContext());
+
+    expect(publicResponse.status).toBe(200);
+    expect(publicResponse.headers.get("content-type")).toBe("image/jpeg");
+    expect(publicHead.body).toBeNull();
+    expect(adminResponse.status).toBe(200);
+    expect(adminResponse.headers.get("content-type")).toBe("image/jpeg");
+    expect(adminHead.body).toBeNull();
+    expect(mocks.getPublicResourceAsset).toHaveBeenCalledWith("resource-asset-id", space.id);
+    expect(mocks.getAdminResourceAsset).toHaveBeenCalledWith("resource-asset-id", space.id);
+    expect(provider.openFile).toHaveBeenCalledTimes(4);
+  });
 });
 
 function request(slug = "google", method = "GET") {
@@ -155,6 +228,10 @@ function solutionContext(id = "asset-id") {
 
 function portfolioContext(kind = "assignment") {
   return { params: Promise.resolve({ id: "portfolio-id", kind }) };
+}
+
+function resourceContext(id = "resource-asset-id") {
+  return { params: Promise.resolve({ id }) };
 }
 
 function streamingProvider(id: string) {

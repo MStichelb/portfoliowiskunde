@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 
 import type { ManagedSourceProfile } from "@/lib/source-profiles";
 
+import { SourceProfileExerciseResourcesEditor } from "./source-profile-exercise-resources-editor";
+import { SourceProfileExerciseScannerEditor } from "./source-profile-exercise-scanner-editor";
 import { SourceProfileGlobalResourcesEditor } from "./source-profile-global-resources-editor";
 
 type ServerAction = (formData: FormData) => void | Promise<void>;
@@ -25,11 +27,13 @@ export function SourceProfileManageDialog({
   const saveModeRef = useRef<HTMLInputElement>(null);
   const targetRef = useRef<HTMLInputElement>(null);
   const [name, setName] = useState(profile.name);
-  const [resourcesDirty, setResourcesDirty] = useState(false);
+  const [globalResourcesDirty, setGlobalResourcesDirty] = useState(false);
+  const [exerciseScannerDirty, setExerciseScannerDirty] = useState(false);
+  const [exerciseResourcesDirty, setExerciseResourcesDirty] = useState(false);
   const [closePrompt, setClosePrompt] = useState(false);
   const [sharedPrompt, setSharedPrompt] = useState(false);
   const [splitTarget, setSplitTarget] = useState("");
-  const dirty = name !== profile.name || resourcesDirty;
+  const dirty = name !== profile.name || globalResourcesDirty || exerciseScannerDirty || exerciseResourcesDirty;
   const shared = profile.usageCount > 1;
   const router = useRouter();
 
@@ -87,6 +91,7 @@ const leave = useCallback(() => {
         <div className="source-profile-dialog-heading source-profile-dialog-heading-sticky">
           <h2 id="manage-source-profile-title">Bronprofiel beheren</h2>
           <div className="source-profile-dialog-heading-actions">
+            {profile.canArchive ? <button className="secondary-button" type="submit" formAction={archiveAction}><Archive size={16} aria-hidden />Archiveren</button> : null}
             <button className="primary-button" type="button" onClick={requestSave}><Save size={16} aria-hidden />Opslaan</button>
             <button className="icon-button" type="button" onClick={requestClose} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
           </div>
@@ -111,12 +116,24 @@ const leave = useCallback(() => {
             ownerIdField="sourceProfileId"
             ownerId={profile.id}
             embedded
-            onDirtyChange={setResourcesDirty}
+            onDirtyChange={setGlobalResourcesDirty}
           />
 
-          {profile.canArchive ? <div className="source-profile-lifecycle-zone">
-            <button className="secondary-button" type="submit" formAction={archiveAction}><Archive size={16} aria-hidden />Archiveren</button>
-          </div> : null}
+          <SourceProfileExerciseScannerEditor
+            scanner={profile.config.scanner.exercise}
+            editorKey={profile.id}
+            embedded
+            onDirtyChange={setExerciseScannerDirty}
+          />
+
+          <SourceProfileExerciseResourcesEditor
+            resources={profile.config.exerciseResources}
+            ownerIdField="sourceProfileId"
+            ownerId={profile.id}
+            embedded
+            onDirtyChange={setExerciseResourcesDirty}
+          />
+
         </div>
       </form>
 

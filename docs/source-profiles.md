@@ -13,7 +13,7 @@ Een relationele singleton-reference wijst exact één template als standaard aan
 
 Een nieuw template vertrekt van het actuele standaardtemplate of een expliciet gekozen bestaand template en krijgt altijd een nieuwe ID en een gevalideerde, onafhankelijke configsnapshot. Dupliceren doet hetzelfde met een veilige kopienaam. Templatenamen zijn na trimmen en zonder onderscheid tussen hoofd- en kleine letters appbreed uniek, ook wanneer een template gearchiveerd is. Een defaultwissel past uitsluitend de singleton-reference aan: bestaande LearningSpaces, concrete profielen, bronnen, index en synchronisatie blijven onaangeroerd.
 
-B3.3 bewerkt alleen template-metadata. Een inhoudelijke templateconfig-, resource- of scannereditor volgt in latere stappen; er is geen JSON-editor en geen live inheritance.
+B3.3 introduceerde alleen template-metadata. Sinds C/D kunnen globale en onderdelen per oefening via getypeerde editors worden beheerd; er blijft bewust geen vrije JSON-editor en geen live inheritance.
 
 Migration 036 zet LearningSpaces die nog direct aan het technische built-in profiel gekoppeld waren om naar afzonderlijke concrete snapshots. Migration 037 voegt expliciet profieleigendom toe. Bestaande custom profielen krijgen deterministisch de owner met de laagste user-ID van hun management-LearningSpace; ontbreekt die, dan wordt de actieve compatibility-superadmin gebruikt. Bestaande profielsnapshots en usage-koppelingen blijven behouden. Eventuele genormaliseerde naamconflicten bij dezelfde nieuwe eigenaar krijgen een veilig suffix. Migration 038 voegt aan concrete profielen en templates een nullable `archived_at` toe; bestaande rijen blijven actief en behouden al hun data. Het built-in profiel blijft zonder owner alleen als technische fallback bestaan en verschijnt niet in de normale beheer-overzichten.
 
@@ -33,7 +33,7 @@ Vanuit het ingebouwde profiel kan een owner of superadmin een eigen profiel make
 
 Hernoemen van een gedeeld profiel vereist een expliciete impactbevestiging van de profieleigenaar of superadmin. Op de centrale pagina is geen concrete LearningSpace-context bekend en wordt daarom alleen het gedeelde profiel zelf voor alle gekoppelde omgevingen hernoemd. De bestaande guarded domeinsemantiek voor een expliciete geldige LearningSpace-context blijft een onafhankelijke split-copy ondersteunen, maar de LearningSpace-instellingen bieden daarvoor geen profielmanagement-UI meer.
 
-De scanner leest deze configuratie nog niet: profiel-, template-, default-, kopieer- en koppelacties starten geen synchronisatie en sync en indexering blijven exact de bestaande implementatie gebruiken. Latere fases voegen terminologie, resources en scannerregels toe zonder het interne portfolio-domein of de read-only bronprincipes te wijzigen.
+Sinds E leest de synchronisatie het actieve bronprofiel één keer per synchronisatieronde en gebruikt Scanner v2 die configuratie voor zowel globale `source_file`-resources als onderdelen per oefening. Profiel-, template-, default-, kopieer- en koppelacties starten nog steeds geen automatische synchronisatie. De oefeningnummerparser blijft bewust bestaan als structurele identity extractor voor oefeningsbestanden en -mappen; de standaardmarker is `Oef`, maar het bronprofiel kan die marker aanpassen. De resourceclassificatie erboven is profielgestuurd en bronbestanden blijven read-only.
 
 Voor volgende beheerfases geldt een impactonderscheid: presentatie- en terminologiewijzigingen zijn laag-risico configuratie, terwijl bronherkenningsregels bepalen hoe bestanden en mappen inhoudelijk worden geïnterpreteerd. Wijzigingen aan zulke regels moeten daarom een duidelijke waarschuwing krijgen en, waar haalbaar, vóór toepassing een preview of dry-run van de gevolgen tonen. Templatewijzigingen propageren nooit stilzwijgend naar bestaande profielen. Die waarschuwing en preview maken nog geen deel uit van B3.1.
 
@@ -61,3 +61,92 @@ Wijzigingen aan een gedeeld concreet bronprofiel vereisen expliciete bevestiging
 Concrete bronprofielen bewaren profielnaam en globale documenten in één beheerflow. De beheerder slaat beide samen op via de vaste knop bovenaan het dialoogvenster. Sluiten met lokale wijzigingen vraagt expliciet of de wijzigingen moeten worden opgeslagen, genegeerd of verder bewerkt.
 
 Bij een gedeeld concreet profiel wordt pas bij opslaan een impactkeuze gevraagd. De beheerder kan de wijzigingen voor alle gekoppelde leeromgevingen opslaan, of één gekoppelde leeromgeving afsplitsen naar een onafhankelijke kopie. Zo'n split-kopie behoudt de oorspronkelijke profieleigenaar, wordt alleen in de gekozen leeromgeving actief en laat het gedeelde origineel voor de overige leeromgevingen onaangeraakt.
+
+## C4 — Profielgestuurde herkenning van globale bronbestanden
+
+Sinds C4 gebruikt de synchronisatie het **actieve bronprofiel van de LearningSpace** bij de indexering. De herkenningsregels van globale `source_file`-resources zijn daarmee niet langer alleen configuratie: voor de bestaande globale documentrollen bepalen ze welk bestand in de portfolioroot wordt gekoppeld.
+
+C4 is bewust een compatibiliteitsstap vóór Scanner v2. De bestaande opslag heeft nog drie vaste globale documentposities. Daarom worden op dit moment de eerste `source_file`-resource volgens profielvolgorde met de semantische rol `assignment`, `hint` en `final_answer` gekoppeld aan respectievelijk de bestaande opgaven-, hints- en eindoplossingenpositie. De resource-ID zelf is daarbij niet meer bepalend: een resource met een eigen ID blijft werken zolang zijn semantische rol overeenkomt. Een tweede globale bronresource met dezelfde semantische rol en globale resources met `generic` of `worked_solution` krijgen in C4 nog geen eigen persistente bestandspositie; D voegt het exercise-resourceconfiguratie- en readmodel toe, terwijl de generieke bestandsopslag en vrije herkenning bij Scanner v2 in E horen.
+
+De bestandsherkenning volgt de ingestelde operator (`starts_with`, `contains` of `ends_with`), hoofdlettergevoeligheid en toegelaten extensies. De tekstregel wordt toegepast op de bestandsnaam **zonder extensie**; de extensie wordt afzonderlijk gecontroleerd. Vanaf Scanner v2 is de **portfoliomap** autoritatief voor het portfolionummer. Een nummer dat toevallig in een globale bestandsnaam staat, wordt dus niet gebruikt om het bestand aan een ander portfolio toe te wijzen. Een profielregel moet zelf voldoende specifiek zijn wanneer meerdere bestanden in dezelfde portfoliomap zouden matchen.
+
+Een profielwijziging start niet automatisch een synchronisatie. De nieuwe herkenningsregels worden toegepast bij de eerstvolgende synchronisatie. De bestaande vaste databasevelden en foutmeldingsterminologie blijven in C4 behouden om deze stap zonder databasemigratie en zonder brede foutmeldingsrefactor uit te voeren; generieke resource-opslag volgt in Scanner v2 en resource-aware foutmeldingen in J.
+
+## D1–D3 — Onderdelen per oefening
+
+Vanaf D1 bevat dezelfde V1-profielconfig ook een getypeerde lijst `exerciseResources` met maximaal tien onderdelen per individuele oefening. Een onderdeel heeft een stabiele resource-ID, label, icoon, volgorde, semantische rol en een bronherkenningsconfiguratie. In deze D-fase is het resourcekind bewust beperkt tot `source_file`; oefeningsspecifieke externe links worden nog niet geïntroduceerd.
+
+De standaardconfig bevat twee compatibiliteitsonderdelen: **Uitwerking** met semantische rol `worked_solution` en **Alternatieve uitwerking** met semantische rol `alternative_solution`. Oude V1-configs zonder `exerciseResources` worden bij het lezen automatisch met deze twee definities aangevuld. Daarom is voor D1–D3 geen databasemigratie nodig en blijven bestaande profielen, sjablonen en LearningSpaces geldig.
+
+D1 introduceert nog geen vrije bestandsnaamregel voor onderdelen per oefening. De herkenning heeft in deze overgangsfase expliciet target `legacy_solution_file` en bewaart de toegelaten bestandstypes (`PDF`, `PNG`, `JPG`, `JPEG`). De bestaande PF/Oef-conventie blijft dus de structurele herkenningsregel. De semantische rol bepaalt vervolgens hoe zo'n bestaand bestand geïnterpreteerd wordt:
+- de eerste resource in profielvolgorde met `worked_solution` koppelt aan de bestaande `standard`-variant;
+- de eerste resource met `alternative_solution` koppelt aan de bestaande `-alt`-variant.
+
+De resource-ID is daarbij niet bepalend. Een leraar kan de labels, iconen, volgorde en toegelaten bestandstypes wijzigen zonder de historische `standard`/`alternative`-databasevelden te hernoemen. Wanneer een toegelaten extensie uit de resourceconfig verdwijnt, wordt zo'n bestand bij de volgende synchronisatie niet meer als dat onderdeel per oefening geïndexeerd.
+
+Andere semantische rollen (`assignment`, `final_answer`, `hint`, `explanation` en `generic`) kunnen vanaf D1 al in een profiel of sjabloon worden vastgelegd en in de beheer-UI worden geordend. Ze krijgen in D3 bewust nog geen vrije bestandsherkenning of nieuwe persistente assetpositie. Dat vereist de generieke regelengine en opslagkoppeling van Scanner v2 in fase E. Ook een tweede resource met dezelfde legacy semantische rol wordt in D niet automatisch aan dezelfde variant gekoppeld: alleen de eerste volgens profielvolgorde vormt de compatibiliteitsbrug.
+
+D2 maakt de exercise-readmodels resource-aware zonder de bestaande publicatie- en autorisatielogica te vervangen. Admin-readmodels bevatten alle geconfigureerde onderdelen per oefening in profielvolgorde, ook wanneer er voor een resource geen beschikbaar bestand is. Publieke exercise-readmodels bevatten alleen resources met beschikbare, effectief toegankelijke assets; de bestaande vlag voor alternatieve uitwerkingen blijft daarbij gerespecteerd. Het bestaande `assets`-veld blijft parallel aanwezig zodat de huidige oefeningspagina's en API-routes backward compatible blijven.
+
+Concrete bronprofielen bewaren profielnaam, globale documenten en onderdelen per oefening samen in dezelfde centrale saveflow. De gedeeld-profielkeuze uit C2 blijft ongewijzigd: opslaan kan voor alle gekoppelde LearningSpaces of als onafhankelijke kopie voor één LearningSpace. Appbrede sjablonen hebben dezelfde editor voor onderdelen per oefening en bewaren metadata, globale documenten en onderdelen via één centrale Opslaan-knop bovenaan. Templatewijzigingen propageren nooit naar bestaande concrete profielen.
+
+Een profielwijziging start ook in D geen automatische synchronisatie. Wijzigingen aan de legacy-koppeling of toegelaten extensies worden bij de eerstvolgende synchronisatie toegepast. De volledige generalisatie naar vrije herkenningsregels, meer resourcevormen en generieke persistente exercise assets blijft expliciet scope van E — Scanner v2.
+
+## E1–E5 — Scanner v2
+
+Scanner v2 maakt herkenning, classificatie en persistence profielgestuurd, maar houdt de bestanden zelf als source of truth. De actieve profielconfiguratie wordt één keer vóór het indexeren geladen en expliciet aan de indexer doorgegeven. Dezelfde bronstructuur en hetzelfde profiel leveren daardoor deterministisch hetzelfde resultaat op.
+
+### Portfolio- en onderdeelcontext
+
+Het **portfolionummer komt uitsluitend uit de portfoliomap** (`Portfolio <code> - <titel>`). Het mag nog in bestandsnamen voorkomen, bijvoorbeeld `PF1-Oef3a.png`, maar die tekst bepaalt niet meer aan welk portfolio het bestand behoort. Zo kan een bestand in Portfolio 1 technisch `PF8-...` heten zonder dat Scanner v2 naar Portfolio 8 springt. Als twee globale bestanden binnen dezelfde portfoliomap aan dezelfde herkenningsregel voldoen, ontstaat gewoon een conflict en wordt er niet gegokt.
+
+Een individueel portfolio kan wel of geen tussentitels/onderdelen hebben. Directe submappen volgens de vaste conventie **`nummer - titel`**, bijvoorbeeld `1 - Oppervlakte`, worden automatisch als portfolio-onderdelen beschouwd. Als zulke mappen ontbreken, vormt de portfoliomap zelf één impliciete oefeningscontext. De historische map `Uitwerkingen` blijft als compatibilitycontainer ondersteund: wanneer daar `nummer - titel`-mappen in staan, worden die als onderdelen gebruikt; zonder zulke onderdeelmappen kan `Uitwerkingen` zelf de impliciete oefeningscontext zijn. Dit is een eigenschap van elk portfolio afzonderlijk en geen leeromgevinginstelling.
+
+### Oefeningen herkennen
+
+Een bronprofiel configureert alleen **waar het oefeningsnummer begint**:
+
+- `Na tekst`, standaard na `Oef`; de tekst is vrij aanpasbaar, bijvoorbeeld `Vraag` of `Ex`;
+- `Aan begin van naam`.
+
+De scanner ondersteunt de vaste nummergrammatica die voor de portfolio's nodig is: een hoofdnummer, optioneel één letter en optioneel aansluitende cijfers, bijvoorbeeld `3`, `12`, `3a`, `12b` en `3a1`. Een puntnotatie zoals `3.1` wordt bewust niet als standaard bestandsnaamformaat ingevoerd. Haakjes zoals `(1)` en `(2)` behoren niet tot de oefeningsidentiteit: `Oef3a(1).png` blijft oefening `3a`. Zulke toevoegingen kunnen gewoon deel uitmaken van meerdere bestanden/stappen die alfabetisch worden gesorteerd.
+
+Bestanden **en** mappen kunnen automatisch oefeningen vormen; daar is geen aparte schakelaar voor. Een mapnaam moet het oefeningsnummer eenduidig bevatten en mag na het nummer geen andere tekst meer hebben, bijvoorbeeld `Oef3a/`. Binnen zo'n oefeningsmap kunnen onderdelen vervolgens via gewone bestandsnaamregels (`opgave.pdf`, `uitwerking.png`, ...) worden gevonden.
+
+Nummerherkenning en onderdeelherkenning werken samen om letterambiguïteit te vermijden. Voor `Oef3uitwerking.png` zijn technisch zowel `3` + `uitwerking` als `3u` + `itwerking` kandidaten. Als de onderdeelregel zegt dat de tekst na het oefeningsnummer met `uitwerking` begint, blijft alleen oefening `3` geldig. `Oef3auitwerking.png` en `Oef3auitwerkingvervolg.png` kunnen op dezelfde manier eenduidig als oefening `3a` worden herkend. Als de ingestelde regels geen eenduidige keuze toelaten, waarschuwt de scanner en kiest hij niets.
+
+### Onderdelen per oefening
+
+Elke exercise-resource heeft naast ID, label, icoon, volgorde en semantische rol vier scanner-/weergave-eigenschappen.
+
+**Zoeklocatie** bepaalt waar het bestand ten opzichte van de huidige oefeningscontext mag staan:
+
+- `Bij de oefening`: rechtstreeks in de huidige contextmap, of rechtstreeks in een expliciete oefeningsmap;
+- `In submap`: uitsluitend in één ingestelde submap, standaard bijvoorbeeld `assets`;
+- `Bij de oefening én in submap`: beide locaties zijn toegestaan.
+
+De huidige contextmap is de portfoliomap wanneer het portfolio geen onderdelen heeft, of de map `nummer - titel` wanneer het portfolio wel onderdelen heeft. Bij een expliciete oefeningsmap is `Bij de oefening` de oefeningsmap zelf. Er wordt in E niet willekeurig recursief door alle submappen gezocht.
+
+**Herkenningsregel** heeft drie vormen:
+
+- `Tekst na oefeningnummer`: `Begint met`, `Bevat` of `Is exact`; dit is de voorkeursroute voor bestanden zoals `PF1-Oef3a-alt(1).png`;
+- `Bestandsnaam`: dezelfde eenvoudige tekstoperatoren op de volledige naam zonder extensie; vooral nuttig binnen een oefeningsmap; bestaande profielen met een oudere `ends_with`-regel blijven leesbaar, maar nieuwe regels bieden die optie niet aan;
+- `Standaard / overige bestanden`: fallback die pas wordt gebruikt wanneer geen specifiekere regel voor hetzelfde bestand overeenkomt.
+
+Specifieke regels hebben dus voorrang op fallbackregels. Hierdoor kan `PF1-Oef3a-alt.png` eerst als Alternatieve uitwerking worden geclassificeerd en niet tegelijk als gewone Uitwerking. Als twee regels met dezelfde prioriteit hetzelfde bestand claimen, wordt geen `first match wins` toegepast: er volgt een conflictwaarschuwing en het bestand wordt niet gekoppeld. Meerdere fallbackresources zijn toegestaan wanneer locatie, bestandstype of andere context ze eenduidig houdt; als ze werkelijk hetzelfde bestand claimen, geldt dezelfde conflictregel.
+
+**Meerdere bestanden toestaan** is een toggle per onderdeel. Staat die aan, dan worden alle eenduidige matches alfabetisch op bestandsnaam gekoppeld en in die volgorde genummerd. Scanner v2 probeert `(1)`, `(2)`, `vervolg`, enz. niet als aparte semantische staptaal te interpreteren. Staat de toggle uit en matchen meerdere bestanden, dan kiest de scanner niets en meldt hij een conflict. Defaults: Opgave en Eindoplossing één bestand; Uitwerking, Alternatieve uitwerking, Hint, Uitleg en Overig meerdere bestanden.
+
+**Weergave** wordt nu al in het bronprofiel opgeslagen met drie waarden: `Altijd zichtbaar`, `Inklapbaar als geheel` en `Inklapbaar per bestand`. Opgave/Eindoplossing krijgen standaard `Altijd zichtbaar`, Hint `Inklapbaar per bestand`, en de overige meervoudige onderdelen `Inklapbaar als geheel`. E bewaart deze intentie in het readmodel; de volledige leerlingpresentatie van alle generieke oefeningsonderdelen wordt bewust later gebouwd.
+
+### Globale resources, persistence en compatibility
+
+Globale `source_file`-resources worden in profielvolgorde herkend via hun bestandsnaamregel (`starts_with`, `contains` of `ends_with`), hoofdlettergevoeligheid en toegelaten extensies. Elke eenduidig gevonden globale resource wordt in de generieke resource-index bewaard, ook wanneer de semantische rol niet één van de drie historische documentvelden is. De eerste resources met `assignment`, `hint` en `final_answer` blijven daarnaast naar de bestaande portfolio-documentvelden gespiegeld zodat oude URLs/readmodels blijven werken. Externe links blijven portfolio-metadata en worden niet door de scanner verwerkt.
+
+Migration `040_generic_source_resource_assets` voegt additief `source_resource_assets` toe. De tabel bewaart portfolio- en oefeningsresources met resource-ID, semantische rol, provider-`source_id`, relatief pad, bestandsnaam, extensie, volgorde/stap en indexstatus. Een stabiele provider-`source_id` laat rename/move dezelfde resource-instance behouden; zonder provider-ID is het relatieve pad de fallback. Verdwenen bestanden blijven als missing indexrecord bestaan en kunnen bij herstel met dezelfde source-ID opnieuw worden geactiveerd. De bestaande vaste portfolio-documentvelden en `solution_variants`/`solution_assets` blijven voorlopig parallel bestaan als backward-compatibilitylaag.
+
+Admin-readmodels tonen geconfigureerde resources ook wanneer ze ontbreken; publieke readmodels en generieke assetroutes geven alleen effectief geïndexeerde en volgens de bestaande portfolio/sectie/oefening-publicatie toegankelijke resources vrij. Voor `alternative_solution` blijft `show_alternative_to_students` ook op de directe generieke assetroute autoritatief. De generieke routes zijn `/api/resource-assets/[id]` en `/api/admin/resource-assets/[id]`; bestaande portfolio- en solution-assetroutes blijven geldig. MIME wordt afgeleid uit de echte bestandsextensie.
+
+### Bewuste scopegrenzen
+
+De individuele oefeningspagina's blijven in E nog de bestaande Uitwerking/Alternatieve uitwerking renderen. Andere generieke onderdelen zijn wel geïndexeerd, persistent en beschikbaar in readmodels. De opgeslagen weergavemodus wordt pas gebruikt wanneer die bredere oefeningspresentatie wordt gebouwd. Resource-specifieke visibility/publicatie blijft H, resource-aware gebruikersfoutmeldingen blijft J. De didactische betekenis van deelvragen (`3a`, `3b`: sequentieel of parallel) wordt niet door de scanner gegokt; E bewaart het hoofdnummer en suffix stabiel, G kan daar later de inhoudelijke relatie bovenop modelleren. Aanpasbare UI-terminologie zoals een ander woord voor “Portfolio” hoort bij I en verandert de interne semantiek niet.

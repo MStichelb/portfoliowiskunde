@@ -1,0 +1,199 @@
+.adminHeaderActions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: -2.7rem;
+  margin-bottom: 1.15rem;
+  min-height: 2rem;
+}
+
+.infoButton {
+  display: inline-flex;
+  width: 2rem;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  color: inherit;
+  background: transparent;
+  text-decoration: none;
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+
+.infoButton:hover,
+.infoButton:focus-visible {
+  background: rgba(127, 127, 127, 0.08);
+}
+
+.infoButton:active {
+  transform: translateY(1px);
+}
+
+.missingResource {
+  border-color: #a9abad !important;
+  color: #76797c !important;
+  background: #f2f3f4 !important;
+  box-shadow: none !important;
+}
+
+.missingSourceResource {
+  cursor: not-allowed;
+}
+
+.externalResource {
+  cursor: pointer;
+}
+
+.adminResourceItem {
+  display: grid;
+  gap: 0.3rem;
+  align-content: start;
+}
+
+.resourceTypeLabel {
+  color: #7b858a;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.modalTarget {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+
+.modalTarget:target {
+  display: flex;
+}
+
+.modalBackdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 18, 20, 0.46);
+}
+
+.modalPanel {
+  position: relative;
+  z-index: 1;
+  width: min(34rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 2rem);
+  overflow: auto;
+  border: 1px solid #d6d8da;
+  border-radius: 0.85rem;
+  background: #fff;
+  box-shadow: 0 1rem 3rem rgba(16, 18, 20, 0.22);
+  padding: 1.25rem;
+}
+
+.modalHeading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.modalTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.modalSubtitle {
+  margin: 0.35rem 0 0;
+  color: #62666a;
+  font-size: 0.92rem;
+}
+
+
+.rulesList {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.ruleItem {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+  border: 1px solid #e2e3e5;
+  border-radius: 0.6rem;
+  background: #fafafa;
+}
+
+.ruleItem dt {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 700;
+}
+
+.ruleItem dd {
+  margin: 0;
+  color: #4f5357;
+  font-size: 0.92rem;
+}
+
+.linkForm {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.linkForm label {
+  display: grid;
+  gap: 0.4rem;
+  font-weight: 700;
+}
+
+.linkForm input[type="url"] {
+  width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  border: 1px solid #9ab0ad;
+  border-radius: 4px;
+  padding: 8px;
+  background: #fff;
+  color: #17222b;
+  font: inherit;
+}
+
+.linkHelp {
+  margin: -0.25rem 0 0;
+  color: #62666a;
+  font-size: 0.88rem;
+}
+
+.modalActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 0.15rem;
+}
+
+.modalActions a {
+  text-decoration: none;
+}
+
+@media (max-width: 640px) {
+  .adminHeaderActions {
+    margin-top: -2.55rem;
+    margin-bottom: 1rem;
+  }
+
+  .modalTarget {
+    padding: 0.75rem;
+  }
+
+  .modalPanel {
+    width: calc(100vw - 1.5rem);
+    max-height: calc(100vh - 1.5rem);
+    padding: 1rem;
+  }
+}

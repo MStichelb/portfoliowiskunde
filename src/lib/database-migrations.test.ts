@@ -136,6 +136,8 @@ describe("Google Drive LearningSpace migration", () => {
     expect((await database.execute("SELECT archived_at FROM source_profile_templates")).rows.every((row) => row.archived_at === null)).toBe(true);
     expect((await database.execute("SELECT COUNT(*) AS count FROM source_profiles WHERE type = 'custom' AND owner_user_id IS NULL")).rows[0].count).toBe(0);
     expect((await database.execute("SELECT owner_user_id FROM source_profiles WHERE type = 'built_in'")).rows[0].owner_user_id).toBeNull();
+    const builtInProfileConfig = JSON.parse(String((await database.execute("SELECT config_json FROM source_profiles WHERE type = 'built_in'")).rows[0].config_json));
+    expect(builtInProfileConfig.exerciseResources.map((resource: { id: string }) => resource.id)).toEqual(["worked-solution", "alternative-solution"]);
     expect((await database.execute("PRAGMA table_info(individual_learning_space_access)")).rows.map((row) => row.name))
       .toEqual(expect.arrayContaining(["user_id", "learning_space_id", "created_at", "updated_at"]));
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '021_multi_user_foundation'")).rows).toHaveLength(1);
@@ -147,6 +149,12 @@ describe("Google Drive LearningSpace migration", () => {
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '031_exercise_note_labels'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '037_source_profile_ownership'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '038_source_profile_lifecycle'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '039_portfolio_external_links'")).rows).toHaveLength(1);
+    expect((await database.execute("PRAGMA table_info(portfolio_external_links)")).rows.map((row) => row.name))
+      .toEqual(expect.arrayContaining(["portfolio_id", "resource_id", "url", "updated_at"]));
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '040_generic_source_resource_assets'")).rows).toHaveLength(1);
+    expect((await database.execute("PRAGMA table_info(source_resource_assets)")).rows.map((row) => row.name))
+      .toEqual(expect.arrayContaining(["learning_space_id", "portfolio_id", "exercise_id", "resource_scope", "resource_id", "semantic_role", "source_id", "relative_path", "extension", "is_indexed", "missing_since", "archived_at", "last_seen_at"]));
     expect((await database.execute("SELECT id, role, status FROM users WHERE id = 'user-legacy-superadmin'")).rows[0]).toMatchObject({
       role: "superadmin", status: "active",
     });
@@ -236,6 +244,62 @@ describe("Google Drive LearningSpace migration", () => {
     }))).toEqual(profileSnapshotsBefore);
     expect((await upgraded.execute("SELECT * FROM learning_space_source_profiles ORDER BY learning_space_id")).rows).toEqual(usageBefore);
     expect((await upgraded.execute("SELECT version FROM schema_migrations WHERE version = '037_source_profile_ownership'")).rows).toHaveLength(1);
+  });
+
+  it("adds per-portfolio external link storage without changing existing portfolio data", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-external-links-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 38)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-12T20:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.execute({
+      sql: `INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, is_indexed, indexed_at)
+        VALUES ('legacy-link-portfolio', 'space-5:1', '1', 'space-5', 'Bestaande titel', 'Portfolio 1 - Bestaande titel', 1, '2026-09-12T20:00:00.000Z')`,
+      args: [],
+    });
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT title FROM portfolios WHERE id = 'legacy-link-portfolio'")).rows[0]?.title).toBe("Bestaande titel");
+    expect((await upgraded.execute("SELECT * FROM portfolio_external_links")).rows).toEqual([]);
+    expect((await upgraded.execute("SELECT version FROM schema_migrations WHERE version = '039_portfolio_external_links'")).rows).toHaveLength(1);
+  });
+
+  it("adds generic source-resource storage after migration 039 without changing existing portfolio data", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-generic-resources-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 39)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-13T10:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.execute({
+      sql: `INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, assignment_pdf_path, is_indexed, indexed_at)
+        VALUES ('legacy-resource-portfolio', 'space-5:1', '1', 'space-5', 'Bestaande titel', 'Portfolio 1 - Bestaande titel',
+          'Portfolio 1 - Bestaande titel/Portfolio 1 - Bestaande titel.pdf', 1, '2026-09-13T10:00:00.000Z')`,
+      args: [],
+    });
+    const portfolioBefore = (await legacy.execute("SELECT id, title, assignment_pdf_path, is_indexed FROM portfolios WHERE id = 'legacy-resource-portfolio'")).rows[0];
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT id, title, assignment_pdf_path, is_indexed FROM portfolios WHERE id = 'legacy-resource-portfolio'")).rows[0]).toEqual(portfolioBefore);
+    expect((await upgraded.execute("SELECT * FROM source_resource_assets")).rows).toEqual([]);
+    expect((await upgraded.execute("SELECT version FROM schema_migrations WHERE version = '040_generic_source_resource_assets'")).rows).toHaveLength(1);
+    expect((await upgraded.execute("PRAGMA index_list(source_resource_assets)")).rows.map((row) => row.name))
+      .toEqual(expect.arrayContaining(["source_resource_assets_portfolio_index", "source_resource_assets_exercise_index", "source_resource_assets_source_index"]));
   });
 
   it("adds custom message defaults without changing existing portfolio data", async () => {

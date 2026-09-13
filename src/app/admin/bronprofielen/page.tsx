@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { ArchiveVisibilityToggle } from "@/app/components/archive-visibility-toggle";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
+import { SourceProfileExerciseResourcesViewer } from "@/app/components/source-profile-exercise-resources-editor";
 import { SourceProfileGlobalResourcesViewer } from "@/app/components/source-profile-global-resources-editor";
 import { SourceProfileManageDialog } from "@/app/components/source-profile-manage-dialog";
 import { SourceProfileOwnerFilter } from "@/app/components/source-profile-owner-filter";
@@ -12,7 +13,7 @@ import { SourceProfileTemplateManager, type SourceProfileTemplateModal } from "@
 import { requireAdminUser } from "@/lib/auth";
 import { getSourceProfileOverview, sourceProfileUsageLabel, type ManagedSourceProfile } from "@/lib/source-profiles";
 import { listSourceProfileTemplates } from "@/lib/source-profile-templates";
-import { archiveManagedSourceProfileAction, archiveSourceProfileTemplateAction, copyManagedSourceProfileAction, copyManagedSourceProfileTemplateAction, createSourceProfileTemplateAction, duplicateSourceProfileTemplateAction, linkManagedSourceProfileAction, permanentlyDeleteManagedSourceProfileAction, permanentlyDeleteSourceProfileTemplateAction, restoreManagedSourceProfileAction, restoreSourceProfileTemplateAction, saveManagedSourceProfileAction, setDefaultSourceProfileTemplateAction, updateSourceProfileTemplateAction, updateSourceProfileTemplateGlobalResourcesAction } from "./actions";
+import { archiveManagedSourceProfileAction, archiveSourceProfileTemplateAction, copyManagedSourceProfileAction, copyManagedSourceProfileTemplateAction, createSourceProfileTemplateAction, duplicateSourceProfileTemplateAction, linkManagedSourceProfileAction, permanentlyDeleteManagedSourceProfileAction, permanentlyDeleteSourceProfileTemplateAction, restoreManagedSourceProfileAction, restoreSourceProfileTemplateAction, saveManagedSourceProfileAction, saveSourceProfileTemplateAction, setDefaultSourceProfileTemplateAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,7 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
     <ProfileList profiles={visibleRelatedProfiles} showOwner empty={user.role === "superadmin" && showArchive ? "Geen gearchiveerde bronprofielen van andere gebruikers." : user.role === "superadmin" ? "Er zijn geen bronprofielen van andere gebruikers voor deze filter." : "Je hebt momenteel geen actieve foreign bronprofielen via editor-leeromgevingen."} />
   </section>;
 
-  const templateSection = <SourceProfileTemplateManager key={`${query.templateSaved ?? ""}:${query.templateError ?? ""}:${query.templateModal ?? ""}:${query.template ?? ""}`} templates={templates} copyTargets={overview.copyTargets} canManage={user.role === "superadmin"} showArchive={showTemplateArchive} actions={{ create: createSourceProfileTemplateAction, update: updateSourceProfileTemplateAction, updateResources: updateSourceProfileTemplateGlobalResourcesAction, duplicate: duplicateSourceProfileTemplateAction, setDefault: setDefaultSourceProfileTemplateAction, copy: copyManagedSourceProfileTemplateAction, archive: archiveSourceProfileTemplateAction, restore: restoreSourceProfileTemplateAction, permanentlyDelete: permanentlyDeleteSourceProfileTemplateAction }} initialModal={templateModal(query.templateModal)} initialTemplateId={query.template} error={query.templateError} />;
+  const templateSection = <SourceProfileTemplateManager key={`${query.templateSaved ?? ""}:${query.templateError ?? ""}:${query.templateModal ?? ""}:${query.template ?? ""}`} templates={templates} copyTargets={overview.copyTargets} canManage={user.role === "superadmin"} showArchive={showTemplateArchive} actions={{ create: createSourceProfileTemplateAction, save: saveSourceProfileTemplateAction, duplicate: duplicateSourceProfileTemplateAction, setDefault: setDefaultSourceProfileTemplateAction, copy: copyManagedSourceProfileTemplateAction, archive: archiveSourceProfileTemplateAction, restore: restoreSourceProfileTemplateAction, permanentlyDelete: permanentlyDeleteSourceProfileTemplateAction }} initialModal={templateModal(query.templateModal)} initialTemplateId={query.template} error={query.templateError} />;
 
   return <main className="page-shell admin-page source-profiles-page">
     <Link className="secondary-button compact-back-button" href="/admin"><ArrowLeft size={16} aria-hidden />Terug naar beheer</Link>
@@ -66,6 +67,7 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
         <div className="source-profile-central-usage"><strong>{selectedProfile.name}</strong><span>{selectedProfile.isInactive ? "Inactief" : `Gebruikt in: ${sourceProfileUsageLabel(selectedProfile.usages)}`}</span>{selectedProfile.ownerName ? <small>Eigenaar: {selectedProfile.ownerName}</small> : null}</div>
         <div className="source-profile-dialog-form"><p>Je kunt dit profiel bekijken{selectedProfile.canCopy ? " en onafhankelijk kopiëren" : ""}, maar niet wijzigen of koppelen.</p></div>
         <SourceProfileGlobalResourcesViewer resources={selectedProfile.config.globalResources} />
+        <SourceProfileExerciseResourcesViewer resources={selectedProfile.config.exerciseResources} />
         <div className="source-profile-dialog-actions"><Link className="secondary-button link-button" href="/admin/bronprofielen">Sluiten</Link></div>
       </div></div> : null}
 
@@ -97,12 +99,13 @@ function profileFeedback(value: string | undefined): string | null {
   if (value === "restored") return "Bronprofiel hersteld.";
   if (value === "deleted") return "Bronprofiel permanent verwijderd.";
   if (value === "resourcesUpdated") return "Globale documenten opgeslagen.";
+  if (value === "exerciseResourcesUpdated") return "Onderdelen per oefening opgeslagen.";
   if (value === "profileUpdated") return "Bronprofiel opgeslagen.";
   if (value === "profileSplit") return "Onafhankelijke profielkopie gemaakt en actief gezet in de gekozen leeromgeving.";
   return null;
 }
 function templateModal(value: string | undefined): SourceProfileTemplateModal | null { return value === "create" || value === "manage" || value === "default" || value === "copy" ? value : null; }
-function templateFeedback(value: string | undefined): string | null { if (value === "created") return "Bronprofielsjabloon gemaakt."; if (value === "updated") return "Bronprofielsjabloon bijgewerkt."; if (value === "duplicated") return "Bronprofielsjabloon onafhankelijk gedupliceerd."; if (value === "default") return "Standaardsjabloon gewijzigd voor toekomstige leeromgevingen."; if (value === "archived") return "Bronprofielsjabloon gearchiveerd."; if (value === "restored") return "Bronprofielsjabloon hersteld."; if (value === "deleted") return "Bronprofielsjabloon permanent verwijderd."; if (value === "resourcesUpdated") return "Globale documenten van het sjabloon opgeslagen."; return null; }
+function templateFeedback(value: string | undefined): string | null { if (value === "created") return "Bronprofielsjabloon gemaakt."; if (value === "updated") return "Bronprofielsjabloon bijgewerkt."; if (value === "duplicated") return "Bronprofielsjabloon onafhankelijk gedupliceerd."; if (value === "default") return "Standaardsjabloon gewijzigd voor toekomstige leeromgevingen."; if (value === "archived") return "Bronprofielsjabloon gearchiveerd."; if (value === "restored") return "Bronprofielsjabloon hersteld."; if (value === "deleted") return "Bronprofielsjabloon permanent verwijderd."; if (value === "resourcesUpdated") return "Globale documenten van het sjabloon opgeslagen."; if (value === "exerciseResourcesUpdated") return "Onderdelen per oefening van het sjabloon opgeslagen."; return null; }
 function initialSection(query: Query, editorProfiles: ManagedSourceProfile[]): SourceProfileSectionTab {
   if (query.tab === "editor" || query.tab === "templates" || query.tab === "owned") return query.tab;
   if (query.templateModal || query.template || query.templateError || query.templateSaved) return "templates";

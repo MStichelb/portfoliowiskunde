@@ -19,11 +19,10 @@ export default async function LearningSpacePortfolioPage({ params }: { params: P
   await preparePublicIndex(space.id, { isPrefetch: isNextPrefetchRequest(await headers()) });
   const portfolio = await getStudentPortfolio(id, space.id);
   if (!portfolio) notFound();
-  const documents: ErrorReportDocumentKind[] = [
-    ...(portfolio.assignmentPdfPath ? ["assignment" as const] : []),
-    ...(portfolio.finalSolutionsPdfPath ? ["final_solutions" as const] : []),
-    ...(portfolio.hintsDocumentPath ? ["hints" as const] : []),
-  ];
+  const documents: ErrorReportDocumentKind[] = portfolio.globalResources.flatMap((resource) => {
+    if (resource.kind !== "source_file" || !resource.available || !resource.documentKind) return [];
+    return [resource.documentKind === "final-solutions" ? "final_solutions" : resource.documentKind];
+  });
   const reportExercises = listErrorReportExerciseIdentities(portfolio.sections);
-  return <main className="page-shell student-page"><header className="page-header"><p className="eyebrow">{portfolio.themeName ?? "Overige portfolio's"} • Portfolio {portfolio.code}</p><h1>{portfolio.title}</h1><PortfolioDocumentsWithMessage portfolioId={portfolio.id} spaceSlug={space.slug} hasHints={Boolean(portfolio.hintsDocumentPath)} customText={portfolio.customText} customTextPosition={portfolio.customTextPosition} /></header>{portfolio.sections.map((section) => <section className="section" key={section.id}><h2>{section.order}. {section.title}</h2><ol className="exercise-grid">{section.exercises.map((exercise) => <li key={exercise.id}>{exercise.visible ? <Link href={`/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(exercise.id)}`} className="exercise-link">Oefening {exercise.code}</Link> : <span className="exercise-hidden">Oefening {exercise.code}<small>Niet beschikbaar</small></span>}</li>)}</ol></section>)}{user ? <PortfolioErrorReportForm portfolioId={portfolio.id} documents={documents} exercises={reportExercises} /> : null}</main>;
+  return <main className="page-shell student-page"><header className="page-header"><p className="eyebrow">{portfolio.themeName ?? "Overige portfolio's"} • Portfolio {portfolio.code}</p><h1>{portfolio.title}</h1><PortfolioDocumentsWithMessage portfolioId={portfolio.id} spaceSlug={space.slug} resources={portfolio.globalResources} customText={portfolio.customText} customTextPosition={portfolio.customTextPosition} /></header>{portfolio.sections.map((section) => <section className="section" key={section.id}><h2>{section.order}. {section.title}</h2><ol className="exercise-grid">{section.exercises.map((exercise) => <li key={exercise.id}>{exercise.visible ? <Link href={`/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(exercise.id)}`} className="exercise-link">Oefening {exercise.code}</Link> : <span className="exercise-hidden">Oefening {exercise.code}<small>Niet beschikbaar</small></span>}</li>)}</ol></section>)}{user ? <PortfolioErrorReportForm portfolioId={portfolio.id} documents={documents} exercises={reportExercises} /> : null}</main>;
 }

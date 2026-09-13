@@ -1,55 +1,19 @@
 "use client";
 
-import {
-  ArrowDown,
-  ArrowUp,
-  Astroid,
-  BookOpen,
-  BookSearch,
-  Brain,
-  Calculator,
-  ChevronDown,
-  ChevronRight,
-  CircleCheckBig,
-  CircleHelp,
-  Clapperboard,
-  DraftingCompass,
-  ExternalLink,
-  FileClock,
-  FileText,
-  FlaskConical,
-  KeyRound,
-  LandPlot,
-  Lightbulb,
-  Link,
-  Map,
-  MonitorPlay,
-  NotebookPen,
-  Paperclip,
-  Pencil,
-  MapPinned,
-  Plus,
-  Puzzle,
-  ScrollText,
-  Shapes,
-  Sparkles,
-  Star,
-  Trash2,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, CircleHelp, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { ConfiguredResourceIcon } from "@/app/components/configured-resource-icon";
+import { SourceProfileIconPicker } from "@/app/components/source-profile-icon-picker";
 import {
   GLOBAL_RESOURCE_LIMIT,
   globalResourceFileExtensions,
   globalResourceFileMatchOperators,
-  globalResourceSelectableIcons,
   globalResourceSemanticRoles,
   sortGlobalResources,
   type GlobalResourceConfig,
   type GlobalResourceFileExtension,
   type GlobalResourceFileMatchOperator,
-  type GlobalResourceIcon,
   type GlobalResourceSemanticRole,
 } from "@/lib/source-profile-config";
 
@@ -67,36 +31,6 @@ const operatorLabels: Record<GlobalResourceFileMatchOperator, string> = {
   ends_with: "Eindigt op",
 };
 
-const iconComponents: Record<GlobalResourceIcon, LucideIcon> = {
-  "file-text": FileText,
-  lightbulb: Lightbulb,
-  "circle-check-big": CircleCheckBig,
-  "book-open": BookOpen,
-  link: Link,
-  "external-link": ExternalLink,
-  youtube: MonitorPlay,
-  calculator: Calculator,
-  astroid: Astroid,
-  "land-plot": LandPlot,
-  "drafting-compass": DraftingCompass,
-  brain: Brain,
-  "flask-conical": FlaskConical,
-  "key-round": KeyRound,
-  star: Star,
-  shapes: Shapes,
-  "notebook-pen": NotebookPen,
-  pencil: Pencil,
-  paperclip: Paperclip,
-  "scroll-text": ScrollText,
-  map: Map,
-  "book-search": BookSearch,
-  sparkles: Sparkles,
-  clapperboard: Clapperboard,
-  "monitor-play": MonitorPlay,
-  puzzle: Puzzle,
-  "file-clock": FileClock,
-  "map-pinned": MapPinned,
-};
 
 export function SourceProfileGlobalResourcesViewer({ resources }: { resources: readonly GlobalResourceConfig[] }) {
   const items = sortGlobalResources(resources);
@@ -112,11 +46,10 @@ export function SourceProfileGlobalResourcesViewer({ resources }: { resources: r
 
     {items.length === 0 ? <p className="empty-state">Geen globale documenten ingesteld.</p> : <div className="source-profile-resource-list">
       {items.map((resource) => {
-        const Icon = iconComponents[resource.icon];
         return <article className="source-profile-resource-item is-expanded" key={resource.id}>
           <div className="source-profile-resource-item-heading source-profile-resource-item-heading-readonly">
             <div className="source-profile-resource-summary source-profile-resource-summary-readonly">
-              <Icon size={18} aria-hidden />
+              <ConfiguredResourceIcon icon={resource.icon} size={18} />
               <strong title={resource.label}>{resource.label}</strong>
               <span>{roleLabels[resource.semanticRole]}</span>
             </div>
@@ -211,12 +144,11 @@ export function SourceProfileGlobalResourcesEditor({
     {items.length === 0 ? <p className="empty-state">Nog geen globale documenten ingesteld.</p> : <div className="source-profile-resource-list">
       {items.map((resource, index) => {
         const expanded = expandedIds.has(resource.id);
-        const Icon = iconComponents[resource.icon];
         return <article className={`source-profile-resource-item${expanded ? " is-expanded" : ""}`} key={resource.id}>
           <div className="source-profile-resource-item-heading">
             <button className="source-profile-resource-summary" type="button" onClick={() => toggleExpanded(resource.id)} aria-expanded={expanded}>
               {expanded ? <ChevronDown size={17} aria-hidden /> : <ChevronRight size={17} aria-hidden />}
-              <Icon size={18} aria-hidden />
+              <ConfiguredResourceIcon icon={resource.icon} size={18} />
               <strong title={resource.label || "Nieuw document"}>{resource.label || "Nieuw document"}</strong>
               <span>{roleLabels[resource.semanticRole]}</span>
             </button>
@@ -225,7 +157,7 @@ export function SourceProfileGlobalResourcesEditor({
 
           {expanded ? <div className="source-profile-resource-details">
             <div className="source-profile-resource-top-grid">
-              <IconPicker value={resource.icon} onChange={(icon) => update(index, (current) => ({ ...current, icon }))} />
+              <SourceProfileIconPicker value={resource.icon} onChange={(icon) => update(index, (current) => ({ ...current, icon }))} />
               <label>Label<input value={resource.label} maxLength={40} required onChange={(event) => update(index, (current) => ({ ...current, label: event.target.value }))} /></label>
             </div>
 
@@ -279,7 +211,7 @@ export function SourceProfileGlobalResourcesEditor({
           <h3 id={`${ownerId}-global-resources-heading`}>Globale documenten</h3>
           <button className="source-profile-help-button" type="button" onClick={() => setShowHelp((current) => !current)} aria-expanded={showHelp} aria-label="Uitleg over globale documenten" title="Uitleg over globale documenten"><CircleHelp size={17} aria-hidden /></button>
         </div>
-        <p>Configureer documenten die bovenaan elk portfolio beschikbaar kunnen zijn. De scanner gebruikt deze regels pas in een latere stap.</p>
+        <p>Configureer documenten die bovenaan elk portfolio beschikbaar kunnen zijn. De scanner gebruikt deze regels bij synchronisatie.</p>
       </div>
       <span className="source-role-badge">{items.length}/{GLOBAL_RESOURCE_LIMIT}</span>
     </div>
@@ -304,57 +236,6 @@ function ResourceOrderActions({ index, count, onMove, onDelete }: { index: numbe
   </div>;
 }
 
-function IconPicker({ value, onChange }: { value: GlobalResourceIcon; onChange: (icon: GlobalResourceIcon) => void }) {
-  const [open, setOpen] = useState(false);
-  const SelectedIcon = iconComponents[value];
-  return <div className="source-profile-icon-picker-field">
-    <span>Icoon</span>
-    <div className="source-profile-icon-picker">
-      <button className="source-profile-icon-picker-trigger" type="button" onClick={() => setOpen((current) => !current)} aria-expanded={open} aria-label="Icoon kiezen"><SelectedIcon size={18} aria-hidden /><ChevronDown size={15} aria-hidden /></button>
-      {open ? <div className="source-profile-icon-picker-menu" role="listbox" aria-label="Beschikbare iconen">
-        {globalResourceSelectableIcons.map((icon) => {
-          const Icon = iconComponents[icon];
-          const label = iconLabel(icon);
-          return <button key={icon} className={icon === value ? "is-selected" : ""} type="button" onClick={() => { onChange(icon); setOpen(false); }} role="option" aria-selected={icon === value} title={label}><Icon size={19} aria-hidden /><span>{label}</span></button>;
-        })}
-      </div> : null}
-    </div>
-  </div>;
-}
-
-function iconLabel(icon: GlobalResourceIcon): string {
-  const labels: Record<GlobalResourceIcon, string> = {
-    "file-text": "Document",
-    lightbulb: "Idee",
-    "circle-check-big": "Controle",
-    "book-open": "Boek",
-    link: "Link",
-    "external-link": "Externe link",
-    youtube: "Video (oud)",
-    calculator: "Rekenmachine",
-    astroid: "Stervorm",
-    "land-plot": "Terrein",
-    "drafting-compass": "Passer",
-    brain: "Brein",
-    "flask-conical": "Proef",
-    "key-round": "Sleutel",
-    star: "Ster",
-    shapes: "Vormen",
-    "notebook-pen": "Notities",
-    pencil: "Potlood",
-    paperclip: "Paperclip",
-    "scroll-text": "Tekstrol",
-    map: "Kaart",
-    "book-search": "Boek zoeken",
-    sparkles: "Extra",
-    clapperboard: "Film",
-    "monitor-play": "Video",
-    puzzle: "Puzzel",
-    "file-clock": "Planning",
-    "map-pinned": "Locatiekaart",
-  };
-  return labels[icon];
-}
 
 function normalizeOrders(resources: readonly GlobalResourceConfig[]): GlobalResourceConfig[] {
   return resources.map((resource, index) => ({ ...resource, order: (index + 1) * 10 }));

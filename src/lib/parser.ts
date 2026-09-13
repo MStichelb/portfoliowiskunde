@@ -1,8 +1,11 @@
 import type {
+  ExerciseNumberCandidate,
+  ParsedExerciseIdentity,
   ParsedPortfolioDirectory,
   ParsedSectionDirectory,
   ParsedSolutionFile,
 } from "@/lib/domain";
+import type { ExerciseScannerConfig } from "@/lib/source-profile-config";
 
 const PORTFOLIO_ID_SOURCE = "(?:\\d+[a-z]*|[a-z]+)";
 const PORTFOLIO_DIRECTORY = new RegExp(`^portfolio\\s+(${PORTFOLIO_ID_SOURCE})\\s*-\\s*(.+)$`, "i");
@@ -83,6 +86,86 @@ export function parseSectionDirectory(name: string): ParsedSectionDirectory | nu
   if (!match) return null;
 
   return { order: Number(match[1]), title: match[2].trim() };
+}
+
+export function findExerciseNumberCandidates(
+  stem: string,
+  config: ExerciseScannerConfig,
+): ExerciseNumberCandidate[] {
+  const starts = exerciseNumberStarts(stem, config);
+  const candidates: ExerciseNumberCandidate[] = [];
+  const seen = new Set<string>();
+
+  for (const start of starts) {
+    const tail = stem.slice(start);
+    const number = tail.match(/^(\d+)/);
+    if (!number) continue;
+    const main = number[1];
+    addExerciseNumberCandidate(candidates, seen, stem, start, main, "");
+
+    const afterMain = tail.slice(main.length);
+    const letter = afterMain.match(/^([a-z])/i);
+    if (!letter) continue;
+    const part = letter[1].toLowerCase();
+    addExerciseNumberCandidate(candidates, seen, stem, start, main, part);
+
+    const afterLetter = afterMain.slice(letter[1].length);
+    const numericSubpart = afterLetter.match(/^(\d+)/);
+    if (numericSubpart) addExerciseNumberCandidate(candidates, seen, stem, start, main, `${part}${numericSubpart[1]}`);
+  }
+
+  return candidates.sort((left, right) => right.consumedLength - left.consumedLength || left.exerciseCode.localeCompare(right.exerciseCode, "nl"));
+}
+
+export function parseExerciseDirectoryIdentity(name: string, config: ExerciseScannerConfig): ParsedExerciseIdentity | null {
+  const exact = findExerciseNumberCandidates(name.trim(), config).filter((candidate) => candidate.remainder.trim() === "");
+  if (exact.length === 0) return null;
+  const longest = exact[0];
+  if (exact.some((candidate) => candidate.consumedLength === longest.consumedLength && candidate.exerciseCode !== longest.exerciseCode)) return null;
+  return { exerciseNumber: longest.exerciseNumber, exerciseSuffix: longest.exerciseSuffix, exerciseCode: longest.exerciseCode };
+}
+
+function exerciseNumberStarts(stem: string, config: ExerciseScannerConfig): number[] {
+  if (config.numberLocation === "start") return [0];
+  const marker = config.marker.trim();
+  if (!marker) return [];
+  const haystack = stem.toLocaleLowerCase("nl");
+  const needle = marker.toLocaleLowerCase("nl");
+  const starts: number[] = [];
+  let offset = 0;
+  while (offset <= haystack.length - needle.length) {
+    const found = haystack.indexOf(needle, offset);
+    if (found < 0) break;
+    starts.push(found + marker.length);
+    offset = found + Math.max(1, needle.length);
+  }
+  return starts;
+}
+
+function addExerciseNumberCandidate(
+  candidates: ExerciseNumberCandidate[],
+  seen: Set<string>,
+  stem: string,
+  start: number,
+  main: string,
+  suffix: string,
+): void {
+  const exerciseNumber = Number(main);
+  if (!Number.isSafeInteger(exerciseNumber)) return;
+  const exerciseCode = `${exerciseNumber}${suffix}`;
+  const consumedLength = main.length + suffix.length;
+  const key = `${start}:${exerciseCode}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  const rawRemainder = stem.slice(start + consumedLength);
+  candidates.push({
+    exerciseNumber,
+    exerciseSuffix: suffix,
+    exerciseCode,
+    remainder: rawRemainder.trimStart(),
+    consumedLength,
+    hasBoundaryAfterNumber: rawRemainder.length === 0 || /^\s|^[-_(\[{.]/.test(rawRemainder),
+  });
 }
 
 export function parseSolutionFileName(name: string): ParsedSolutionFile | null {
