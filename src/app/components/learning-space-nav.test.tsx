@@ -24,6 +24,7 @@ describe("LearningSpace admin navigation", () => {
     expect(markup).toContain("Toegang");
     expect(markup).toContain("Publieke pagina");
     expect(markup).not.toContain(">Foutmeldingen<");
+    expect(markup).not.toContain('/admin/5/status');
   });
 
   it("shows the access tab in the agreed order and accepts access as current section", () => {

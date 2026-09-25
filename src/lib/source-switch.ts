@@ -15,6 +15,7 @@ import {
 } from "@/lib/repositories";
 import { compareSourceManifests, sourceManifestFromIndex, type SourceComparison, type SourceManifestEntry } from "@/lib/source-comparison";
 import { SourceAccessError, SourceConfigurationError } from "@/lib/source-errors";
+import { getActiveSourceProfileConfigForLearningSpace } from "@/lib/source-profiles";
 import { getStorageProviderForSource } from "@/lib/storage";
 import { indexSource } from "@/lib/storage/portfolio-indexer";
 import type { StorageProvider } from "@/lib/storage/provider";
@@ -132,7 +133,8 @@ async function inspectSwitchTarget(
   const configured = await (dependencies.getProvider ?? getStorageProviderForSource)(learningSpaceId, targetSourceId);
   await configured.provider.assertReadyForIndex?.();
   const readiness = configured.provider.getReadinessMetadata?.();
-  const portfolios = await (dependencies.index ?? indexSource)(configured.provider);
+  const sourceProfileConfig = await getActiveSourceProfileConfigForLearningSpace(learningSpaceId);
+  const portfolios = await (dependencies.index ?? indexSource)(configured.provider, sourceProfileConfig);
   const [currentManifest, currentWarnings] = await Promise.all([
     (dependencies.getCurrentManifest ?? getIndexedSourceManifest)(learningSpaceId),
     dependencies.getCurrentWarnings

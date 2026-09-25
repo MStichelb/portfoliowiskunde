@@ -5,6 +5,13 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import {
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
+  parseSourceProfileConfig,
+  type SourceProfileConfig,
+} from "./source-profile-config";
+import { getActiveSourceProfileForLearningSpace } from "./source-profiles";
+import {
   archiveLearningSpace,
   getActiveLearningSpaceSource,
   getAdminPortfolios,
@@ -20,6 +27,7 @@ import { sourceManifestFromIndex } from "./source-comparison";
 import { compareLearningSpaceSources, switchLearningSpaceSource } from "./source-switch";
 import { indexSource } from "./storage/portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./storage/provider";
+import { synchronizeSource } from "./sync";
 
 let temporaryDirectory: string | undefined;
 
@@ -37,6 +45,81 @@ afterEach(async () => {
 });
 
 describe("manual LearningSpace source switching", () => {
+  it("uses the same active custom profile for synchronization, comparison and switching", async () => {
+    await setupDatabase();
+    const { primary, mirror } = await configureDualSource();
+    const customConfig = await configureCustomExerciseHintProfile();
+    const indexedConfigs: SourceProfileConfig[] = [];
+    const captureIndex: typeof indexSource = async (provider, config) => {
+      if (!config) throw new Error("De actieve bronprofielconfiguratie ontbreekt.");
+      indexedConfigs.push(config);
+      return indexSource(provider, config);
+    };
+    const primaryProvider = portfolioProvider("primary-custom", { exerciseFileName: "PF1-Oef1-hint.png" });
+    const space = (await getLearningSpace("space-5"))!;
+
+    await expect(synchronizeSource("space-5", {
+      getConfiguredProvider: async () => ({ provider: primaryProvider, type: "onedrive", space, source: primary }),
+      index: captureIndex,
+    })).resolves.toMatchObject({ portfolios: 1, skipped: false });
+
+    const database = await getDatabase();
+    expect((await database.execute("SELECT resource_id, source_id FROM source_resource_assets WHERE learning_space_id = 'space-5' AND is_indexed = 1")).rows)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ resource_id: "exercise-hint", source_id: "primary-custom:PF1-Oef1-hint.png" })]));
+    expect(Number((await database.execute(`SELECT COUNT(*) AS count FROM solution_assets WHERE variant_id IN (
+      SELECT solution_variants.id FROM solution_variants WHERE solution_variants.exercise_id IN (
+      SELECT exercises.id FROM exercises INNER JOIN portfolios ON portfolios.id = exercises.portfolio_id WHERE portfolios.learning_space_id = 'space-5'
+    ))`)).rows[0].count)).toBe(0);
+
+    const targetDependencies = {
+      ...providerDependencies(portfolioProvider("mirror-custom", { exerciseFileName: "PF1-Oef1-hint.png" }), "2026-09-25T08:00:00.000Z"),
+      index: captureIndex,
+    };
+    const preview = await compareLearningSpaceSources("space-5", mirror.id, targetDependencies);
+    expect(preview.comparison).toMatchObject({ hasDifferences: false, matchedFiles: 3 });
+    expect((await getActiveLearningSpaceSource("space-5"))?.id).toBe(primary.id);
+
+    const switched = await switchLearningSpaceSource("space-5", mirror.id, true, targetDependencies);
+    expect(switched).toMatchObject({ switched: true, confirmationRequired: false });
+    expect((await getActiveLearningSpaceSource("space-5"))?.id).toBe(mirror.id);
+    expect((await database.execute("SELECT resource_id, source_id FROM source_resource_assets WHERE learning_space_id = 'space-5' AND is_indexed = 1")).rows)
+      .toEqual(expect.arrayContaining([expect.objectContaining({ resource_id: "exercise-hint", source_id: "mirror-custom:PF1-Oef1-hint.png" })]));
+    expect(indexedConfigs).toHaveLength(3);
+    expect(indexedConfigs).toEqual([customConfig, customConfig, customConfig]);
+    expect(customConfig).not.toEqual(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+  });
+
+  it("keeps the default profile behavior identical for synchronization, comparison and switching", async () => {
+    await setupDatabase();
+    const { primary, mirror } = await configureDualSource();
+    const activeProfile = await getActiveSourceProfileForLearningSpace("space-5");
+    expect(activeProfile?.config).toEqual(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    const indexedConfigs: SourceProfileConfig[] = [];
+    const captureIndex: typeof indexSource = async (provider, config) => {
+      if (!config) throw new Error("De actieve bronprofielconfiguratie ontbreekt.");
+      indexedConfigs.push(config);
+      return indexSource(provider, config);
+    };
+    const space = (await getLearningSpace("space-5"))!;
+    await synchronizeSource("space-5", {
+      getConfiguredProvider: async () => ({ provider: portfolioProvider("primary-default"), type: "onedrive", space, source: primary }),
+      index: captureIndex,
+    });
+    const dependencies = { ...providerDependencies(portfolioProvider("mirror-default")), index: captureIndex };
+    await compareLearningSpaceSources("space-5", mirror.id, dependencies);
+    await switchLearningSpaceSource("space-5", mirror.id, true, dependencies);
+
+    expect(indexedConfigs).toEqual([
+      BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
+      BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
+      BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
+    ]);
+    expect(Number((await (await getDatabase()).execute(`SELECT COUNT(*) AS count FROM solution_assets WHERE variant_id IN (
+      SELECT solution_variants.id FROM solution_variants WHERE solution_variants.exercise_id IN (
+      SELECT exercises.id FROM exercises INNER JOIN portfolios ON portfolios.id = exercises.portfolio_id WHERE portfolios.learning_space_id = 'space-5'
+    )) AND is_indexed = 1`)).rows[0].count)).toBe(1);
+  });
+
   it("keeps both configurations and logical metadata across mirror and primary switches", async () => {
     await setupDatabase();
     const { primary, mirror } = await configureDualSource();
@@ -163,6 +246,8 @@ describe("manual LearningSpace source switching", () => {
     await setupDatabase();
     const { primary, mirror } = await configureDualSource();
     await persistIndex(await indexSource(portfolioProvider("primary")), "onedrive", "space-5", { sourceId: primary.id });
+    await addPublicationMetadata();
+    const before = await indexedState();
     const database = await getDatabase();
     const originalAssetId = String((await database.execute("SELECT source_id FROM solution_assets LIMIT 1")).rows[0].source_id);
     let indexStarted = false;
@@ -176,6 +261,47 @@ describe("manual LearningSpace source switching", () => {
     expect(indexStarted).toBe(false);
     expect((await getActiveLearningSpaceSource("space-5"))?.id).toBe(primary.id);
     expect(String((await database.execute("SELECT source_id FROM solution_assets LIMIT 1")).rows[0].source_id)).toBe(originalAssetId);
+    expect(await indexedState()).toEqual(before);
+    expect((await getLearningSpaceSource(mirror.id))?.lastValidationStatus).toBe("invalid");
+  });
+
+  it("keeps the active source, valid index and metadata when target indexing fails", async () => {
+    await setupDatabase();
+    const { primary, mirror } = await configureDualSource();
+    await persistIndex(await indexSource(portfolioProvider("primary")), "onedrive", "space-5", { sourceId: primary.id });
+    await addPublicationMetadata();
+    const before = await indexedState();
+
+    await expect(switchLearningSpaceSource("space-5", mirror.id, true, {
+      ...providerDependencies(portfolioProvider("mirror")),
+      index: async () => { throw new Error("forced target indexing failure"); },
+    })).rejects.toThrow("forced target indexing failure");
+
+    expect(await indexedState()).toEqual(before);
+    expect((await getLearningSpaceSource(mirror.id))?.lastValidationStatus).toBe("invalid");
+  });
+
+  it("rejects an invalid active profile without changing the active source, index or metadata", async () => {
+    await setupDatabase();
+    const { primary, mirror } = await configureDualSource();
+    await persistIndex(await indexSource(portfolioProvider("primary")), "onedrive", "space-5", { sourceId: primary.id });
+    await addPublicationMetadata();
+    const before = await indexedState();
+    const database = await getDatabase();
+    const profile = await getActiveSourceProfileForLearningSpace("space-5");
+    await database.execute({
+      sql: "UPDATE source_profiles SET config_json = ?, updated_at = ? WHERE id = ?",
+      args: [JSON.stringify({ configVersion: 1 }), "2026-09-25T08:30:00.000Z", profile!.id],
+    });
+    let indexStarted = false;
+
+    await expect(switchLearningSpaceSource("space-5", mirror.id, true, {
+      ...providerDependencies(portfolioProvider("mirror")),
+      index: async () => { indexStarted = true; return []; },
+    })).rejects.toThrow();
+
+    expect(indexStarted).toBe(false);
+    expect(await indexedState()).toEqual(before);
     expect((await getLearningSpaceSource(mirror.id))?.lastValidationStatus).toBe("invalid");
   });
 
@@ -183,6 +309,8 @@ describe("manual LearningSpace source switching", () => {
     await setupDatabase();
     const { primary, mirror } = await configureDualSource();
     await persistIndex(await indexSource(portfolioProvider("primary")), "onedrive", "space-5", { sourceId: primary.id });
+    await addPublicationMetadata();
+    const indexedBefore = await indexedState();
     const database = await getDatabase();
     const before = await database.execute("SELECT id, source_id FROM solution_assets ORDER BY id");
     await database.execute(`CREATE TRIGGER fail_source_activation BEFORE UPDATE OF is_active ON learning_space_sources
@@ -191,6 +319,7 @@ describe("manual LearningSpace source switching", () => {
     await expect(switchLearningSpaceSource("space-5", mirror.id, true, providerDependencies(portfolioProvider("mirror"), "2026-08-21T13:39:00.000Z"))).rejects.toThrow();
     expect((await getActiveLearningSpaceSource("space-5"))?.id).toBe(primary.id);
     expect((await database.execute("SELECT id, source_id FROM solution_assets ORDER BY id")).rows).toEqual(before.rows);
+    expect(await indexedState()).toEqual(indexedBefore);
   });
 
   it("blocks switching for archived LearningSpaces before opening the provider", async () => {
@@ -225,6 +354,63 @@ async function configureDualSource() {
   return { primary: space.primarySource!, mirror: space.mirrorSource! };
 }
 
+async function configureCustomExerciseHintProfile(): Promise<SourceProfileConfig> {
+  const activeProfile = await getActiveSourceProfileForLearningSpace("space-5");
+  if (!activeProfile || activeProfile.type !== "custom" || activeProfile.id === BUILT_IN_DEFAULT_SOURCE_PROFILE_ID) {
+    throw new Error("De test verwacht een concreet, actief custom bronprofiel.");
+  }
+  const config = parseSourceProfileConfig({
+    ...structuredClone(activeProfile.config),
+    exerciseResources: [{
+      id: "exercise-hint",
+      kind: "source_file",
+      label: "Hint per oefening",
+      icon: "lightbulb",
+      order: 10,
+      semanticRole: "hint",
+      location: { scope: "alongside_exercise" },
+      recognition: {
+        file: { target: "after_exercise_number", operator: "starts_with", value: "-hint", caseSensitive: false },
+        directory: null,
+        fileExtensions: ["png"],
+      },
+      allowMultiple: true,
+      displayMode: "collapsible_each",
+    }],
+  });
+  await (await getDatabase()).execute({
+    sql: "UPDATE source_profiles SET config_version = ?, config_json = ?, updated_at = ? WHERE id = ?",
+    args: [config.configVersion, JSON.stringify(config), "2026-09-25T08:00:00.000Z", activeProfile.id],
+  });
+  const validatedProfile = await getActiveSourceProfileForLearningSpace("space-5");
+  if (!validatedProfile) throw new Error("Het actieve bronprofiel ontbreekt na configuratie.");
+  return validatedProfile.config;
+}
+
+async function addPublicationMetadata(): Promise<void> {
+  const portfolio = (await getAdminPortfolios("space-5"))[0];
+  await setPortfolioPublication(portfolio.id, "visible", true, "2026-09-25T07:00:00.000Z", "2027-06-30T16:00:00.000Z");
+  await setExercisePublication([portfolio.sections[0].exercises[0].id], "hidden", null, null);
+}
+
+async function indexedState() {
+  const database = await getDatabase();
+  return {
+    activeSourceId: (await getActiveLearningSpaceSource("space-5"))?.id,
+    portfolios: (await database.execute(`SELECT id, relative_path, visible, publication_limited, publish_from, publish_until, is_indexed, archived_at
+      FROM portfolios WHERE learning_space_id = 'space-5' ORDER BY id`)).rows,
+    exercises: (await database.execute(`SELECT exercises.id, exercises.visibility_mode, exercises.publish_from, exercises.publish_until,
+      exercises.is_indexed, exercises.archived_at FROM exercises INNER JOIN portfolios ON portfolios.id = exercises.portfolio_id
+      WHERE portfolios.learning_space_id = 'space-5' ORDER BY exercises.id`)).rows,
+    solutionAssets: (await database.execute(`SELECT solution_assets.id, solution_assets.source_id, solution_assets.relative_path, solution_assets.is_indexed
+      FROM solution_assets INNER JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+      INNER JOIN exercises ON exercises.id = solution_variants.exercise_id
+      INNER JOIN portfolios ON portfolios.id = exercises.portfolio_id
+      WHERE portfolios.learning_space_id = 'space-5' ORDER BY solution_assets.id`)).rows,
+    resourceAssets: (await database.execute("SELECT id, resource_id, source_id, relative_path, is_indexed FROM source_resource_assets WHERE learning_space_id = 'space-5' ORDER BY id")).rows,
+  };
+}
+
 function providerDependencies(provider: StorageProvider, mirrorCompletedAt?: string) {
   const readyProvider: StorageProvider = mirrorCompletedAt ? {
     ...provider,
@@ -241,7 +427,7 @@ function providerDependencies(provider: StorageProvider, mirrorCompletedAt?: str
 
 function portfolioProvider(
   prefix: string,
-  options: { omitExercise?: boolean; sourceIdPrefix?: string; sourceVersion?: string } = {},
+  options: { omitExercise?: boolean; sourceIdPrefix?: string; sourceVersion?: string; exerciseFileName?: string } = {},
 ): StorageProvider {
   const portfolio = "Portfolio 1 - Functies";
   const solutions = `${portfolio}/Uitwerkingen`;
@@ -258,7 +444,7 @@ function portfolioProvider(
     "": [directory(portfolio)],
     [portfolio]: [file(`${portfolio}/Portfolio 1 - Functies.pdf`), file(`${portfolio}/Eindoplossingen portfolio 1.pdf`), directory(solutions)],
     [solutions]: [directory(section)],
-    [section]: options.omitExercise ? [] : [file(`${section}/PF1-Oef1.png`)],
+    [section]: options.omitExercise ? [] : [file(`${section}/${options.exerciseFileName ?? "PF1-Oef1.png"}`)],
   };
   return { id: prefix, async list(relativePath = "") { return tree[relativePath] ?? []; }, async readFile() { return Buffer.from(""); } };
 }

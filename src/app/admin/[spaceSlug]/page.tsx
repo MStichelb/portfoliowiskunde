@@ -6,7 +6,8 @@ import { AdminSpaceHeader } from "@/app/components/admin-space-header";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import { PublicationStatus } from "@/app/components/publication-status";
 import { requireAdminUser } from "@/lib/auth";
-import { canManageLearningSpace } from "@/lib/authorization";
+import { canConfigureLearningSpace, canManageLearningSpace } from "@/lib/authorization";
+import { getLearningSpaceSourceStatus } from "@/lib/learning-space-source-status";
 import { getActiveWarningCounts, getAdminLearningSpaceBySlug, getAdminPortfolios, getMissingIndexCounts, getThemes } from "@/lib/repositories";
 
 import { archiveMissingIndexAction } from "../actions";
@@ -18,8 +19,10 @@ export default async function LearningSpaceAdminPage({ params }: { params: Promi
   const { spaceSlug } = await params;
   const space = await getAdminLearningSpaceBySlug(spaceSlug);
   if (!space || !await canManageLearningSpace(user, space.id)) notFound();
-  const [portfolios, themes, warnings, missing] = await Promise.all([
+  const canConfigure = await canConfigureLearningSpace(user, space.id);
+  const [portfolios, themes, warnings, missing, sourceStatus] = await Promise.all([
     getAdminPortfolios(space.id), getThemes(space.id), getActiveWarningCounts(space.id), getMissingIndexCounts(space.id),
+    getLearningSpaceSourceStatus(user, space.id),
   ]);
   const groups = [
     ...themes.map((theme) => ({ id: theme.id, name: theme.name, portfolios: portfolios.filter((portfolio) => portfolio.themeId === theme.id) })),
@@ -27,7 +30,13 @@ export default async function LearningSpaceAdminPage({ params }: { params: Promi
   ].filter((group) => group.portfolios.length > 0);
 
   return <main className="page-shell admin-page admin-space-page">
-    <AdminSpaceHeader current={space} section="portfolios" user={user} />
+    <AdminSpaceHeader
+      current={space}
+      section="portfolios"
+      user={user}
+      canConfigure={canConfigure}
+      sourceStatus={sourceStatus}
+    />
     {!space.isActive ? <p className="archived-message" role="status">Gearchiveerd. De laatst opgeslagen metadata blijft beschikbaar; synchronisatie is uitgeschakeld.</p> : null}
     {missing.exercises > 0 || missing.assets > 0 ? <div className="missing-index-action"><span>{missing.exercises} verdwenen oefeningen en {missing.assets} verdwenen bestanden wachten op opschoning.</span><ConfirmActionButton action={archiveMissingIndexAction} fields={{ learningSpaceId: space.id }} className="danger-button" label="Index opschonen" confirmTitle="Verdwenen items uit overzicht verwijderen" confirmText={`${missing.exercises} oefeningen en ${missing.assets} bestanden verdwijnen uit het actieve overzicht. Meldingen en notities blijven behouden; bronbestanden worden nooit gewijzigd.`} /></div> : null}
     {groups.length === 0 ? <p className="empty-state">Nog geen portfolio&apos;s in deze leeromgeving. Configureer een bron en synchroniseer.</p> : groups.map((group) => <section className="theme-admin-group" key={group.id}>

@@ -63,6 +63,7 @@ describe("LearningSpace settings page", () => {
       action: mocks.saveLearningSpaceAction,
     }));
     expect(markup).toContain("Instellingenformulier");
+    expect(markup).not.toContain("Uitgebreide bronstatus");
     expect(markup).toContain("Bronprofiel: Standaard portfolio");
     expect(markup).toContain("Actieve bron");
     expect(markup).not.toContain("Status leeromgeving");

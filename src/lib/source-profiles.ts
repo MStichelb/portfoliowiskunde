@@ -7,6 +7,7 @@ import type { DatabaseRow, InStatement } from "@/lib/database";
 import { getDatabase } from "@/lib/database";
 import type { AppUser } from "@/lib/identity";
 import {
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_DESCRIPTION,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
@@ -112,6 +113,11 @@ export async function getActiveSourceProfileForLearningSpace(learningSpaceId: st
     args: [learningSpaceId],
   });
   return result.rows[0] ? sourceProfileFromRow(result.rows[0]) : null;
+}
+
+export async function getActiveSourceProfileConfigForLearningSpace(learningSpaceId: string): Promise<SourceProfileConfig> {
+  return (await getActiveSourceProfileForLearningSpace(learningSpaceId))?.config
+    ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG;
 }
 
 export async function getSourceProfileOverview(user: AppUser, options: { archivedOnly?: boolean } = {}): Promise<SourceProfileOverview> {
