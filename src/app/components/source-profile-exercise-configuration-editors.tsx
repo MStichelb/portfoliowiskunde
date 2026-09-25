@@ -10,6 +10,7 @@ import type {
 
 import { SourceProfileExerciseResourcesEditor } from "./source-profile-exercise-resources-editor";
 import { SourceProfileExerciseScannerEditor } from "./source-profile-exercise-scanner-editor";
+import { SourceProfileStructurePreview } from "./source-profile-structure-preview";
 
 export function SourceProfileExerciseConfigurationEditors({
   scanner,
@@ -28,7 +29,9 @@ export function SourceProfileExerciseConfigurationEditors({
   onScannerDirtyChange?: (dirty: boolean) => void;
   onResourcesDirtyChange?: (dirty: boolean) => void;
 }) {
-  const [exerciseMode, setExerciseMode] = useState<ExerciseMode>(scanner.exerciseMode);
+  const [scannerPreview, setScannerPreview] = useState<ExerciseScannerConfig>(scanner);
+  const [previewResources, setPreviewResources] = useState<ExerciseResourceConfig[]>(() => [...resources]);
+  const exerciseMode: ExerciseMode = scannerPreview.exerciseMode;
 
   return <>
     <SourceProfileExerciseScannerEditor
@@ -36,7 +39,7 @@ export function SourceProfileExerciseConfigurationEditors({
       editorKey={editorKey}
       embedded
       onDirtyChange={onScannerDirtyChange}
-      onChange={(next) => setExerciseMode(next.exerciseMode)}
+      onChange={setScannerPreview}
     />
     <SourceProfileExerciseResourcesEditor
       resources={resources}
@@ -45,6 +48,8 @@ export function SourceProfileExerciseConfigurationEditors({
       embedded
       exerciseMode={exerciseMode}
       onDirtyChange={onResourcesDirtyChange}
+      onChange={setPreviewResources}
     />
+    <SourceProfileStructurePreview scanner={scannerPreview} resources={previewResources} />
   </>;
 }

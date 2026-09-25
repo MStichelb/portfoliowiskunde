@@ -100,6 +100,7 @@ type SourceProfileExerciseResourcesEditorProps = {
   ownerId: string;
   embedded?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  onChange?: (resources: ExerciseResourceConfig[]) => void;
   exerciseMode?: ExerciseMode;
 };
 
@@ -119,17 +120,23 @@ function SourceProfileExerciseResourcesEditorState({
   ownerId,
   embedded = false,
   onDirtyChange,
+  onChange,
   exerciseMode = "files_and_directories",
 }: SourceProfileExerciseResourcesEditorProps & { initial: ExerciseResourceConfig[] }) {
   const baseline = useMemo(() => JSON.stringify(initial), [initial]);
   const [items, setItems] = useState<ExerciseResourceConfig[]>(initial);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [showHelp, setShowHelp] = useState(false);
-  const serialized = JSON.stringify(enforceActiveExactRules(items, exerciseMode));
+  const effectiveItems = useMemo(() => enforceActiveExactRules(items, exerciseMode), [exerciseMode, items]);
+  const serialized = JSON.stringify(effectiveItems);
 
   useEffect(() => {
     onDirtyChange?.(serialized !== baseline);
   }, [baseline, onDirtyChange, serialized]);
+
+  useEffect(() => {
+    onChange?.(effectiveItems);
+  }, [effectiveItems, onChange]);
 
   const update = (index: number, transform: (resource: ExerciseResourceConfig) => ExerciseResourceConfig) => {
     setItems((current) => current.map((resource, candidateIndex) => candidateIndex === index ? transform(resource) : resource));
