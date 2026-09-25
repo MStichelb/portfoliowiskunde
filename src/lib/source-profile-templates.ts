@@ -21,7 +21,7 @@ import {
   type GlobalResourceConfig,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
-import { availableSourceProfileName, uniqueSourceProfileName } from "@/lib/source-profile-name";
+import { availableSourceProfileName, rethrowUniqueNameConflict, SOURCE_PROFILE_NAME_CONFLICT_MESSAGE, SOURCE_PROFILE_NAME_UNIQUE_INDEX, uniqueSourceProfileName } from "@/lib/source-profile-name";
 import type { SourceProfile } from "@/lib/source-profiles";
 
 export interface SourceProfileTemplate {
@@ -58,6 +58,8 @@ export interface SourceProfileTemplateMetadataInput {
 
 const sourceProfileTemplateNameSchema = z.string().trim().min(1, "Geef het bronprofielsjabloon een naam.").max(80, "Een sjabloonnaam mag maximaal 80 tekens bevatten.");
 const sourceProfileTemplateDescriptionSchema = z.string().trim().max(240, "Een sjabloonbeschrijving mag maximaal 240 tekens bevatten.").optional().nullable();
+const SOURCE_PROFILE_TEMPLATE_NAME_UNIQUE_INDEX = "source_profile_templates_normalized_name_unique";
+const SOURCE_PROFILE_TEMPLATE_NAME_CONFLICT_MESSAGE = "Er bestaat al een appbreed bronprofielsjabloon met deze naam.";
 
 export async function ensureInitialSourceProfileTemplate(): Promise<void> {
   await (await getDatabase()).batch(initialSourceProfileTemplateBootstrapStatements());
@@ -109,7 +111,11 @@ export async function copySourceProfileTemplateToLearningSpace(
   const template = await getSourceProfileTemplate(templateId);
   const name = await availableSourceProfileName(user.id, template.name);
   const prepared = prepareSourceProfileTemplateClone({ ...template, name }, learningSpaceId, user.id);
-  await (await getDatabase()).batch(prepared.statements);
+  try {
+    await (await getDatabase()).batch(prepared.statements);
+  } catch (error) {
+    rethrowSourceProfileNameConflict(error);
+  }
   return prepared.profile;
 }
 
@@ -140,12 +146,16 @@ export async function saveSourceProfileTemplate(
     globalResources,
     exerciseResources,
   });
-  await (await getDatabase()).execute({
-    sql: `UPDATE source_profile_templates
-      SET name = ?, description = ?, config_version = ?, config_json = ?, updated_at = ?
-      WHERE id = ? AND archived_at IS NULL`,
-    args: [metadata.name, metadata.description, config.configVersion, JSON.stringify(config), new Date().toISOString(), template.id],
-  });
+  try {
+    await (await getDatabase()).execute({
+      sql: `UPDATE source_profile_templates
+        SET name = ?, description = ?, config_version = ?, config_json = ?, updated_at = ?
+        WHERE id = ? AND archived_at IS NULL`,
+      args: [metadata.name, metadata.description, config.configVersion, JSON.stringify(config), new Date().toISOString(), template.id],
+    });
+  } catch (error) {
+    rethrowSourceProfileTemplateNameConflict(error);
+  }
 }
 
 export async function updateSourceProfileTemplateMetadata(
@@ -156,10 +166,14 @@ export async function updateSourceProfileTemplateMetadata(
   requireSourceProfileTemplateManagement(user);
   await getSourceProfileTemplate(templateId);
   const metadata = await validatedUniqueTemplateMetadata(input, templateId);
-  await (await getDatabase()).execute({
-    sql: "UPDATE source_profile_templates SET name = ?, description = ?, updated_at = ? WHERE id = ?",
-    args: [metadata.name, metadata.description, new Date().toISOString(), templateId],
-  });
+  try {
+    await (await getDatabase()).execute({
+      sql: "UPDATE source_profile_templates SET name = ?, description = ?, updated_at = ? WHERE id = ?",
+      args: [metadata.name, metadata.description, new Date().toISOString(), templateId],
+    });
+  } catch (error) {
+    rethrowSourceProfileTemplateNameConflict(error);
+  }
 }
 
 export async function updateSourceProfileTemplateGlobalResources(
@@ -255,7 +269,11 @@ export async function cloneSourceProfileTemplateToLearningSpace(
 ): Promise<SourceProfile> {
   await uniqueSourceProfileName(ownerUserId, template.name);
   const prepared = prepareSourceProfileTemplateClone(template, learningSpaceId, ownerUserId);
-  await (await getDatabase()).batch(prepared.statements);
+  try {
+    await (await getDatabase()).batch(prepared.statements);
+  } catch (error) {
+    rethrowSourceProfileNameConflict(error);
+  }
   return prepared.profile;
 }
 
@@ -358,12 +376,16 @@ async function insertIndependentTemplateSnapshot(
   const config = parseStoredSourceProfileConfig(source.config.configVersion, configJson);
   const id = `source-profile-template-${randomUUID()}`;
   const now = new Date().toISOString();
-  await (await getDatabase()).execute({
-    sql: `INSERT INTO source_profile_templates
-      (id, name, description, config_version, config_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    args: [id, metadata.name, metadata.description, config.configVersion, JSON.stringify(config), now, now],
-  });
+  try {
+    await (await getDatabase()).execute({
+      sql: `INSERT INTO source_profile_templates
+        (id, name, description, config_version, config_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      args: [id, metadata.name, metadata.description, config.configVersion, JSON.stringify(config), now, now],
+    });
+  } catch (error) {
+    rethrowSourceProfileTemplateNameConflict(error);
+  }
   return { id, name: metadata.name, description: metadata.description, config, archivedAt: null, createdAt: now, updatedAt: now };
 }
 
@@ -380,8 +402,16 @@ async function validatedUniqueTemplateMetadata(
       WHERE LOWER(TRIM(name)) = LOWER(?) AND (? IS NULL OR id <> ?) LIMIT 1`,
     args: [parsedName.data, excludeTemplateId ?? null, excludeTemplateId ?? null],
   });
-  if (duplicate.rows[0]) throw new Error("Er bestaat al een appbreed bronprofielsjabloon met deze naam.");
+  if (duplicate.rows[0]) throw new Error(SOURCE_PROFILE_TEMPLATE_NAME_CONFLICT_MESSAGE);
   return { name: parsedName.data, description: parsedDescription.data || null };
+}
+
+function rethrowSourceProfileNameConflict(error: unknown): never {
+  rethrowUniqueNameConflict(error, SOURCE_PROFILE_NAME_UNIQUE_INDEX, SOURCE_PROFILE_NAME_CONFLICT_MESSAGE);
+}
+
+function rethrowSourceProfileTemplateNameConflict(error: unknown): never {
+  rethrowUniqueNameConflict(error, SOURCE_PROFILE_TEMPLATE_NAME_UNIQUE_INDEX, SOURCE_PROFILE_TEMPLATE_NAME_CONFLICT_MESSAGE);
 }
 
 async function availableTemplateCopyName(sourceName: string): Promise<string> {

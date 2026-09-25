@@ -30,8 +30,8 @@ export function PortfolioDocumentLinks({
   const query = spaceSlug ? `?space=${encodeURIComponent(spaceSlug)}` : "";
   const sourceHref = (resource: PortfolioGlobalResource) => {
     if (resource.kind !== "source_file" || !resource.available) return null;
-    if (resource.documentKind) return `${portfolioBase}/${resource.documentKind}${query}`;
     if (resource.assetId) return `${resourceBase}/${encodeURIComponent(resource.assetId)}${query}`;
+    if (resource.documentKind) return `${portfolioBase}/${resource.documentKind}${query}`;
     return null;
   };
 

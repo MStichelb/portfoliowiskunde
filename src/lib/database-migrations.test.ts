@@ -153,6 +153,11 @@ describe("Google Drive LearningSpace migration", () => {
     expect((await database.execute("PRAGMA table_info(portfolio_external_links)")).rows.map((row) => row.name))
       .toEqual(expect.arrayContaining(["portfolio_id", "resource_id", "url", "updated_at"]));
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '040_generic_source_resource_assets'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '041_source_profile_name_uniqueness'")).rows).toHaveLength(1);
+    expect((await database.execute("PRAGMA index_list(source_profiles)")).rows.map((row) => row.name))
+      .toContain("source_profiles_owner_normalized_name_unique");
+    expect((await database.execute("PRAGMA index_list(source_profile_templates)")).rows.map((row) => row.name))
+      .toContain("source_profile_templates_normalized_name_unique");
     expect((await database.execute("PRAGMA table_info(source_resource_assets)")).rows.map((row) => row.name))
       .toEqual(expect.arrayContaining(["learning_space_id", "portfolio_id", "exercise_id", "resource_scope", "resource_id", "semantic_role", "source_id", "relative_path", "extension", "is_indexed", "missing_since", "archived_at", "last_seen_at"]));
     expect((await database.execute("SELECT id, role, status FROM users WHERE id = 'user-legacy-superadmin'")).rows[0]).toMatchObject({
@@ -300,6 +305,83 @@ describe("Google Drive LearningSpace migration", () => {
     expect((await upgraded.execute("SELECT version FROM schema_migrations WHERE version = '040_generic_source_resource_assets'")).rows).toHaveLength(1);
     expect((await upgraded.execute("PRAGMA index_list(source_resource_assets)")).rows.map((row) => row.name))
       .toEqual(expect.arrayContaining(["source_resource_assets_portfolio_index", "source_resource_assets_exercise_index", "source_resource_assets_source_index"]));
+  });
+
+  it("adds atomic source-profile name uniqueness after migration 040 without changing valid records", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-profile-name-uniqueness-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 40)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-13T12:00:00.000Z"] },
+      ], "write");
+    }
+    const profilesBefore = (await legacy.execute("SELECT * FROM source_profiles ORDER BY id")).rows;
+    const templatesBefore = (await legacy.execute("SELECT * FROM source_profile_templates ORDER BY id")).rows;
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT * FROM source_profiles ORDER BY id")).rows).toEqual(profilesBefore);
+    expect((await upgraded.execute("SELECT * FROM source_profile_templates ORDER BY id")).rows).toEqual(templatesBefore);
+    expect((await upgraded.execute("SELECT version FROM schema_migrations WHERE version = '041_source_profile_name_uniqueness'")).rows).toHaveLength(1);
+    expect((await upgraded.execute("PRAGMA index_list(source_profiles)")).rows.map((row) => row.name))
+      .toContain("source_profiles_owner_normalized_name_unique");
+    expect((await upgraded.execute("PRAGMA index_list(source_profile_templates)")).rows.map((row) => row.name))
+      .toContain("source_profile_templates_normalized_name_unique");
+  });
+
+  it("fails migration 041 clearly and without partial changes when normalized names conflict", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-profile-name-conflict-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 40)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-13T12:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.batch([
+      {
+        sql: `INSERT INTO source_profiles
+          (id, type, name, description, config_version, config_json, created_at, updated_at,
+            management_learning_space_id, owner_user_id, archived_at)
+          SELECT 'conflicting-profile', type, '  STANDAARD PORTFOLIO  ', description, config_version, config_json,
+            created_at, updated_at, management_learning_space_id, owner_user_id, archived_at
+          FROM source_profiles WHERE type = 'custom' ORDER BY id LIMIT 1`,
+        args: [],
+      },
+      {
+        sql: `INSERT INTO source_profile_templates
+          (id, name, description, config_version, config_json, created_at, updated_at, archived_at)
+          SELECT 'conflicting-template', '  STANDAARD PORTFOLIO  ', description, config_version, config_json,
+            created_at, updated_at, archived_at
+          FROM source_profile_templates ORDER BY id LIMIT 1`,
+        args: [],
+      },
+    ], "write");
+    const profilesBefore = (await legacy.execute("SELECT id, name, owner_user_id FROM source_profiles ORDER BY id")).rows;
+    const templatesBefore = (await legacy.execute("SELECT id, name FROM source_profile_templates ORDER BY id")).rows;
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    await expect(getDatabase()).rejects.toThrow(/Migratie 041.*custom bronprofiel.*appbreed bronprofielsjabloon/);
+    resetDatabaseForTests();
+
+    const inspection = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    expect((await inspection.execute("SELECT id, name, owner_user_id FROM source_profiles ORDER BY id")).rows).toEqual(profilesBefore);
+    expect((await inspection.execute("SELECT id, name FROM source_profile_templates ORDER BY id")).rows).toEqual(templatesBefore);
+    expect((await inspection.execute("SELECT version FROM schema_migrations WHERE version = '041_source_profile_name_uniqueness'")).rows).toHaveLength(0);
+    expect((await inspection.execute("PRAGMA index_list(source_profiles)")).rows.map((row) => row.name))
+      .not.toContain("source_profiles_owner_normalized_name_unique");
+    expect((await inspection.execute("PRAGMA index_list(source_profile_templates)")).rows.map((row) => row.name))
+      .not.toContain("source_profile_templates_normalized_name_unique");
+    inspection.close();
   });
 
   it("adds custom message defaults without changing existing portfolio data", async () => {

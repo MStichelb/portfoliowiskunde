@@ -178,6 +178,57 @@ describe("source profile ownership and access", () => {
     expect(first.profile.name).toBe("Kopie van Standaard portfolio");
     expect(second.profile.name).toBe("Kopie van Standaard portfolio (2)");
     await expect(renameManagedSourceProfile(actors.owner, second.profile.id, ` ${first.profile.name.toUpperCase()} `)).rejects.toThrow("al een bronprofiel");
+    await expect(renameManagedSourceProfile(actors.owner, second.profile.id, ` ${second.profile.name} `)).resolves.toBeUndefined();
+  });
+
+  it("enforces concrete profile names in the database and translates raced create and rename conflicts", async () => {
+    const database = await getDatabase();
+    const occupied = await createProfile("space-5", actors.owner.id, "Bezette profielnaam", false);
+    const profileBefore = (await database.execute({ sql: "SELECT name, updated_at FROM source_profiles WHERE id = ?", args: [profileFiveId] })).rows[0];
+    const assignmentBefore = (await database.execute("SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = 'space-5'")).rows[0];
+
+    await expect(database.execute({
+      sql: `INSERT INTO source_profiles
+        (id, type, name, description, config_version, config_json, created_at, updated_at, management_learning_space_id, owner_user_id, archived_at)
+        SELECT ?, 'custom', ?, description, config_version, config_json, created_at, updated_at,
+          management_learning_space_id, owner_user_id, archived_at
+        FROM source_profiles WHERE id = ?`,
+      args: ["direct-profile-name-conflict", "  BEZETTE PROFIELNAAM  ", occupied.id],
+    })).rejects.toThrow();
+    await expect(database.execute({
+      sql: `INSERT INTO source_profiles
+        (id, type, name, description, config_version, config_json, created_at, updated_at, archived_at)
+        SELECT ?, 'built_in', ?, description, config_version, config_json, created_at, updated_at, archived_at
+        FROM source_profiles WHERE id = ?`,
+      args: ["second-built-in-name", "Standaard portfolio", BUILT_IN_DEFAULT_SOURCE_PROFILE_ID],
+    })).resolves.toBeDefined();
+
+    const originalExecute = database.execute.bind(database);
+    const execute = vi.spyOn(database, "execute").mockImplementation(async (statement) => {
+      const sql = typeof statement === "string" ? statement : statement.sql;
+      if (sql.includes("SELECT 1 FROM source_profiles") && sql.includes("LOWER(TRIM(name))")) return { rows: [] };
+      return originalExecute(statement);
+    });
+    const template = await getDefaultSourceProfileTemplate();
+    try {
+      await expect(cloneSourceProfileTemplateToLearningSpace(
+        { ...template, name: " bezette profielnaam " },
+        "space-5",
+        actors.owner.id,
+      )).rejects.toThrow("Je hebt al een bronprofiel met deze naam.");
+      await expect(renameManagedSourceProfile(actors.owner, profileFiveId, " BEZETTE PROFIELNAAM "))
+        .rejects.toThrow("Je hebt al een bronprofiel met deze naam.");
+    } finally {
+      execute.mockRestore();
+    }
+
+    expect((await database.execute({
+      sql: `SELECT COUNT(*) AS count FROM source_profiles
+        WHERE owner_user_id = ? AND LOWER(TRIM(name)) = LOWER(?)`,
+      args: [actors.owner.id, "Bezette profielnaam"],
+    })).rows[0].count).toBe(1);
+    expect((await database.execute({ sql: "SELECT name, updated_at FROM source_profiles WHERE id = ?", args: [profileFiveId] })).rows[0]).toEqual(profileBefore);
+    expect((await database.execute("SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = 'space-5'")).rows[0]).toEqual(assignmentBefore);
   });
 
   it("archives only unused owned profiles and excludes them from normal reads and selectors", async () => {
@@ -208,8 +259,9 @@ describe("source profile ownership and access", () => {
     expect((await getSourceProfileOverview(actors.owner)).ownedProfiles.map((profile) => profile.id)).toContain(inactive.id);
 
     await archiveSourceProfile(actors.owner, inactive.id);
-    await database.execute({ sql: "UPDATE source_profiles SET name = 'Herstelbaar' WHERE id = ?", args: [profileFiveId] });
-    await expect(restoreSourceProfile(actors.owner, inactive.id)).rejects.toThrow("al een bronprofiel");
+    await expect(database.execute({ sql: "UPDATE source_profiles SET name = 'Herstelbaar' WHERE id = ?", args: [profileFiveId] })).rejects.toThrow();
+    await restoreSourceProfile(actors.owner, inactive.id);
+    await archiveSourceProfile(actors.owner, inactive.id);
     await permanentlyDeleteSourceProfile(actors.owner, inactive.id);
     expect((await database.execute({ sql: "SELECT 1 FROM source_profiles WHERE id = ?", args: [inactive.id] })).rows).toHaveLength(0);
   });

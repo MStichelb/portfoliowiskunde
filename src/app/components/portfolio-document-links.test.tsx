@@ -14,6 +14,7 @@ describe("PortfolioDocumentLinks", () => {
         sourceResource("assignments", "Opgaven", "assignment", true, "starts_with", "Portfolio"),
         sourceResource("hints", "Hints", "hints", false, "contains", "Hints"),
         sourceResource("final-solutions", "Eindoplossingen", "final-solutions", false, "starts_with", "Eindoplossingen"),
+        genericSourceResource("missing-generic", "Ontbrekende bijlage", "missing-asset-id", false),
         externalResource("video", "Video", null),
       ]}
     />);
@@ -22,9 +23,25 @@ describe("PortfolioDocumentLinks", () => {
     expect(markup).toContain("Opgaven");
     expect(markup).not.toContain("/hints");
     expect(markup).not.toContain("Eindoplossingen");
+    expect(markup).not.toContain("Ontbrekende bijlage");
     expect(markup).not.toContain("Video");
     expect(markup).not.toContain(">Bestand<");
     expect(markup).not.toContain(">Link<");
+  });
+
+  it("geeft een generiek asset-ID voorrang op de legacy documentroute en codeert beide routes", () => {
+    const markup = renderToStaticMarkup(<PortfolioDocumentLinks
+      portfolioId="portfolio /1"
+      spaceSlug="5 wis/alpha"
+      resources={[
+        sourceResource("assignments", "Opgaven", "assignment", true, "starts_with", "Portfolio", "asset /met?tekens"),
+        sourceResource("hints", "Hints", "hints", true, "contains", "Hints"),
+      ]}
+    />);
+
+    expect(markup).toContain('href="/api/resource-assets/asset%20%2Fmet%3Ftekens?space=5%20wis%2Falpha"');
+    expect(markup).not.toContain("/api/portfolio-assets/portfolio%20%2F1/assignment");
+    expect(markup).toContain('href="/api/portfolio-assets/portfolio%20%2F1/hints?space=5%20wis%2Falpha"');
   });
 
   it("behoudt in de leerlingweergave de profielvolgorde en toont externe en generieke bronresources", () => {
@@ -101,6 +118,7 @@ function sourceResource(
   available: boolean,
   operator: "starts_with" | "contains" | "ends_with",
   value: string,
+  assetId: string | null = null,
 ): PortfolioGlobalResource {
   return {
     id,
@@ -109,14 +127,19 @@ function sourceResource(
     icon: "file-text",
     semanticRole: "generic",
     documentKind,
-    assetId: null,
+    assetId,
     url: null,
     available,
     recognition: { target: "file_name", operator, value, caseSensitive: false, fileExtensions: ["pdf"] },
   };
 }
 
-function genericSourceResource(id: string, label: string, assetId: string): PortfolioGlobalResource {
+function genericSourceResource(
+  id: string,
+  label: string,
+  assetId: string,
+  available = true,
+): PortfolioGlobalResource {
   return {
     id,
     kind: "source_file",
@@ -126,7 +149,7 @@ function genericSourceResource(id: string, label: string, assetId: string): Port
     documentKind: null,
     assetId,
     url: null,
-    available: true,
+    available,
     recognition: { target: "file_name", operator: "contains", value: "Lesvideo", caseSensitive: false, fileExtensions: ["png"] },
   };
 }

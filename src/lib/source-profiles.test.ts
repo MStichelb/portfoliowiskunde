@@ -329,7 +329,8 @@ describe("concrete source profile foundation", () => {
     });
 
     const profile = await getActiveSourceProfileForLearningSpace(space.id);
-    expect(profile).toMatchObject({ type: "custom", name: "Standaard portfolio", managementLearningSpaceId: space.id });
+    expect(profile).toMatchObject({ type: "custom", managementLearningSpaceId: space.id });
+    expect(profile?.name).toMatch(/^Standaard portfolio/);
     expect(profile?.id).not.toBe(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID);
     expect(profile && getSourceProfileConfig(profile)).toEqual(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
   });

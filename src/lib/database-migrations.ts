@@ -14,6 +14,10 @@ import {
 export interface DatabaseMigration {
   version: string;
   statements: string[];
+  conflictCheck?: {
+    sql: string;
+    message: string;
+  };
 }
 
 export const migrations: DatabaseMigration[] = [
@@ -979,6 +983,29 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX source_resource_assets_portfolio_index ON source_resource_assets(portfolio_id, resource_scope, resource_id, is_indexed)",
       "CREATE INDEX source_resource_assets_exercise_index ON source_resource_assets(exercise_id, resource_id, is_indexed)",
       "CREATE INDEX source_resource_assets_source_index ON source_resource_assets(learning_space_id, source_id)",
+    ],
+  },
+  {
+    version: "041_source_profile_name_uniqueness",
+    conflictCheck: {
+      sql: `SELECT 'custom bronprofiel (eigenaar ' || owner_user_id || '): "' || LOWER(TRIM(name)) || '"' AS conflict
+        FROM source_profiles
+        WHERE type = 'custom' AND owner_user_id IS NOT NULL
+        GROUP BY owner_user_id, LOWER(TRIM(name))
+        HAVING COUNT(*) > 1
+        UNION ALL
+        SELECT 'appbreed bronprofielsjabloon: "' || LOWER(TRIM(name)) || '"' AS conflict
+        FROM source_profile_templates
+        GROUP BY LOWER(TRIM(name))
+        HAVING COUNT(*) > 1`,
+      message: "Migratie 041 kan niet worden toegepast omdat bronprofielnamen conflicteren. Los deze naamconflicten eerst op zonder records te verwijderen of automatisch te hernoemen:",
+    },
+    statements: [
+      `CREATE UNIQUE INDEX source_profiles_owner_normalized_name_unique
+        ON source_profiles(owner_user_id, LOWER(TRIM(name)))
+        WHERE type = 'custom'`,
+      `CREATE UNIQUE INDEX source_profile_templates_normalized_name_unique
+        ON source_profile_templates(LOWER(TRIM(name)))`,
     ],
   },
 ];

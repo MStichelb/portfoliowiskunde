@@ -119,6 +119,9 @@ describe("global source profile templates", () => {
     expect(firstProfile).toMatchObject({ type: "custom", managementLearningSpaceId: first.id, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG });
     expect(secondProfile).toMatchObject({ type: "custom", managementLearningSpaceId: second.id, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG });
     expect(firstProfile.id).not.toBe(secondProfile.id);
+    expect(firstProfile.name).not.toBe(secondProfile.name);
+    expect(firstProfile.name).toMatch(/^Standaard portfolio/);
+    expect(secondProfile.name).toMatch(/^Standaard portfolio/);
     expect(firstProfile.id).not.toBe(INITIAL_SOURCE_PROFILE_TEMPLATE_ID);
     expect(secondProfile.id).not.toBe(INITIAL_SOURCE_PROFILE_TEMPLATE_ID);
   });
@@ -133,7 +136,7 @@ describe("global source profile templates", () => {
       sql: "UPDATE source_profile_templates SET name = 'Nieuw template', config_json = ?, updated_at = ? WHERE id = ?",
       args: [JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, null, 2), "2026-09-11T00:00:00.000Z", INITIAL_SOURCE_PROFILE_TEMPLATE_ID],
     });
-    expect(await getActiveSourceProfileForLearningSpace(space.id)).toMatchObject({ name: "Standaard portfolio", config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG });
+    expect(await getActiveSourceProfileForLearningSpace(space.id)).toMatchObject({ name: profile.name, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG });
     expect((await database.execute({ sql: "SELECT config_json FROM source_profiles WHERE id = ?", args: [profile.id] })).rows[0].config_json).toBe(profileConfigBefore);
 
     await database.execute({ sql: "UPDATE source_profiles SET name = 'Eigen concrete naam' WHERE id = ?", args: [profile.id] });
@@ -196,10 +199,58 @@ describe("global source profile templates", () => {
 
   it("enforces trimmed case-insensitive global names and the 80 character limit", async () => {
     const created = await createSourceProfileTemplate(superadmin, { name: "Eigen sjabloon", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID });
+    await expect(updateSourceProfileTemplateMetadata(superadmin, created.id, { name: " EIGEN SJABLOON " })).resolves.toBeUndefined();
     await expect(createSourceProfileTemplate(superadmin, { name: " eigen SJABLOON ", sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID })).rejects.toThrow("bestaat al");
     await expect(updateSourceProfileTemplateMetadata(superadmin, created.id, { name: " standaard PORTFOLIO " })).rejects.toThrow("bestaat al");
     await expect(updateSourceProfileTemplateMetadata(superadmin, created.id, { name: " " })).rejects.toThrow("Geef het bronprofielsjabloon");
     await expect(updateSourceProfileTemplateMetadata(superadmin, created.id, { name: "a".repeat(81) })).rejects.toThrow("maximaal 80");
+  });
+
+  it("enforces template names in the database and translates raced create and rename conflicts", async () => {
+    const database = await getDatabase();
+    const occupied = await createSourceProfileTemplate(superadmin, {
+      name: "Bezet sjabloon",
+      sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID,
+    });
+    const initialBefore = (await database.execute({
+      sql: "SELECT name, description, updated_at FROM source_profile_templates WHERE id = ?",
+      args: [INITIAL_SOURCE_PROFILE_TEMPLATE_ID],
+    })).rows[0];
+
+    await expect(database.execute({
+      sql: `INSERT INTO source_profile_templates
+        (id, name, description, config_version, config_json, created_at, updated_at, archived_at)
+        SELECT ?, ?, description, config_version, config_json, created_at, updated_at, archived_at
+        FROM source_profile_templates WHERE id = ?`,
+      args: ["direct-template-name-conflict", "  BEZET SJABLOON  ", occupied.id],
+    })).rejects.toThrow();
+
+    const originalExecute = database.execute.bind(database);
+    const execute = vi.spyOn(database, "execute").mockImplementation(async (statement) => {
+      const sql = typeof statement === "string" ? statement : statement.sql;
+      if (sql.includes("SELECT 1 FROM source_profile_templates") && sql.includes("LOWER(TRIM(name))")) return { rows: [] };
+      return originalExecute(statement);
+    });
+    try {
+      await expect(createSourceProfileTemplate(superadmin, {
+        name: " bezet sjabloon ",
+        sourceTemplateId: INITIAL_SOURCE_PROFILE_TEMPLATE_ID,
+      })).rejects.toThrow("Er bestaat al een appbreed bronprofielsjabloon met deze naam.");
+      await expect(updateSourceProfileTemplateMetadata(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, {
+        name: " BEZET SJABLOON ",
+      })).rejects.toThrow("Er bestaat al een appbreed bronprofielsjabloon met deze naam.");
+    } finally {
+      execute.mockRestore();
+    }
+
+    expect((await database.execute({
+      sql: "SELECT COUNT(*) AS count FROM source_profile_templates WHERE LOWER(TRIM(name)) = LOWER(?)",
+      args: ["Bezet sjabloon"],
+    })).rows[0].count).toBe(1);
+    expect((await database.execute({
+      sql: "SELECT name, description, updated_at FROM source_profile_templates WHERE id = ?",
+      args: [INITIAL_SOURCE_PROFILE_TEMPLATE_ID],
+    })).rows[0]).toEqual(initialBefore);
   });
 
   it("archives non-default templates and excludes them from normal lists and copy flows", async () => {
@@ -228,11 +279,12 @@ describe("global source profile templates", () => {
     expect((await listSourceProfileTemplates(superadmin)).find((item) => item.id === template.id)).toMatchObject({ isArchived: false, isDefault: false });
 
     await archiveSourceProfileTemplate(superadmin, template.id);
-    await database.execute(`INSERT INTO source_profile_templates
+    await expect(database.execute(`INSERT INTO source_profile_templates
       (id, name, description, config_version, config_json, created_at, updated_at)
       SELECT 'legacy-conflict', 'Herstelbaar sjabloon', description, config_version, config_json, created_at, updated_at
-      FROM source_profile_templates WHERE id = '${INITIAL_SOURCE_PROFILE_TEMPLATE_ID}'`);
-    await expect(restoreSourceProfileTemplate(superadmin, template.id)).rejects.toThrow("bestaat al");
+      FROM source_profile_templates WHERE id = '${INITIAL_SOURCE_PROFILE_TEMPLATE_ID}'`)).rejects.toThrow();
+    await restoreSourceProfileTemplate(superadmin, template.id);
+    await archiveSourceProfileTemplate(superadmin, template.id);
     await permanentlyDeleteSourceProfileTemplate(superadmin, template.id);
     expect((await database.execute({ sql: "SELECT 1 FROM source_profile_templates WHERE id = ?", args: [template.id] })).rows).toHaveLength(0);
   });
@@ -309,7 +361,7 @@ describe("global source profile templates", () => {
 
     const existingRowAfter = (await database.execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [existingProfile.id] })).rows[0];
     expect(existingRowAfter).toEqual(existingRowBefore);
-    expect((await getActiveSourceProfileForLearningSpace(existingSpace.id))?.name).toBe("Standaard portfolio");
+    expect((await getActiveSourceProfileForLearningSpace(existingSpace.id))?.name).toBe(existingProfile.name);
     expect((await listSourceProfileTemplates(superadmin)).filter((template) => template.isDefault)).toEqual([
       expect.objectContaining({ id: second.id }),
     ]);

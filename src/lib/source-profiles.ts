@@ -23,7 +23,13 @@ import {
   type GlobalResourceConfig,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
-import { availableSourceProfileName, uniqueSourceProfileName } from "@/lib/source-profile-name";
+import {
+  availableSourceProfileName,
+  rethrowUniqueNameConflict,
+  SOURCE_PROFILE_NAME_CONFLICT_MESSAGE,
+  SOURCE_PROFILE_NAME_UNIQUE_INDEX,
+  uniqueSourceProfileName,
+} from "@/lib/source-profile-name";
 export { sourceProfileUsageLabel } from "@/lib/source-profile-usage";
 export { sourceProfileNameSchema } from "@/lib/source-profile-name";
 
@@ -319,10 +325,14 @@ export async function saveManagedSourceProfile(
 
   const validName = await uniqueSourceProfileName(profile.ownerUserId, input.name, profile.id);
   const now = new Date().toISOString();
-  await (await getDatabase()).batch([{
-    sql: "UPDATE source_profiles SET name = ?, config_version = ?, config_json = ?, updated_at = ? WHERE id = ? AND type = 'custom' AND archived_at IS NULL",
-    args: [validName, config.configVersion, JSON.stringify(config), now, profile.id],
-  }]);
+  try {
+    await (await getDatabase()).batch([{
+      sql: "UPDATE source_profiles SET name = ?, config_version = ?, config_json = ?, updated_at = ? WHERE id = ? AND type = 'custom' AND archived_at IS NULL",
+      args: [validName, config.configVersion, JSON.stringify(config), now, profile.id],
+    }]);
+  } catch (error) {
+    rethrowSourceProfileNameConflict(error);
+  }
 
   return {
     mode: "all",
@@ -625,19 +635,31 @@ async function createIndependentCopy(source: SourceProfile, managementLearningSp
   const id = `source-profile-${randomUUID()}`;
   const now = new Date().toISOString();
   const name = await availableSourceProfileName(ownerUserId, requestedName);
-  await (await getDatabase()).batch([{
-    sql: `INSERT INTO source_profiles
-      (id, type, name, description, config_version, config_json, created_at, updated_at, management_learning_space_id, owner_user_id)
-      VALUES (?, 'custom', ?, ?, ?, ?, ?, ?, ?, ?)`,
-    args: [id, name, source.description, config.configVersion, JSON.stringify(config), now, now, managementLearningSpaceId, ownerUserId],
-  }, ...(activate ? [assignmentStatement(managementLearningSpaceId, id, now)] : [])]);
+  try {
+    await (await getDatabase()).batch([{
+      sql: `INSERT INTO source_profiles
+        (id, type, name, description, config_version, config_json, created_at, updated_at, management_learning_space_id, owner_user_id)
+        VALUES (?, 'custom', ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [id, name, source.description, config.configVersion, JSON.stringify(config), now, now, managementLearningSpaceId, ownerUserId],
+    }, ...(activate ? [assignmentStatement(managementLearningSpaceId, id, now)] : [])]);
+  } catch (error) {
+    rethrowSourceProfileNameConflict(error);
+  }
   return { id, type: "custom", name, description: source.description, config, managementLearningSpaceId, ownerUserId, archivedAt: null, createdAt: now, updatedAt: now };
 }
 
 async function renameAllowedSourceProfile(profile: SourceProfile, name: string): Promise<void> {
   if (profile.type !== "custom" || !profile.ownerUserId) throw new AuthorizationError("Bronprofiel niet beschikbaar.");
   const validName = await uniqueSourceProfileName(profile.ownerUserId, name, profile.id);
-  await (await getDatabase()).execute({ sql: "UPDATE source_profiles SET name = ?, updated_at = ? WHERE id = ? AND type = 'custom'", args: [validName, new Date().toISOString(), profile.id] });
+  try {
+    await (await getDatabase()).execute({ sql: "UPDATE source_profiles SET name = ?, updated_at = ? WHERE id = ? AND type = 'custom'", args: [validName, new Date().toISOString(), profile.id] });
+  } catch (error) {
+    rethrowSourceProfileNameConflict(error);
+  }
+}
+
+function rethrowSourceProfileNameConflict(error: unknown): never {
+  rethrowUniqueNameConflict(error, SOURCE_PROFILE_NAME_UNIQUE_INDEX, SOURCE_PROFILE_NAME_CONFLICT_MESSAGE);
 }
 
 async function assignSourceProfile(learningSpaceId: string, sourceProfileId: string): Promise<void> {

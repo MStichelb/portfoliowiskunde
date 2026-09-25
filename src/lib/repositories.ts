@@ -16,6 +16,12 @@ import { LEGACY_SUPERADMIN_USER_ID } from "@/lib/identity";
 import type { SourceManifestEntry } from "@/lib/source-comparison";
 import { getDefaultSourceProfileTemplate, prepareSourceProfileTemplateClone } from "@/lib/source-profile-templates";
 import {
+  availableSourceProfileName,
+  rethrowUniqueNameConflict,
+  SOURCE_PROFILE_NAME_CONFLICT_MESSAGE,
+  SOURCE_PROFILE_NAME_UNIQUE_INDEX,
+} from "@/lib/source-profile-name";
+import {
   BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
   firstExerciseResourceBySemanticRole,
   firstSourceFileGlobalResourceBySemanticRole,
@@ -394,7 +400,9 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
   const template = await getDefaultSourceProfileTemplate();
-  const profileClone = prepareSourceProfileTemplateClone(template, id, ownerUserId ?? LEGACY_SUPERADMIN_USER_ID, now);
+  const profileOwnerUserId = ownerUserId ?? LEGACY_SUPERADMIN_USER_ID;
+  const profileName = await availableSourceProfileName(profileOwnerUserId, template.name);
+  const profileClone = prepareSourceProfileTemplateClone({ ...template, name: profileName }, id, profileOwnerUserId, now);
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
   const mirror = input.mirrorSource ?? null;
   const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
@@ -411,7 +419,11 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
       args: [id, ownerUserId, now, now],
     });
   }
-  await executeBatch(statements);
+  try {
+    await executeBatch(statements);
+  } catch (error) {
+    rethrowUniqueNameConflict(error, SOURCE_PROFILE_NAME_UNIQUE_INDEX, SOURCE_PROFILE_NAME_CONFLICT_MESSAGE);
+  }
   return (await getLearningSpace(id))!;
 }
 
