@@ -1,0 +1,426 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+
+import { AuthorizationError } from "./authorization";
+import { getDatabase, resetDatabaseForTests } from "./database";
+import { createUser, type AppUser } from "./identity";
+import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, BUILT_IN_DEFAULT_SOURCE_PROFILE_ID } from "./source-profile-config";
+import { cloneSourceProfileTemplateToLearningSpace, getDefaultSourceProfileTemplate } from "./source-profile-templates";
+import {
+  archiveSourceProfile,
+  canCopySourceProfile,
+  copySourceProfileToLearningSpace,
+  createOwnSourceProfile,
+  getActiveSourceProfileForLearningSpace,
+  getManagedSourceProfiles,
+  getSourceProfileForLearningSpaceCard,
+  getSourceProfileOverview,
+  linkSourceProfileToLearningSpace,
+  permanentlyDeleteSourceProfile,
+  renameManagedSourceProfile,
+  saveManagedSourceProfile,
+  renameSourceProfile,
+  restoreSourceProfile,
+  sourceProfileUsageLabel,
+  switchActiveSourceProfile,
+  updateManagedSourceProfileGlobalResources,
+} from "./source-profiles";
+import { setIndividualLearningSpaceAccess, upsertManagedMembership } from "./user-management";
+
+let temporaryDirectory: string | undefined;
+let actors: Record<"owner" | "pureEditor" | "ownerEditor" | "viewer" | "student" | "superadmin", AppUser>;
+let profileFiveId: string;
+let profileSixId: string;
+
+beforeEach(async () => {
+  temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "source-profile-ownership-"));
+  process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+  resetDatabaseForTests();
+  actors = {
+    owner: await createUser({ displayName: "Olivia Owner", role: "teacher" }),
+    pureEditor: await createUser({ displayName: "Elias Editor", role: "teacher" }),
+    ownerEditor: await createUser({ displayName: "Mira Owner Editor", role: "teacher" }),
+    viewer: await createUser({ displayName: "Vera Viewer", role: "teacher" }),
+    student: await createUser({ displayName: "Sam Student", role: "student" }),
+    superadmin: await createUser({ displayName: "Admin", role: "superadmin" }),
+  };
+  await upsertManagedMembership("space-5", actors.owner.id, "owner");
+  await upsertManagedMembership("space-5", actors.pureEditor.id, "editor");
+  await upsertManagedMembership("space-5", actors.ownerEditor.id, "editor");
+  await upsertManagedMembership("space-6", actors.ownerEditor.id, "owner");
+  await setIndividualLearningSpaceAccess(actors.viewer.id, "space-5", true);
+  await setIndividualLearningSpaceAccess(actors.student.id, "space-5", true);
+  const database = await getDatabase();
+  await database.batch([
+    { sql: "UPDATE source_profiles SET owner_user_id = ? WHERE management_learning_space_id = 'space-5'", args: [actors.owner.id] },
+    { sql: "UPDATE source_profiles SET owner_user_id = ? WHERE management_learning_space_id = 'space-6'", args: [actors.ownerEditor.id] },
+  ]);
+  profileFiveId = (await getActiveSourceProfileForLearningSpace("space-5"))!.id;
+  profileSixId = (await getActiveSourceProfileForLearningSpace("space-6"))!.id;
+});
+
+afterEach(async () => {
+  resetDatabaseForTests();
+  delete process.env.PORTFOLIO_DATABASE_PATH;
+  if (temporaryDirectory) await removeTemporaryDirectory(temporaryDirectory);
+  temporaryDirectory = undefined;
+});
+
+describe("source profile ownership and access", () => {
+  it("separates owned profiles from active foreign profiles exposed through editor usage", async () => {
+    const inactiveOwned = await createProfile("space-5", actors.owner.id, "Inactief eigen profiel", false);
+    const ownerOverview = await getSourceProfileOverview(actors.owner);
+    expect(ownerOverview.ownedProfiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([profileFiveId, inactiveOwned.id]));
+    expect(ownerOverview.editorAccessibleActiveProfiles).toEqual([]);
+
+    for (const editor of [actors.pureEditor, actors.ownerEditor]) {
+      const overview = await getSourceProfileOverview(editor);
+      expect(overview.editorAccessibleActiveProfiles).toContainEqual(expect.objectContaining({
+        id: profileFiveId, ownerUserId: actors.owner.id, ownerName: "Olivia Owner", canRename: false, canLink: false,
+      }));
+      expect(overview.editorAccessibleActiveProfiles.map((profile) => profile.id)).not.toContain(inactiveOwned.id);
+    }
+    expect(await getSourceProfileOverview(actors.viewer)).toMatchObject({ ownedProfiles: [], editorAccessibleActiveProfiles: [], copyTargets: [] });
+    const superadminOverview = await getSourceProfileOverview(actors.superadmin);
+    expect(superadminOverview.ownedProfiles).toEqual([]);
+    expect(superadminOverview.editorAccessibleActiveProfiles).toEqual([]);
+    expect(superadminOverview.otherUserProfiles.map((profile) => profile.id)).toEqual(expect.arrayContaining([profileFiveId, profileSixId, inactiveOwned.id]));
+    expect(superadminOverview.otherProfileOwners).toEqual([
+      { id: actors.ownerEditor.id, label: "Mira Owner Editor" },
+      { id: actors.owner.id, label: "Olivia Owner" },
+    ]);
+    expect((await getManagedSourceProfiles(actors.superadmin)).map((profile) => profile.id)).toEqual(expect.arrayContaining([profileFiveId, profileSixId, inactiveOwned.id]));
+  });
+
+  it("separates a superadmin's personal profiles from profiles of other owners", async () => {
+    const ownProfile = await createProfile("space-5", actors.superadmin.id, "Eigen adminprofiel", false);
+    const overview = await getSourceProfileOverview(actors.superadmin);
+    expect(overview.ownedProfiles.map((profile) => profile.id)).toEqual([ownProfile.id]);
+    expect(overview.otherUserProfiles.map((profile) => profile.id)).not.toContain(ownProfile.id);
+    expect(overview.otherUserProfiles.every((profile) => profile.ownerUserId !== actors.superadmin.id)).toBe(true);
+  });
+
+  it("uses the same ownership model centrally and in the read-only LearningSpace card", async () => {
+    const inactiveOwned = await createProfile("space-5", actors.owner.id, "Eigen reserve", false);
+    const overview = await getSourceProfileOverview(actors.owner);
+    const card = await getSourceProfileForLearningSpaceCard(actors.owner, "space-5");
+    expect(overview.ownedProfiles.map((profile) => profile.id)).toContain(inactiveOwned.id);
+    expect(overview.ownedProfiles.every((profile) => profile.ownerUserId === actors.owner.id)).toBe(true);
+    expect(card).toMatchObject({ id: profileFiveId, ownerUserId: actors.owner.id, usageCount: 1 });
+  });
+
+  it("shows a contextual active profile to editors and derives copy capability from owner targets", async () => {
+    const pureEditorOverview = await getSourceProfileOverview(actors.pureEditor);
+    expect(pureEditorOverview.editorAccessibleActiveProfiles[0]).toMatchObject({ id: profileFiveId, ownerName: "Olivia Owner", access: "editor", canCopy: false });
+    expect(pureEditorOverview.copyTargets).toEqual([]);
+    expect(await canCopySourceProfile(actors.pureEditor, profileFiveId)).toBe(false);
+
+    const ownerEditorOverview = await getSourceProfileOverview(actors.ownerEditor);
+    expect(ownerEditorOverview.editorAccessibleActiveProfiles[0]).toMatchObject({ id: profileFiveId, access: "editor", canCopy: true, canLink: false });
+    expect(ownerEditorOverview.copyTargets.map((target) => target.learningSpaceId)).toEqual(["space-6"]);
+    expect(await canCopySourceProfile(actors.ownerEditor, profileFiveId)).toBe(true);
+  });
+
+  it("allows copying an accessible foreign profile only to an owner target and transfers ownership to the copier", async () => {
+    await expect(copySourceProfileToLearningSpace(actors.pureEditor, profileFiveId, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(copySourceProfileToLearningSpace(actors.ownerEditor, profileFiveId, "space-5")).rejects.toThrow("waarvan je eigenaar bent");
+
+    const result = await copySourceProfileToLearningSpace(actors.ownerEditor, profileFiveId, "space-6");
+    expect(result).toMatchObject({ activated: true, profile: { ownerUserId: actors.ownerEditor.id, managementLearningSpaceId: "space-6" } });
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.id).toBe(result.profile.id);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(profileFiveId);
+  });
+
+  it("blocks foreign link, rename and selection while allowing the profile owner", async () => {
+    await expect(linkSourceProfileToLearningSpace(actors.ownerEditor, profileFiveId, "space-6")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(renameManagedSourceProfile(actors.ownerEditor, profileFiveId, "Verboden")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(switchActiveSourceProfile(actors.ownerEditor, "space-6", profileFiveId)).rejects.toBeInstanceOf(AuthorizationError);
+
+    const ownReserve = await createProfile("space-5", actors.owner.id, "Eigen alternatief", false);
+    await linkSourceProfileToLearningSpace(actors.owner, ownReserve.id, "space-5");
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(ownReserve.id);
+    await renameManagedSourceProfile(actors.owner, ownReserve.id, "Nieuwe eigen naam");
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.name).toBe("Nieuwe eigen naam");
+  });
+
+  it("derives owner-compatible link targets and does not let a superadmin bypass them", async () => {
+    const inactiveOwned = await createProfile("space-5", actors.owner.id, "Te koppelen profiel", false);
+    const ownerProfile = (await getSourceProfileOverview(actors.owner)).ownedProfiles.find((profile) => profile.id === profileFiveId)!;
+    expect(ownerProfile.linkTargets).toEqual([]);
+    expect(ownerProfile.canLink).toBe(false);
+    const inactiveProfile = (await getSourceProfileOverview(actors.owner)).ownedProfiles.find((profile) => profile.id === inactiveOwned.id)!;
+    expect(inactiveProfile.linkTargets.map((target) => target.learningSpaceId)).toEqual(["space-5"]);
+    expect(inactiveProfile.canLink).toBe(true);
+
+    const adminProfile = (await getSourceProfileOverview(actors.superadmin)).otherUserProfiles.find((profile) => profile.id === profileFiveId)!;
+    expect(adminProfile.linkTargets).toEqual([]);
+    await expect(linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6")).rejects.toThrow("profieleigenaar ook eigenaar");
+
+    await upsertManagedMembership("space-6", actors.owner.id, "owner");
+    const refreshed = (await getSourceProfileOverview(actors.superadmin)).otherUserProfiles.find((profile) => profile.id === profileFiveId)!;
+    expect(refreshed.linkTargets.map((target) => target.learningSpaceId)).toEqual(["space-6"]);
+    await linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6");
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.id).toBe(profileFiveId);
+  });
+
+  it("keeps concrete names unique per owner and generates collision-safe copy names", async () => {
+    await expect(createProfile("space-5", actors.owner.id, " standaard PORTFOLIO ", false)).rejects.toThrow("al een bronprofiel");
+    const sameNameOtherOwner = await createProfile("space-6", actors.ownerEditor.id, "Standaard portfolio", false);
+    expect(sameNameOtherOwner.name).toBe("Standaard portfolio");
+
+    const first = await copySourceProfileToLearningSpace(actors.owner, profileFiveId, "space-5");
+    await switchActiveSourceProfile(actors.owner, "space-5", profileFiveId);
+    const second = await copySourceProfileToLearningSpace(actors.owner, profileFiveId, "space-5");
+    expect(first.profile.name).toBe("Kopie van Standaard portfolio");
+    expect(second.profile.name).toBe("Kopie van Standaard portfolio (2)");
+    await expect(renameManagedSourceProfile(actors.owner, second.profile.id, ` ${first.profile.name.toUpperCase()} `)).rejects.toThrow("al een bronprofiel");
+    await expect(renameManagedSourceProfile(actors.owner, second.profile.id, ` ${second.profile.name} `)).resolves.toBeUndefined();
+  });
+
+  it("enforces concrete profile names in the database and translates raced create and rename conflicts", async () => {
+    const database = await getDatabase();
+    const occupied = await createProfile("space-5", actors.owner.id, "Bezette profielnaam", false);
+    const profileBefore = (await database.execute({ sql: "SELECT name, updated_at FROM source_profiles WHERE id = ?", args: [profileFiveId] })).rows[0];
+    const assignmentBefore = (await database.execute("SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = 'space-5'")).rows[0];
+
+    await expect(database.execute({
+      sql: `INSERT INTO source_profiles
+        (id, type, name, description, config_version, config_json, created_at, updated_at, management_learning_space_id, owner_user_id, archived_at)
+        SELECT ?, 'custom', ?, description, config_version, config_json, created_at, updated_at,
+          management_learning_space_id, owner_user_id, archived_at
+        FROM source_profiles WHERE id = ?`,
+      args: ["direct-profile-name-conflict", "  BEZETTE PROFIELNAAM  ", occupied.id],
+    })).rejects.toThrow();
+    await expect(database.execute({
+      sql: `INSERT INTO source_profiles
+        (id, type, name, description, config_version, config_json, created_at, updated_at, archived_at)
+        SELECT ?, 'built_in', ?, description, config_version, config_json, created_at, updated_at, archived_at
+        FROM source_profiles WHERE id = ?`,
+      args: ["second-built-in-name", "Standaard portfolio", BUILT_IN_DEFAULT_SOURCE_PROFILE_ID],
+    })).resolves.toBeDefined();
+
+    const originalExecute = database.execute.bind(database);
+    const execute = vi.spyOn(database, "execute").mockImplementation(async (statement) => {
+      const sql = typeof statement === "string" ? statement : statement.sql;
+      if (sql.includes("SELECT 1 FROM source_profiles") && sql.includes("LOWER(TRIM(name))")) return { rows: [] };
+      return originalExecute(statement);
+    });
+    const template = await getDefaultSourceProfileTemplate();
+    try {
+      await expect(cloneSourceProfileTemplateToLearningSpace(
+        { ...template, name: " bezette profielnaam " },
+        "space-5",
+        actors.owner.id,
+      )).rejects.toThrow("Je hebt al een bronprofiel met deze naam.");
+      await expect(renameManagedSourceProfile(actors.owner, profileFiveId, " BEZETTE PROFIELNAAM "))
+        .rejects.toThrow("Je hebt al een bronprofiel met deze naam.");
+    } finally {
+      execute.mockRestore();
+    }
+
+    expect((await database.execute({
+      sql: `SELECT COUNT(*) AS count FROM source_profiles
+        WHERE owner_user_id = ? AND LOWER(TRIM(name)) = LOWER(?)`,
+      args: [actors.owner.id, "Bezette profielnaam"],
+    })).rows[0].count).toBe(1);
+    expect((await database.execute({ sql: "SELECT name, updated_at FROM source_profiles WHERE id = ?", args: [profileFiveId] })).rows[0]).toEqual(profileBefore);
+    expect((await database.execute("SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = 'space-5'")).rows[0]).toEqual(assignmentBefore);
+  });
+
+  it("archives only unused owned profiles and excludes them from normal reads and selectors", async () => {
+    const inactive = await createProfile("space-5", actors.owner.id, "Oud profiel", false);
+    await expect(archiveSourceProfile(actors.pureEditor, inactive.id)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(archiveSourceProfile(actors.viewer, inactive.id)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(archiveSourceProfile(actors.ownerEditor, inactive.id)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(archiveSourceProfile(actors.owner, profileFiveId)).rejects.toThrow("gebruikt bronprofiel");
+
+    await archiveSourceProfile(actors.owner, inactive.id);
+    expect((await getSourceProfileOverview(actors.owner)).ownedProfiles.map((profile) => profile.id)).not.toContain(inactive.id);
+    const archiveProfiles = (await getSourceProfileOverview(actors.owner, { archivedOnly: true })).ownedProfiles;
+    expect(archiveProfiles.map((profile) => profile.id)).toEqual([inactive.id]);
+    const archived = archiveProfiles.find((profile) => profile.id === inactive.id);
+    expect(archived).toMatchObject({ isArchived: true, archivedAt: expect.any(String), canRename: false, canCopy: false, canLink: false, canArchive: false });
+    await expect(copySourceProfileToLearningSpace(actors.owner, inactive.id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(linkSourceProfileToLearningSpace(actors.owner, inactive.id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+  });
+
+  it("restores without activation, blocks active name conflicts and permanently deletes only archived rows", async () => {
+    const database = await getDatabase();
+    const inactive = await createProfile("space-5", actors.owner.id, "Herstelbaar", false);
+    await expect(permanentlyDeleteSourceProfile(actors.owner, inactive.id)).rejects.toThrow("Alleen een gearchiveerd");
+    await archiveSourceProfile(actors.owner, inactive.id);
+    const activeBefore = (await getActiveSourceProfileForLearningSpace("space-5"))!.id;
+    await restoreSourceProfile(actors.owner, inactive.id);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))!.id).toBe(activeBefore);
+    expect((await getSourceProfileOverview(actors.owner)).ownedProfiles.map((profile) => profile.id)).toContain(inactive.id);
+
+    await archiveSourceProfile(actors.owner, inactive.id);
+    await expect(database.execute({ sql: "UPDATE source_profiles SET name = 'Herstelbaar' WHERE id = ?", args: [profileFiveId] })).rejects.toThrow();
+    await restoreSourceProfile(actors.owner, inactive.id);
+    await archiveSourceProfile(actors.owner, inactive.id);
+    await permanentlyDeleteSourceProfile(actors.owner, inactive.id);
+    expect((await database.execute({ sql: "SELECT 1 FROM source_profiles WHERE id = ?", args: [inactive.id] })).rows).toHaveLength(0);
+  });
+
+  it("reserves normalized archived profile names until permanent deletion", async () => {
+    const archived = await createProfile("space-5", actors.owner.id, " Gereserveerd ", false);
+    await archiveSourceProfile(actors.owner, archived.id);
+    await expect(createProfile("space-5", actors.owner.id, "GERESERVEERD", false)).rejects.toThrow("al een bronprofiel");
+    await expect(renameManagedSourceProfile(actors.owner, profileFiveId, " gereserveerd ")).rejects.toThrow("al een bronprofiel");
+
+    const copyName = await createProfile("space-5", actors.owner.id, "Kopie van Standaard portfolio", false);
+    await archiveSourceProfile(actors.owner, copyName.id);
+    const copied = await copySourceProfileToLearningSpace(actors.owner, profileFiveId, "space-5");
+    expect(copied.profile.name).toBe("Kopie van Standaard portfolio (2)");
+
+    await permanentlyDeleteSourceProfile(actors.owner, archived.id);
+    await expect(createProfile("space-5", actors.owner.id, "gereserveerd", false)).resolves.toMatchObject({ name: "gereserveerd" });
+  });
+
+  it("lets superadmin administer an unused foreign profile but never bypass usage integrity", async () => {
+    const database = await getDatabase();
+    const inactive = await createProfile("space-5", actors.owner.id, "Administratief oud", false);
+    await archiveSourceProfile(actors.superadmin, inactive.id);
+    await restoreSourceProfile(actors.superadmin, inactive.id);
+    await archiveSourceProfile(actors.superadmin, inactive.id);
+    await permanentlyDeleteSourceProfile(actors.superadmin, inactive.id);
+
+    await database.execute({ sql: "UPDATE source_profiles SET archived_at = ? WHERE id = ?", args: ["2026-09-12T00:00:00.000Z", profileFiveId] });
+    await expect(permanentlyDeleteSourceProfile(actors.superadmin, profileFiveId)).rejects.toThrow("gebruikt bronprofiel");
+    expect((await database.execute({ sql: "SELECT 1 FROM source_profiles WHERE id = ?", args: [profileFiveId] })).rows).toHaveLength(1);
+  });
+
+  it("preserves shared usage and makes a split copy owned by the current user", async () => {
+    await upsertManagedMembership("space-6", actors.owner.id, "owner");
+    await linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6");
+    await expect(renameSourceProfile(actors.owner, "space-5", profileFiveId, "Alleen vijf")).rejects.toThrow("Kies of je");
+    await renameSourceProfile(actors.owner, "space-5", profileFiveId, "Alleen vijf", "current");
+    const split = (await getActiveSourceProfileForLearningSpace("space-5"))!;
+    expect(split).toMatchObject({ name: "Alleen vijf", ownerUserId: actors.owner.id });
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.id).toBe(profileFiveId);
+  });
+
+  it("keeps visibility and usage reads bulk and independent", async () => {
+    await createProfile("space-5", actors.owner.id, "Zulu", false);
+    await createProfile("space-5", actors.owner.id, "Alfa", false);
+    const database = await getDatabase();
+    const execute = vi.spyOn(database, "execute");
+    const profiles = await getManagedSourceProfiles(actors.owner);
+    expect(execute).toHaveBeenCalledTimes(2);
+    expect(profiles.map((profile) => profile.name)).toEqual(["Standaard portfolio", "Alfa", "Zulu"]);
+    expect(profiles.find((profile) => profile.id === profileFiveId)).toMatchObject({ usageCount: 1, isInactive: false });
+  });
+
+  it("rejects viewer/student access and malformed profile ids without changing assignments", async () => {
+    for (const actor of [actors.viewer, actors.student]) {
+      await expect(copySourceProfileToLearningSpace(actor, profileFiveId, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+      await expect(renameManagedSourceProfile(actor, profileFiveId, "Verboden")).rejects.toBeInstanceOf(AuthorizationError);
+    }
+    await expect(getSourceProfileOverview(actors.student)).rejects.toBeInstanceOf(AuthorizationError);
+    const disabledOwner = { ...actors.owner, status: "disabled" as const };
+    await expect(copySourceProfileToLearningSpace(disabledOwner, profileFiveId, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(renameManagedSourceProfile(disabledOwner, profileFiveId, "Verboden")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(linkSourceProfileToLearningSpace(actors.owner, "missing", "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(linkSourceProfileToLearningSpace(actors.owner, profileFiveId, "missing-space")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(linkSourceProfileToLearningSpace(actors.owner, (await getDefaultSourceProfileTemplate()).id, "space-5")).rejects.toBeInstanceOf(AuthorizationError);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.id).toBe(profileFiveId);
+  });
+
+  it("creates an owned profile from the technical fallback without touching indexed data", async () => {
+    const database = await getDatabase();
+    const portfoliosBefore = (await database.execute("SELECT * FROM portfolios ORDER BY id")).rows;
+    await database.execute({ sql: "UPDATE learning_space_source_profiles SET source_profile_id = ? WHERE learning_space_id = 'space-5'", args: [BUILT_IN_DEFAULT_SOURCE_PROFILE_ID] });
+    const created = await createOwnSourceProfile(actors.owner, "space-5");
+    expect(created).toMatchObject({ ownerUserId: actors.owner.id, config: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG });
+    expect((await database.execute("SELECT * FROM portfolios ORDER BY id")).rows).toEqual(portfoliosBefore);
+    expect((await database.execute("SELECT COUNT(*) AS count FROM sync_runs WHERE learning_space_id = 'space-5'")).rows[0].count).toBe(0);
+  });
+
+  it("formats at most three usage labels and a remaining count", () => {
+    const usages = ["4NW1", "5WET", "6WIS", "EXTRA"].map((learningSpaceShortLabel, index) => ({
+      learningSpaceId: `space-${index}`, learningSpaceName: `Ruimte ${index}`, learningSpaceShortLabel,
+    }));
+    expect(sourceProfileUsageLabel([])).toBe("Inactief");
+    expect(sourceProfileUsageLabel(usages)).toBe("4NW1, 5WET, 6WIS +1");
+  });
+  it("saves name and resources together and can split a shared profile into an owner-preserving copy", async () => {
+    await saveManagedSourceProfile(actors.owner, profileFiveId, {
+      name: "Samen opgeslagen",
+      resources: [{ id: "formula", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic" }],
+      mode: "all",
+    });
+    expect(await getActiveSourceProfileForLearningSpace("space-5")).toMatchObject({
+      name: "Samen opgeslagen",
+      config: { globalResources: [expect.objectContaining({ id: "formula", label: "Formularium" })] },
+    });
+
+    await upsertManagedMembership("space-6", actors.owner.id, "owner");
+    await linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6");
+
+    await expect(saveManagedSourceProfile(actors.owner, profileFiveId, {
+      name: "Zonder keuze",
+      resources: [],
+      mode: "copy",
+    })).rejects.toThrow("Kies voor welke leeromgeving");
+
+    const split = await saveManagedSourceProfile(actors.owner, profileFiveId, {
+      name: "Alleen vijf",
+      resources: [{ id: "local", kind: "external_link", label: "Alleen vijf", icon: "link", order: 10, semanticRole: "generic" }],
+      mode: "copy",
+      targetLearningSpaceId: "space-5",
+    });
+    expect(split.mode).toBe("copy");
+    expect(split.profile.ownerUserId).toBe(actors.owner.id);
+    expect(split.profile.name).toBe("Alleen vijf");
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))).toMatchObject({
+      id: split.profile.id,
+      name: "Alleen vijf",
+      config: { globalResources: [expect.objectContaining({ id: "local" })] },
+    });
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))).toMatchObject({
+      id: profileFiveId,
+      config: { globalResources: [expect.objectContaining({ id: "formula" })] },
+    });
+  });
+
+  it("updates global resources only for the owner or superadmin and confirms shared impact", async () => {
+    await expect(updateManagedSourceProfileGlobalResources(actors.pureEditor, profileFiveId, [])).rejects.toBeInstanceOf(AuthorizationError);
+    await updateManagedSourceProfileGlobalResources(actors.owner, profileFiveId, [{
+      id: "formula", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic",
+    }]);
+    expect((await getActiveSourceProfileForLearningSpace("space-5"))?.config.globalResources).toEqual([
+      expect.objectContaining({ id: "formula", kind: "external_link", label: "Formularium" }),
+    ]);
+
+    await upsertManagedMembership("space-6", actors.owner.id, "owner");
+    await linkSourceProfileToLearningSpace(actors.superadmin, profileFiveId, "space-6");
+    await expect(updateManagedSourceProfileGlobalResources(actors.owner, profileFiveId, [])).rejects.toThrow("gedeelde profiel");
+    await updateManagedSourceProfileGlobalResources(actors.owner, profileFiveId, [], "all");
+    expect((await getActiveSourceProfileForLearningSpace("space-6"))?.config.globalResources).toEqual([]);
+  });
+
+});
+
+async function createProfile(learningSpaceId: string, ownerUserId: string, name: string, activate: boolean) {
+  const template = await getDefaultSourceProfileTemplate();
+  if (activate) return cloneSourceProfileTemplateToLearningSpace({ ...template, name }, learningSpaceId, ownerUserId);
+  const profile = await cloneSourceProfileTemplateToLearningSpace({ ...template, name }, learningSpaceId, ownerUserId);
+  const fallbackId = learningSpaceId === "space-5" ? profileFiveId : profileSixId;
+  await (await getDatabase()).execute({ sql: "UPDATE learning_space_source_profiles SET source_profile_id = ? WHERE learning_space_id = ?", args: [fallbackId, learningSpaceId] });
+  return profile;
+}
+
+async function removeTemporaryDirectory(directory: string): Promise<void> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    try { await rm(directory, { recursive: true, force: true }); return; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EBUSY") throw error;
+      if (attempt === 9) return;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+}

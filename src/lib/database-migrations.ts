@@ -1,6 +1,23 @@
+import {
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON,
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_DESCRIPTION,
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_ID,
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_NAME,
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP,
+  INITIAL_SOURCE_PROFILE_TEMPLATE_DESCRIPTION,
+  INITIAL_SOURCE_PROFILE_TEMPLATE_ID,
+  INITIAL_SOURCE_PROFILE_TEMPLATE_NAME,
+  INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP,
+  MIGRATED_SOURCE_PROFILE_SNAPSHOT_PREFIX,
+} from "@/lib/source-profile-config";
+
 export interface DatabaseMigration {
   version: string;
   statements: string[];
+  conflictCheck?: {
+    sql: string;
+    message: string;
+  };
 }
 
 export const migrations: DatabaseMigration[] = [
@@ -804,4 +821,195 @@ export const migrations: DatabaseMigration[] = [
       "DROP INDEX IF EXISTS error_reports_issue_reporter_unique",
     ],
   },
+  {
+    version: "034_source_profile_foundation",
+    statements: [
+      `CREATE TABLE source_profiles (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL CHECK(type IN ('built_in', 'custom')),
+        name TEXT NOT NULL,
+        description TEXT,
+        config_version INTEGER NOT NULL,
+        config_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE learning_space_source_profiles (
+        learning_space_id TEXT PRIMARY KEY REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        source_profile_id TEXT NOT NULL REFERENCES source_profiles(id) ON DELETE RESTRICT,
+        assigned_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `INSERT INTO source_profiles
+        (id, type, name, description, config_version, config_json, created_at, updated_at)
+        VALUES (${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)}, 'built_in', ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_NAME)},
+          ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_DESCRIPTION)}, 1, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON)},
+          ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP)}, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP)})
+        ON CONFLICT(id) DO NOTHING`,
+      `INSERT INTO learning_space_source_profiles
+        (learning_space_id, source_profile_id, assigned_at, updated_at)
+        SELECT id, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)}, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP)},
+          ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP)} FROM learning_spaces WHERE TRUE
+        ON CONFLICT(learning_space_id) DO NOTHING`,
+      "CREATE INDEX learning_space_source_profiles_profile_index ON learning_space_source_profiles(source_profile_id)",
+    ],
+  },
+  {
+    version: "035_source_profile_management_context",
+    statements: [
+      "ALTER TABLE source_profiles ADD COLUMN management_learning_space_id TEXT REFERENCES learning_spaces(id) ON DELETE SET NULL",
+      "CREATE INDEX source_profiles_management_context_index ON source_profiles(management_learning_space_id, type)",
+    ],
+  },
+  {
+    version: "036_global_source_profile_templates",
+    statements: [
+      `CREATE TABLE source_profile_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        config_version INTEGER NOT NULL,
+        config_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE TABLE source_profile_template_defaults (
+        singleton_id INTEGER PRIMARY KEY CHECK(singleton_id = 1),
+        default_template_id TEXT NOT NULL REFERENCES source_profile_templates(id) ON DELETE RESTRICT,
+        updated_at TEXT NOT NULL
+      )`,
+      `INSERT INTO source_profile_templates
+        (id, name, description, config_version, config_json, created_at, updated_at)
+        VALUES (${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_ID)}, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_NAME)},
+          ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_DESCRIPTION)}, 1, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON)},
+          ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)}, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)})
+        ON CONFLICT(id) DO NOTHING`,
+      `INSERT INTO source_profile_template_defaults (singleton_id, default_template_id, updated_at)
+        VALUES (1, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_ID)}, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)})
+        ON CONFLICT(singleton_id) DO NOTHING`,
+      `INSERT INTO source_profiles
+        (id, type, name, description, config_version, config_json, created_at, updated_at, management_learning_space_id)
+        SELECT ${sqlText(MIGRATED_SOURCE_PROFILE_SNAPSHOT_PREFIX)} || learning_space_source_profiles.learning_space_id,
+          'custom', ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_NAME)}, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_DESCRIPTION)},
+          1, ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON)}, ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)},
+          ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)}, learning_space_source_profiles.learning_space_id
+        FROM learning_space_source_profiles
+        WHERE learning_space_source_profiles.source_profile_id = ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)}
+        ON CONFLICT(id) DO NOTHING`,
+      `UPDATE learning_space_source_profiles
+        SET source_profile_id = ${sqlText(MIGRATED_SOURCE_PROFILE_SNAPSHOT_PREFIX)} || learning_space_id,
+          updated_at = ${sqlText(INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP)}
+        WHERE source_profile_id = ${sqlText(BUILT_IN_DEFAULT_SOURCE_PROFILE_ID)}`,
+    ],
+  },
+  {
+    version: "037_source_profile_ownership",
+    statements: [
+      "ALTER TABLE source_profiles ADD COLUMN owner_user_id TEXT REFERENCES users(id) ON DELETE RESTRICT",
+      `UPDATE source_profiles
+        SET owner_user_id = COALESCE(
+          (SELECT MIN(learning_space_members.user_id)
+            FROM learning_space_members
+            WHERE learning_space_members.learning_space_id = source_profiles.management_learning_space_id
+              AND learning_space_members.role = 'owner'),
+          (SELECT MIN(users.id) FROM users WHERE users.role = 'superadmin' AND users.status = 'active'),
+          (SELECT MIN(users.id) FROM users WHERE users.role = 'superadmin')
+        )
+        WHERE source_profiles.type = 'custom' AND source_profiles.owner_user_id IS NULL`,
+      `WITH ranked_profiles AS (
+          SELECT id, name,
+            ROW_NUMBER() OVER (PARTITION BY owner_user_id, LOWER(TRIM(name)) ORDER BY created_at, id) AS duplicate_number
+          FROM source_profiles
+          WHERE type = 'custom' AND owner_user_id IS NOT NULL
+        )
+        UPDATE source_profiles
+        SET name = (
+          SELECT SUBSTR(TRIM(ranked_profiles.name), 1,
+              80 - LENGTH(' (' || CAST(ranked_profiles.duplicate_number AS TEXT) || ')'))
+            || ' (' || CAST(ranked_profiles.duplicate_number AS TEXT) || ')'
+          FROM ranked_profiles
+          WHERE ranked_profiles.id = source_profiles.id
+        )
+        WHERE id IN (SELECT id FROM ranked_profiles WHERE duplicate_number > 1)`,
+      "CREATE INDEX source_profiles_owner_index ON source_profiles(owner_user_id, type)",
+    ],
+  },
+  {
+    version: "038_source_profile_lifecycle",
+    statements: [
+      "ALTER TABLE source_profiles ADD COLUMN archived_at TEXT",
+      "ALTER TABLE source_profile_templates ADD COLUMN archived_at TEXT",
+      "CREATE INDEX source_profiles_archive_index ON source_profiles(archived_at, owner_user_id, type)",
+      "CREATE INDEX source_profile_templates_archive_index ON source_profile_templates(archived_at, name)",
+    ],
+  },
+  {
+    version: "039_portfolio_external_links",
+    statements: [
+      `CREATE TABLE portfolio_external_links (
+        portfolio_id TEXT NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+        resource_id TEXT NOT NULL,
+        url TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(portfolio_id, resource_id)
+      )`,
+    ],
+  },
+  {
+    version: "040_generic_source_resource_assets",
+    statements: [
+      `CREATE TABLE source_resource_assets (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        portfolio_id TEXT NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+        exercise_id TEXT REFERENCES exercises(id) ON DELETE CASCADE,
+        resource_scope TEXT NOT NULL CHECK(resource_scope IN ('portfolio', 'exercise')),
+        resource_id TEXT NOT NULL,
+        semantic_role TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        extension TEXT NOT NULL,
+        step INTEGER NOT NULL DEFAULT 1,
+        last_modified_at TEXT,
+        source_version TEXT,
+        is_indexed INTEGER NOT NULL DEFAULT 1,
+        missing_since TEXT,
+        archived_at TEXT,
+        last_seen_at TEXT NOT NULL,
+        CHECK((resource_scope = 'portfolio' AND exercise_id IS NULL) OR (resource_scope = 'exercise' AND exercise_id IS NOT NULL)),
+        UNIQUE(learning_space_id, resource_scope, resource_id, source_id)
+      )`,
+      "CREATE INDEX source_resource_assets_portfolio_index ON source_resource_assets(portfolio_id, resource_scope, resource_id, is_indexed)",
+      "CREATE INDEX source_resource_assets_exercise_index ON source_resource_assets(exercise_id, resource_id, is_indexed)",
+      "CREATE INDEX source_resource_assets_source_index ON source_resource_assets(learning_space_id, source_id)",
+    ],
+  },
+  {
+    version: "041_source_profile_name_uniqueness",
+    conflictCheck: {
+      sql: `SELECT 'custom bronprofiel (eigenaar ' || owner_user_id || '): "' || LOWER(TRIM(name)) || '"' AS conflict
+        FROM source_profiles
+        WHERE type = 'custom' AND owner_user_id IS NOT NULL
+        GROUP BY owner_user_id, LOWER(TRIM(name))
+        HAVING COUNT(*) > 1
+        UNION ALL
+        SELECT 'appbreed bronprofielsjabloon: "' || LOWER(TRIM(name)) || '"' AS conflict
+        FROM source_profile_templates
+        GROUP BY LOWER(TRIM(name))
+        HAVING COUNT(*) > 1`,
+      message: "Migratie 041 kan niet worden toegepast omdat bronprofielnamen conflicteren. Los deze naamconflicten eerst op zonder records te verwijderen of automatisch te hernoemen:",
+    },
+    statements: [
+      `CREATE UNIQUE INDEX source_profiles_owner_normalized_name_unique
+        ON source_profiles(owner_user_id, LOWER(TRIM(name)))
+        WHERE type = 'custom'`,
+      `CREATE UNIQUE INDEX source_profile_templates_normalized_name_unique
+        ON source_profile_templates(LOWER(TRIM(name)))`,
+    ],
+  },
 ];
+
+function sqlText(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}

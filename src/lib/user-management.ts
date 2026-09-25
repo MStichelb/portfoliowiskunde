@@ -339,6 +339,31 @@ export async function listManagedStorageConnections(): Promise<ManagedStorageCon
   }));
 }
 
+export async function listLearningSpaceOwnerNames(learningSpaceIds: readonly string[]): Promise<Map<string, string[]>> {
+  const uniqueIds = [...new Set(learningSpaceIds.filter(Boolean))];
+  if (uniqueIds.length === 0) return new Map();
+
+  const placeholders = uniqueIds.map(() => "?").join(", ");
+  const rows = (await (await getDatabase()).execute({
+    sql: `SELECT learning_space_members.learning_space_id, users.display_name
+      FROM learning_space_members
+      JOIN users ON users.id = learning_space_members.user_id
+      WHERE learning_space_members.role = 'owner'
+        AND learning_space_members.learning_space_id IN (${placeholders})
+      ORDER BY learning_space_members.learning_space_id, users.display_name`,
+    args: uniqueIds,
+  })).rows;
+
+  const ownersBySpace = new Map<string, string[]>();
+  for (const row of rows) {
+    const learningSpaceId = String(row.learning_space_id);
+    const names = ownersBySpace.get(learningSpaceId) ?? [];
+    names.push(String(row.display_name));
+    ownersBySpace.set(learningSpaceId, names);
+  }
+  return ownersBySpace;
+}
+
 export async function listManagedMemberships(): Promise<ManagedMembership[]> {
   const rows = (await (await getDatabase()).execute(`SELECT learning_space_members.*, users.display_name
     FROM learning_space_members JOIN users ON users.id = learning_space_members.user_id

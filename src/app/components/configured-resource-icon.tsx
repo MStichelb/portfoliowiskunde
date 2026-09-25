@@ -1,0 +1,68 @@
+import {
+  Astroid,
+  BookOpen,
+  BookSearch,
+  Brain,
+  Calculator,
+  CircleCheckBig,
+  Clapperboard,
+  DraftingCompass,
+  ExternalLink,
+  FileClock,
+  FileText,
+  FlaskConical,
+  KeyRound,
+  LandPlot,
+  Lightbulb,
+  Link,
+  Map,
+  MapPinned,
+  MonitorPlay,
+  NotebookPen,
+  Paperclip,
+  Pencil,
+  Puzzle,
+  ScrollText,
+  Shapes,
+  Sparkles,
+  Star,
+  type LucideIcon,
+} from "lucide-react";
+
+import type { GlobalResourceIcon } from "@/lib/source-profile-config";
+
+const iconComponents: Record<GlobalResourceIcon, LucideIcon> = {
+  "file-text": FileText,
+  lightbulb: Lightbulb,
+  "circle-check-big": CircleCheckBig,
+  "book-open": BookOpen,
+  link: Link,
+  "external-link": ExternalLink,
+  youtube: MonitorPlay,
+  calculator: Calculator,
+  astroid: Astroid,
+  "land-plot": LandPlot,
+  "drafting-compass": DraftingCompass,
+  brain: Brain,
+  "flask-conical": FlaskConical,
+  "key-round": KeyRound,
+  star: Star,
+  shapes: Shapes,
+  "notebook-pen": NotebookPen,
+  pencil: Pencil,
+  paperclip: Paperclip,
+  "scroll-text": ScrollText,
+  map: Map,
+  "book-search": BookSearch,
+  sparkles: Sparkles,
+  clapperboard: Clapperboard,
+  "monitor-play": MonitorPlay,
+  puzzle: Puzzle,
+  "file-clock": FileClock,
+  "map-pinned": MapPinned,
+};
+
+export function ConfiguredResourceIcon({ icon, size = 17 }: { icon: GlobalResourceIcon; size?: number }) {
+  const Icon = iconComponents[icon];
+  return <Icon size={size} aria-hidden />;
+}

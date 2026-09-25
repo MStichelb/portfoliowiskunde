@@ -1,3 +1,5 @@
+import type { ExerciseResourceSemanticRole, GlobalResourceSemanticRole } from "@/lib/source-profile-config";
+
 export type SolutionVariantKind = "standard" | "alternative";
 
 export interface ParsedPortfolioDirectory {
@@ -8,6 +10,18 @@ export interface ParsedPortfolioDirectory {
 export interface ParsedSectionDirectory {
   order: number;
   title: string;
+}
+
+export interface ParsedExerciseIdentity {
+  exerciseNumber: number;
+  exerciseSuffix: string;
+  exerciseCode: string;
+}
+
+export interface ExerciseNumberCandidate extends ParsedExerciseIdentity {
+  remainder: string;
+  consumedLength: number;
+  hasBoundaryAfterNumber: boolean;
 }
 
 export interface ParsedSolutionFile {
@@ -26,7 +40,21 @@ export interface IndexWarning {
   message: string;
 }
 
+export interface IndexedPortfolioResourceAsset {
+  resourceId: string;
+  semanticRole: GlobalResourceSemanticRole;
+  relativePath: string;
+  sourceId: string;
+  fileName: string;
+  extension: string;
+  lastModifiedAt: string | null;
+  sourceVersion: string | null;
+}
+
 export interface IndexedAsset {
+  resourceId: string;
+  semanticRole: ExerciseResourceSemanticRole;
+  legacyVariant: SolutionVariantKind | null;
   relativePath: string;
   sourceId: string;
   fileName: string;
@@ -59,6 +87,7 @@ export interface IndexedPortfolio {
   hintsDocumentSourceId: string | null;
   finalSolutionsPdfPath: string | null;
   finalSolutionsPdfSourceId: string | null;
+  resourceAssets: IndexedPortfolioResourceAsset[];
   sections: IndexedSection[];
   warnings: IndexWarning[];
 }

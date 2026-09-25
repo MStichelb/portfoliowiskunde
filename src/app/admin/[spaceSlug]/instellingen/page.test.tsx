@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   canConfigureLearningSpace: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
+  getSourceProfileForLearningSpaceCard: vi.fn(),
   settingsForm: vi.fn(),
+  sourceProfileCard: vi.fn(),
   saveLearningSpaceAction: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NEXT_NOT_FOUND"); }),
 }));
@@ -16,6 +18,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: mocks.canConfigureLearningSpace }));
 vi.mock("@/lib/repositories", () => ({ getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug }));
+vi.mock("@/lib/source-profiles", () => ({ getSourceProfileForLearningSpaceCard: mocks.getSourceProfileForLearningSpaceCard }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("../../actions", () => ({ saveLearningSpaceAction: mocks.saveLearningSpaceAction }));
 vi.mock("@/app/components/admin-space-header", () => ({
@@ -30,6 +33,12 @@ vi.mock("@/app/components/learning-space-settings-form", () => ({
 vi.mock("@/app/components/source-switch-panel", () => ({
   SourceSwitchPanel: () => <section>Actieve bron</section>,
 }));
+vi.mock("@/app/components/source-profile-card", () => ({
+  SourceProfileCard: (props: unknown) => {
+    mocks.sourceProfileCard(props);
+    return <section>Bronprofiel: Standaard portfolio</section>;
+  },
+}));
 
 import LearningSpaceSettingsPage from "./page";
 
@@ -39,6 +48,7 @@ describe("LearningSpace settings page", () => {
     mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
     mocks.canConfigureLearningSpace.mockResolvedValue(true);
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
+    mocks.getSourceProfileForLearningSpaceCard.mockResolvedValue({ id: "profile-1", name: "Standaard portfolio" });
   });
 
   it("passes superadmin delete rights into settings while preserving the active source", async () => {
@@ -53,6 +63,8 @@ describe("LearningSpace settings page", () => {
       action: mocks.saveLearningSpaceAction,
     }));
     expect(markup).toContain("Instellingenformulier");
+    expect(markup).not.toContain("Uitgebreide bronstatus");
+    expect(markup).toContain("Bronprofiel: Standaard portfolio");
     expect(markup).toContain("Actieve bron");
     expect(markup).not.toContain("Status leeromgeving");
     expect(markup).not.toContain("Beheerders van deze leeromgeving");
@@ -75,6 +87,29 @@ describe("LearningSpace settings page", () => {
     expect(mocks.settingsForm).toHaveBeenLastCalledWith(expect.objectContaining({ canPermanentlyDelete: true }));
     expect(archivedMarkup).not.toContain("Status leeromgeving");
     expect(archivedMarkup).not.toContain("Actieve bron");
+  });
+
+  it("does not let an editor open the owner-only settings route", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher"));
+    mocks.canConfigureLearningSpace.mockResolvedValue(false);
+
+    await expect(LearningSpaceSettingsPage({
+      params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({}),
+    })).rejects.toThrow("NEXT_NOT_FOUND");
+
+    expect(mocks.settingsForm).not.toHaveBeenCalled();
+    expect(mocks.sourceProfileCard).not.toHaveBeenCalled();
+    expect(mocks.getSourceProfileForLearningSpaceCard).not.toHaveBeenCalled();
+  });
+
+  it("passes no profile mutation flows into the read-only card", async () => {
+    renderToStaticMarkup(await LearningSpaceSettingsPage({
+      params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({}),
+    }));
+    const props = mocks.sourceProfileCard.mock.calls[0][0] as Record<string, unknown>;
+    expect(props).toEqual({ profile: expect.objectContaining({ name: "Standaard portfolio" }), canConfigure: true });
+    expect(props).not.toHaveProperty("actions");
+    expect(props).not.toHaveProperty("initialModal");
   });
 
   it("does not open settings for a user without configuration rights", async () => {

@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   createLearningSpaceForOwner: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
   ensureStorageConnection: vi.fn(),
+  requireLearningSpaceConfiguration: vi.fn(),
+  requireLearningSpaceCreation: vi.fn(),
   revalidatePath: vi.fn(),
   redirect: vi.fn(),
 }));
@@ -12,13 +14,18 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/auth", () => ({ endAdminSession: vi.fn(), requireAdmin: vi.fn(), requireAdminUser: mocks.requireAdminUser }));
+vi.mock("@/lib/authorization", () => ({
+  requireLearningSpaceConfiguration: mocks.requireLearningSpaceConfiguration,
+  requireLearningSpaceCreation: mocks.requireLearningSpaceCreation,
+  requireLearningSpaceManagement: vi.fn(),
+}));
 vi.mock("@/lib/repositories", () => ({
   createLearningSpaceForOwner: mocks.createLearningSpaceForOwner,
   getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug,
 }));
 vi.mock("@/lib/storage-connections", () => ({ ensureStorageConnection: mocks.ensureStorageConnection }));
 
-import { createLearningSpaceAction } from "./actions";
+import { createLearningSpaceAction, saveLearningSpaceAction } from "./actions";
 
 describe("createLearningSpaceAction authorization and ownership", () => {
   beforeEach(() => {
@@ -26,6 +33,9 @@ describe("createLearningSpaceAction authorization and ownership", () => {
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(null);
     mocks.createLearningSpaceForOwner.mockImplementation(async (input) => ({ ...input, id: `space-${input.slug}` }));
     mocks.ensureStorageConnection.mockImplementation(async (userId) => ({ id: `connection-${userId}` }));
+    mocks.requireLearningSpaceCreation.mockImplementation((actor) => {
+      if (actor.role === "student") throw new Error("Alleen actieve leraren en hoofdbeheerders");
+    });
     mocks.redirect.mockImplementation((url: string) => { throw new Error(`REDIRECT:${url}`); });
   });
 
@@ -72,6 +82,17 @@ describe("createLearningSpaceAction authorization and ownership", () => {
 
     expect(mocks.ensureStorageConnection).toHaveBeenCalledWith("teacher-connection", "onedrive");
     expect(mocks.createLearningSpaceForOwner).toHaveBeenCalledWith(expect.objectContaining({ storageConnectionId: "connection-teacher-connection" }), "teacher-connection");
+  });
+
+  it("keeps an editor out of the owner-only settings mutation", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher", "editor-1"));
+    mocks.requireLearningSpaceConfiguration.mockRejectedValueOnce(new Error("Alleen een eigenaar of hoofdbeheerder"));
+    const form = validForm("editor-space");
+    form.set("id", "space-5");
+
+    await expect(saveLearningSpaceAction({ error: null }, form)).rejects.toThrow("Alleen een eigenaar of hoofdbeheerder");
+
+    expect(mocks.requireLearningSpaceConfiguration).toHaveBeenCalledWith(expect.objectContaining({ id: "editor-1" }), "space-5");
   });
 });
 

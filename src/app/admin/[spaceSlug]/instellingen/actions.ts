@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireAdminUser } from "@/lib/auth";
-import { requireLearningSpaceConfiguration } from "@/lib/authorization";
+import { canManageLearningSpace, requireLearningSpaceConfiguration } from "@/lib/authorization";
 import { getLearningSpace } from "@/lib/repositories";
+import { copyActiveSourceProfileToLearningSpace, copySourceProfileToLearningSpace, createOwnSourceProfile, linkSourceProfileToLearningSpace, renameSourceProfile } from "@/lib/source-profiles";
+import { copySourceProfileTemplateToLearningSpace } from "@/lib/source-profile-templates";
 import { listManagedMemberships, removeManagedMembership, upsertManagedMembership } from "@/lib/user-management";
 
 export async function addLearningSpaceEditorAction(formData: FormData) {
@@ -38,6 +40,70 @@ export async function removeLearningSpaceEditorAction(formData: FormData) {
   revalidatePath(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
   redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?memberSaved=1`);
 }
+
+export async function linkSourceProfileAction(formData: FormData) {
+  await runSourceProfileAction(formData, "linked", "switch", async (user, learningSpaceId) => {
+    await linkSourceProfileToLearningSpace(user, value(formData, "sourceProfileId"), learningSpaceId);
+  });
+}
+
+export async function copySelectedSourceProfileAction(formData: FormData) {
+  await runSourceProfileAction(formData, "copied", "switch", async (user, learningSpaceId) => {
+    await requireLearningSpaceConfiguration(user, learningSpaceId);
+    const result = await copySourceProfileToLearningSpace(user, value(formData, "sourceProfileId"), learningSpaceId);
+    if (!result.activated) throw new Error("De profielkopie kon niet worden geactiveerd.");
+  });
+}
+
+export async function createOwnSourceProfileAction(formData: FormData) {
+  await runSourceProfileAction(formData, "created", null, async (user, learningSpaceId) => {
+    await createOwnSourceProfile(user, learningSpaceId);
+  });
+}
+
+export async function copySourceProfileAction(formData: FormData) {
+  await runSourceProfileAction(formData, "copied", "copy", async (user, learningSpaceId) => {
+    const result = await copyActiveSourceProfileToLearningSpace(user, learningSpaceId, value(formData, "targetLearningSpaceId"));
+    if (!result.activated) throw new Error("De profielkopie kon niet worden geactiveerd.");
+  });
+}
+
+export async function copySourceProfileTemplateAction(formData: FormData) {
+  await runSourceProfileAction(formData, "templateCopied", "switch", async (user, learningSpaceId) => {
+    await copySourceProfileTemplateToLearningSpace(user, value(formData, "templateId"), learningSpaceId);
+  });
+}
+
+export async function renameSourceProfileAction(formData: FormData) {
+  await runSourceProfileAction(formData, "renamed", "rename", async (user, learningSpaceId) => {
+    const scope = value(formData, "renameScope");
+    await renameSourceProfile(user, learningSpaceId, value(formData, "sourceProfileId"), value(formData, "name"), scope === "all" || scope === "current" ? scope : undefined);
+  });
+}
+
+async function runSourceProfileAction(
+  formData: FormData,
+  saved: SourceProfileSaved,
+  errorModal: "switch" | "rename" | "copy" | null,
+  mutation: (user: Awaited<ReturnType<typeof requireAdminUser>>, learningSpaceId: string) => Promise<SourceProfileSaved | void>,
+): Promise<never> {
+  const learningSpaceId = value(formData, "learningSpaceId");
+  const user = await requireAdminUser();
+  if (!await canManageLearningSpace(user, learningSpaceId)) redirect("/admin");
+  const space = await getLearningSpace(learningSpaceId);
+  if (!space) redirect("/admin");
+  try {
+    saved = await mutation(user, learningSpaceId) ?? saved;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Bronprofiel kon niet worden gewijzigd.";
+    const modalQuery = errorModal ? `&profileModal=${errorModal}` : "";
+    redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?profileError=${encodeURIComponent(message)}${modalQuery}`);
+  }
+  revalidatePath(`/admin/${encodeURIComponent(space.slug)}/instellingen`);
+  redirect(`/admin/${encodeURIComponent(space.slug)}/instellingen?profileSaved=${saved}`);
+}
+
+type SourceProfileSaved = "linked" | "created" | "copied" | "templateCopied" | "renamed";
 
 function value(formData: FormData, key: string): string {
   return String(formData.get(key) ?? "").trim();

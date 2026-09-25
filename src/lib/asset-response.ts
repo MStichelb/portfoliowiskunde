@@ -64,9 +64,11 @@ export async function storageAssetResponse(
 }
 
 export function mimeTypeForExtension(extension: string): string {
-  if (extension === "pdf") return "application/pdf";
-  if (extension === "png") return "image/png";
-  if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+  const normalized = extension.toLowerCase();
+  if (normalized === "pdf") return "application/pdf";
+  if (normalized === "png") return "image/png";
+  if (normalized === "jpg" || normalized === "jpeg") return "image/jpeg";
+  if (normalized === "docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   return "application/octet-stream";
 }
 

@@ -17,6 +17,7 @@ import {
   listLearningSpaceGroupMappings,
   listLearningSpaceIndividualStudentAccess,
   listLearningSpaceIndividualStudentCandidates,
+  listLearningSpaceOwnerNames,
   listManagedGroupUsers,
   listManagedGroupMappings,
   listManagedMemberships,
@@ -62,6 +63,22 @@ describe("superadmin user and access management", () => {
     await updateManagedUserStatus(teacher.id, "disabled");
     await updateManagedUserStatus(student.id, "disabled");
     expect((await listManagedUsers()).filter((user) => user.id === teacher.id || user.id === student.id).every((user) => user.status === "disabled")).toBe(true);
+  });
+
+  it("levert voor publieke leeromgevingkaartjes alleen eigenaarnamen van de gevraagde leeromgevingen", async () => {
+    await useTemporaryDatabase();
+    const owner5 = await createUser({ displayName: "Olivia Owner", role: "teacher" });
+    const owner6 = await createUser({ displayName: "Mathias Owner", role: "teacher" });
+    const editor = await createUser({ displayName: "Elias Editor", role: "teacher" });
+    await upsertManagedMembership("space-5", owner5.id, "owner");
+    await upsertManagedMembership("space-6", owner6.id, "owner");
+    await upsertManagedMembership("space-5", editor.id, "editor");
+
+    const owners = await listLearningSpaceOwnerNames(["space-5"]);
+    expect(owners.get("space-5")).toEqual(["Olivia Owner"]);
+    expect(owners.has("space-6")).toBe(false);
+    expect([...owners.values()].flat()).not.toContain("Elias Editor");
+    await expect(listLearningSpaceOwnerNames([])).resolves.toEqual(new Map());
   });
 
   it("beheert owner/editor memberships en blokkeert een rolwijziging zonder cleanup", async () => {

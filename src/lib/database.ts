@@ -126,14 +126,28 @@ async function runMigrations(database: DatabaseClient, isPostgres: boolean): Pro
 
     for (const migration of migrations) {
       if (knownVersions.has(migration.version)) continue;
-      await database.batch([
-        ...migration.statements.map((sql) => ({ sql, args: [] })),
-        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, new Date().toISOString()] },
-      ]);
+      await assertNoMigrationConflicts(database, migration);
+      try {
+        await database.batch([
+          ...migration.statements.map((sql) => ({ sql, args: [] })),
+          { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, new Date().toISOString()] },
+        ]);
+      } catch (error) {
+        await assertNoMigrationConflicts(database, migration);
+        throw error;
+      }
     }
   } finally {
     if (isPostgres) await database.execute(`SELECT pg_advisory_unlock(${POSTGRES_MIGRATION_LOCK_ID})`);
   }
+}
+
+async function assertNoMigrationConflicts(database: DatabaseClient, migration: (typeof migrations)[number]): Promise<void> {
+  if (!migration.conflictCheck) return;
+  const result = await database.execute(migration.conflictCheck.sql);
+  if (result.rows.length === 0) return;
+  const conflicts = result.rows.map((row) => String(row.conflict)).join("; ");
+  throw new Error(`${migration.conflictCheck.message} ${conflicts}`);
 }
 
 export async function executeBatch(statements: InStatement[]): Promise<void> {

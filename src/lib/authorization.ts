@@ -16,6 +16,14 @@ export function canCreateLearningSpace(user: AppUser | null): boolean {
   return canAccessAdmin(user);
 }
 
+export function canManageSourceProfileTemplates(user: AppUser | null): boolean {
+  return Boolean(user && user.status === "active" && user.role === "superadmin");
+}
+
+export function requireSourceProfileTemplateManagement(user: AppUser | null): void {
+  if (!canManageSourceProfileTemplates(user)) throw new AuthorizationError("Alleen een hoofdbeheerder kan appbrede bronprofielsjablonen beheren.");
+}
+
 export async function getAccessibleLearningSpaceIds(user: AppUser | null): Promise<string[]> {
   if (!user || user.status !== "active") return [];
   const database = await getDatabase();

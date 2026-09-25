@@ -12,7 +12,29 @@ import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycl
 import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRelativePath } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { ExerciseNotePosition } from "@/lib/exercise-note";
+import { LEGACY_SUPERADMIN_USER_ID } from "@/lib/identity";
 import type { SourceManifestEntry } from "@/lib/source-comparison";
+import { getDefaultSourceProfileTemplate, prepareSourceProfileTemplateClone } from "@/lib/source-profile-templates";
+import {
+  availableSourceProfileName,
+  rethrowUniqueNameConflict,
+  SOURCE_PROFILE_NAME_CONFLICT_MESSAGE,
+  SOURCE_PROFILE_NAME_UNIQUE_INDEX,
+} from "@/lib/source-profile-name";
+import {
+  BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
+  firstExerciseResourceBySemanticRole,
+  firstSourceFileGlobalResourceBySemanticRole,
+  sortExerciseResources,
+  sortGlobalResources,
+  type ExerciseResourceConfig,
+  type ExerciseResourceSemanticRole,
+  type GlobalResourceConfig,
+  type GlobalResourceFileRecognition,
+  type GlobalResourceIcon,
+  type GlobalResourceSemanticRole,
+} from "@/lib/source-profile-config";
+import { getActiveSourceProfileForLearningSpace } from "@/lib/source-profiles";
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
 import {
   resolveChildPublication,
@@ -30,6 +52,27 @@ export interface AdminAsset {
   variant: "standard" | "alternative";
   isIndexed: boolean;
   lastModifiedAt: string | null;
+}
+
+export interface ExerciseResourceAsset {
+  id: string;
+  fileName: string;
+  extension: string;
+  step: number;
+  lastModifiedAt: string | null;
+  source: "solution" | "resource";
+}
+
+export interface ExerciseResource {
+  id: string;
+  kind: "source_file";
+  label: string;
+  icon: GlobalResourceIcon;
+  semanticRole: ExerciseResourceSemanticRole;
+  displayMode: ExerciseResourceConfig["displayMode"];
+  legacyVariant: "standard" | "alternative" | null;
+  available: boolean;
+  assets: ExerciseResourceAsset[];
 }
 
 export interface AdminExercise {
@@ -50,6 +93,7 @@ export interface AdminExercise {
   noteLabel: string | null;
   customNote: string | null;
   notePosition: ExerciseNotePosition;
+  resources: ExerciseResource[];
   assets: AdminAsset[];
 }
 
@@ -67,6 +111,21 @@ export interface AdminSection {
   exercises: AdminExercise[];
 }
 
+export type PortfolioDocumentKind = "assignment" | "hints" | "final-solutions";
+
+export interface PortfolioGlobalResource {
+  id: string;
+  kind: "source_file" | "external_link";
+  label: string;
+  icon: GlobalResourceIcon;
+  semanticRole: GlobalResourceSemanticRole;
+  documentKind: PortfolioDocumentKind | null;
+  assetId: string | null;
+  url: string | null;
+  available: boolean;
+  recognition?: GlobalResourceFileRecognition | null;
+}
+
 export interface AdminPortfolio {
   id: string;
   code: string;
@@ -82,6 +141,7 @@ export interface AdminPortfolio {
   assignmentPdfPath: string | null;
   hintsDocumentPath: string | null;
   finalSolutionsPdfPath: string | null;
+  globalResources: PortfolioGlobalResource[];
   learningSpaceId: string;
   themeId: string | null;
   themeName: string | null;
@@ -103,6 +163,7 @@ export interface StudentPortfolio {
   assignmentPdfPath: string | null;
   hintsDocumentPath: string | null;
   finalSolutionsPdfPath: string | null;
+  globalResources: PortfolioGlobalResource[];
   sections: Array<{
     id: string;
     title: string;
@@ -338,6 +399,10 @@ export async function createLearningSpaceForOwner(input: LearningSpaceInput, own
 async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUserId: string | null): Promise<LearningSpace> {
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
+  const template = await getDefaultSourceProfileTemplate();
+  const profileOwnerUserId = ownerUserId ?? LEGACY_SUPERADMIN_USER_ID;
+  const profileName = await availableSourceProfileName(profileOwnerUserId, template.name);
+  const profileClone = prepareSourceProfileTemplateClone({ ...template, name: profileName }, id, profileOwnerUserId, now);
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
   const mirror = input.mirrorSource ?? null;
   const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
@@ -345,6 +410,7 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args: [id, input.name, input.slug, input.shortLabel, input.description ?? DEFAULT_LEARNING_SPACE_DESCRIPTION, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder,
       legacyStorageProvider(primary.providerType), primary.providerType, primary.localSourcePath ?? null, primary.oneDriveDriveId ?? null,
       primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now] }];
+  statements.push(...profileClone.statements);
   statements.push(sourceUpsertStatement(id, "primary", primary, true, now));
   if (mirror) statements.push(sourceUpsertStatement(id, "mirror", mirror, false, now));
   if (ownerUserId) {
@@ -353,7 +419,11 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
       args: [id, ownerUserId, now, now],
     });
   }
-  await executeBatch(statements);
+  try {
+    await executeBatch(statements);
+  } catch (error) {
+    rethrowUniqueNameConflict(error, SOURCE_PROFILE_NAME_UNIQUE_INDEX, SOURCE_PROFILE_NAME_CONFLICT_MESSAGE);
+  }
   return (await getLearningSpace(id))!;
 }
 
@@ -483,6 +553,7 @@ export async function permanentlyDeleteLearningSpace(id: string): Promise<boolea
     { sql: `DELETE FROM sync_warnings WHERE sync_run_id IN (${syncRunIds})`, args: [id] },
     { sql: "DELETE FROM sync_runs WHERE learning_space_id = ?", args: [id] },
     { sql: "DELETE FROM sync_leases WHERE learning_space_id = ?", args: [id] },
+    { sql: `DELETE FROM portfolio_external_links WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
     { sql: "DELETE FROM portfolios WHERE learning_space_id = ?", args: [id] },
     { sql: "DELETE FROM themes WHERE learning_space_id = ?", args: [id] },
     { sql: "DELETE FROM app_settings WHERE key = 'legacy_default_learning_space_id' AND value = ?", args: [id] },
@@ -673,6 +744,7 @@ export async function persistIndex(
     { sql: "UPDATE exercises SET is_indexed = 0 WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [spaceId] },
     { sql: "UPDATE solution_variants SET is_indexed = 0 WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?))", args: [spaceId] },
     { sql: "UPDATE solution_assets SET is_indexed = 0 WHERE variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [spaceId] },
+    { sql: "UPDATE source_resource_assets SET is_indexed = 0 WHERE learning_space_id = ?", args: [spaceId] },
   ];
 
   for (const portfolio of portfolios) {
@@ -690,6 +762,24 @@ export async function persistIndex(
         portfolio.assignmentPdfSourceId, portfolio.hintsDocumentPath, portfolio.hintsDocumentSourceId,
         portfolio.finalSolutionsPdfPath, portfolio.finalSolutionsPdfSourceId, startedAt, startedAt],
     });
+
+    for (const resourceAsset of portfolio.resourceAssets) {
+      const resourceAssetId = stableId("source-resource-asset", spaceId, "portfolio", resourceAsset.resourceId, resourceAsset.sourceId);
+      statements.push({
+        sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
+          semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed,
+          missing_since, archived_at, last_seen_at)
+          VALUES (?, ?, ?, NULL, 'portfolio', ?, ?, ?, ?, ?, ?, 1, ?, ?, 1, NULL, NULL, ?)
+          ON CONFLICT(learning_space_id, resource_scope, resource_id, source_id) DO UPDATE SET
+            portfolio_id = excluded.portfolio_id, exercise_id = NULL, semantic_role = excluded.semantic_role,
+            relative_path = excluded.relative_path, file_name = excluded.file_name, extension = excluded.extension,
+            step = 1, last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
+            is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
+        args: [resourceAssetId, spaceId, portfolioId, resourceAsset.resourceId, resourceAsset.semanticRole, resourceAsset.sourceId,
+          resourceAsset.relativePath, resourceAsset.fileName, resourceAsset.extension, resourceAsset.lastModifiedAt,
+          resourceAsset.sourceVersion, startedAt],
+      });
+    }
 
     for (const section of portfolio.sections) {
       const sectionId = `${portfolioId}-section-${section.order}`;
@@ -711,8 +801,26 @@ export async function persistIndex(
           args: [exerciseId, portfolioId, sectionId, exercise.code, exercise.number, exercise.suffix, startedAt],
         });
 
+        for (const asset of exercise.assets) {
+          const resourceAssetId = stableId("source-resource-asset", spaceId, "exercise", asset.resourceId, asset.sourceId);
+          statements.push({
+            sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
+              semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed,
+              missing_since, archived_at, last_seen_at)
+              VALUES (?, ?, ?, ?, 'exercise', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, NULL, ?)
+              ON CONFLICT(learning_space_id, resource_scope, resource_id, source_id) DO UPDATE SET
+                portfolio_id = excluded.portfolio_id, exercise_id = excluded.exercise_id, semantic_role = excluded.semantic_role,
+                relative_path = excluded.relative_path, file_name = excluded.file_name, extension = excluded.extension,
+                step = excluded.step, last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
+                is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
+            args: [resourceAssetId, spaceId, portfolioId, exerciseId, asset.resourceId, asset.semanticRole, asset.sourceId,
+              asset.relativePath, asset.fileName, asset.parsed.extension, asset.parsed.step, asset.lastModifiedAt,
+              asset.sourceVersion, startedAt],
+          });
+        }
+
         for (const variant of ["standard", "alternative"] as const) {
-          const variantAssets = exercise.assets.filter((asset) => asset.parsed.variant === variant);
+          const variantAssets = exercise.assets.filter((asset) => asset.legacyVariant === variant);
           if (variantAssets.length === 0) continue;
           const variantId = `${exerciseId}-${variant}`;
           seenVariantIds.add(variantId);
@@ -760,6 +868,10 @@ export async function persistIndex(
       warnings.push({ severity: "warning", path: asset.relativePath, message: asset.variantStillPresent ? `${label} is onvolledig: bestand ontbreekt: ${asset.fileName}.` : `Bronbestand ontbreekt: ${asset.fileName}. Deze oefening blijft voorlopig herkenbaar in het beheer.` });
     }
   }
+  statements.push({
+    sql: "UPDATE source_resource_assets SET missing_since = ? WHERE learning_space_id = ? AND is_indexed = 0 AND missing_since IS NULL",
+    args: [startedAt, spaceId],
+  });
   for (const warning of warnings) {
     statements.push({
       sql: "INSERT INTO sync_warnings (id, sync_run_id, severity, relative_path, message) VALUES (?, ?, ?, ?, ?)",
@@ -791,34 +903,47 @@ export async function persistIndex(
 
 export async function getIndexedSourceManifest(learningSpaceId: string): Promise<SourceManifestEntry[]> {
   const database = await getDatabase();
-  const [portfolios, sections, assets] = await Promise.all([
+  const [portfolios, sections, legacyAssets, resourceAssets] = await Promise.all([
     database.execute({ sql: `SELECT relative_path, assignment_pdf_path, hints_document_path, final_solutions_pdf_path FROM portfolios
       WHERE learning_space_id = ? AND is_indexed = 1`, args: [learningSpaceId] }),
     database.execute({ sql: `SELECT sections.relative_path FROM sections JOIN portfolios ON portfolios.id = sections.portfolio_id
-      WHERE portfolios.learning_space_id = ? AND sections.is_indexed = 1 AND EXISTS (
-        SELECT 1 FROM exercises
-        JOIN solution_variants ON solution_variants.exercise_id = exercises.id
-        JOIN solution_assets ON solution_assets.variant_id = solution_variants.id
-        WHERE exercises.section_id = sections.id AND solution_assets.is_indexed = 1
+      WHERE portfolios.learning_space_id = ? AND sections.is_indexed = 1 AND (
+        EXISTS (
+          SELECT 1 FROM exercises
+          JOIN solution_variants ON solution_variants.exercise_id = exercises.id
+          JOIN solution_assets ON solution_assets.variant_id = solution_variants.id
+          WHERE exercises.section_id = sections.id AND solution_assets.is_indexed = 1
+        ) OR EXISTS (
+          SELECT 1 FROM source_resource_assets
+          JOIN exercises ON exercises.id = source_resource_assets.exercise_id
+          WHERE exercises.section_id = sections.id AND source_resource_assets.resource_scope = 'exercise'
+            AND source_resource_assets.is_indexed = 1
+        )
       )`, args: [learningSpaceId] }),
     database.execute({ sql: `SELECT solution_assets.relative_path FROM solution_assets
       JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
       JOIN exercises ON exercises.id = solution_variants.exercise_id
       JOIN portfolios ON portfolios.id = exercises.portfolio_id
       WHERE portfolios.learning_space_id = ? AND solution_assets.is_indexed = 1`, args: [learningSpaceId] }),
+    database.execute({ sql: `SELECT relative_path FROM source_resource_assets
+      WHERE learning_space_id = ? AND is_indexed = 1`, args: [learningSpaceId] }),
   ]);
   const manifest: SourceManifestEntry[] = [];
+  const seenFiles = new Set<string>();
+  const addFile = (relativePath: string | null) => {
+    if (!relativePath || seenFiles.has(relativePath)) return;
+    seenFiles.add(relativePath);
+    manifest.push({ kind: "file", relativePath });
+  };
   for (const row of portfolios.rows) {
     manifest.push({ kind: "portfolio", relativePath: text(row, "relative_path") });
-    const assignment = nullableText(row, "assignment_pdf_path");
-    const hints = nullableText(row, "hints_document_path");
-    const finalSolutions = nullableText(row, "final_solutions_pdf_path");
-    if (assignment) manifest.push({ kind: "file", relativePath: assignment });
-    if (hints) manifest.push({ kind: "file", relativePath: hints });
-    if (finalSolutions) manifest.push({ kind: "file", relativePath: finalSolutions });
+    addFile(nullableText(row, "assignment_pdf_path"));
+    addFile(nullableText(row, "hints_document_path"));
+    addFile(nullableText(row, "final_solutions_pdf_path"));
   }
   for (const row of sections.rows) manifest.push({ kind: "section", relativePath: text(row, "relative_path") });
-  for (const row of assets.rows) manifest.push({ kind: "file", relativePath: text(row, "relative_path") });
+  for (const row of legacyAssets.rows) addFile(text(row, "relative_path"));
+  for (const row of resourceAssets.rows) addFile(text(row, "relative_path"));
   return manifest.sort((left, right) => comparePortfolioRelativePaths(left.relativePath, right.relativePath));
 }
 
@@ -845,6 +970,7 @@ export async function archiveMissingIndexItems(learningSpaceId: string): Promise
     { sql: `DELETE FROM sync_warnings WHERE sync_run_id = (SELECT id FROM sync_runs WHERE status = 'completed' AND learning_space_id = ? ORDER BY finished_at DESC LIMIT 1)
       AND relative_path IN (SELECT relative_path FROM solution_assets WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN
         (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?))))`, args: [learningSpaceId, learningSpaceId] },
+    { sql: "UPDATE source_resource_assets SET archived_at = ? WHERE learning_space_id = ? AND is_indexed = 0 AND archived_at IS NULL", args: [now, learningSpaceId] },
     { sql: "UPDATE solution_assets SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [now, learningSpaceId] },
     { sql: "UPDATE solution_variants SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?))", args: [now, learningSpaceId] },
     { sql: "UPDATE exercises SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [now, learningSpaceId] },
@@ -876,10 +1002,110 @@ export async function recordFailedSync(providerType: string, error: unknown, lea
   });
 }
 
+function portfolioExternalLinksByPortfolio(rows: readonly DatabaseRow[]): Map<string, Map<string, string>> {
+  const result = new Map<string, Map<string, string>>();
+  for (const row of rows) {
+    const portfolioId = text(row, "portfolio_id");
+    const links = result.get(portfolioId) ?? new Map<string, string>();
+    links.set(text(row, "resource_id"), text(row, "url"));
+    result.set(portfolioId, links);
+  }
+  return result;
+}
+
+function portfolioGlobalResources(
+  portfolio: DatabaseRow,
+  resources: readonly GlobalResourceConfig[],
+  externalLinks: ReadonlyMap<string, string> | undefined,
+  resourceAssetRows: readonly DatabaseRow[] = [],
+): PortfolioGlobalResource[] {
+  const documentKindsByResourceId = profileDocumentKinds(resources);
+  const availableAssets = new Map(resourceAssetRows
+    .filter((row) => bool(row.is_indexed ?? 1))
+    .map((row) => [text(row, "resource_id"), row] as const));
+  return sortGlobalResources(resources).map((resource) => {
+    if (resource.kind === "external_link") {
+      const url = externalLinks?.get(resource.id) ?? null;
+      return {
+        id: resource.id, kind: resource.kind, label: resource.label, icon: resource.icon, semanticRole: resource.semanticRole,
+        documentKind: null, assetId: null, url, available: Boolean(url), recognition: null,
+      };
+    }
+
+    const documentKind = documentKindsByResourceId.get(resource.id) ?? null;
+    const columns = documentKind ? portfolioDocumentColumns(documentKind) : null;
+    const asset = availableAssets.get(resource.id);
+    const legacyAvailable = columns ? Boolean(nullableText(portfolio, columns.path) || nullableText(portfolio, columns.sourceId)) : false;
+    return {
+      id: resource.id, kind: resource.kind, label: resource.label, icon: resource.icon, semanticRole: resource.semanticRole,
+      documentKind, assetId: asset ? text(asset, "id") : null, url: null, available: Boolean(asset) || legacyAvailable,
+      recognition: resource.recognition,
+    };
+  });
+}
+
+function profileDocumentKinds(resources: readonly GlobalResourceConfig[]): Map<string, PortfolioDocumentKind> {
+  const result = new Map<string, PortfolioDocumentKind>();
+  const assignment = firstSourceFileGlobalResourceBySemanticRole(resources, "assignment");
+  const hints = firstSourceFileGlobalResourceBySemanticRole(resources, "hint");
+  const finalSolutions = firstSourceFileGlobalResourceBySemanticRole(resources, "final_answer");
+  if (assignment) result.set(assignment.id, "assignment");
+  if (hints) result.set(hints.id, "hints");
+  if (finalSolutions) result.set(finalSolutions.id, "final-solutions");
+  return result;
+}
+
+function legacyExerciseResourceVariants(resources: readonly ExerciseResourceConfig[]): Map<string, "standard" | "alternative"> {
+  const result = new Map<string, "standard" | "alternative">();
+  const standard = firstExerciseResourceBySemanticRole(resources, "worked_solution");
+  const alternative = firstExerciseResourceBySemanticRole(resources, "alternative_solution");
+  if (standard) result.set(standard.id, "standard");
+  if (alternative) result.set(alternative.id, "alternative");
+  return result;
+}
+
+function exerciseResourceReadModel(
+  resources: readonly ExerciseResourceConfig[],
+  legacyAssetRows: readonly DatabaseRow[],
+  resourceAssetRows: readonly DatabaseRow[],
+  options: { includeUnavailable: boolean; showAlternative: boolean },
+): ExerciseResource[] {
+  const variants = legacyExerciseResourceVariants(resources);
+  const items = sortExerciseResources(resources).map((resource): ExerciseResource => {
+    const legacyVariant = variants.get(resource.id) ?? null;
+    const hideAlternative = resource.semanticRole === "alternative_solution" && !options.showAlternative;
+    const rows = hideAlternative
+      ? []
+      : legacyVariant === null
+        ? resourceAssetRows.filter((asset) => text(asset, "resource_id") === resource.id && bool(asset.is_indexed ?? 1))
+        : legacyAssetRows.filter((asset) => text(asset, "kind") === legacyVariant && bool(asset.is_indexed ?? 1));
+    const assets = rows.map((asset): ExerciseResourceAsset => ({
+      id: text(asset, "id"),
+      fileName: text(asset, "file_name"),
+      extension: text(asset, "extension"),
+      step: Number(asset.step),
+      lastModifiedAt: nullableText(asset, "last_modified_at"),
+      source: legacyVariant === null ? "resource" : "solution",
+    }));
+    return {
+      id: resource.id,
+      kind: resource.kind,
+      label: resource.label,
+      icon: resource.icon,
+      semanticRole: resource.semanticRole,
+      displayMode: resource.displayMode,
+      legacyVariant,
+      available: assets.length > 0,
+      assets,
+    };
+  });
+  return options.includeUnavailable ? items : items.filter((resource) => resource.available);
+}
+
 export async function getAdminPortfolios(learningSpaceId?: string): Promise<AdminPortfolio[]> {
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
-  const [portfolios, sections, exercises, assets] = await Promise.all([
+  const [portfolios, sections, exercises, assets, resourceAssets, sourceProfile, externalLinks] = await Promise.all([
     database.execute({ sql: `SELECT portfolios.*, themes.name AS theme_name FROM portfolios LEFT JOIN themes ON themes.id = portfolios.theme_id
       WHERE portfolios.learning_space_id = ? AND portfolios.archived_at IS NULL`, args: [spaceId] }),
     database.execute({ sql: "SELECT * FROM sections WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) AND archived_at IS NULL ORDER BY portfolio_id, sort_order", args: [spaceId] }),
@@ -888,8 +1114,17 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
       FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
       WHERE solution_assets.archived_at IS NULL
       ORDER BY solution_assets.step, solution_assets.file_name`),
+    database.execute({ sql: `SELECT * FROM source_resource_assets
+      WHERE learning_space_id = ? AND archived_at IS NULL
+      ORDER BY step, file_name`, args: [spaceId] }),
+    getActiveSourceProfileForLearningSpace(spaceId),
+    database.execute({ sql: `SELECT portfolio_id, resource_id, url FROM portfolio_external_links
+      WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)`, args: [spaceId] }),
   ]);
   const now = new Date();
+  const resources = sourceProfile?.config.globalResources ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources;
+  const exerciseResources = sourceProfile?.config.exerciseResources ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
+  const externalLinksByPortfolio = portfolioExternalLinksByPortfolio(externalLinks.rows);
 
   return portfolios.rows.map((portfolio) => {
     const portfolioId = text(portfolio, "id");
@@ -911,6 +1146,12 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
       assignmentPdfPath: nullableText(portfolio, "assignment_pdf_path"),
       hintsDocumentPath: nullableText(portfolio, "hints_document_path"),
       finalSolutionsPdfPath: nullableText(portfolio, "final_solutions_pdf_path"),
+      globalResources: portfolioGlobalResources(
+        portfolio,
+        resources,
+        externalLinksByPortfolio.get(portfolioId),
+        resourceAssets.rows.filter((asset) => text(asset, "portfolio_id") === portfolioId && text(asset, "resource_scope") === "portfolio"),
+      ),
       learningSpaceId: text(portfolio, "learning_space_id"), themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
       cardColor: text(portfolio, "card_color"),
       customText: nullableText(portfolio, "custom_text"),
@@ -932,6 +1173,8 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
           isIndexed: bool(section.is_indexed),
           exercises: exercises.rows.filter((exercise) => text(exercise, "section_id") === sectionId).map((exercise) => {
             const exerciseId = text(exercise, "id");
+            const exerciseAssets = assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId);
+            const exerciseResourceAssets = resourceAssets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && text(asset, "resource_scope") === "exercise");
             const exercisePublication = { mode: childMode(exercise), limited: false, publishFrom: null, publishUntil: null };
             const exerciseStatus = resolveChildPublication(exercisePublication, sectionStatus, now);
             return {
@@ -945,14 +1188,15 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
               effectivePublished: exerciseStatus.state === "visible",
               isIndexed: bool(exercise.is_indexed),
               showAlternativeToStudents: bool(exercise.show_alternative_to_students),
-              standardAssets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
-              alternativeAssets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
-              missingAssets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && !bool(asset.is_indexed)).length,
+              standardAssets: exerciseAssets.filter((asset) => text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
+              alternativeAssets: exerciseAssets.filter((asset) => text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
+              missingAssets: exerciseAssets.filter((asset) => !bool(asset.is_indexed)).length,
               hasNote: Boolean(nullableText(exercise, "custom_note")),
               noteLabel: nullableText(exercise, "note_label"),
               customNote: nullableText(exercise, "custom_note"),
               notePosition: text(exercise, "note_position") as ExerciseNotePosition,
-              assets: assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId).map((asset) => ({
+              resources: exerciseResourceReadModel(exerciseResources, exerciseAssets, exerciseResourceAssets, { includeUnavailable: true, showAlternative: true }),
+              assets: exerciseAssets.map((asset) => ({
                 id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"),
                 step: Number(asset.step), variant: text(asset, "kind") as AdminAsset["variant"],
                 isIndexed: bool(asset.is_indexed), lastModifiedAt: nullableText(asset, "last_modified_at"),
@@ -1026,6 +1270,22 @@ export async function setPortfolioCustomMessage(id: string, customText: string |
   await database.execute({ sql: "UPDATE portfolios SET custom_text = ?, custom_text_position = ? WHERE id = ?", args: [customText, customTextPosition, id] });
 }
 
+export async function setPortfolioExternalLinks(
+  portfolioId: string,
+  links: readonly { resourceId: string; url: string | null }[],
+): Promise<void> {
+  if (links.length === 0) return;
+  const now = new Date().toISOString();
+  const statements: InStatement[] = links.map((link) => link.url
+    ? {
+        sql: `INSERT INTO portfolio_external_links (portfolio_id, resource_id, url, updated_at) VALUES (?, ?, ?, ?)
+          ON CONFLICT(portfolio_id, resource_id) DO UPDATE SET url = excluded.url, updated_at = excluded.updated_at`,
+        args: [portfolioId, link.resourceId, link.url, now],
+      }
+    : { sql: "DELETE FROM portfolio_external_links WHERE portfolio_id = ? AND resource_id = ?", args: [portfolioId, link.resourceId] });
+  await (await getDatabase()).batch(statements);
+}
+
 export async function setSectionPublication(id: string, mode: ChildVisibilityMode, limited: boolean, publishFrom: string | null, publishUntil: string | null): Promise<void> {
   const database = await getDatabase();
   await database.execute({ sql: "UPDATE sections SET visibility_mode = ?, publication_limited = ?, publish_from = ?, publish_until = ? WHERE id = ?", args: [mode, limited ? 1 : 0, publishFrom, publishUntil, id] });
@@ -1070,7 +1330,7 @@ export async function setExerciseNote(id: string, customNote: string | null, not
 export async function getStudentPortfolios(learningSpaceId?: string): Promise<StudentPortfolio[]> {
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
-  const [portfolios, sections, exercises] = await Promise.all([
+  const [portfolios, sections, exercises, resourceAssets, sourceProfile, externalLinks] = await Promise.all([
     database.execute({ sql: `SELECT portfolios.*, themes.name AS theme_name FROM portfolios LEFT JOIN themes ON themes.id = portfolios.theme_id
       WHERE portfolios.is_indexed = 1 AND portfolios.learning_space_id = ?`, args: [spaceId] }),
     database.execute({ sql: "SELECT * FROM sections WHERE is_indexed = 1 AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY portfolio_id, sort_order", args: [spaceId] }),
@@ -1084,8 +1344,15 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
       FROM exercises WHERE exercises.is_indexed = 1
         AND exercises.portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)
       ORDER BY exercises.section_id, exercises.exercise_number, exercises.exercise_suffix`, args: [spaceId] }),
+    database.execute({ sql: `SELECT * FROM source_resource_assets
+      WHERE learning_space_id = ? AND resource_scope = 'portfolio' AND is_indexed = 1 AND archived_at IS NULL`, args: [spaceId] }),
+    getActiveSourceProfileForLearningSpace(spaceId),
+    database.execute({ sql: `SELECT portfolio_id, resource_id, url FROM portfolio_external_links
+      WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)`, args: [spaceId] }),
   ]);
   const now = new Date();
+  const resources = sourceProfile?.config.globalResources ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources;
+  const externalLinksByPortfolio = portfolioExternalLinksByPortfolio(externalLinks.rows);
   const result: StudentPortfolio[] = [];
 
   for (const portfolio of portfolios.rows) {
@@ -1103,6 +1370,12 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
       assignmentPdfPath: nullableText(portfolio, "assignment_pdf_path"),
       hintsDocumentPath: nullableText(portfolio, "hints_document_path"),
       finalSolutionsPdfPath: nullableText(portfolio, "final_solutions_pdf_path"),
+      globalResources: portfolioGlobalResources(
+        portfolio,
+        resources,
+        externalLinksByPortfolio.get(portfolioId),
+        resourceAssets.rows.filter((asset) => text(asset, "portfolio_id") === portfolioId),
+      ).filter((resource) => resource.available),
       sections: [],
     };
     for (const section of sections.rows.filter((row) => text(row, "portfolio_id") === portfolioId)) {
@@ -1157,11 +1430,22 @@ export async function getVisibleExercise(id: string, learningSpaceId?: string) {
       ORDER BY CASE solution_variants.kind WHEN 'standard' THEN 0 ELSE 1 END, solution_assets.step, solution_assets.file_name`,
     args: [id],
   });
+  const resourceAssets = await database.execute({
+    sql: `SELECT id, resource_id, file_name, extension, step, last_modified_at
+      FROM source_resource_assets
+      WHERE exercise_id = ? AND resource_scope = 'exercise' AND is_indexed = 1 AND archived_at IS NULL
+      ORDER BY step, file_name`,
+    args: [id],
+  });
+  const sourceProfile = await getActiveSourceProfileForLearningSpace(text(exercise, "learning_space_id"));
+  const exerciseResources = sourceProfile?.config.exerciseResources ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
+  const visibleAssetRows = assets.rows.filter((asset) => text(asset, "kind") !== "alternative" || bool(exercise.show_alternative_to_students));
   return {
     id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"),
     portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
     customNote: nullableText(exercise, "custom_note"), noteLabel: nullableText(exercise, "note_label"), notePosition: text(exercise, "note_position") as ExerciseNotePosition,
-    assets: assets.rows.filter((asset) => text(asset, "kind") !== "alternative" || bool(exercise.show_alternative_to_students)).map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label"), lastModifiedAt: nullableText(asset, "last_modified_at") })),
+    resources: exerciseResourceReadModel(exerciseResources, visibleAssetRows, resourceAssets.rows, { includeUnavailable: false, showAlternative: bool(exercise.show_alternative_to_students) }),
+    assets: visibleAssetRows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label"), lastModifiedAt: nullableText(asset, "last_modified_at") })),
   };
 }
 
@@ -1173,12 +1457,44 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     WHERE exercises.id = ? AND exercises.archived_at IS NULL${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`, args: learningSpaceId ? [id, learningSpaceId] : [id] });
   const exercise = result.rows[0];
   if (!exercise) return null;
-  const assets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.file_name, solution_assets.extension, solution_assets.step, solution_variants.kind, solution_variants.label
+  const assets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.file_name, solution_assets.extension, solution_assets.step,
+      solution_assets.last_modified_at, solution_variants.kind, solution_variants.label
     FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
     WHERE solution_variants.exercise_id = ? AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1
     ORDER BY CASE solution_variants.kind WHEN 'standard' THEN 0 ELSE 1 END, solution_assets.step, solution_assets.file_name`, args: [id] });
+  const resourceAssets = await database.execute({
+    sql: `SELECT id, resource_id, file_name, extension, step, last_modified_at, is_indexed
+      FROM source_resource_assets
+      WHERE exercise_id = ? AND resource_scope = 'exercise' AND archived_at IS NULL
+      ORDER BY step, file_name`,
+    args: [id],
+  });
   const isIndexed = bool(exercise.exercise_is_indexed) && bool(exercise.section_is_indexed) && bool(exercise.portfolio_is_indexed);
-  return { id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"), portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"), isIndexed, customNote: nullableText(exercise, "custom_note"), noteLabel: nullableText(exercise, "note_label"), notePosition: text(exercise, "note_position") as ExerciseNotePosition, assets: assets.rows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label") })) };
+  const sourceProfile = await getActiveSourceProfileForLearningSpace(text(exercise, "learning_space_id"));
+  const exerciseResources = sourceProfile?.config.exerciseResources ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
+  return {
+    id,
+    portfolioId: text(exercise, "portfolio_id"),
+    learningSpaceId: text(exercise, "learning_space_id"),
+    code: text(exercise, "exercise_code"),
+    sectionTitle: text(exercise, "section_title"),
+    portfolioCode: text(exercise, "portfolio_code"),
+    portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
+    isIndexed,
+    customNote: nullableText(exercise, "custom_note"),
+    noteLabel: nullableText(exercise, "note_label"),
+    notePosition: text(exercise, "note_position") as ExerciseNotePosition,
+    resources: exerciseResourceReadModel(exerciseResources, assets.rows, resourceAssets.rows, { includeUnavailable: true, showAlternative: true }),
+    assets: assets.rows.map((asset) => ({
+      id: text(asset, "id"),
+      fileName: text(asset, "file_name"),
+      extension: text(asset, "extension"),
+      step: Number(asset.step),
+      kind: text(asset, "kind") as "standard" | "alternative",
+      label: text(asset, "label"),
+      lastModifiedAt: nullableText(asset, "last_modified_at"),
+    })),
+  };
 }
 
 export async function getAdminAsset(id: string, learningSpaceId?: string) {
@@ -1213,7 +1529,78 @@ export async function getPublicAsset(id: string, learningSpaceId?: string) {
   return { learningSpaceId: text(row, "learning_space_id"), sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension") };
 }
 
-export type PortfolioDocumentKind = "assignment" | "hints" | "final-solutions";
+export async function getAdminResourceAsset(id: string, learningSpaceId?: string) {
+  const database = await getDatabase();
+  const result = await database.execute({
+    sql: `SELECT source_resource_assets.relative_path, source_resource_assets.source_id, source_resource_assets.file_name,
+      source_resource_assets.extension, source_resource_assets.resource_scope, portfolios.learning_space_id
+      FROM source_resource_assets JOIN portfolios ON portfolios.id = source_resource_assets.portfolio_id
+      LEFT JOIN exercises ON exercises.id = source_resource_assets.exercise_id
+      WHERE source_resource_assets.id = ? AND source_resource_assets.is_indexed = 1 AND source_resource_assets.archived_at IS NULL
+        AND portfolios.is_indexed = 1
+        AND (source_resource_assets.resource_scope = 'portfolio' OR exercises.is_indexed = 1)
+        ${learningSpaceId ? "AND portfolios.learning_space_id = ?" : ""}`,
+    args: learningSpaceId ? [id, learningSpaceId] : [id],
+  });
+  const row = result.rows[0];
+  return row ? {
+    learningSpaceId: text(row, "learning_space_id"),
+    sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"),
+    fileName: text(row, "file_name"),
+    extension: text(row, "extension"),
+  } : null;
+}
+
+export async function getPublicResourceAsset(id: string, learningSpaceId?: string) {
+  const database = await getDatabase();
+  const result = await database.execute({
+    sql: `SELECT source_resource_assets.relative_path, source_resource_assets.source_id, source_resource_assets.file_name,
+      source_resource_assets.extension, source_resource_assets.resource_scope, source_resource_assets.semantic_role,
+      exercises.visibility_mode AS exercise_visibility_mode, exercises.is_indexed AS exercise_is_indexed,
+      exercises.show_alternative_to_students,
+      sections.visibility_mode AS section_visibility_mode, sections.publication_limited AS section_publication_limited,
+      sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
+      sections.is_indexed AS section_is_indexed,
+      portfolios.visible AS portfolio_visible, portfolios.publication_limited,
+      portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until,
+      portfolios.is_indexed AS portfolio_is_indexed, portfolios.learning_space_id
+      FROM source_resource_assets
+      JOIN portfolios ON portfolios.id = source_resource_assets.portfolio_id
+      LEFT JOIN exercises ON exercises.id = source_resource_assets.exercise_id
+      LEFT JOIN sections ON sections.id = exercises.section_id
+      WHERE source_resource_assets.id = ? AND source_resource_assets.is_indexed = 1 AND source_resource_assets.archived_at IS NULL
+        ${learningSpaceId ? "AND portfolios.learning_space_id = ?" : ""}`,
+    args: learningSpaceId ? [id, learningSpaceId] : [id],
+  });
+  const row = result.rows[0];
+  if (!row || !bool(row.portfolio_is_indexed)) return null;
+  const now = new Date();
+  const portfolioStatus = resolvePortfolioPublication({
+    visible: bool(row.portfolio_visible), limited: bool(row.publication_limited),
+    publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until"),
+  }, now);
+  if (portfolioStatus.state !== "visible") return null;
+
+  if (text(row, "resource_scope") === "exercise") {
+    if (!bool(row.exercise_is_indexed) || !bool(row.section_is_indexed)) return null;
+    if (text(row, "semantic_role") === "alternative_solution" && !bool(row.show_alternative_to_students)) return null;
+    const sectionStatus = resolveChildPublication({
+      mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited),
+      publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until"),
+    }, portfolioStatus, now);
+    const exerciseStatus = resolveChildPublication({
+      mode: childMode({ visibility_mode: row.exercise_visibility_mode }), limited: false, publishFrom: null, publishUntil: null,
+    }, sectionStatus, now);
+    if (exerciseStatus.state !== "visible") return null;
+  }
+
+  return {
+    learningSpaceId: text(row, "learning_space_id"),
+    sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"),
+    fileName: text(row, "file_name"),
+    extension: text(row, "extension"),
+  };
+}
 
 export async function getPublicPortfolioDocument(portfolioId: string, kind: PortfolioDocumentKind, learningSpaceId?: string) {
   const database = await getDatabase();
@@ -1224,7 +1611,8 @@ export async function getPublicPortfolioDocument(portfolioId: string, kind: Port
   const sourceId = nullableText(portfolio, columns.sourceId);
   const relativePath = nullableText(portfolio, columns.path);
   if (!sourceId && !relativePath) return null;
-  return { learningSpaceId: text(portfolio, "learning_space_id"), sourceId: sourceId ?? relativePath!, fileName: (relativePath ?? "document.pdf").split("/").at(-1) ?? "document.pdf", extension: "pdf" };
+  const { fileName, extension } = portfolioDocumentFileDescriptor(relativePath);
+  return { learningSpaceId: text(portfolio, "learning_space_id"), sourceId: sourceId ?? relativePath!, fileName, extension };
 }
 
 export async function getAdminPortfolioDocument(portfolioId: string, kind: PortfolioDocumentKind, learningSpaceId?: string) {
@@ -1236,13 +1624,23 @@ export async function getAdminPortfolioDocument(portfolioId: string, kind: Portf
   const sourceId = nullableText(portfolio, columns.sourceId);
   const relativePath = nullableText(portfolio, columns.path);
   if (!sourceId && !relativePath) return null;
-  return { learningSpaceId: text(portfolio, "learning_space_id"), sourceId: sourceId ?? relativePath!, fileName: (relativePath ?? "document.pdf").split("/").at(-1) ?? "document.pdf", extension: "pdf" };
+  const { fileName, extension } = portfolioDocumentFileDescriptor(relativePath);
+  return { learningSpaceId: text(portfolio, "learning_space_id"), sourceId: sourceId ?? relativePath!, fileName, extension };
 }
 
 function portfolioDocumentColumns(kind: PortfolioDocumentKind) {
   if (kind === "assignment") return { path: "assignment_pdf_path", sourceId: "assignment_pdf_source_id" } as const;
   if (kind === "hints") return { path: "hints_document_path", sourceId: "hints_document_source_id" } as const;
   return { path: "final_solutions_pdf_path", sourceId: "final_solutions_pdf_source_id" } as const;
+}
+
+function portfolioDocumentFileDescriptor(relativePath: string | null) {
+  const fileName = (relativePath ?? "document.pdf").split("/").at(-1) ?? "document.pdf";
+  const lastDot = fileName.lastIndexOf(".");
+  const extension = lastDot > 0 && lastDot < fileName.length - 1
+    ? fileName.slice(lastDot + 1).toLowerCase()
+    : "pdf";
+  return { fileName, extension };
 }
 
 

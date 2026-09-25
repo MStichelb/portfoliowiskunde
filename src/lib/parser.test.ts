@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   comparePortfolioIds,
+  findExerciseNumberCandidates,
+  parseExerciseDirectoryIdentity,
   parseHintsDocumentCode,
   parsePortfolioDirectory,
   parsePortfolioDocumentCode,
@@ -46,6 +48,40 @@ describe("portfolio parser", () => {
     expect(parseSectionDirectory("1 - Differentiaalvergelijkingen")).toEqual({
       order: 1,
       title: "Differentiaalvergelijkingen",
+    });
+  });
+
+
+  describe("flexibele oefeningnummerherkenning", () => {
+    const afterOef = { numberLocation: "after_text", marker: "Oef" } as const;
+
+    it("maakt kandidaten zonder het portfolionummer vóór Oef te gebruiken", () => {
+      expect(findExerciseNumberCandidates("PF1-Oef3uitwerking", afterOef).map((candidate) => [candidate.exerciseCode, candidate.remainder])).toEqual([
+        ["3u", "itwerking"],
+        ["3", "uitwerking"],
+      ]);
+      expect(findExerciseNumberCandidates("PF12-Oef3auitwerking", afterOef).map((candidate) => [candidate.exerciseCode, candidate.remainder])).toEqual([
+        ["3a", "uitwerking"],
+        ["3", "auitwerking"],
+      ]);
+    });
+
+    it("houdt een bestandsstap tussen haakjes buiten het oefeningnummer", () => {
+      expect(findExerciseNumberCandidates("PF1-Oef3a(1)", afterOef)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ exerciseCode: "3a", exerciseNumber: 3, exerciseSuffix: "a", remainder: "(1)" }),
+      ]));
+      expect(findExerciseNumberCandidates("PF1-Oef3a1-uitwerking", afterOef)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ exerciseCode: "3a1", exerciseNumber: 3, exerciseSuffix: "a1", remainder: "-uitwerking" }),
+      ]));
+    });
+
+    it("ondersteunt oefeningnummers aan het begin en exacte oefeningsmappen", () => {
+      const atStart = { numberLocation: "start", marker: "" } as const;
+      expect(findExerciseNumberCandidates("12b-uitwerking", atStart)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ exerciseCode: "12b", remainder: "-uitwerking" }),
+      ]));
+      expect(parseExerciseDirectoryIdentity("Oef3a", afterOef)).toEqual({ exerciseNumber: 3, exerciseSuffix: "a", exerciseCode: "3a" });
+      expect(parseExerciseDirectoryIdentity("Oef3a-uitwerking", afterOef)).toBeNull();
     });
   });
 

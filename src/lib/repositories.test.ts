@@ -4,8 +4,9 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
+import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "./source-profile-config";
 import { adminExercisePortfolioHref } from "./admin-routes";
-import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getPublicAsset, getPublicPortfolioDocument, getStudentPortfolios, getThemes, getVisibleExercise, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, setExerciseAlternativeVisibility, setExerciseNote, setExercisePublication, setLearningSpaceEditorsCanManageAccess, setPortfolioCardColor, setPortfolioPublication, setPortfolioTheme, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolioDocument, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getPublicAsset, getPublicPortfolioDocument, getPublicResourceAsset, getAdminResourceAsset, getStudentPortfolios, getThemes, getVisibleExercise, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, setExerciseAlternativeVisibility, setExerciseNote, setExercisePublication, setLearningSpaceEditorsCanManageAccess, setPortfolioCardColor, setPortfolioExternalLinks, setPortfolioPublication, setPortfolioTheme, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -76,13 +77,13 @@ describe("persistIndex", () => {
     resetDatabaseForTests();
     const base = createPortfolioProvider("1", "PF1-Oef1.png");
     const portfolioPath = "Portfolio 1 - Test";
-    const hintsPath = `${portfolioPath}/Hints portfolio 1 - Test.pdf`;
+    const hintsPath = `${portfolioPath}/Hints portfolio 1 - Test.png`;
     const hintsProvider: StorageProvider = {
       ...base,
       async list(relativePath = "") {
         const entries = await base.list(relativePath);
         return relativePath === portfolioPath
-          ? [...entries, { name: "Hints portfolio 1 - Test.pdf", relativePath: hintsPath, sourceId: "hints-source-id", kind: "file" }]
+          ? [...entries, { name: "Hints portfolio 1 - Test.png", relativePath: hintsPath, sourceId: "hints-source-id", kind: "file" }]
           : entries;
       },
     };
@@ -93,8 +94,189 @@ describe("persistIndex", () => {
     expect((await getStudentPortfolios()).find((portfolio) => portfolio.id === "portfolio-1")?.hintsDocumentPath).toBe(hintsPath);
     expect(await getPublicPortfolioDocument("portfolio-1", "hints")).toMatchObject({
       sourceId: "hints-source-id",
-      fileName: "Hints portfolio 1 - Test.pdf",
+      fileName: "Hints portfolio 1 - Test.png",
+      extension: "png",
     });
+    expect(await getAdminPortfolioDocument("portfolio-1", "hints")).toMatchObject({
+      sourceId: "hints-source-id",
+      fileName: "Hints portfolio 1 - Test.png",
+      extension: "png",
+    });
+  });
+
+  it("stores external resource URLs per portfolio, hides empty resources and preserves links across synchronization", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-external-links-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const source = createTwoPortfolioProvider();
+    await persistIndex(await indexSource(source), "local", "space-6");
+
+    const database = await getDatabase();
+    const activeProfileId = String((await database.execute("SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = 'space-6'")).rows[0].source_profile_id);
+    const configRow = (await database.execute({ sql: "SELECT config_json FROM source_profiles WHERE id = ?", args: [activeProfileId] })).rows[0];
+    const config = JSON.parse(String(configRow.config_json));
+    config.globalResources.push({ id: "video", kind: "external_link", label: "Instructievideo", icon: "monitor-play", order: 40, semanticRole: "generic" });
+    await database.execute({ sql: "UPDATE source_profiles SET config_json = ?, updated_at = ? WHERE id = ?", args: [JSON.stringify(config), "2026-09-12T20:00:00.000Z", activeProfileId] });
+
+    const portfolios = await getAdminPortfolios("space-6");
+    const first = portfolios.find((portfolio) => portfolio.code === "3")!;
+    const second = portfolios.find((portfolio) => portfolio.code === "4")!;
+    expect(first.globalResources.find((resource) => resource.id === "video")).toMatchObject({ url: null, available: false, recognition: null });
+    expect(second.globalResources.find((resource) => resource.id === "video")).toMatchObject({ url: null, available: false, recognition: null });
+    expect(first.globalResources.find((resource) => resource.id === "assignments")?.recognition).toMatchObject({
+      target: "file_name",
+      operator: "starts_with",
+      value: "Portfolio",
+      fileExtensions: ["pdf"],
+    });
+
+    await setPortfolioExternalLinks(first.id, [{ resourceId: "video", url: "https://example.com/video" }]);
+    await setPortfolioPublication(first.id, "visible", false, null, null);
+    await setPortfolioPublication(second.id, "visible", false, null, null);
+
+    expect((await getStudentPortfolios("space-6")).find((portfolio) => portfolio.id === first.id)?.globalResources.find((resource) => resource.id === "video"))
+      .toMatchObject({ url: "https://example.com/video", available: true });
+    expect((await getStudentPortfolios("space-6")).find((portfolio) => portfolio.id === second.id)?.globalResources.find((resource) => resource.id === "video"))
+      .toBeUndefined();
+
+    await persistIndex(await indexSource(source), "local", "space-6");
+    expect((await getAdminPortfolios("space-6")).find((portfolio) => portfolio.id === first.id)?.globalResources.find((resource) => resource.id === "video"))
+      .toMatchObject({ url: "https://example.com/video", available: true });
+
+    await setPortfolioExternalLinks(first.id, [{ resourceId: "video", url: null }]);
+    expect((await getAdminPortfolios("space-6")).find((portfolio) => portfolio.id === first.id)?.globalResources.find((resource) => resource.id === "video"))
+      .toMatchObject({ url: null, available: false });
+  });
+
+  it("uses the active source profile during synchronization and exposes custom global resource identities", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-profile-driven-sync-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    const database = await getDatabase();
+    const activeProfileId = String((await database.execute("SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = 'space-6'")).rows[0].source_profile_id);
+    const configRow = (await database.execute({ sql: "SELECT config_json FROM source_profiles WHERE id = ?", args: [activeProfileId] })).rows[0];
+    const config = JSON.parse(String(configRow.config_json));
+    config.globalResources = [
+      {
+        id: "werkblad", kind: "source_file", label: "Werkblad", icon: "file-text", order: 10, semanticRole: "assignment",
+        recognition: { target: "file_name", operator: "starts_with", value: "Werkblad", caseSensitive: false, fileExtensions: ["pdf"] },
+      },
+      {
+        id: "tips", kind: "source_file", label: "Tips", icon: "lightbulb", order: 20, semanticRole: "hint",
+        recognition: { target: "file_name", operator: "ends_with", value: "Tips", caseSensitive: false, fileExtensions: ["png"] },
+      },
+      {
+        id: "modelantwoord", kind: "source_file", label: "Modelantwoord", icon: "circle-check-big", order: 30, semanticRole: "final_answer",
+        recognition: { target: "file_name", operator: "starts_with", value: "Modelantwoord", caseSensitive: false, fileExtensions: ["pdf"] },
+      },
+    ];
+    await database.execute({ sql: "UPDATE source_profiles SET config_json = ?, updated_at = ? WHERE id = ?", args: [JSON.stringify(config), "2026-09-13T12:00:00.000Z", activeProfileId] });
+
+    const provider = createProfileDrivenPortfolioProvider();
+    const space = (await getLearningSpace("space-6"))!;
+    await expect(synchronizeSource("space-6", {
+      getConfiguredProvider: async () => ({ provider, type: "local", space: { ...space, sourceType: "local" } }),
+    })).resolves.toMatchObject({ portfolios: 1, skipped: false });
+
+    const portfolio = (await getAdminPortfolios("space-6")).find((item) => item.code === "1")!;
+    expect(portfolio.assignmentPdfPath).toBe("Portfolio 1 - Test/Werkblad portfolio 1.pdf");
+    expect(portfolio.hintsDocumentPath).toBe("Portfolio 1 - Test/Portfolio 1 - Tips.png");
+    expect(portfolio.finalSolutionsPdfPath).toBe("Portfolio 1 - Test/Modelantwoord portfolio 1.pdf");
+    expect(portfolio.globalResources).toEqual([
+      expect.objectContaining({ id: "werkblad", documentKind: "assignment", available: true }),
+      expect.objectContaining({ id: "tips", documentKind: "hints", available: true }),
+      expect.objectContaining({ id: "modelantwoord", documentKind: "final-solutions", available: true }),
+    ]);
+  });
+
+  it("persists generic portfolio and exercise resources and reconciles a stable source across rename, missing and restore", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-generic-resources-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    const database = await getDatabase();
+    const profileId = String((await database.execute("SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = 'space-6'")).rows[0].source_profile_id);
+    const config = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    config.globalResources.push({
+      id: "lesson-video",
+      kind: "source_file",
+      label: "Lesvideo",
+      icon: "monitor-play",
+      order: 40,
+      semanticRole: "generic",
+      recognition: { target: "file_name", operator: "contains", value: "Lesvideo", caseSensitive: false, fileExtensions: ["png"] },
+    });
+    config.exerciseResources.unshift({
+      id: "exercise-hint",
+      kind: "source_file",
+      label: "Hint per oefening",
+      icon: "lightbulb",
+      order: 5,
+      semanticRole: "hint",
+      location: { scope: "alongside_exercise" },
+      recognition: {
+        file: { target: "after_exercise_number", operator: "starts_with", value: "-hint", caseSensitive: false },
+        directory: null,
+        fileExtensions: ["png"],
+      },
+      allowMultiple: true,
+      displayMode: "collapsible_each",
+    });
+    await database.execute({
+      sql: "UPDATE source_profiles SET config_json = ?, updated_at = ? WHERE id = ?",
+      args: [JSON.stringify(config), "2026-09-13T13:00:00.000Z", profileId],
+    });
+
+    const provider = createGenericResourceProvider();
+    await persistIndex(await indexSource(provider, config), "local", "space-6");
+
+    const lessonRow = (await database.execute("SELECT * FROM source_resource_assets WHERE resource_id = 'lesson-video'")).rows[0];
+    const hintRow = (await database.execute("SELECT * FROM source_resource_assets WHERE resource_id = 'exercise-hint'")).rows[0];
+    expect(lessonRow).toMatchObject({ resource_scope: "portfolio", source_id: "lesson-video-source", is_indexed: 1 });
+    expect(hintRow).toMatchObject({ resource_scope: "exercise", source_id: "exercise-hint-source", is_indexed: 1, missing_since: null });
+
+    const portfolio = (await getAdminPortfolios("space-6")).find((item) => item.code === "8")!;
+    expect(portfolio.globalResources.find((resource) => resource.id === "lesson-video")).toMatchObject({
+      available: true,
+      documentKind: null,
+      assetId: String(lessonRow.id),
+    });
+    const exerciseId = String(hintRow.exercise_id);
+    expect((await getAdminExercise(exerciseId))?.resources.find((resource) => resource.id === "exercise-hint")).toMatchObject({
+      available: true,
+      legacyVariant: null,
+      assets: [expect.objectContaining({ id: String(hintRow.id), source: "resource" })],
+    });
+    expect(await getAdminResourceAsset(String(hintRow.id), "space-6")).toMatchObject({ sourceId: "exercise-hint-source", extension: "png" });
+
+    expect(await getPublicResourceAsset(String(hintRow.id), "space-6")).toBeNull();
+    await setPortfolioPublication(portfolio.id, "visible", false, null, null);
+    expect((await getVisibleExercise(exerciseId, "space-6"))?.resources.map((resource) => resource.id)).toEqual(["exercise-hint"]);
+    expect(await getPublicResourceAsset(String(lessonRow.id), "space-6")).toMatchObject({ sourceId: "lesson-video-source", extension: "png" });
+    expect(await getPublicResourceAsset(String(hintRow.id), "space-6")).toMatchObject({ sourceId: "exercise-hint-source", extension: "png" });
+    expect((await getStudentPortfolios("space-6")).find((item) => item.id === portfolio.id)?.globalResources.find((resource) => resource.id === "lesson-video"))
+      .toMatchObject({ available: true, assetId: String(lessonRow.id) });
+
+    provider.renameExercise("PF8-Oef2-hint-extra.png");
+    await persistIndex(await indexSource(provider, config), "local", "space-6");
+    expect((await database.execute("SELECT id, relative_path, is_indexed, missing_since FROM source_resource_assets WHERE resource_id = 'exercise-hint'")).rows).toEqual([
+      expect.objectContaining({ id: String(hintRow.id), relative_path: "Portfolio 8 - Test/Uitwerkingen/1 - Test/PF8-Oef2-hint-extra.png", is_indexed: 1, missing_since: null }),
+    ]);
+
+    provider.removeExercise();
+    await persistIndex(await indexSource(provider, config), "local", "space-6");
+    expect((await database.execute("SELECT id, is_indexed, missing_since FROM source_resource_assets WHERE resource_id = 'exercise-hint'")).rows[0]).toMatchObject({
+      id: String(hintRow.id), is_indexed: 0,
+    });
+    expect((await database.execute("SELECT missing_since FROM source_resource_assets WHERE resource_id = 'exercise-hint'")).rows[0].missing_since).not.toBeNull();
+    expect(await getPublicResourceAsset(String(hintRow.id), "space-6")).toBeNull();
+
+    provider.restoreExercise("PF8-Oef2-hint-restored.png");
+    await persistIndex(await indexSource(provider, config), "local", "space-6");
+    expect((await database.execute("SELECT id, relative_path, is_indexed, missing_since, archived_at FROM source_resource_assets WHERE resource_id = 'exercise-hint'")).rows).toEqual([
+      expect.objectContaining({ id: String(hintRow.id), relative_path: "Portfolio 8 - Test/Uitwerkingen/1 - Test/PF8-Oef2-hint-restored.png", is_indexed: 1, missing_since: null, archived_at: null }),
+    ]);
   });
 
   it("uses natural portfolio-ID ordering in admin and public read models", async () => {
@@ -254,7 +436,7 @@ describe("persistIndex", () => {
     expect(await getPublicAsset(assetId)).toBeNull();
   });
 
-  it("keeps alternative solution assets private when their student flag is disabled", async () => {
+  it("keeps alternative solution assets private when their student flag is disabled and exposes profile-driven resource read models", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-alternatives-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
@@ -262,10 +444,72 @@ describe("persistIndex", () => {
     await setPortfolioPublication("portfolio-3", "visible", false, null, null);
     const database = await getDatabase();
     const row = (await database.execute("SELECT solution_assets.id AS asset_id, exercises.id AS exercise_id FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id JOIN exercises ON exercises.id = solution_variants.exercise_id WHERE solution_variants.kind = 'alternative' LIMIT 1")).rows[0];
+    const genericAlternativeId = String((await database.execute({
+      sql: "SELECT id FROM source_resource_assets WHERE exercise_id = ? AND resource_scope = 'exercise' AND semantic_role = 'alternative_solution' AND is_indexed = 1 LIMIT 1",
+      args: [String(row.exercise_id)],
+    })).rows[0].id);
+    const profileId = String((await database.execute("SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = 'space-6'")).rows[0].source_profile_id);
+    const exerciseResources = [
+      {
+        id: "alternative-path", kind: "source_file" as const, label: "Andere aanpak", icon: "sparkles" as const, order: 10, semanticRole: "alternative_solution" as const,
+        location: { scope: "alongside_exercise" as const },
+        recognition: { target: "after_exercise_number" as const, operator: "starts_with" as const, value: "-alt", caseSensitive: false, fileExtensions: ["png" as const] },
+        allowMultiple: true,
+        displayMode: "collapsible_group" as const,
+      },
+      {
+        id: "extra-explanation", kind: "source_file" as const, label: "Extra uitleg", icon: "book-open" as const, order: 20, semanticRole: "explanation" as const,
+        location: { scope: "alongside_exercise" as const },
+        recognition: { target: "after_exercise_number" as const, operator: "starts_with" as const, value: "-uitleg", caseSensitive: false, fileExtensions: ["png" as const] },
+        allowMultiple: true,
+        displayMode: "collapsible_group" as const,
+      },
+      {
+        id: "worked-path", kind: "source_file" as const, label: "Modeluitwerking", icon: "circle-check-big" as const, order: 30, semanticRole: "worked_solution" as const,
+        location: { scope: "alongside_exercise" as const },
+        recognition: { target: "fallback" as const, fileExtensions: ["png" as const] },
+        allowMultiple: true,
+        displayMode: "collapsible_group" as const,
+      },
+    ];
+    await database.execute({
+      sql: "UPDATE source_profiles SET config_json = ? WHERE id = ?",
+      args: [JSON.stringify({ ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, exerciseResources }), profileId],
+    });
+
     expect(await getPublicAsset(String(row.asset_id))).not.toBeNull();
+    expect(await getPublicResourceAsset(genericAlternativeId, "space-6")).not.toBeNull();
+    const adminBefore = await getAdminExercise(String(row.exercise_id));
+    expect(adminBefore?.resources.map((resource) => [resource.id, resource.available, resource.legacyVariant])).toEqual([
+      ["alternative-path", true, "alternative"],
+      ["extra-explanation", false, null],
+      ["worked-path", true, "standard"],
+    ]);
+    const portfolioExercise = (await getAdminPortfolios("space-6"))
+      .flatMap((portfolio) => portfolio.sections)
+      .flatMap((section) => section.exercises)
+      .find((exercise) => exercise.id === String(row.exercise_id));
+    expect(portfolioExercise?.resources.map((resource) => [resource.id, resource.available])).toEqual([
+      ["alternative-path", true],
+      ["extra-explanation", false],
+      ["worked-path", true],
+    ]);
+    expect((await getVisibleExercise(String(row.exercise_id), "space-6"))?.resources.map((resource) => resource.id)).toEqual([
+      "alternative-path",
+      "worked-path",
+    ]);
+
     await setExerciseAlternativeVisibility(String(row.exercise_id), false);
     expect(await getPublicAsset(String(row.asset_id))).toBeNull();
-    expect(await getAdminExercise(String(row.exercise_id))).not.toBeNull();
+    expect(await getPublicResourceAsset(genericAlternativeId, "space-6")).toBeNull();
+    expect((await getVisibleExercise(String(row.exercise_id), "space-6"))?.resources.map((resource) => resource.id)).toEqual(["worked-path"]);
+    expect((await getAdminExercise(String(row.exercise_id)))?.resources.map((resource) => resource.id)).toEqual([
+      "alternative-path",
+      "extra-explanation",
+      "worked-path",
+    ]);
+    await setExerciseAlternativeVisibility(String(row.exercise_id), true);
+    expect(await getPublicResourceAsset(genericAlternativeId, "space-6")).not.toBeNull();
   });
 
   it("shows only warnings from the latest successful sync and keeps them after a failed run", async () => {
@@ -517,6 +761,7 @@ describe("persistIndex", () => {
     await database.execute({ sql: `INSERT INTO error_reports (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, message, status, created_at, updated_at)
       VALUES (?, ?, ?, ?, 'standard', '[]', 'Lifecycle test', 'TODO', ?, ?)`, args: ["report-space-5", String(references.portfolio_id), String(references.section_id), String(references.exercise_id), "2026-08-14T10:00:00.000Z", "2026-08-14T10:00:00.000Z"] });
     await database.execute({ sql: "INSERT INTO sync_warnings (id, sync_run_id, severity, relative_path, message) VALUES (?, ?, 'warning', 'test', 'Lifecycle test')", args: ["warning-space-5", syncRunId] });
+    await database.execute({ sql: "INSERT INTO portfolio_external_links (portfolio_id, resource_id, url, updated_at) VALUES (?, 'video', 'https://example.com', ?)", args: [String(references.portfolio_id), "2026-09-12T20:00:00.000Z"] });
     const retainedPortfolioIds = (await getAdminPortfolios("space-6")).map((portfolio) => portfolio.id);
 
     expect(await archiveLearningSpace("space-5")).toBe(true);
@@ -530,6 +775,7 @@ describe("persistIndex", () => {
     expect((await database.execute("SELECT learning_space_id FROM sync_leases WHERE learning_space_id = 'space-5'")).rows).toEqual([]);
     expect((await database.execute("SELECT id FROM learning_space_sources WHERE learning_space_id = 'space-5'")).rows).toEqual([]);
     expect((await database.execute("SELECT id FROM error_reports WHERE id = 'report-space-5'")).rows).toEqual([]);
+    expect((await database.execute("SELECT portfolio_id FROM portfolio_external_links")).rows).toEqual([]);
     expect((await database.execute("SELECT id FROM sync_warnings WHERE id = 'warning-space-5'")).rows).toEqual([]);
     expect((await database.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
     expect((await getAdminPortfolios("space-6")).map((portfolio) => portfolio.id)).toEqual(retainedPortfolioIds);
@@ -606,6 +852,7 @@ describe("persistIndex", () => {
     await persistIndex(await indexSource(provider), "local", "space-6", { sourceId: source.id });
     const database = await getDatabase();
     const before = await database.execute("SELECT id, source_id, is_indexed FROM solution_assets ORDER BY id");
+    const genericBefore = await database.execute("SELECT id, resource_id, source_id, relative_path, is_indexed FROM source_resource_assets ORDER BY id");
     await database.execute(`CREATE TRIGGER fail_running_sync BEFORE INSERT ON sync_runs
       WHEN NEW.status = 'running' BEGIN SELECT RAISE(ABORT, 'forced internal persistence failure'); END`);
 
@@ -614,6 +861,7 @@ describe("persistIndex", () => {
     })).rejects.toThrow("forced internal persistence failure");
     expect((await getActiveLearningSpaceSource("space-6"))?.lastValidationStatus).toBe("valid");
     expect((await database.execute("SELECT id, source_id, is_indexed FROM solution_assets ORDER BY id")).rows).toEqual(before.rows);
+    expect((await database.execute("SELECT id, resource_id, source_id, relative_path, is_indexed FROM source_resource_assets ORDER BY id")).rows).toEqual(genericBefore.rows);
   });
 
   it("marks a source invalid only for an explicit source configuration failure", async () => {
@@ -664,6 +912,68 @@ function createTwoPortfolioProvider() {
     remove(relativePath: string) { for (const entries of Object.values(tree)) { const index = entries.findIndex((entry) => entry.relativePath === relativePath); if (index >= 0) entries.splice(index, 1); } },
     has(relativePath: string) { return Object.values(tree).flat().some((entry) => entry.relativePath === relativePath); },
   } satisfies StorageProvider & { setVersion(relativePath: string, version: string): void; setSourceId(relativePath: string, sourceId: string): void; add(relativePath: string): void; remove(relativePath: string): void; has(relativePath: string): boolean };
+}
+
+function createProfileDrivenPortfolioProvider(): StorageProvider {
+  const portfolio = "Portfolio 1 - Test";
+  const solutions = `${portfolio}/Uitwerkingen`;
+  return {
+    id: "profile-driven-fixture",
+    async list(relativePath = "") {
+      if (relativePath === "") return [{ name: portfolio, relativePath: portfolio, kind: "directory" as const }];
+      if (relativePath === portfolio) return [
+        { name: "Werkblad portfolio 1.pdf", relativePath: `${portfolio}/Werkblad portfolio 1.pdf`, kind: "file" as const },
+        { name: "Portfolio 1 - Tips.png", relativePath: `${portfolio}/Portfolio 1 - Tips.png`, kind: "file" as const },
+        { name: "Modelantwoord portfolio 1.pdf", relativePath: `${portfolio}/Modelantwoord portfolio 1.pdf`, kind: "file" as const },
+        { name: "Uitwerkingen", relativePath: solutions, kind: "directory" as const },
+      ];
+      if (relativePath === solutions) return [];
+      return [];
+    },
+    async readFile() { return Buffer.from(""); },
+  };
+}
+
+function createGenericResourceProvider() {
+  const portfolio = "Portfolio 8 - Test";
+  const solutions = `${portfolio}/Uitwerkingen`;
+  const section = `${solutions}/1 - Test`;
+  let exerciseFileName: string | null = "PF8-Oef2-hint.png";
+
+  const file = (name: string, relativePath: string, sourceId: string): StorageEntry => ({
+    name,
+    relativePath,
+    sourceId,
+    kind: "file",
+    sourceVersion: "v1",
+    lastModifiedAt: "2026-09-13T10:00:00.000Z",
+  });
+
+  return {
+    id: "generic-resource-fixture",
+    async list(relativePath = "") {
+      if (relativePath === "") return [{ name: portfolio, relativePath: portfolio, sourceId: "portfolio-8-directory", kind: "directory" as const }];
+      if (relativePath === portfolio) return [
+        file("Portfolio 8 - Test.pdf", `${portfolio}/Portfolio 8 - Test.pdf`, "portfolio-8-assignment"),
+        file("Eindoplossingen portfolio 8.pdf", `${portfolio}/Eindoplossingen portfolio 8.pdf`, "portfolio-8-final"),
+        file("Lesvideo portfolio 8.png", `${portfolio}/Lesvideo portfolio 8.png`, "lesson-video-source"),
+        { name: "Uitwerkingen", relativePath: solutions, sourceId: "portfolio-8-solutions", kind: "directory" as const },
+      ];
+      if (relativePath === solutions) return [{ name: "1 - Test", relativePath: section, sourceId: "portfolio-8-section-1", kind: "directory" as const }];
+      if (relativePath === section) return exerciseFileName
+        ? [file(exerciseFileName, `${section}/${exerciseFileName}`, "exercise-hint-source")]
+        : [];
+      return [];
+    },
+    async readFile() { return Buffer.from(""); },
+    renameExercise(fileName: string) { exerciseFileName = fileName; },
+    removeExercise() { exerciseFileName = null; },
+    restoreExercise(fileName: string) { exerciseFileName = fileName; },
+  } satisfies StorageProvider & {
+    renameExercise(fileName: string): void;
+    removeExercise(): void;
+    restoreExercise(fileName: string): void;
+  };
 }
 
 function createSingleAssetProvider(fileName: string) {

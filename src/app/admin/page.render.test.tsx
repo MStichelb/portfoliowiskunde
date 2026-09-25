@@ -47,6 +47,8 @@ describe("AdminPage overview reads", () => {
     const markup = renderToStaticMarkup(await AdminPage({ searchParams: Promise.resolve({}) }));
 
     expect(markup).toContain("Kaartoverzicht");
+    expect(markup).toContain('href="/admin/bronprofielen"');
+    expect(markup).toContain("Bronprofielen");
     expect(mocks.getLearningSpaces).toHaveBeenCalledOnce();
     expect(mocks.getLearningSpaces).toHaveBeenCalledWith();
     expect(mocks.getManageableLearningSpaceIds).toHaveBeenCalledOnce();

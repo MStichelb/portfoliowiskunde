@@ -1,4 +1,4 @@
-import { storageAssetResponse } from "@/lib/asset-response";
+import { mimeTypeForExtension, storageAssetResponse } from "@/lib/asset-response";
 import { getAuthenticatedUser } from "@/lib/auth";
 import { canAccessPublicLearningSpace } from "@/lib/public-access";
 import { getLearningSpaceBySlug, getPublicPortfolioDocument } from "@/lib/repositories";
@@ -20,7 +20,11 @@ async function handleAssetRequest(request: Request, { params }: RouteContext) {
   }
   const document = await getPublicPortfolioDocument(id, kind, space.id);
   if (!document) return new Response("Niet gevonden.", { status: 404 });
-  return storageAssetResponse(request, () => getStorageProvider(document.learningSpaceId), { sourceId: document.sourceId, fileName: document.fileName, contentType: "application/pdf" });
+  return storageAssetResponse(request, () => getStorageProvider(document.learningSpaceId), {
+    sourceId: document.sourceId,
+    fileName: document.fileName,
+    contentType: mimeTypeForExtension(document.extension),
+  });
 }
 
 export const GET = handleAssetRequest;

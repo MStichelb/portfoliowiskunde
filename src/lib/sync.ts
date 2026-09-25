@@ -4,6 +4,7 @@ import { getLearningSpace, persistIndex, recordFailedSync, recordLearningSpaceSo
 import { indexSource } from "@/lib/storage/portfolio-indexer";
 import { getStorageProviderWithType } from "@/lib/storage";
 import { SourceAccessError, SourceConfigurationError } from "@/lib/source-errors";
+import { getActiveSourceProfileConfigForLearningSpace } from "@/lib/source-profiles";
 import type { StorageProvider } from "@/lib/storage/provider";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
 
@@ -39,7 +40,8 @@ export async function synchronizeSource(learningSpaceId?: string, dependencies: 
     await configured.provider.assertReadyForIndex?.();
     const readiness = configured.provider.getReadinessMetadata?.();
     stage = "indexing";
-    const portfolios = await (dependencies.index ?? indexSource)(configured.provider);
+    const sourceProfileConfig = await getActiveSourceProfileConfigForLearningSpace(configured.space.id);
+    const portfolios = await (dependencies.index ?? indexSource)(configured.provider, sourceProfileConfig);
     const currentSpace = await getLearningSpace(configured.space.id);
     if (!currentSpace?.isActive) {
       return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true, skipReason: "archived" as const };

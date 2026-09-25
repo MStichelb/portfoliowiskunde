@@ -35,6 +35,7 @@ import {
   setPortfolioTitle,
   setPortfolioCardColor,
   setPortfolioCustomMessage,
+  setPortfolioExternalLinks,
   setPortfolioTheme,
   saveErrorReportThreadNote,
   setErrorReportHandled,
@@ -285,6 +286,19 @@ export async function savePortfolioAction(formData: FormData) {
     setPortfolioCustomMessage(id, customMessage.data.customText, customMessage.data.customTextPosition),
   ]);
   refreshPublicationPaths(id);
+}
+
+export async function savePortfolioExternalLinksAction(formData: FormData) {
+  const portfolioId = stringValue(formData, "portfolioId");
+  const portfolio = await requirePortfolioManagement(portfolioId);
+
+  const resources = portfolio.globalResources.filter((resource) => resource.kind === "external_link");
+  const links = resources.map((resource) => ({
+    resourceId: resource.id,
+    url: normalizeExternalResourceUrl(String(formData.get(`externalLink:${resource.id}`) ?? ""), resource.label),
+  }));
+  await setPortfolioExternalLinks(portfolio.id, links);
+  refreshPublicationPaths(portfolio.id);
 }
 
 export async function saveSectionPublicationAction(formData: FormData) {
@@ -570,6 +584,19 @@ async function refreshErrorReportIssuePaths(learningSpaceId: string, studentView
   if (learningSpace) {
     revalidatePath(`/admin/${encodeURIComponent(learningSpace.slug)}/foutmeldingen`);
     if (studentViews) revalidatePath(`/${encodeURIComponent(learningSpace.slug)}`);
+  }
+}
+
+function normalizeExternalResourceUrl(value: string, label: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > 2048) throw new Error(`De URL voor ${label} is te lang.`);
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error();
+    return url.toString();
+  } catch {
+    throw new Error(`Gebruik een geldige http(s)-URL voor ${label}.`);
   }
 }
 

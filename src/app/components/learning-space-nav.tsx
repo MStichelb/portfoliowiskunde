@@ -3,7 +3,7 @@ import { ExternalLink, KeyRound, List, Settings, Tags } from "lucide-react";
 
 import type { LearningSpace } from "@/lib/repositories";
 
-export type AdminSpaceSection = "portfolios" | "themes" | "reports" | "settings" | "access";
+export type AdminSpaceSection = "portfolios" | "themes" | "reports" | "settings" | "access" | "status";
 
 export function LearningSpaceNav({ current, section, showSettings = true }: { current: LearningSpace; section: AdminSpaceSection; showSettings?: boolean }) {
   return <nav className="space-nav" aria-label="Leeromgeving beheren">

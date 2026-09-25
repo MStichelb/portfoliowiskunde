@@ -92,11 +92,12 @@ describe("source comparison", () => {
       code: "5", title: "Limieten van rijen & reeksen", relativePath: "Portfolio 5 - Limieten van rijen & reeksen",
       assignmentPdfPath: null, assignmentPdfSourceId: null,
       hintsDocumentPath: "Portfolio 5 - Limieten van rijen & reeksen/Hints portfolio 5.pdf", hintsDocumentSourceId: "hints-5",
-      finalSolutionsPdfPath: null, finalSolutionsPdfSourceId: null, warnings: [],
+      finalSolutionsPdfPath: null, finalSolutionsPdfSourceId: null, warnings: [], resourceAssets: [],
       sections: [
         { order: 4, title: "Limieten van recursieve rijen", relativePath: emptySection, exercises: [] },
         { order: 5, title: "Convergentie", relativePath: populatedSection, exercises: [{
           code: "1", number: 1, suffix: "", assets: [{
+            resourceId: "worked-solution", semanticRole: "worked_solution", legacyVariant: "standard",
             relativePath: `${populatedSection}/PF5-Oef1.png`, sourceId: "asset-1", fileName: "PF5-Oef1.png",
             lastModifiedAt: null, sourceVersion: null,
             parsed: { portfolioCode: "5", exerciseNumber: 1, exerciseSuffix: "", exerciseCode: "1", variant: "standard", step: 1, extension: "png" },
