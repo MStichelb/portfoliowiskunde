@@ -343,6 +343,7 @@ async function setupDatabase() {
 
 async function configureDualSource() {
   await updateLearningSpace("space-5", {
+    subjectId: "subject-wiskunde",
     name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
     primarySource: {
       providerType: "onedrive", storageConnectionId: "connection-onedrive-user-legacy-superadmin",

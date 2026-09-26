@@ -7,6 +7,7 @@ import { getDatabase, resetDatabaseForTests } from "./database";
 import { createUser } from "./identity";
 import { createLearningSpaceForOwner, getActiveLearningSpaceSource, getAdminLearningSpaceBySlug, type LearningSpaceInput } from "./repositories";
 import { ensureStorageConnection } from "./storage-connections";
+import { createSubject, setSubjectActive } from "./subjects";
 
 let temporaryDirectory: string | undefined;
 
@@ -31,6 +32,7 @@ describe("transactional LearningSpace owner creation", () => {
 
     const space = await createLearningSpaceForOwner(oneDriveInput("teacher-created", connection.id), teacher.id);
 
+    expect(space).toMatchObject({ collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's" });
     await expect(memberRole(space.id, teacher.id)).resolves.toBe("owner");
     await expect(getActiveLearningSpaceSource(space.id)).resolves.toMatchObject({ storageConnectionId: connection.id, providerType: "onedrive" });
   });
@@ -63,6 +65,22 @@ describe("transactional LearningSpace owner creation", () => {
     await expect(memberRole(space.id, first.id)).resolves.toBe("owner");
     await expect(memberRole(space.id, second.id)).resolves.toBeNull();
   });
+
+  it("requires an existing active subject before creating any LearningSpace data", async () => {
+    await useTemporaryDatabase();
+    const teacher = await createUser({ displayName: "Leraar", role: "teacher" });
+    const superadmin = await createUser({ displayName: "Hoofdbeheerder", role: "superadmin" });
+    const inactive = await createSubject(superadmin, { name: "Fysica", sortOrder: 20 });
+    await setSubjectActive(superadmin, inactive.id, false);
+
+    await expect(createLearningSpaceForOwner({ ...localInput("missing-subject"), subjectId: "" }, teacher.id)).rejects.toThrow("Kies een vak.");
+    await expect(createLearningSpaceForOwner({ ...localInput("unknown-subject"), subjectId: "subject-onbekend" }, teacher.id)).rejects.toThrow("bestaat niet");
+    await expect(createLearningSpaceForOwner({ ...localInput("inactive-subject"), subjectId: inactive.id }, teacher.id)).rejects.toThrow("niet actief");
+
+    await expect(getAdminLearningSpaceBySlug("missing-subject")).resolves.toBeNull();
+    await expect(getAdminLearningSpaceBySlug("unknown-subject")).resolves.toBeNull();
+    await expect(getAdminLearningSpaceBySlug("inactive-subject")).resolves.toBeNull();
+  });
 });
 
 async function useTemporaryDatabase(): Promise<void> {
@@ -81,11 +99,12 @@ async function memberRole(learningSpaceId: string, userId: string): Promise<stri
 }
 
 function localInput(slug: string): LearningSpaceInput {
-  return { name: slug, slug, shortLabel: slug, sortOrder: 10, sourceType: "local", localSourcePath: null };
+  return { subjectId: "subject-wiskunde", name: slug, slug, shortLabel: slug, sortOrder: 10, sourceType: "local", localSourcePath: null };
 }
 
 function oneDriveInput(slug: string, storageConnectionId: string): LearningSpaceInput {
   return {
+    subjectId: "subject-wiskunde",
     name: slug,
     slug,
     shortLabel: slug,

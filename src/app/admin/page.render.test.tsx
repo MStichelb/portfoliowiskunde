@@ -10,12 +10,14 @@ const mocks = vi.hoisted(() => ({
   getManageableLearningSpaceIds: vi.fn(),
   listManagedMemberships: vi.fn(),
   listManagedGroupMappings: vi.fn(),
+  listActiveSubjects: vi.fn(),
   overview: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/authorization", () => ({ getManageableLearningSpaceIds: mocks.getManageableLearningSpaceIds }));
 vi.mock("@/lib/repositories", () => ({ getLearningSpaces: mocks.getLearningSpaces }));
+vi.mock("@/lib/subjects", () => ({ listActiveSubjects: mocks.listActiveSubjects }));
 vi.mock("@/lib/user-management", () => ({
   listManagedMemberships: mocks.listManagedMemberships,
   listManagedGroupMappings: mocks.listManagedGroupMappings,
@@ -41,6 +43,7 @@ describe("AdminPage overview reads", () => {
     mocks.getManageableLearningSpaceIds.mockResolvedValue([space.id]);
     mocks.listManagedMemberships.mockResolvedValue([{ learningSpaceId: space.id, userId: user.id, displayName: user.displayName, role: "owner" }]);
     mocks.listManagedGroupMappings.mockResolvedValue([]);
+    mocks.listActiveSubjects.mockResolvedValue([{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true }]);
   });
 
   it("loads each overview dataset once and passes one combined card model", async () => {
@@ -49,6 +52,7 @@ describe("AdminPage overview reads", () => {
     expect(markup).toContain("Kaartoverzicht");
     expect(markup).toContain('href="/admin/bronprofielen"');
     expect(markup).toContain("Bronprofielen");
+    expect(markup).not.toContain('href="/admin/systeem"');
     expect(mocks.getLearningSpaces).toHaveBeenCalledOnce();
     expect(mocks.getLearningSpaces).toHaveBeenCalledWith();
     expect(mocks.getManageableLearningSpaceIds).toHaveBeenCalledOnce();
@@ -58,6 +62,13 @@ describe("AdminPage overview reads", () => {
       cards: [expect.objectContaining({ id: space.id, currentUserRole: "owner" })],
     }));
   });
+
+  it("shows the system entry only to a superadmin", async () => {
+    mocks.requireAdminUser.mockResolvedValue({ ...user, role: "superadmin" });
+    const markup = renderToStaticMarkup(await AdminPage({ searchParams: Promise.resolve({}) }));
+    expect(markup).toContain('href="/admin/systeem"');
+    expect(markup).toContain("Systeem");
+  });
 });
 
 const user: AppUser = {
@@ -66,7 +77,9 @@ const user: AppUser = {
 };
 
 const space: LearningSpace = {
-  id: "space-5", name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
+  id: "space-5", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
+  collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
   sortOrder: 5, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "local", localSourcePath: null,
   oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: null, googleDriveFolderLabel: null,
   sources: [], activeSourceId: null, primarySource: null, mirrorSource: null,

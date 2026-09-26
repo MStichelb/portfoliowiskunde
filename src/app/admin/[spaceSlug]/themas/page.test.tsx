@@ -73,6 +73,11 @@ const user: AppUser = {
 
 const space: LearningSpace = {
   id: "space-5",
+  subjectId: "subject-wiskunde",
+  subjectName: "Wiskunde",
+  subjectIsActive: true,
+  collectionLabelSingular: "Portfolio",
+  collectionLabelPlural: "Portfolio's",
   name: "Vijfde jaar",
   slug: "5",
   shortLabel: "5WIS",

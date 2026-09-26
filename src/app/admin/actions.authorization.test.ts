@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   createLearningSpaceForOwner: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
+  getLearningSpace: vi.fn(),
+  updateLearningSpace: vi.fn(),
   ensureStorageConnection: vi.fn(),
   requireLearningSpaceConfiguration: vi.fn(),
   requireLearningSpaceCreation: vi.fn(),
@@ -22,6 +24,8 @@ vi.mock("@/lib/authorization", () => ({
 vi.mock("@/lib/repositories", () => ({
   createLearningSpaceForOwner: mocks.createLearningSpaceForOwner,
   getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug,
+  getLearningSpace: mocks.getLearningSpace,
+  updateLearningSpace: mocks.updateLearningSpace,
 }));
 vi.mock("@/lib/storage-connections", () => ({ ensureStorageConnection: mocks.ensureStorageConnection }));
 
@@ -31,6 +35,7 @@ describe("createLearningSpaceAction authorization and ownership", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(null);
+    mocks.getLearningSpace.mockResolvedValue({ id: "space-5", slug: "owner-space", primarySource: null, mirrorSource: null });
     mocks.createLearningSpaceForOwner.mockImplementation(async (input) => ({ ...input, id: `space-${input.slug}` }));
     mocks.ensureStorageConnection.mockImplementation(async (userId) => ({ id: `connection-${userId}` }));
     mocks.requireLearningSpaceCreation.mockImplementation((actor) => {
@@ -94,6 +99,23 @@ describe("createLearningSpaceAction authorization and ownership", () => {
 
     expect(mocks.requireLearningSpaceConfiguration).toHaveBeenCalledWith(expect.objectContaining({ id: "editor-1" }), "space-5");
   });
+
+  it("lets the existing configuration actor submit both terminology labels", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher", "owner-1"));
+    mocks.requireLearningSpaceConfiguration.mockResolvedValue(undefined);
+    const form = validForm("owner-space");
+    form.set("id", "space-5");
+    form.set("collectionLabelSingular", "  Practicum  ");
+    form.set("collectionLabelPlural", "  Practicums  ");
+
+    await expect(saveLearningSpaceAction({ error: null }, form)).rejects.toThrow("REDIRECT:/admin/owner-space/instellingen?saved=1");
+
+    expect(mocks.requireLearningSpaceConfiguration).toHaveBeenCalledWith(expect.objectContaining({ id: "owner-1" }), "space-5");
+    expect(mocks.updateLearningSpace).toHaveBeenCalledWith("space-5", expect.objectContaining({
+      collectionLabelSingular: "  Practicum  ",
+      collectionLabelPlural: "  Practicums  ",
+    }));
+  });
 });
 
 function user(role: "student" | "teacher" | "superadmin", id: string) {
@@ -106,6 +128,7 @@ function validForm(slug: string, sourceType = "local"): FormData {
   form.set("slug", slug);
   form.set("shortLabel", slug.toUpperCase());
   form.set("sortOrder", "10");
+  form.set("subjectId", "subject-wiskunde");
   form.set("sourceType", sourceType);
   return form;
 }

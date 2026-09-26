@@ -44,6 +44,15 @@ describe("grouped error report thread inbox", () => {
     expect(markup).toMatch(/TO DO[\s\S]*?<span>1<\/span>/);
   });
 
+  it("uses the configured collection term in the LearningSpace inbox", () => {
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadInbox threads={[thread()]} issuesByThread={{}} learningSpaceId="space-5" oldDoneCount={0} spaceSlug="5wis" collectionLabelSingular="Oefening" />);
+
+    expect(markup).toContain("Oefening 1: Veeltermfuncties");
+    expect(markup).toContain("Sorteer op Oefening");
+    expect(markup).toContain("Filter op Oefening");
+    expect(markup).not.toContain("Portfolio 1:");
+  });
+
   it("uses understandable document and variant labels", () => {
     expect(errorReportDocumentLabel("assignment")).toBe("Opgaven");
     expect(errorReportDocumentLabel("final_solutions")).toBe("Eindoplossingen");

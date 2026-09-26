@@ -107,7 +107,9 @@ function mapping(learningSpaceId: string, externalGroupName: string): ManagedGro
 function space(id: string, slug: string, shortLabel: string, name: string, isActive = true, sourceType: LearningSpace["sourceType"] = "local", mirrorSource: LearningSpaceSource | null = null): LearningSpace {
   const primarySource = source(id, "primary", sourceType);
   return {
-    id, slug, shortLabel, name, description: "Oefenmateriaal", cardColor: "#DCEFE9", sortOrder: Number(slug) || 99,
+    id, subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
+    collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+    slug, shortLabel, name, description: "Oefenmateriaal", cardColor: "#DCEFE9", sortOrder: Number(slug) || 99,
     isActive, archivedAt: isActive ? null : "2026-09-01T00:00:00.000Z", editorsCanManageAccess: false, sourceType,
     localSourcePath: null, oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null,
     googleDriveFolderId: null, googleDriveFolderLabel: null, sources: mirrorSource ? [primarySource, mirrorSource] : [primarySource],

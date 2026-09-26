@@ -28,7 +28,7 @@ export function PortfolioExternalLinksForm({
           <div className={styles.modalHeading}>
             <div>
               <h3 id={`${dialogId}-title`} className={styles.modalTitle}><ConfiguredResourceIcon icon={resource.icon} />{resource.label}</h3>
-              <p className={styles.modalSubtitle}>{resource.url ? "Deze externe link is ingesteld voor dit portfolio." : "Nog geen externe link ingesteld voor dit portfolio."}</p>
+              <p className={styles.modalSubtitle}>{resource.url ? "Deze externe link is ingesteld voor het huidige item." : "Nog geen externe link ingesteld voor het huidige item."}</p>
             </div>
             <a href="#" className="icon-button" aria-label="Sluiten" title="Sluiten">
               <X size={18} aria-hidden />
@@ -55,7 +55,7 @@ export function PortfolioExternalLinksForm({
                 autoComplete="off"
               />
             </label>
-            <p className={styles.linkHelp}>Laat het veld leeg en sla op om de link voor dit portfolio te verwijderen.</p>
+            <p className={styles.linkHelp}>Laat het veld leeg en sla op om de link voor het huidige item te verwijderen.</p>
             <div className={styles.modalActions}>
               <button type="submit" className="secondary-button">Opslaan</button>
               {resource.url ? <a className="secondary-button" href={resource.url} target="_blank" rel="noreferrer">Link openen</a> : null}

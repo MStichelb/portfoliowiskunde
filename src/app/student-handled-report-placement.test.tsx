@@ -47,7 +47,10 @@ beforeEach(() => {
     { id: "space-6", slug: "6wis", name: "Zesde jaar", description: "", cardColor: "#fff" },
   ]);
   mocks.getPubliclyAccessibleLearningSpaceIds.mockResolvedValue(["space-5", "space-6"]);
-  mocks.getLearningSpaceBySlug.mockResolvedValue({ id: "space-5", slug: "5wis", name: "Vijfde jaar", isActive: true });
+  mocks.getLearningSpaceBySlug.mockResolvedValue({
+    id: "space-5", slug: "5wis", name: "Vijfde jaar", subjectName: "Wiskunde", isActive: true,
+    collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  });
   mocks.getStudentPortfolios.mockResolvedValue([]);
   mocks.getThemes.mockResolvedValue([]);
   mocks.requirePublicLearningSpaceAccess.mockResolvedValue(student);
@@ -68,6 +71,7 @@ describe("handled report banner placement", () => {
     expect(markup.match(/data-student-notification/g)).toHaveLength(1);
     expect(markup.indexOf("data-page-banner")).toBeLessThan(markup.indexOf("data-student-notification"));
     expect(markup.indexOf("data-student-notification")).toBeLessThan(markup.indexOf("Vijfde jaar"));
+    expect(markup).toContain("Portfolio&#x27;s");
   });
 
   it("does not repeat the banner on a LearningSpace page when the student has multiple spaces", async () => {
@@ -80,5 +84,22 @@ describe("handled report banner placement", () => {
     const markup = renderToStaticMarkup(await LearningSpacePage({ params: Promise.resolve({ spaceSlug: "5wis" }) }));
     expect(markup).not.toContain("data-student-notification");
     expect(mocks.listNotification).not.toHaveBeenCalled();
+  });
+
+  it("renders custom terminology independently of the subject and preserves the technical portfolio route", async () => {
+    mocks.getLearningSpaceBySlug.mockResolvedValue({
+      id: "space-5", slug: "5wis", name: "Vijfde jaar", subjectName: "Fysica", isActive: true,
+      collectionLabelSingular: "Oefening", collectionLabelPlural: "Oefeningen",
+    });
+    mocks.getStudentPortfolios.mockResolvedValue([{
+      id: "portfolio-1", code: "1", title: "Krachten", themeId: null, cardColor: "#DCEFE9",
+    }]);
+
+    const markup = renderToStaticMarkup(await LearningSpacePage({ params: Promise.resolve({ spaceSlug: "5wis" }) }));
+
+    expect(markup).toContain("Oefeningen");
+    expect(markup).toContain("Oefening 1");
+    expect(markup).toContain('href="/5wis/portfolio/portfolio-1"');
+    expect(markup).not.toContain("Portfolio 1");
   });
 });

@@ -20,14 +20,14 @@ vi.mock("@/lib/repositories", () => ({
   listErrorReportIssuesForThreads: mocks.listErrorReportIssuesForThreads,
 }));
 vi.mock("@/app/components/admin-space-header", () => ({ AdminSpaceHeader: () => <header>Beheer</header> }));
-vi.mock("@/app/components/error-report-groups", () => ({ GroupedErrorReportThreadInbox: ({ threads, oldDoneCount }: { threads: Array<{ id: string }>; oldDoneCount: number }) => <div>Threads: {threads.length}; cleanup: {oldDoneCount}</div> }));
+vi.mock("@/app/components/error-report-groups", () => ({ GroupedErrorReportThreadInbox: ({ threads, oldDoneCount, collectionLabelSingular }: { threads: Array<{ id: string }>; oldDoneCount: number; collectionLabelSingular: string }) => <div>Threads: {threads.length}; cleanup: {oldDoneCount}; term: {collectionLabelSingular}</div> }));
 
 import SpaceReportsPage from "./page";
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.requireAdminUser.mockResolvedValue({ id: "teacher-1", role: "teacher", status: "active" });
-  mocks.getAdminLearningSpaceBySlug.mockResolvedValue({ id: "space-5", slug: "5wis" });
+  mocks.getAdminLearningSpaceBySlug.mockResolvedValue({ id: "space-5", slug: "5wis", collectionLabelSingular: "Oefening" });
   mocks.canManageLearningSpace.mockResolvedValue(true);
   mocks.getGroupedErrorReportThreads.mockResolvedValue([{ id: "thread-1" }, { id: "thread-2" }]);
   mocks.getOldDoneErrorThreadCount.mockResolvedValue(1);
@@ -40,6 +40,7 @@ describe("LearningSpace grouped error report page", () => {
 
     expect(markup).toContain("Threads: 2");
     expect(markup).toContain("cleanup: 1");
+    expect(markup).toContain("term: Oefening");
     expect(mocks.getGroupedErrorReportThreads).toHaveBeenCalledTimes(1);
     expect(mocks.getGroupedErrorReportThreads).toHaveBeenCalledWith("space-5");
     expect(mocks.getOldDoneErrorThreadCount).toHaveBeenCalledWith(undefined, "space-5");

@@ -321,6 +321,11 @@ function userAccess(userId: string, learningSpaceId: string, individual: boolean
 function learningSpace(id: string, shortLabel: string, sortOrder: number): LearningSpace {
   return {
     id,
+    subjectId: "subject-wiskunde",
+    subjectName: "Wiskunde",
+    subjectIsActive: true,
+    collectionLabelSingular: "Portfolio",
+    collectionLabelPlural: "Portfolio's",
     name: `Space ${sortOrder}`,
     slug: id,
     shortLabel,

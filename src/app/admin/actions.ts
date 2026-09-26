@@ -8,6 +8,7 @@ import { z } from "zod";
 import { endAdminSession, requireAdmin, requireAdminUser } from "@/lib/auth";
 import { bulkSelectionError } from "@/lib/admin-validation";
 import { adminExerciseNoteReturnHref } from "@/lib/admin-routes";
+import { CollectionTerminologyError } from "@/lib/collection-terminology";
 import { requireLearningSpaceConfiguration, requireLearningSpaceCreation, requireLearningSpaceManagement } from "@/lib/authorization";
 import { exerciseNoteSchema } from "@/lib/exercise-note";
 import { errorReportTeacherResponseSchema } from "@/lib/error-report-teacher-response";
@@ -59,6 +60,7 @@ import { compareLearningSpaceSources, switchLearningSpaceSource, type SourceSwit
 import { synchronizeSource } from "@/lib/sync";
 import { userFacingSourceError } from "@/lib/source-errors";
 import { ensureStorageConnection } from "@/lib/storage-connections";
+import { SubjectSelectionError } from "@/lib/subjects";
 
 const childModeSchema = z.enum(["hidden", "visible"]);
 const portfolioModeSchema = z.enum(["hidden", "visible"]);
@@ -183,6 +185,8 @@ export async function saveLearningSpaceAction(_previousState: AdminActionState, 
   try {
     await updateLearningSpace(id, input);
   } catch (error) {
+    if (error instanceof SubjectSelectionError) return { error: error.message };
+    if (error instanceof CollectionTerminologyError) return { error: error.message };
     if (isUniqueConstraintError(error)) return { error: "Deze URL is al in gebruik. Kies een andere URL." };
     throw error;
   }
@@ -209,14 +213,16 @@ export async function createLearningSpaceAction(formData: FormData) {
   try {
     input = learningSpaceInput(formData);
     input = await assignOwnedStorageConnections(input, admin.id);
-  } catch {
-    redirect("/admin?create=1&createError=invalid");
+  } catch (error) {
+    redirect(`/admin?create=1&createError=${error instanceof SubjectSelectionError ? "subject" : "invalid"}`);
   }
   if (await getAdminLearningSpaceBySlug(input.slug)) redirect("/admin?create=1&createError=duplicate");
   let space;
   try {
     space = await createLearningSpaceForOwner(input, admin.id);
   } catch (error) {
+    if (error instanceof SubjectSelectionError) redirect("/admin?create=1&createError=subject");
+    if (error instanceof CollectionTerminologyError) redirect("/admin?create=1&createError=invalid");
     if (isUniqueConstraintError(error)) redirect("/admin?create=1&createError=duplicate");
     throw error;
   }
@@ -609,6 +615,9 @@ function isUniqueConstraintError(error: unknown): boolean {
 }
 
 function learningSpaceInput(formData: FormData): LearningSpaceInput {
+  const subjectId = stringValue(formData, "subjectId");
+  const collectionLabelSingular = formData.has("collectionLabelSingular") ? String(formData.get("collectionLabelSingular") ?? "") : undefined;
+  const collectionLabelPlural = formData.has("collectionLabelPlural") ? String(formData.get("collectionLabelPlural") ?? "") : undefined;
   const name = stringValue(formData, "name");
   const slug = stringValue(formData, "slug").toLowerCase();
   const shortLabel = stringValue(formData, "shortLabel");
@@ -623,9 +632,10 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const oneDriveFolderPath = stringValue(formData, "oneDriveFolderPath");
   const googleDriveFolderId = stringValue(formData, "googleDriveFolderId");
   const googleDriveFolderLabel = stringValue(formData, "googleDriveFolderLabel");
+  if (!subjectId) throw new SubjectSelectionError("Kies een vak.");
   if (!name || !shortLabel || description.length > 240 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik geldige algemene instellingen.");
   if (cardColorInput && !isHexColor(cardColorInput)) throw new Error("Kies een geldige kaartkleur.");
-  const common = { name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder: Number(stringValue(formData, "sortOrder")) || 0, sourceType };
+  const common = { subjectId, collectionLabelSingular, collectionLabelPlural, name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder: Number(stringValue(formData, "sortOrder")) || 0, sourceType };
   if (!hasRoleSources) {
     if (sourceType === "local") return { ...common, localSourcePath: localSourcePath ? path.resolve(localSourcePath) : null };
     if (sourceType === "onedrive") {

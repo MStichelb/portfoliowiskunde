@@ -5,16 +5,20 @@ import { CircleHelp } from "lucide-react";
 import Link from "next/link";
 
 import { saveLearningSpaceEditorPermissionsAction, type AdminActionState } from "@/app/admin/actions";
+import { COLLECTION_LABEL_MAX_LENGTH } from "@/lib/collection-terminology";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
+import type { Subject } from "@/lib/subjects";
 import { LearningSpaceLifecycleActions } from "./learning-space-lifecycle-actions";
 import { EditorPermissionsToggle } from "./editor-permissions-toggle";
 
 export function LearningSpaceSettingsForm({
   space,
+  subjects,
   canPermanentlyDelete,
   action,
 }: {
   space: LearningSpace;
+  subjects: Subject[];
   canPermanentlyDelete: boolean;
   action: (previousState: AdminActionState, formData: FormData) => AdminActionState | Promise<AdminActionState>;
 }) {
@@ -24,6 +28,7 @@ export function LearningSpaceSettingsForm({
   const [mirrorProvider, setMirrorProvider] = useState<StorageSourceType>(space.mirrorSource?.providerType ?? "google_drive");
   const [state, actionState] = useActionState(action, { error: null });
   const [cardColor, setCardColor] = useState(space.cardColor);
+  const currentSubjectIsListed = subjects.some((subject) => subject.id === space.subjectId);
 
   return <form action={actionState} className="learning-space-settings-form">
     <input type="hidden" name="id" value={space.id} />
@@ -31,6 +36,7 @@ export function LearningSpaceSettingsForm({
     <section className="settings-card" aria-labelledby="general-settings-heading">
       <h2 id="general-settings-heading">Algemeen</h2>
       <div className="settings-grid">
+        <label>Vak<select name="subjectId" defaultValue={space.subjectId} required>{!currentSubjectIsListed ? <option value={space.subjectId}>{space.subjectName}{space.subjectIsActive ? "" : " (inactief)"}</option> : null}{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select><small>Alleen actieve vakken kunnen als nieuwe keuze worden ingesteld.</small></label>
         <label>Weergavenaam<input name="name" defaultValue={space.name} required maxLength={100} /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
         <label>URL<input name="slug" defaultValue={space.slug} required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" /><small>Dit wordt gebruikt in het webadres van deze leeromgeving.</small></label>
         <label>Kort label<input name="shortLabel" defaultValue={space.shortLabel} required maxLength={6} /><small>Compacte naam voor de navigatie, maximaal 6 tekens.</small></label>
@@ -50,6 +56,15 @@ export function LearningSpaceSettingsForm({
         />
         <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
       </div>
+    </section>
+
+    <section className="settings-card" aria-labelledby="terminology-settings-heading">
+      <div className="card-heading"><div><h2 id="terminology-settings-heading">Terminologie</h2><p>Deze termen worden gebruikt in de navigatie en interface van deze leeromgeving.</p></div></div>
+      <div className="settings-grid">
+        <label>Enkelvoud<input name="collectionLabelSingular" defaultValue={space.collectionLabelSingular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /></label>
+        <label>Meervoud<input name="collectionLabelPlural" defaultValue={space.collectionLabelPlural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /></label>
+      </div>
+      <div className="settings-card-actions"><button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button></div>
     </section>
 
     <EditorPermissionsToggle

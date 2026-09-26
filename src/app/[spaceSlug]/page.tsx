@@ -9,6 +9,7 @@ import { requirePublicLearningSpaceAccess } from "@/lib/learning-space-access";
 import { getLearningSpaceBySlug, getStudentPortfolios, getThemes } from "@/lib/repositories";
 import { listPendingHandledReportNotificationsForCurrentUser } from "@/lib/student-error-reports";
 import { cardColorStyle, DEFAULT_PORTFOLIO_COLOR } from "@/lib/ui-colors";
+import { miscellaneousCollectionLabel } from "@/lib/collection-terminology";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function LearningSpacePage({ params }: { params: Promise<{ 
     getThemes(space.id),
     user?.role === "student" ? listPendingHandledReportNotificationsForCurrentUser() : Promise.resolve(null),
   ]);
-  const groups = [...themes.map((theme) => ({ id: theme.id, name: theme.name, portfolios: portfolios.filter((portfolio) => portfolio.themeId === theme.id) })), { id: "other", name: "Overige portfolio's", portfolios: portfolios.filter((portfolio) => !portfolio.themeId) }].filter((group) => group.portfolios.length > 0);
+  const groups = [...themes.map((theme) => ({ id: theme.id, name: theme.name, portfolios: portfolios.filter((portfolio) => portfolio.themeId === theme.id) })), { id: "other", name: miscellaneousCollectionLabel(space.collectionLabelPlural), portfolios: portfolios.filter((portfolio) => !portfolio.themeId) }].filter((group) => group.portfolios.length > 0);
   const homeNotification = notification?.singleLearningSpaceId === space.id ? notification : null;
-  return <main className="page-shell student-page"><PageBanner variant="portfolio" /><StudentHandledReportNotificationBanner notification={homeNotification} /><header className="page-header"><p className="eyebrow">Wiskunde</p><h1>{space.name}</h1><p>Overzicht van de oefeningenportfolio&apos;s</p></header>{groups.length === 0 ? <p className="empty-state">Er zijn momenteel geen zichtbare portfolio&apos;s.</p> : groups.map((group) => <section className="theme-group" key={group.id}><h2>{group.name}</h2><div className="portfolio-cards">{group.portfolios.map((portfolio) => <Link className="portfolio-card color-card" style={cardColorStyle(portfolio.cardColor, DEFAULT_PORTFOLIO_COLOR)} key={portfolio.id} href={`/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(portfolio.id)}`}><span>Portfolio {portfolio.code}</span><strong>{portfolio.title}</strong></Link>)}</div></section>)}</main>;
+  return <main className="page-shell student-page"><PageBanner variant="portfolio" /><StudentHandledReportNotificationBanner notification={homeNotification} /><header className="page-header"><p className="eyebrow">Wiskunde</p><h1>{space.name}</h1><p>{space.collectionLabelPlural}</p></header>{groups.length === 0 ? <p className="empty-state">Er zijn momenteel geen zichtbare items.</p> : groups.map((group) => <section className="theme-group" key={group.id}><h2>{group.name}</h2><div className="portfolio-cards">{group.portfolios.map((portfolio) => <Link className="portfolio-card color-card" style={cardColorStyle(portfolio.cardColor, DEFAULT_PORTFOLIO_COLOR)} key={portfolio.id} href={`/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(portfolio.id)}`}><span>{space.collectionLabelSingular} {portfolio.code}</span><strong>{portfolio.title}</strong></Link>)}</div></section>)}</main>;
 }

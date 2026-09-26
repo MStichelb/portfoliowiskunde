@@ -26,7 +26,8 @@ describe("PortfolioExternalLinksForm", () => {
     expect(markup).not.toContain('name="externalLink:assignments"');
     expect(markup).toContain('href="https://example.com/video"');
     expect(markup).toContain("Link openen");
-    expect(markup).toContain("Laat het veld leeg en sla op om de link voor dit portfolio te verwijderen.");
+    expect(markup).toContain("Laat het veld leeg en sla op om de link voor het huidige item te verwijderen.");
+    expect(markup).not.toContain("dit portfolio");
   });
 
   it("neemt in elk popup-formulier de overige externe links als hidden values mee zodat opslaan niets anders wist", () => {

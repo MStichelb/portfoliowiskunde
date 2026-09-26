@@ -1008,6 +1008,41 @@ export const migrations: DatabaseMigration[] = [
         ON source_profile_templates(LOWER(TRIM(name)))`,
     ],
   },
+  {
+    version: "042_subjects",
+    statements: [
+      `CREATE TABLE subjects (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        sort_order INTEGER NOT NULL CHECK(sort_order >= 0),
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0, 1)),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE UNIQUE INDEX subjects_normalized_name_unique
+        ON subjects(LOWER(TRIM(name)))`,
+      `INSERT INTO subjects (id, name, sort_order, is_active, created_at, updated_at)
+        VALUES ('subject-wiskunde', 'Wiskunde', 10, 1, '2026-09-26T00:00:00.000Z', '2026-09-26T00:00:00.000Z')
+        ON CONFLICT(id) DO NOTHING`,
+    ],
+  },
+  {
+    version: "043_learning_space_subject",
+    statements: [
+      "ALTER TABLE learning_spaces ADD COLUMN subject_id TEXT REFERENCES subjects(id)",
+      `UPDATE learning_spaces
+        SET subject_id = (SELECT id FROM subjects WHERE id = 'subject-wiskunde')
+        WHERE subject_id IS NULL`,
+      "CREATE INDEX learning_spaces_subject_index ON learning_spaces(subject_id)",
+    ],
+  },
+  {
+    version: "044_learning_space_collection_terminology",
+    statements: [
+      "ALTER TABLE learning_spaces ADD COLUMN collection_label_singular TEXT NOT NULL DEFAULT 'Portfolio'",
+      "ALTER TABLE learning_spaces ADD COLUMN collection_label_plural TEXT NOT NULL DEFAULT 'Portfolio''s'",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

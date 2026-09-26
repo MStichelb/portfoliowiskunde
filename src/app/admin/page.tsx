@@ -1,4 +1,4 @@
-import { Link2, SlidersHorizontal, Users } from "lucide-react";
+import { Link2, Settings, SlidersHorizontal, Users } from "lucide-react";
 import Link from "next/link";
 
 import { AdminLearningSpaceOverview } from "@/app/components/admin-learning-space-overview";
@@ -8,6 +8,7 @@ import { buildAdminLearningSpaceCards, providerLabel } from "@/lib/admin-learnin
 import { requireAdminUser } from "@/lib/auth";
 import { getManageableLearningSpaceIds } from "@/lib/authorization";
 import { getLearningSpaces, type LearningSpace } from "@/lib/repositories";
+import { listActiveSubjects } from "@/lib/subjects";
 import { listManagedGroupMappings, listManagedMemberships } from "@/lib/user-management";
 
 import { createLearningSpaceAction } from "./actions";
@@ -16,11 +17,12 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ smartschool?: string; create?: string; createError?: string; created?: string; error?: string }> }) {
   const user = await requireAdminUser();
-  const [allSpaces, activeManageableIds, memberships, groupMappings, params] = await Promise.all([
+  const [allSpaces, activeManageableIds, memberships, groupMappings, subjects, params] = await Promise.all([
     getLearningSpaces(),
     getManageableLearningSpaceIds(user),
     listManagedMemberships(),
     listManagedGroupMappings(),
+    listActiveSubjects(),
     searchParams,
   ]);
   const cards = buildAdminLearningSpaceCards({ spaces: allSpaces, activeManageableIds, memberships, groupMappings, user });
@@ -28,7 +30,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     <PageBanner variant="admin" />
     <header className="admin-header">
       <div><p className="eyebrow">Beheer</p><h1>Leeromgevingen</h1><p>Kies een leeromgeving om portfolio&apos;s binnen deze leeromgeving te beheren.</p></div>
-      <div className="admin-actions"><Link className="secondary-button link-button" href="/admin/bronprofielen"><SlidersHorizontal size={17} aria-hidden />Bronprofielen</Link><Link className="secondary-button link-button" href="/admin/verbindingen"><Link2 size={17} aria-hidden />Verbindingen</Link>{user.role === "superadmin" ? <Link className="secondary-button link-button" href="/admin/gebruikers"><Users size={17} aria-hidden />Gebruikers</Link> : null}<LearningSpaceCreateModal action={createLearningSpaceAction} initialOpen={params.create === "1"} error={createErrorMessage(params.createError)} /></div>
+      <div className="admin-actions"><Link className="secondary-button link-button" href="/admin/bronprofielen"><SlidersHorizontal size={17} aria-hidden />Bronprofielen</Link><Link className="secondary-button link-button" href="/admin/verbindingen"><Link2 size={17} aria-hidden />Verbindingen</Link>{user.role === "superadmin" ? <><Link className="secondary-button link-button" href="/admin/gebruikers"><Users size={17} aria-hidden />Gebruikers</Link><Link className="secondary-button link-button" href="/admin/systeem"><Settings size={17} aria-hidden />Systeem</Link></> : null}<LearningSpaceCreateModal action={createLearningSpaceAction} subjects={subjects} initialOpen={params.create === "1"} error={createErrorMessage(params.createError)} /></div>
     </header>
     {params.smartschool === "linked" ? <p className="success-message" role="status">Smartschool-account gekoppeld.</p> : null}
     {params.smartschool && params.smartschool !== "linked" ? <p className="error-message" role="alert">De Smartschool-koppeling is niet gelukt.</p> : null}
@@ -41,6 +43,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
 function createErrorMessage(error: string | undefined): string | null {
   if (error === "duplicate") return "Deze URL bestaat al. Kies een andere URL.";
   if (error === "invalid") return "Controleer de ingevulde gegevens.";
+  if (error === "subject") return "Kies een geldig actief vak.";
   return null;
 }
 

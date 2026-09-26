@@ -522,7 +522,7 @@ async function insertTemplate(id: string, name: string): Promise<void> {
 }
 
 function spaceInput(slug: string) {
-  return { name: slug, slug, shortLabel: slug, sortOrder: 90, sourceType: "local" as const, localSourcePath: null };
+  return { subjectId: "subject-wiskunde", name: slug, slug, shortLabel: slug, sortOrder: 90, sourceType: "local" as const, localSourcePath: null };
 }
 
 async function useFreshDatabase(prefix: string): Promise<void> {

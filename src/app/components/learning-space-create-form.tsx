@@ -3,17 +3,19 @@
 import { useState } from "react";
 
 import type { StorageSourceType } from "@/lib/repositories";
+import type { Subject } from "@/lib/subjects";
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
 
 interface LearningSpaceCreateFormProps {
   action: (formData: FormData) => void | Promise<void>;
+  subjects: Subject[];
   error?: string | null;
   generalOnly?: boolean;
   onCancel?: () => void;
   returnTo?: "admin";
 }
 
-export function LearningSpaceCreateForm({ action, error = null, generalOnly = false, onCancel, returnTo }: LearningSpaceCreateFormProps) {
+export function LearningSpaceCreateForm({ action, subjects, error = null, generalOnly = false, onCancel, returnTo }: LearningSpaceCreateFormProps) {
   const [sourceType, setSourceType] = useState<StorageSourceType>("onedrive");
 
   return <form action={action} className="learning-space-create-form">
@@ -21,6 +23,7 @@ export function LearningSpaceCreateForm({ action, error = null, generalOnly = fa
     <fieldset>
       <legend className="sr-only">Gegevens leeromgeving</legend>
       <div className="settings-grid create-general-grid">
+        <label>Vak<select name="subjectId" defaultValue="" required><option value="" disabled>Kies een vak</option>{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select><small>Kies het vak waarvoor deze leeromgeving wordt gebruikt.</small></label>
         <label>Weergavenaam<input name="name" required maxLength={100} placeholder="5MTWE 5LWE" /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
         <label>URL<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="5we" /><small>Dit wordt gebruikt in het webadres van deze leeromgeving.</small></label>
         <label>Kort label<input name="shortLabel" required maxLength={6} placeholder="5WET" /><small>Compacte naam voor de navigatie, maximaal 6 karakters.</small></label>

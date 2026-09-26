@@ -332,7 +332,9 @@ const teachers = [
 ];
 
 const space: LearningSpace = {
-  id: "space-5", name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
+  id: "space-5", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
+  collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
   sortOrder: 5, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "local", localSourcePath: null, oneDriveDriveId: null,
   oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: null, googleDriveFolderLabel: null, sources: [],
   activeSourceId: null, primarySource: null, mirrorSource: null,

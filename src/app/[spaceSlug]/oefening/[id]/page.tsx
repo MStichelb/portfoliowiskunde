@@ -30,8 +30,8 @@ export default async function LearningSpaceExercisePage({ params }: { params: Pr
   if (reportVariants.length === 0) reportVariants.push("standard");
 
   return <main className="page-shell solution-page">
-    <Link href={`/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}`} className="secondary-button compact-back-button"><ArrowLeft size={17} aria-hidden />Terug naar portfolio</Link>
-    <header className="exercise-page-heading"><p className="eyebrow">Portfolio {exercise.portfolioCode} • {exercise.portfolioTitle}</p><h1>Oefening {exercise.code}</h1><p>{exercise.sectionTitle}</p></header>
+    <Link href={`/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}`} className="secondary-button compact-back-button"><ArrowLeft size={17} aria-hidden />Terug naar {space.collectionLabelSingular}</Link>
+    <header className="exercise-page-heading"><p className="eyebrow">{space.collectionLabelSingular} {exercise.portfolioCode} • {exercise.portfolioTitle}</p><h1>Oefening {exercise.code}</h1><p>{exercise.sectionTitle}</p></header>
     <ExerciseSolutionWithNote customNote={exercise.customNote} noteLabel={exercise.noteLabel} notePosition={exercise.notePosition}>
       {resources.map((resource) => <Variant resource={resource} spaceSlug={space.slug} key={resource.id} />)}
     </ExerciseSolutionWithNote>

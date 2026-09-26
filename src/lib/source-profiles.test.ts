@@ -325,7 +325,7 @@ describe("concrete source profile foundation", () => {
   it("gives a newly created LearningSpace its own typed custom snapshot", async () => {
     await useFreshDatabase("source-profile-created-space-");
     const space = await createLearningSpace({
-      name: "Nieuwe leeromgeving", slug: "nieuwe-leeromgeving", shortLabel: "Nieuw", sortOrder: 70, sourceType: "local", localSourcePath: null,
+      subjectId: "subject-wiskunde", name: "Nieuwe leeromgeving", slug: "nieuwe-leeromgeving", shortLabel: "Nieuw", sortOrder: 70, sourceType: "local", localSourcePath: null,
     });
 
     const profile = await getActiveSourceProfileForLearningSpace(space.id);

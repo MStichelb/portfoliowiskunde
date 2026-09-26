@@ -55,7 +55,9 @@ describe("LearningSpace portfolio settings page", () => {
     vi.clearAllMocks();
     mocks.requireAdminUser.mockResolvedValue({ id: "teacher", role: "teacher", status: "active" });
     mocks.canManageLearningSpace.mockResolvedValue(true);
-    mocks.getAdminLearningSpaceBySlug.mockResolvedValue({ id: "space-5", slug: "5" });
+    mocks.getAdminLearningSpaceBySlug.mockResolvedValue({
+      id: "space-5", slug: "5", collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+    });
     mocks.getAdminPortfolio.mockResolvedValue({
       id: "portfolio-1", code: "1", title: "Goniometrie", detectedTitle: "Goniometrie", cardColor: "#E7EEF2",
       visible: true, limited: false, publishFrom: null, publishUntil: null, customText: "Bericht", customTextPosition: "above_documents",
@@ -82,6 +84,18 @@ describe("LearningSpace portfolio settings page", () => {
       action: mocks.savePortfolioExternalLinksAction,
     }));
     expect(markup).toContain("Externe links instellen");
+    expect(markup).toContain("Portfolio-instellingen");
     expect(markup).not.toContain("Thema opslaan");
+  });
+
+  it("renders custom terminology while keeping the internal portfolio route untouched", async () => {
+    mocks.getAdminLearningSpaceBySlug.mockResolvedValue({
+      id: "space-5", slug: "5", subjectName: "Fysica", collectionLabelSingular: "Practicum", collectionLabelPlural: "Practicums",
+    });
+
+    const markup = renderToStaticMarkup(await LearningSpacePortfolioAdminPage({ params: Promise.resolve({ spaceSlug: "5", id: "portfolio-1" }) }));
+
+    expect(markup).toContain("Practicum 1");
+    expect(markup).toContain("Practicum-instellingen");
   });
 });

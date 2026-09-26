@@ -575,7 +575,7 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await updateLearningSpace("space-5", {
-      name: "Google", slug: "google", shortLabel: "G", sortOrder: 50, sourceType: "google_drive", googleDriveFolderId: "google-root-id",
+      subjectId: "subject-wiskunde", name: "Google", slug: "google", shortLabel: "G", sortOrder: 50, sourceType: "google_drive", googleDriveFolderId: "google-root-id",
     });
     const index = await indexSource(createPortfolioProvider("1", "PF1-Oef1.png"));
     await persistIndex(index, "google_drive", "space-5");
@@ -601,8 +601,8 @@ describe("persistIndex", () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-create-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
-    await expect(createLearningSpace({ name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, sourceType: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4", sourceType: "local", isActive: true, archivedAt: null, editorsCanManageAccess: false });
-    await expect(createLearningSpace({ name: "Dubbel", slug: "fysica-4", shortLabel: "D", sortOrder: 41, sourceType: "local", localSourcePath: null })).rejects.toThrow();
+    await expect(createLearningSpace({ subjectId: "subject-wiskunde", name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, sourceType: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4", sourceType: "local", isActive: true, archivedAt: null, editorsCanManageAccess: false });
+    await expect(createLearningSpace({ subjectId: "subject-wiskunde", name: "Dubbel", slug: "fysica-4", shortLabel: "D", sortOrder: 41, sourceType: "local", localSourcePath: null })).rejects.toThrow();
   });
 
   it("persists editor delegation without changing its safe default", async () => {
@@ -622,7 +622,7 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await updateLearningSpace("space-5", {
-      name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Publieke beschrijving",
+      subjectId: "subject-wiskunde", name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Publieke beschrijving",
       cardColor: "#A1B2C3", sortOrder: 50, sourceType: "local", localSourcePath: null,
     });
     expect(await getLearningSpace("space-5")).toMatchObject({
@@ -676,11 +676,11 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await updateLearningSpace("space-5", {
-      name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
+      subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
       oneDriveDriveId: "drive-five", oneDriveFolderId: "folder-five", oneDriveFolderPath: "Wiskunde/5",
     });
     await updateLearningSpace("space-5", {
-      name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "google_drive",
+      subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "google_drive",
       googleDriveFolderId: "google-folder-five", googleDriveFolderLabel: "Mirror 5de jaar",
     });
     expect((await getLearningSpaces()).find((space) => space.id === "space-5")).toMatchObject({
@@ -688,7 +688,7 @@ describe("persistIndex", () => {
       googleDriveFolderId: "google-folder-five", googleDriveFolderLabel: "Mirror 5de jaar",
     });
     await updateLearningSpace("space-5", {
-      name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
+      subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
       oneDriveDriveId: "drive-five", oneDriveFolderId: "folder-five", oneDriveFolderPath: "Wiskunde/5",
     });
     expect((await getLearningSpaces()).find((space) => space.id === "space-5")).toMatchObject({
@@ -701,7 +701,7 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     const source = createTwoPortfolioProvider();
-    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "V", sortOrder: 55, sourceType: "google_drive", googleDriveFolderId: "mirror-five", googleDriveFolderLabel: "Mirror vijf" });
+    await updateLearningSpace("space-5", { subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "V", sortOrder: 55, sourceType: "google_drive", googleDriveFolderId: "mirror-five", googleDriveFolderLabel: "Mirror vijf" });
     await persistIndex(await indexSource(source), "local", "space-5");
     await persistIndex(await indexSource(source), "local", "space-6");
     await createTheme("space-5", "Integralen", 3);
@@ -788,9 +788,9 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await persistIndex(await indexSource(createTwoPortfolioProvider()), "local", "space-6");
-    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: null });
+    await updateLearningSpace("space-5", { subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: null });
     await expect(synchronizeSource("space-5")).rejects.toBeInstanceOf(SourceConfigurationError);
-    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: path.join(temporaryDirectory, "does-not-exist") });
+    await updateLearningSpace("space-5", { subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: path.join(temporaryDirectory, "does-not-exist") });
     await expect(synchronizeSource("space-5")).rejects.toBeInstanceOf(SourceAccessError);
     expect((await getAdminPortfolios("space-6")).some((portfolio) => portfolio.code === "3")).toBe(true);
   });
