@@ -19,7 +19,8 @@ describe("LearningSpaceCreateModal", () => {
     expect(markup).toContain('name="name"');
     expect(markup).toContain('name="slug"');
     expect(markup).toContain('name="shortLabel"');
-    expect(markup).toContain('name="sortOrder"');
+    expect(markup).not.toContain('name="sortOrder"');
+    expect(markup).not.toContain("Sortering");
     expect(markup).toContain('name="description"');
     expect(markup).toContain('name="cardColor"');
     expect(markup).toContain('name="subjectId"');
@@ -38,5 +39,5 @@ describe("LearningSpaceCreateModal", () => {
 });
 
 const subjects = [
-  { id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" },
+  { id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, usageCount: 0, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" },
 ];

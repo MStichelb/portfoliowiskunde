@@ -34,15 +34,20 @@ describe("exercise section selection", () => {
     const markup = renderToStaticMarkup(createElement(ExerciseBulkTable, {
       portfolioId: "portfolio-1",
       spaceSlug: "5wis",
+      exerciseLabelSingular: "OpGavE",
+      exerciseLabelPlural: "OPGAVEN",
       sections: [{ id: "section-1", title: "Deel", order: 1, exercises: [{
-        id: "exercise-1", code: "1", configuredVisible: true, status: { configuredVisibility: "visible", state: "visible", reason: null, effectiveFrom: null, effectiveUntil: null },
+        id: "exercise-1", code: "1a", configuredVisible: true, status: { configuredVisibility: "visible", state: "visible", reason: null, effectiveFrom: null, effectiveUntil: null },
         standardAssets: 1, alternativeAssets: 0, missingAssets: 0, showAlternativeToStudents: false,
         isIndexed: true, noteLabel: "Hint", customNote: "Geheime notitie-inhoud", notePosition: "above_solution",
       }] }],
     }));
 
     expect(markup).toContain(">Notitie<");
-    expect(markup).toContain('aria-label="Notitie voor oefening 1 bewerken"');
+    expect(markup).toContain("Opgaven per onderdeel");
+    expect(markup).toContain("<th>Opgave</th>");
+    expect(markup).toContain(">Opgave 1a</a>");
+    expect(markup).toContain('aria-label="Notitie voor opgave 1a bewerken"');
     expect(markup).not.toContain("Geheime notitie-inhoud");
     expect(markup).not.toContain(">Hint<");
     expect(markup).toContain('colSpan="6"');

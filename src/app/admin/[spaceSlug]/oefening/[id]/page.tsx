@@ -7,6 +7,7 @@ import { SolutionVariantHeading } from "@/app/components/solution-variant-headin
 import { requireAdminUser } from "@/lib/auth";
 import { canManageLearningSpace } from "@/lib/authorization";
 import { adminExercisePortfolioHref } from "@/lib/admin-routes";
+import { formatTerminologyLabel } from "@/lib/collection-terminology";
 import { getAdminExercise, getAdminLearningSpaceBySlug, type ExerciseResource } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +25,7 @@ export default async function LearningSpaceAdminExercisePage({ params }: { param
   return <main className="page-shell admin-page admin-space-page solution-page">
     <AdminSpaceHeader current={space} section="portfolios" user={user} />
     <AdminExercisePreviewToolbar portfolioHref={adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id)} collectionLabelSingular={space.collectionLabelSingular} />
-    <h2>Oefening {exercise.code}</h2><p>{exercise.portfolioTitle} - {exercise.sectionTitle}</p>
+    <h2>{formatTerminologyLabel(space.exerciseLabelSingular, "standalone")} {exercise.code}</h2><p>{exercise.portfolioTitle} - {exercise.sectionTitle}</p>
     {!exercise.isIndexed
       ? <p className="form-message" role="status">Deze oefening is niet meer aanwezig in de bronmap. De historische metadata blijft behouden tot je de index opschoont.</p>
       : resources.map((resource) => <Variant resource={resource} spaceSlug={space.slug} key={resource.id} />)}

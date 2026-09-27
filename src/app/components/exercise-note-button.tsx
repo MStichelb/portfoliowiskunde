@@ -6,11 +6,13 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { deleteExerciseNoteAction, saveExerciseNoteAction } from "@/app/admin/actions";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import type { ExerciseNoteReturnContext } from "@/lib/admin-routes";
+import { DEFAULT_EXERCISE_LABEL_SINGULAR, formatTerminologyLabel } from "@/lib/collection-terminology";
 import { EXERCISE_NOTE_LABEL_MAX_LENGTH, EXERCISE_NOTE_MAX_LENGTH, type ExerciseNotePosition } from "@/lib/exercise-note";
 
-export function ExerciseNoteButton({ exerciseId, exerciseCode, noteLabel, customNote, notePosition, returnContext = "portfolio", initiallyOpen = false }: {
+export function ExerciseNoteButton({ exerciseId, exerciseCode, exerciseLabelSingular = DEFAULT_EXERCISE_LABEL_SINGULAR, noteLabel, customNote, notePosition, returnContext = "portfolio", initiallyOpen = false }: {
   exerciseId: string;
   exerciseCode: string;
+  exerciseLabelSingular?: string;
   noteLabel: string | null;
   customNote: string | null;
   notePosition: ExerciseNotePosition;
@@ -23,6 +25,7 @@ export function ExerciseNoteButton({ exerciseId, exerciseCode, noteLabel, custom
   const titleId = useId();
   const formId = useId();
   const hasNote = Boolean(customNote);
+  const exerciseLabel = formatTerminologyLabel(exerciseLabelSingular, "inline");
   const close = useCallback(() => {
     setOpen(false);
     requestAnimationFrame(() => triggerRef.current?.focus());
@@ -37,13 +40,13 @@ export function ExerciseNoteButton({ exerciseId, exerciseCode, noteLabel, custom
   }, [close, open]);
 
   return <>
-    <button ref={triggerRef} className={`visibility-toggle exercise-note-trigger${hasNote ? " has-note" : ""}`} type="button" onClick={() => setOpen(true)} aria-label={`Notitie voor oefening ${exerciseCode} ${hasNote ? "bewerken" : "toevoegen"}`}>
+    <button ref={triggerRef} className={`visibility-toggle exercise-note-trigger${hasNote ? " has-note" : ""}`} type="button" onClick={() => setOpen(true)} aria-label={`Notitie voor ${exerciseLabel} ${exerciseCode} ${hasNote ? "bewerken" : "toevoegen"}`}>
       {hasNote ? <SquareCheckBig size={16} aria-hidden /> : <Square size={16} aria-hidden />}Notitie
     </button>
     {open ? <div className="confirm-backdrop" role="presentation">
       <div className="exercise-note-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="exercise-note-dialog-heading">
-          <h2 id={titleId}>Notitie bij oefening {exerciseCode}</h2>
+          <h2 id={titleId}>Notitie bij {exerciseLabel} {exerciseCode}</h2>
           <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
         </div>
         <form id={formId} action={saveExerciseNoteAction} className="exercise-note-form">

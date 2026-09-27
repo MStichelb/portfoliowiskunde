@@ -32,7 +32,10 @@ describe("transactional LearningSpace owner creation", () => {
 
     const space = await createLearningSpaceForOwner(oneDriveInput("teacher-created", connection.id), teacher.id);
 
-    expect(space).toMatchObject({ collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's" });
+    expect(space).toMatchObject({
+      collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+      exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
+    });
     await expect(memberRole(space.id, teacher.id)).resolves.toBe("owner");
     await expect(getActiveLearningSpaceSource(space.id)).resolves.toMatchObject({ storageConnectionId: connection.id, providerType: "onedrive" });
   });
@@ -44,6 +47,16 @@ describe("transactional LearningSpace owner creation", () => {
     const space = await createLearningSpaceForOwner(localInput("admin-created"), superadmin.id);
 
     await expect(memberRole(space.id, superadmin.id)).resolves.toBe("owner");
+  });
+
+  it("places a new LearningSpace without a supplied global order at the fallback bottom", async () => {
+    await useTemporaryDatabase();
+    const teacher = await createUser({ displayName: "Leraar", role: "teacher" });
+    const globalMaximum = Number((await (await getDatabase()).execute("SELECT MAX(sort_order) AS maximum FROM learning_spaces")).rows[0]?.maximum);
+
+    const space = await createLearningSpaceForOwner({ ...localInput("bottom-space"), sortOrder: undefined }, teacher.id);
+
+    expect(space.sortOrder).toBe(globalMaximum + 10);
   });
 
   it("rolls back LearningSpace and sources when the owner membership cannot be inserted", async () => {

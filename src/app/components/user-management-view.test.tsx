@@ -326,6 +326,8 @@ function learningSpace(id: string, shortLabel: string, sortOrder: number): Learn
     subjectIsActive: true,
     collectionLabelSingular: "Portfolio",
     collectionLabelPlural: "Portfolio's",
+    exerciseLabelSingular: "Oefening",
+    exerciseLabelPlural: "Oefeningen",
     name: `Space ${sortOrder}`,
     slug: id,
     shortLabel,

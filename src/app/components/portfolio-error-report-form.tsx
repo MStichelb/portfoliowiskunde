@@ -6,6 +6,7 @@ import { useId, useState } from "react";
 import { normalizeErrorReportExerciseCode, type ErrorReportExerciseIdentity } from "@/lib/error-report-exercise-code";
 import { ERROR_REPORT_GENERIC_ERROR_MESSAGE, errorReportSubmissionErrorMessage } from "@/lib/error-report-submission-feedback";
 import type { ErrorReportDocumentKind } from "@/lib/repositories";
+import { DEFAULT_EXERCISE_LABEL_SINGULAR, formatTerminologyLabel } from "@/lib/collection-terminology";
 
 export type PortfolioErrorReportExerciseOption = ErrorReportExerciseIdentity;
 
@@ -17,11 +18,13 @@ export function PortfolioErrorReportForm({
   portfolioId,
   documents,
   exercises,
+  exerciseLabelSingular = DEFAULT_EXERCISE_LABEL_SINGULAR,
   initiallyOpen = false,
 }: {
   portfolioId: string;
   documents: ErrorReportDocumentKind[];
   exercises: PortfolioErrorReportExerciseOption[];
+  exerciseLabelSingular?: string;
   initiallyOpen?: boolean;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
@@ -34,6 +37,7 @@ export function PortfolioErrorReportForm({
   const normalizedExerciseCode = normalizeErrorReportExerciseCode(exerciseCode);
   const selectedExercise = exercises.find((exercise) => normalizeErrorReportExerciseCode(exercise.code) === normalizedExerciseCode);
   const showVariant = shouldShowErrorReportVariant(documentKind, selectedExercise);
+  const exerciseLabel = formatTerminologyLabel(exerciseLabelSingular, "standalone");
 
   if (documents.length === 0) return null;
 
@@ -68,8 +72,8 @@ export function PortfolioErrorReportForm({
     {open ? <div id={contentId} className="report-disclosure-content">
       {status === "sent" ? <p className="success-message" role="status">Bedankt. Je melding is doorgestuurd.</p> : <form action={submit} className="report-form">
         <label>Document<select name="documentKind" value={documentKind} onChange={(event) => setDocumentKind(event.target.value as ErrorReportDocumentKind)}>{documents.map((document) => <option key={document} value={document}>{documentLabel(document)}</option>)}</select></label>
-        <label>Oefening<input name="exerciseCode" value={exerciseCode} onChange={(event) => setExerciseCode(event.target.value)} list={exerciseListId} required maxLength={20} autoComplete="off" /></label>
-        <datalist id={exerciseListId}>{exercises.map((exercise) => <option key={exercise.id} value={exercise.code}>Oefening {exercise.code}</option>)}</datalist>
+        <label>{exerciseLabel}<input name="exerciseCode" value={exerciseCode} onChange={(event) => setExerciseCode(event.target.value)} list={exerciseListId} required maxLength={20} autoComplete="off" /></label>
+        <datalist id={exerciseListId}>{exercises.map((exercise) => <option key={exercise.id} value={exercise.code}>{exerciseLabel} {exercise.code}</option>)}</datalist>
         {showVariant ? <label>Uitwerking<select name="variant"><option value="standard">Uitwerking</option><option value="alternative">Alternatieve uitwerking</option></select></label> : <input type="hidden" name="variant" value={documentKind === "final_solutions" ? "standard" : ""} />}
         <label>Wat heb je opgemerkt?<textarea name="message" required minLength={3} maxLength={2000} /></label>
         <label className="honeypot">Website<input name="website" tabIndex={-1} autoComplete="off" /></label>

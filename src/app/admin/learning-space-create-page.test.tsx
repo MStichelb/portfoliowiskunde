@@ -4,12 +4,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   getManageableLearningSpaceIds: vi.fn(),
+  getAccessibleLearningSpaceIds: vi.fn(),
   getLearningSpaces: vi.fn(),
   listActiveSubjects: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
-vi.mock("@/lib/authorization", () => ({ getManageableLearningSpaceIds: mocks.getManageableLearningSpaceIds }));
+vi.mock("@/lib/authorization", () => ({
+  getManageableLearningSpaceIds: mocks.getManageableLearningSpaceIds,
+  getAccessibleLearningSpaceIds: mocks.getAccessibleLearningSpaceIds,
+}));
 vi.mock("@/lib/repositories", () => ({ getLearningSpaces: mocks.getLearningSpaces }));
 vi.mock("@/lib/subjects", () => ({ listActiveSubjects: mocks.listActiveSubjects }));
 vi.mock("@/app/components/page-banner", () => ({ PageBanner: () => null }));
@@ -22,6 +26,7 @@ describe("admin LearningSpace creation entry point", () => {
     vi.clearAllMocks();
     mocks.getLearningSpaces.mockResolvedValue([]);
     mocks.getManageableLearningSpaceIds.mockResolvedValue([]);
+    mocks.getAccessibleLearningSpaceIds.mockResolvedValue([]);
     mocks.listActiveSubjects.mockResolvedValue([{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true }]);
   });
 

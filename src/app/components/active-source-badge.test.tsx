@@ -37,6 +37,7 @@ function spaceWithActiveSource(role: LearningSpaceSource["role"], providerType: 
   return {
     id: "space-test", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
     collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+    exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
     name: "Test", slug: "test", shortLabel: "T", description: "Testomgeving", cardColor: "#DCEFE9", sortOrder: 1, isActive: true,
     archivedAt: null, editorsCanManageAccess: false, sourceType: providerType, localSourcePath: null, oneDriveDriveId: null,
     oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: null,

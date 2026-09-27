@@ -2,10 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   requireAdmin: vi.fn(),
+  archiveSubject: vi.fn(),
   createSubject: vi.fn(),
+  moveSubject: vi.fn(),
+  permanentlyDeleteSubject: vi.fn(),
   renameSubject: vi.fn(),
-  setSubjectActive: vi.fn(),
-  updateSubjectSortOrder: vi.fn(),
+  restoreSubject: vi.fn(),
   revalidatePath: vi.fn(),
   redirect: vi.fn(),
 }));
@@ -14,13 +16,15 @@ vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidatePath }));
 vi.mock("next/navigation", () => ({ redirect: mocks.redirect }));
 vi.mock("@/lib/auth", () => ({ requireAdmin: mocks.requireAdmin }));
 vi.mock("@/lib/subjects", () => ({
+  archiveSubject: mocks.archiveSubject,
   createSubject: mocks.createSubject,
+  moveSubject: mocks.moveSubject,
+  permanentlyDeleteSubject: mocks.permanentlyDeleteSubject,
   renameSubject: mocks.renameSubject,
-  setSubjectActive: mocks.setSubjectActive,
-  updateSubjectSortOrder: mocks.updateSubjectSortOrder,
+  restoreSubject: mocks.restoreSubject,
 }));
 
-import { createSubjectAction, renameSubjectAction, setSubjectActiveAction, updateSubjectSortOrderAction } from "./actions";
+import { archiveSubjectAction, createSubjectAction, moveSubjectAction, permanentlyDeleteSubjectAction, renameSubjectAction, restoreSubjectAction } from "./actions";
 
 const admin = { id: "admin", role: "superadmin", status: "active" };
 
@@ -31,30 +35,35 @@ describe("subject actions", () => {
     mocks.redirect.mockImplementation((url: string) => { throw new Error(`REDIRECT:${url}`); });
   });
 
-  it("maps create, rename, sorting and activation forms to the subject domain", async () => {
-    await expect(createSubjectAction(form({ name: " Fysica ", sortOrder: "20" }))).rejects.toThrow("REDIRECT:/admin/systeem/vakken?saved=created");
-    expect(mocks.createSubject).toHaveBeenCalledWith(admin, { name: "Fysica", sortOrder: 20 });
+  it("maps create, rename, ordering and lifecycle forms to the subject domain", async () => {
+    await expect(createSubjectAction(form({ name: " Fysica " }))).rejects.toThrow("REDIRECT:/admin/systeem/vakken?saved=created");
+    expect(mocks.createSubject).toHaveBeenCalledWith(admin, { name: "Fysica" });
 
     await expect(renameSubjectAction(form({ subjectId: "subject-1", name: " Chemie " }))).rejects.toThrow("saved=renamed");
     expect(mocks.renameSubject).toHaveBeenCalledWith(admin, "subject-1", "Chemie");
 
-    await expect(updateSubjectSortOrderAction(form({ subjectId: "subject-1", sortOrder: "7" }))).rejects.toThrow("saved=sorted");
-    expect(mocks.updateSubjectSortOrder).toHaveBeenCalledWith(admin, "subject-1", 7);
+    await expect(moveSubjectAction(form({ subjectId: "subject-1", direction: "down" }))).rejects.toThrow("saved=moved");
+    expect(mocks.moveSubject).toHaveBeenCalledWith(admin, "subject-1", "down");
 
-    await expect(setSubjectActiveAction(form({ subjectId: "subject-1", active: "false" }))).rejects.toThrow("saved=deactivated");
-    expect(mocks.setSubjectActive).toHaveBeenCalledWith(admin, "subject-1", false);
+    await expect(archiveSubjectAction(form({ subjectId: "subject-1" }))).rejects.toThrow("saved=archived");
+    expect(mocks.archiveSubject).toHaveBeenCalledWith(admin, "subject-1");
+    await expect(restoreSubjectAction(form({ subjectId: "subject-1" }))).rejects.toThrow("saved=restored");
+    expect(mocks.restoreSubject).toHaveBeenCalledWith(admin, "subject-1");
+    await expect(permanentlyDeleteSubjectAction(form({ subjectId: "subject-1" }))).rejects.toThrow("saved=deleted");
+    expect(mocks.permanentlyDeleteSubject).toHaveBeenCalledWith(admin, "subject-1");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin/systeem/vakken");
   });
 
   it("requires superadmin before every mutation", async () => {
     mocks.requireAdmin.mockRejectedValue(new Error("REDIRECT:/admin/login"));
-    await expect(createSubjectAction(form({ name: "Fysica", sortOrder: "20" }))).rejects.toThrow("REDIRECT:/admin/login");
+    await expect(permanentlyDeleteSubjectAction(form({ subjectId: "subject-1" }))).rejects.toThrow("REDIRECT:/admin/login");
     expect(mocks.createSubject).not.toHaveBeenCalled();
+    expect(mocks.permanentlyDeleteSubject).not.toHaveBeenCalled();
   });
 
   it("returns domain validation errors without hiding them", async () => {
     mocks.createSubject.mockRejectedValue(new Error("Er bestaat al een vak met deze naam."));
-    await expect(createSubjectAction(form({ name: "Fysica", sortOrder: "20" })))
+    await expect(createSubjectAction(form({ name: "Fysica" })))
       .rejects.toThrow("REDIRECT:/admin/systeem/vakken?error=Er%20bestaat%20al%20een%20vak%20met%20deze%20naam.");
   });
 });

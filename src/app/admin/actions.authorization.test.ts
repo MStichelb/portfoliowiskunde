@@ -6,9 +6,11 @@ const mocks = vi.hoisted(() => ({
   getAdminLearningSpaceBySlug: vi.fn(),
   getLearningSpace: vi.fn(),
   updateLearningSpace: vi.fn(),
+  moveTheme: vi.fn(),
   ensureStorageConnection: vi.fn(),
   requireLearningSpaceConfiguration: vi.fn(),
   requireLearningSpaceCreation: vi.fn(),
+  requireLearningSpaceManagement: vi.fn(),
   revalidatePath: vi.fn(),
   redirect: vi.fn(),
 }));
@@ -19,17 +21,18 @@ vi.mock("@/lib/auth", () => ({ endAdminSession: vi.fn(), requireAdmin: vi.fn(), 
 vi.mock("@/lib/authorization", () => ({
   requireLearningSpaceConfiguration: mocks.requireLearningSpaceConfiguration,
   requireLearningSpaceCreation: mocks.requireLearningSpaceCreation,
-  requireLearningSpaceManagement: vi.fn(),
+  requireLearningSpaceManagement: mocks.requireLearningSpaceManagement,
 }));
 vi.mock("@/lib/repositories", () => ({
   createLearningSpaceForOwner: mocks.createLearningSpaceForOwner,
   getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug,
   getLearningSpace: mocks.getLearningSpace,
   updateLearningSpace: mocks.updateLearningSpace,
+  moveTheme: mocks.moveTheme,
 }));
 vi.mock("@/lib/storage-connections", () => ({ ensureStorageConnection: mocks.ensureStorageConnection }));
 
-import { createLearningSpaceAction, saveLearningSpaceAction } from "./actions";
+import { createLearningSpaceAction, moveThemeAction, saveLearningSpaceAction } from "./actions";
 
 describe("createLearningSpaceAction authorization and ownership", () => {
   beforeEach(() => {
@@ -100,13 +103,15 @@ describe("createLearningSpaceAction authorization and ownership", () => {
     expect(mocks.requireLearningSpaceConfiguration).toHaveBeenCalledWith(expect.objectContaining({ id: "editor-1" }), "space-5");
   });
 
-  it("lets the existing configuration actor submit both terminology labels", async () => {
+  it("lets the existing configuration actor submit collection and exercise terminology", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher", "owner-1"));
     mocks.requireLearningSpaceConfiguration.mockResolvedValue(undefined);
     const form = validForm("owner-space");
     form.set("id", "space-5");
     form.set("collectionLabelSingular", "  Practicum  ");
     form.set("collectionLabelPlural", "  Practicums  ");
+    form.set("exerciseLabelSingular", "  Vraag  ");
+    form.set("exerciseLabelPlural", "  Vragen  ");
 
     await expect(saveLearningSpaceAction({ error: null }, form)).rejects.toThrow("REDIRECT:/admin/owner-space/instellingen?saved=1");
 
@@ -114,7 +119,34 @@ describe("createLearningSpaceAction authorization and ownership", () => {
     expect(mocks.updateLearningSpace).toHaveBeenCalledWith("space-5", expect.objectContaining({
       collectionLabelSingular: "  Practicum  ",
       collectionLabelPlural: "  Practicums  ",
+      exerciseLabelSingular: "  Vraag  ",
+      exerciseLabelPlural: "  Vragen  ",
     }));
+  });
+});
+
+describe("moveThemeAction authorization", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.requireAdminUser.mockResolvedValue(user("teacher", "manager-1"));
+    mocks.getLearningSpace.mockResolvedValue({ id: "space-5" });
+  });
+
+  it("requires the existing LearningSpace management permission", async () => {
+    mocks.requireLearningSpaceManagement.mockRejectedValueOnce(new Error("Geen beheerrechten"));
+    const form = themeMoveForm("theme-1", "space-5", "up");
+
+    await expect(moveThemeAction(form)).rejects.toThrow("Geen beheerrechten");
+
+    expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.objectContaining({ id: "manager-1" }), "space-5");
+    expect(mocks.moveTheme).not.toHaveBeenCalled();
+  });
+
+  it("forwards only the validated direction and scoped identifiers", async () => {
+    await moveThemeAction(themeMoveForm("theme-1", "space-5", "down"));
+
+    expect(mocks.moveTheme).toHaveBeenCalledWith("theme-1", "space-5", "down");
+    expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin");
   });
 });
 
@@ -130,5 +162,13 @@ function validForm(slug: string, sourceType = "local"): FormData {
   form.set("sortOrder", "10");
   form.set("subjectId", "subject-wiskunde");
   form.set("sourceType", sourceType);
+  return form;
+}
+
+function themeMoveForm(id: string, learningSpaceId: string, direction: string): FormData {
+  const form = new FormData();
+  form.set("id", id);
+  form.set("learningSpaceId", learningSpaceId);
+  form.set("direction", direction);
   return form;
 }

@@ -135,9 +135,10 @@ function user(role: AppUser["role"]): AppUser {
 const space: LearningSpace = {
   id: "space-5", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
   collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
   name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
   sortOrder: 5, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "local", localSourcePath: "C:\\Portfolio", oneDriveDriveId: null,
   oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: null, googleDriveFolderLabel: null, sources: [],
   activeSourceId: null, primarySource: null, mirrorSource: null,
 };
-const subjects = [{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" }];
+const subjects = [{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, usageCount: 0, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" }];

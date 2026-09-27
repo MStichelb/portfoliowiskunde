@@ -27,6 +27,7 @@ const mirror: LearningSpaceSource = {
 const space: LearningSpace = {
   id: "space-6", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
   collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
   name: "Zesde jaar wiskunde", slug: "6", shortLabel: "6WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
   sortOrder: 60, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "google_drive", localSourcePath: null,
   oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: "folder",

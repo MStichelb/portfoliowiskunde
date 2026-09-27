@@ -1,5 +1,7 @@
 export const DEFAULT_COLLECTION_LABEL_SINGULAR = "Portfolio";
 export const DEFAULT_COLLECTION_LABEL_PLURAL = "Portfolio's";
+export const DEFAULT_EXERCISE_LABEL_SINGULAR = "Oefening";
+export const DEFAULT_EXERCISE_LABEL_PLURAL = "Oefeningen";
 export const COLLECTION_LABEL_MAX_LENGTH = 40;
 
 export class CollectionTerminologyError extends Error {}
@@ -17,8 +19,31 @@ export function normalizeCollectionTerminology(
   };
 }
 
+export function normalizeExerciseTerminology(
+  input: { singular?: string; plural?: string },
+  fallback: { singular: string; plural: string } = {
+    singular: DEFAULT_EXERCISE_LABEL_SINGULAR,
+    plural: DEFAULT_EXERCISE_LABEL_PLURAL,
+  },
+): { singular: string; plural: string } {
+  return {
+    singular: normalizeLabel(input.singular ?? fallback.singular, "enkelvoud"),
+    plural: normalizeLabel(input.plural ?? fallback.plural, "meervoud"),
+  };
+}
+
+export function formatTerminologyLabel(value: string, context: "standalone" | "inline"): string {
+  const normalized = value.toLocaleLowerCase("nl-BE");
+  if (context === "inline") return normalized;
+  const characters = Array.from(normalized);
+  const letterIndex = characters.findIndex((character) => /\p{L}/u.test(character));
+  if (letterIndex < 0) return normalized;
+  characters[letterIndex] = characters[letterIndex].toLocaleUpperCase("nl-BE");
+  return characters.join("");
+}
+
 export function miscellaneousCollectionLabel(plural: string): string {
-  return plural === DEFAULT_COLLECTION_LABEL_PLURAL ? "Overige portfolio's" : `Overige ${plural}`;
+  return `Overige ${formatTerminologyLabel(plural, "inline")}`;
 }
 
 function normalizeLabel(value: string, form: "enkelvoud" | "meervoud"): string {

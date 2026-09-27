@@ -109,6 +109,7 @@ function space(id: string, slug: string, shortLabel: string, name: string, isAct
   return {
     id, subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
     collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+    exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
     slug, shortLabel, name, description: "Oefenmateriaal", cardColor: "#DCEFE9", sortOrder: Number(slug) || 99,
     isActive, archivedAt: isActive ? null : "2026-09-01T00:00:00.000Z", editorsCanManageAccess: false, sourceType,
     localSourcePath: null, oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null,

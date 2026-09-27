@@ -8,19 +8,20 @@ import { LearningSpaceSettingsForm } from "./learning-space-settings-form";
 const space: LearningSpace = {
   id: "space-6", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
   collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
   name: "Zesde jaar", slug: "6", shortLabel: "6WIS", description: "Oefenmateriaal",
   cardColor: "#DCEFE9", sortOrder: 6, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "local",
   localSourcePath: "C:\\Portfolio", oneDriveDriveId: null, oneDriveFolderId: null,
   oneDriveFolderPath: null, googleDriveFolderId: null, googleDriveFolderLabel: null,
   sources: [], activeSourceId: null, primarySource: null, mirrorSource: null,
 };
-const subjects = [{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" }];
+const subjects = [{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, usageCount: 0, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" }];
 
 describe("LearningSpaceSettingsForm", () => {
-  it("keeps all general fields and exposes the stored terminology in its own settings card", () => {
+  it("keeps general settings separate from the existing-space personalization card", () => {
     const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} subjects={subjects} canPermanentlyDelete action={() => ({ error: null })} />);
     const generalStart = markup.indexOf('id="general-settings-heading"');
-    const terminologyStart = markup.indexOf('id="terminology-settings-heading"');
+    const personalizationStart = markup.indexOf('id="personalization-settings-heading"');
     const editorPermissionsStart = markup.indexOf('id="editor-permissions-heading"');
     const sourceStart = markup.indexOf('id="source-settings-heading"');
     const saveButtons = [...markup.matchAll(/class="primary-button settings-save-button"/g)].map((match) => match.index ?? -1);
@@ -31,12 +32,19 @@ describe("LearningSpaceSettingsForm", () => {
     expect(markup).toContain("Met deze naam verschijnt de leeromgeving bij de leerlingen.");
     expect(markup).toContain("URL");
     expect(markup).toContain("Kort label");
-    expect(markup).toContain("Sortering");
+    expect(markup).not.toContain("Sortering");
+    expect(markup).not.toContain('type="number"');
     expect(markup).toContain("Beschrijving");
     expect(markup).toContain("Kleur");
-    expect(markup).toContain("Terminologie");
+    expect(markup).toContain("Personalisatie");
+    expect(markup).toContain("Header");
+    expect(markup).toContain("Om een eigen afbeelding bovenaan het portfolio weer te geven, plaats je de gewenste afbeelding als &#x27;header.png&#x27; of &#x27;header.jpg&#x27; in de bronmap van de leeromgeving. Zo niet wordt de standaardheader gebruikt.");
+    expect(markup).toContain("Benaming portfolio&#x27;s");
+    expect(markup).toContain("Benaming oefeningen");
     expect(markup).toContain('name="collectionLabelSingular" value="Portfolio"');
     expect(markup).toContain('name="collectionLabelPlural" value="Portfolio&#x27;s"');
+    expect(markup).toContain('name="exerciseLabelSingular" value="Oefening"');
+    expect(markup).toContain('name="exerciseLabelPlural" value="Oefeningen"');
     expect(markup).toContain("Bewerkersrechten");
     expect(markup).toContain("Bewerkers kunnen geen toegang beheren");
     expect(markup).toContain("Alleen de eigenaar en hoofdbeheerders mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen.");
@@ -46,13 +54,13 @@ describe("LearningSpaceSettingsForm", () => {
     expect(editorPermissionsSwitch).toContain('type="button"');
     expect(editorPermissionsSwitch).toContain('aria-checked="false"');
     expect(editorPermissionsSwitch).not.toContain("formAction");
-    expect(terminologyStart).toBeGreaterThan(generalStart);
-    expect(editorPermissionsStart).toBeGreaterThan(terminologyStart);
+    expect(personalizationStart).toBeGreaterThan(generalStart);
+    expect(editorPermissionsStart).toBeGreaterThan(personalizationStart);
     expect(editorPermissionsStart).toBeLessThan(sourceStart);
     expect(saveButtons).toHaveLength(3);
     expect(saveButtons[0]).toBeGreaterThan(generalStart);
-    expect(saveButtons[0]).toBeLessThan(terminologyStart);
-    expect(saveButtons[1]).toBeGreaterThan(terminologyStart);
+    expect(saveButtons[0]).toBeLessThan(personalizationStart);
+    expect(saveButtons[1]).toBeGreaterThan(personalizationStart);
     expect(saveButtons[1]).toBeLessThan(editorPermissionsStart);
     expect(saveButtons[2]).toBeGreaterThan(sourceStart);
     expect((markup.match(/>Instellingen opslaan<\/button>/g) ?? [])).toHaveLength(3);
@@ -60,6 +68,24 @@ describe("LearningSpaceSettingsForm", () => {
     expect(markup).not.toContain("Herstellen");
     expect(markup).not.toContain("Leeromgeving verwijderen");
     expect((markup.match(/<form/g) ?? [])).toHaveLength(1);
+  });
+
+  it("orders the general fields without exposing the internal sorting value", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} subjects={subjects} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+    const name = markup.indexOf("Weergavenaam");
+    const url = markup.indexOf(">URL<");
+    const shortLabel = markup.indexOf("Kort label");
+    const subject = markup.indexOf(">Vak<");
+    const description = markup.indexOf("Beschrijving");
+
+    expect((markup.match(/>Vak</g) ?? [])).toHaveLength(1);
+    expect(name).toBeLessThan(subject);
+    expect(subject).toBeLessThan(url);
+    expect(url).toBeLessThan(shortLabel);
+    expect(shortLabel).toBeLessThan(description);
+    expect(markup).not.toContain("Alleen actieve vakken kunnen als nieuwe keuze worden ingesteld.");
+    expect(markup).toContain('class="settings-grid general-settings-grid"');
+    expect(markup).toContain('type="hidden" name="sortOrder" value="6"');
   });
 
   it("preserves a stored Local provider and orders provider options", () => {

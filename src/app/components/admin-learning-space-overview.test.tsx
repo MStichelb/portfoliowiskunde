@@ -3,11 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import type { AdminLearningSpaceCardData } from "@/lib/admin-learning-space-overview";
 
-import { AdminLearningSpaceCard, AdminLearningSpaceCardGrid, AdminLearningSpaceOverview } from "./admin-learning-space-overview";
+import { AdminLearningSpaceCard, AdminLearningSpaceCardGrid, AdminLearningSpaceOrderEditor, AdminLearningSpaceOverview, moveLearningSpaceCardByOffset, moveLearningSpaceCardTo } from "./admin-learning-space-overview";
 
 describe("AdminLearningSpaceOverview", () => {
   it("shows only active cards initially and exposes both overview controls", () => {
-    const markup = renderToStaticMarkup(<AdminLearningSpaceOverview cards={[card(), card({ id: "archived", displayName: "Archived display name", isArchived: true })]} />);
+    const markup = renderToStaticMarkup(<AdminLearningSpaceOverview cards={[card(), card({ id: "archived", displayName: "Archived display name", isArchived: true })]} orderAction={() => undefined} />);
 
     expect(markup).toContain("Toon details");
     expect(markup).toContain("Toon archief");
@@ -15,6 +15,34 @@ describe("AdminLearningSpaceOverview", () => {
     expect((markup.match(/aria-checked="false"/g) ?? [])).toHaveLength(2);
     expect(markup).toContain("Vijfde jaar");
     expect(markup).not.toContain("Archived display name");
+    expect(markup).toContain("Volgorde aanpassen");
+  });
+
+  it("renders an accessible personal reorder editor with drag handles and bounded arrow controls", () => {
+    const markup = renderToStaticMarkup(<AdminLearningSpaceOrderEditor cards={[
+      card({ id: "space-5", shortLabel: "5WIS" }),
+      card({ id: "space-6", shortLabel: "6WIS", displayName: "Zesde jaar" }),
+      card({ id: "space-7", shortLabel: "7WIS", displayName: "Zevende jaar" }),
+    ]} action={() => undefined} />);
+
+    expect(markup).toContain("Deze volgorde geldt alleen voor jou.");
+    expect((markup.match(/draggable="true"/g) ?? [])).toHaveLength(3);
+    expect((markup.match(/verslepen/g) ?? [])).toHaveLength(6);
+    expect((markup.match(/aria-label="Leeromgeving omhoog verplaatsen"/g) ?? [])).toHaveLength(3);
+    expect((markup.match(/aria-label="Leeromgeving omlaag verplaatsen"/g) ?? [])).toHaveLength(3);
+    expect((markup.match(/disabled=""/g) ?? [])).toHaveLength(2);
+    expect(markup).toContain("Volgorde opslaan");
+  });
+
+  it("keeps arrow reordering within the first and last bounds", () => {
+    const cards = [{ id: "a" }, { id: "b" }, { id: "c" }];
+
+    expect(moveLearningSpaceCardByOffset(cards, "b", -1).map((item) => item.id)).toEqual(["b", "a", "c"]);
+    expect(moveLearningSpaceCardByOffset(cards, "b", 1).map((item) => item.id)).toEqual(["a", "c", "b"]);
+    expect(moveLearningSpaceCardByOffset(cards, "a", -1)).toEqual(cards);
+    expect(moveLearningSpaceCardByOffset(cards, "c", 1)).toEqual(cards);
+    expect(moveLearningSpaceCardTo(cards, "a", "c").map((item) => item.id)).toEqual(["b", "c", "a"]);
+    expect(moveLearningSpaceCardTo(cards, "c", "a").map((item) => item.id)).toEqual(["c", "a", "b"]);
   });
 
   it("renders short label, display name and owner without using the slug as its title", () => {

@@ -10,8 +10,12 @@ const banners: Record<"admin" | "main" | "portfolio", StaticImageData> = {
   portfolio: portfolioBanner,
 };
 
-export function PageBanner({ variant }: { variant: keyof typeof banners }) {
+export function PageBanner({ variant, customSrc }: { variant: keyof typeof banners; customSrc?: string }) {
   return <div className={`page-banner page-banner-${variant}`} aria-hidden="true">
-    <Image src={banners[variant]} alt="" priority sizes="(max-width: 1120px) calc(100vw - 32px), 1080px" />
+    {customSrc
+      // The authenticated asset route must be requested by the browser, not by the Next image optimizer.
+      // eslint-disable-next-line @next/next/no-img-element
+      ? <img className="page-banner-custom-image" src={customSrc} alt="" width="1600" height="360" />
+      : <Image src={banners[variant]} alt="" priority sizes="(max-width: 1120px) calc(100vw - 32px), 1080px" />}
   </div>;
 }

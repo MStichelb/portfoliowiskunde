@@ -6,26 +6,35 @@ import { LearningSpaceCreateModal } from "@/app/components/learning-space-create
 import { PageBanner } from "@/app/components/page-banner";
 import { buildAdminLearningSpaceCards, providerLabel } from "@/lib/admin-learning-space-overview";
 import { requireAdminUser } from "@/lib/auth";
-import { getManageableLearningSpaceIds } from "@/lib/authorization";
+import { getAccessibleLearningSpaceIds, getManageableLearningSpaceIds } from "@/lib/authorization";
 import { getLearningSpaces, type LearningSpace } from "@/lib/repositories";
 import { listActiveSubjects } from "@/lib/subjects";
+import { orderLearningSpacesForUser } from "@/lib/user-learning-space-order";
 import { listManagedGroupMappings, listManagedMemberships } from "@/lib/user-management";
 
 import { createLearningSpaceAction } from "./actions";
+import { savePersonalLearningSpaceOrderAction } from "./learning-space-order-actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ smartschool?: string; create?: string; createError?: string; created?: string; error?: string }> }) {
   const user = await requireAdminUser();
-  const [allSpaces, activeManageableIds, memberships, groupMappings, subjects, params] = await Promise.all([
+  const [allSpaces, activeAccessibleIds, activeManageableIds, memberships, groupMappings, subjects, params] = await Promise.all([
     getLearningSpaces(),
+    getAccessibleLearningSpaceIds(user),
     getManageableLearningSpaceIds(user),
     listManagedMemberships(),
     listManagedGroupMappings(),
     listActiveSubjects(),
     searchParams,
   ]);
-  const cards = buildAdminLearningSpaceCards({ spaces: allSpaces, activeManageableIds, memberships, groupMappings, user });
+  const accessibleIds = new Set(activeAccessibleIds);
+  const accessibleSpaces = allSpaces.filter((space) => space.isActive && accessibleIds.has(space.id));
+  const orderedAccessibleSpaces = await orderLearningSpacesForUser(user.id, accessibleSpaces);
+  const orderedSpaces = [...orderedAccessibleSpaces, ...allSpaces.filter((space) => !accessibleIds.has(space.id))];
+  const cards = buildAdminLearningSpaceCards({ spaces: orderedSpaces, activeManageableIds, memberships, groupMappings, user });
+  const orderItems = orderedAccessibleSpaces
+    .map((space) => ({ id: space.id, shortLabel: space.shortLabel, displayName: space.name }));
   return <main className="page-shell admin-page">
     <PageBanner variant="admin" />
     <header className="admin-header">
@@ -36,7 +45,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     {params.smartschool && params.smartschool !== "linked" ? <p className="error-message" role="alert">De Smartschool-koppeling is niet gelukt.</p> : null}
     {params.created === "1" ? <p className="success-message" role="status">Leeromgeving toegevoegd.</p> : null}
     {adminErrorMessage(params.error) ? <p className="error-message" role="alert">{adminErrorMessage(params.error)}</p> : null}
-    <AdminLearningSpaceOverview cards={cards} />
+    <AdminLearningSpaceOverview cards={cards} orderItems={orderItems} orderAction={savePersonalLearningSpaceOrderAction} />
   </main>;
 }
 

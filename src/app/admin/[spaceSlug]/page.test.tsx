@@ -94,8 +94,10 @@ describe("LearningSpace portfolio management source status", () => {
       ...space,
       subjectId: "subject-fysica",
       subjectName: "Fysica",
-      collectionLabelSingular: "Oefening",
-      collectionLabelPlural: "Oefeningen",
+      collectionLabelSingular: "bunDEL",
+      collectionLabelPlural: "BUNDELS",
+      exerciseLabelSingular: "OpGavE",
+      exerciseLabelPlural: "OPGAVEN",
     });
     mocks.getAdminPortfolios.mockResolvedValue([{
       id: "portfolio-1", code: "1", title: "Krachten", themeId: null, effectiveStatus: "visible", sections: [],
@@ -103,8 +105,9 @@ describe("LearningSpace portfolio management source status", () => {
 
     const markup = renderToStaticMarkup(await LearningSpaceAdminPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
 
-    expect(markup).toContain("Overige Oefeningen");
-    expect(markup).toContain('aria-label="Oefening beheren"');
+    expect(markup).not.toContain("Overige Bundels");
+    expect(markup).toContain("Opgaven");
+    expect(markup).toContain('aria-label="Bundel beheren"');
     expect(markup).toContain('href="/admin/5/portfolio/portfolio-1"');
   });
 });
@@ -117,6 +120,7 @@ const teacher = {
 const space = {
   id: "space-5", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
   collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
   name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
   sortOrder: 5, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "onedrive" as const, localSourcePath: null,
   oneDriveDriveId: "drive", oneDriveFolderId: "folder", oneDriveFolderPath: "Portfolio/5", googleDriveFolderId: null,

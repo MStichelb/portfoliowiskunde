@@ -25,6 +25,7 @@ import {
   createLearningSpaceForOwner,
   createTheme,
   deleteTheme,
+  moveTheme,
   getLearningSpace,
   updateLearningSpace,
   updateTheme,
@@ -235,7 +236,7 @@ export async function createThemeAction(formData: FormData) {
   await requireSpaceManagement(learningSpaceId);
   const name = stringValue(formData, "name");
   if (!name || !await getLearningSpace(learningSpaceId)) throw new Error("Ongeldig thema.");
-  await createTheme(learningSpaceId, name, Number(stringValue(formData, "sortOrder")) || 0);
+  await createTheme(learningSpaceId, name);
   revalidatePath("/admin");
 }
 
@@ -245,7 +246,17 @@ export async function saveThemeAction(formData: FormData) {
   await requireSpaceManagement(learningSpaceId);
   const name = stringValue(formData, "name");
   if (!id || !name || !await getLearningSpace(learningSpaceId)) throw new Error("Ongeldig thema.");
-  await updateTheme(id, learningSpaceId, name, Number(stringValue(formData, "sortOrder")) || 0);
+  await updateTheme(id, learningSpaceId, name);
+  revalidatePath("/admin");
+}
+
+export async function moveThemeAction(formData: FormData) {
+  const id = stringValue(formData, "id");
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  await requireSpaceManagement(learningSpaceId);
+  const direction = z.enum(["up", "down"]).safeParse(stringValue(formData, "direction"));
+  if (!id || !direction.success || !await getLearningSpace(learningSpaceId)) throw new Error("Thema niet gevonden.");
+  await moveTheme(id, learningSpaceId, direction.data);
   revalidatePath("/admin");
 }
 
@@ -618,6 +629,8 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const subjectId = stringValue(formData, "subjectId");
   const collectionLabelSingular = formData.has("collectionLabelSingular") ? String(formData.get("collectionLabelSingular") ?? "") : undefined;
   const collectionLabelPlural = formData.has("collectionLabelPlural") ? String(formData.get("collectionLabelPlural") ?? "") : undefined;
+  const exerciseLabelSingular = formData.has("exerciseLabelSingular") ? String(formData.get("exerciseLabelSingular") ?? "") : undefined;
+  const exerciseLabelPlural = formData.has("exerciseLabelPlural") ? String(formData.get("exerciseLabelPlural") ?? "") : undefined;
   const name = stringValue(formData, "name");
   const slug = stringValue(formData, "slug").toLowerCase();
   const shortLabel = stringValue(formData, "shortLabel");
@@ -632,10 +645,13 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const oneDriveFolderPath = stringValue(formData, "oneDriveFolderPath");
   const googleDriveFolderId = stringValue(formData, "googleDriveFolderId");
   const googleDriveFolderLabel = stringValue(formData, "googleDriveFolderLabel");
+  const sortOrderValue = stringValue(formData, "sortOrder");
+  const sortOrder = sortOrderValue ? Number(sortOrderValue) : undefined;
   if (!subjectId) throw new SubjectSelectionError("Kies een vak.");
   if (!name || !shortLabel || description.length > 240 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik geldige algemene instellingen.");
   if (cardColorInput && !isHexColor(cardColorInput)) throw new Error("Kies een geldige kaartkleur.");
-  const common = { subjectId, collectionLabelSingular, collectionLabelPlural, name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder: Number(stringValue(formData, "sortOrder")) || 0, sourceType };
+  if (sortOrder !== undefined && (!Number.isFinite(sortOrder) || sortOrder < 0)) throw new Error("De interne volgorde is ongeldig.");
+  const common = { subjectId, collectionLabelSingular, collectionLabelPlural, exerciseLabelSingular, exerciseLabelPlural, name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder, sourceType };
   if (!hasRoleSources) {
     if (sourceType === "local") return { ...common, localSourcePath: localSourcePath ? path.resolve(localSourcePath) : null };
     if (sourceType === "onedrive") {

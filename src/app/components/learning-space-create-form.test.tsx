@@ -13,7 +13,9 @@ describe("LearningSpaceCreateForm", () => {
     expect(markup).not.toContain('<option value="subject-wiskunde" selected="">');
     expect(markup).toContain(">URL<");
     expect(markup).toContain("Dit wordt gebruikt in het webadres van deze leeromgeving.");
-    expect(markup).toContain("Dit bepaalt de volgorde in de navigatie.");
+    expect(markup).not.toContain("Sortering");
+    expect(markup).not.toContain('name="sortOrder"');
+    expect(markup).not.toContain('type="number"');
     expect(markup).toContain("Compacte naam voor de navigatie");
     expect(markup).not.toContain(">Algemeen</legend>");
     expect(markup).not.toContain(">Bronbestanden</legend>");
@@ -34,6 +36,6 @@ describe("LearningSpaceCreateForm", () => {
 });
 
 const subjects = [
-  { id: "subject-fysica", name: "Fysica", sortOrder: 5, isActive: true, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" },
-  { id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" },
+  { id: "subject-fysica", name: "Fysica", sortOrder: 5, isActive: true, usageCount: 0, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" },
+  { id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, usageCount: 0, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" },
 ];

@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   savePortfolioAction: vi.fn(),
   savePortfolioExternalLinksAction: vi.fn(),
   saveSectionPublicationAction: vi.fn(),
+  bulkTable: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
@@ -46,7 +47,7 @@ vi.mock("@/app/components/portfolio-external-links-form", () => ({
 }));
 vi.mock("@/app/components/publication-status", () => ({ PublicationStatus: () => <span>Status</span> }));
 vi.mock("@/app/components/section-publication-form", () => ({ SectionPublicationForm: () => <div>Onderdeelinstellingen</div> }));
-vi.mock("@/app/components/exercise-bulk-table", () => ({ ExerciseBulkTable: () => <div>Oefeningen</div> }));
+vi.mock("@/app/components/exercise-bulk-table", () => ({ ExerciseBulkTable: (props: unknown) => { mocks.bulkTable(props); return <div>Oefeningenlijst</div>; } }));
 
 import LearningSpacePortfolioAdminPage from "./page";
 
@@ -56,7 +57,7 @@ describe("LearningSpace portfolio settings page", () => {
     mocks.requireAdminUser.mockResolvedValue({ id: "teacher", role: "teacher", status: "active" });
     mocks.canManageLearningSpace.mockResolvedValue(true);
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue({
-      id: "space-5", slug: "5", collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+      id: "space-5", slug: "5", collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's", exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
     });
     mocks.getAdminPortfolio.mockResolvedValue({
       id: "portfolio-1", code: "1", title: "Goniometrie", detectedTitle: "Goniometrie", cardColor: "#E7EEF2",
@@ -90,12 +91,14 @@ describe("LearningSpace portfolio settings page", () => {
 
   it("renders custom terminology while keeping the internal portfolio route untouched", async () => {
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue({
-      id: "space-5", slug: "5", subjectName: "Fysica", collectionLabelSingular: "Practicum", collectionLabelPlural: "Practicums",
+      id: "space-5", slug: "5", subjectName: "Fysica", collectionLabelSingular: "bunDEL", collectionLabelPlural: "bUNDELS", exerciseLabelSingular: "OpGavE", exerciseLabelPlural: "OPGAVEN",
     });
 
     const markup = renderToStaticMarkup(await LearningSpacePortfolioAdminPage({ params: Promise.resolve({ spaceSlug: "5", id: "portfolio-1" }) }));
 
-    expect(markup).toContain("Practicum 1");
-    expect(markup).toContain("Practicum-instellingen");
+    expect(markup).toContain("Bundel 1");
+    expect(markup).toContain("Bundel-instellingen");
+    expect(markup).toContain("Opgaven");
+    expect(mocks.bulkTable).toHaveBeenCalledWith(expect.objectContaining({ exerciseLabelSingular: "OpGavE", exerciseLabelPlural: "OPGAVEN" }));
   });
 });

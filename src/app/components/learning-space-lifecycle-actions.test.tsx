@@ -12,6 +12,8 @@ const activeSpace: LearningSpace = {
   subjectIsActive: true,
   collectionLabelSingular: "Portfolio",
   collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening",
+  exerciseLabelPlural: "Oefeningen",
   name: "Actieve leeromgeving",
   slug: "actief",
   shortLabel: "A",

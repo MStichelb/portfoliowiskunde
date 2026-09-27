@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { requireSubjectManagement } from "@/lib/authorization";
-import { getDatabase, type DatabaseRow } from "@/lib/database";
+import { executeBatch, getDatabase, type DatabaseRow } from "@/lib/database";
 import type { AppUser } from "@/lib/identity";
 
 export interface Subject {
@@ -10,6 +10,7 @@ export interface Subject {
   name: string;
   sortOrder: number;
   isActive: boolean;
+  usageCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -39,21 +40,27 @@ export async function requireActiveSubject(subjectId: string): Promise<Subject> 
   return subject;
 }
 
-export async function createSubject(user: AppUser | null, input: { name: string; sortOrder: number }): Promise<Subject> {
+export async function createSubject(user: AppUser | null, input: { name: string; sortOrder?: number }): Promise<Subject> {
   requireSubjectManagement(user);
   const name = await validatedUniqueSubjectName(input.name);
-  const sortOrder = validSubjectSortOrder(input.sortOrder);
+  const sortOrder = input.sortOrder === undefined ? 0 : validSubjectSortOrder(input.sortOrder);
   const now = new Date().toISOString();
   const subject: Subject = {
     id: `subject-${randomUUID()}`,
     name,
     sortOrder,
     isActive: true,
+    usageCount: 0,
     createdAt: now,
     updatedAt: now,
   };
   try {
-    await (await getDatabase()).execute({
+    const database = await getDatabase();
+    await database.execute(input.sortOrder === undefined ? {
+      sql: `INSERT INTO subjects (id, name, sort_order, is_active, created_at, updated_at)
+        SELECT ?, ?, COALESCE(MAX(sort_order), 0) + 10, 1, ?, ? FROM subjects WHERE is_active = 1`,
+      args: [subject.id, subject.name, now, now],
+    } : {
       sql: `INSERT INTO subjects (id, name, sort_order, is_active, created_at, updated_at)
         VALUES (?, ?, ?, 1, ?, ?)`,
       args: [subject.id, subject.name, subject.sortOrder, now, now],
@@ -61,7 +68,7 @@ export async function createSubject(user: AppUser | null, input: { name: string;
   } catch (error) {
     rethrowSubjectNameConflict(error);
   }
-  return subject;
+  return input.sortOrder === undefined ? requireSubjectRecord(subject.id) : subject;
 }
 
 export async function renameSubject(user: AppUser | null, subjectId: string, value: string): Promise<void> {
@@ -89,24 +96,100 @@ export async function updateSubjectSortOrder(user: AppUser | null, subjectId: st
 }
 
 export async function setSubjectActive(user: AppUser | null, subjectId: string, active: boolean): Promise<void> {
+  if (active) return restoreSubject(user, subjectId);
+  return archiveSubject(user, subjectId);
+}
+
+export async function moveSubject(user: AppUser | null, subjectId: string, direction: "up" | "down"): Promise<boolean> {
+  requireSubjectManagement(user);
+  const subjects = await listSubjects(true);
+  const currentIndex = subjects.findIndex((subject) => subject.id === subjectId);
+  if (currentIndex < 0) return false;
+  const targetIndex = currentIndex + (direction === "up" ? -1 : 1);
+  if (targetIndex < 0 || targetIndex >= subjects.length) return false;
+  [subjects[currentIndex], subjects[targetIndex]] = [subjects[targetIndex], subjects[currentIndex]];
+  const now = new Date().toISOString();
+  await executeBatch(subjects.map((subject, index) => ({
+    sql: "UPDATE subjects SET sort_order = ?, updated_at = ? WHERE id = ? AND is_active = 1",
+    args: [(index + 1) * 10, now, subject.id],
+  })));
+  return true;
+}
+
+export async function archiveSubject(user: AppUser | null, subjectId: string): Promise<void> {
   requireSubjectManagement(user);
   await requireSubject(subjectId);
+  await (await getDatabase()).execute({ sql: "UPDATE subjects SET is_active = 0, updated_at = ? WHERE id = ?", args: [new Date().toISOString(), subjectId] });
+}
+
+export async function restoreSubject(user: AppUser | null, subjectId: string): Promise<void> {
+  requireSubjectManagement(user);
+  await requireSubject(subjectId);
+  const now = new Date().toISOString();
   await (await getDatabase()).execute({
-    sql: "UPDATE subjects SET is_active = ?, updated_at = ? WHERE id = ?",
-    args: [active ? 1 : 0, new Date().toISOString(), subjectId],
+    sql: `UPDATE subjects SET is_active = 1,
+      sort_order = (SELECT COALESCE(MAX(active_subject.sort_order), 0) + 10 FROM subjects AS active_subject WHERE active_subject.is_active = 1),
+      updated_at = ? WHERE id = ?`,
+    args: [now, subjectId],
   });
 }
 
+export async function permanentlyDeleteSubject(user: AppUser | null, subjectId: string): Promise<void> {
+  requireSubjectManagement(user);
+  const subject = await requireSubjectRecord(subjectId);
+  if (subject.isActive) throw new Error("Archiveer dit vak voordat je het definitief verwijdert.");
+  const database = await getDatabase();
+  const usageCount = await subjectUsageCount(subjectId);
+  if (usageCount > 0) throw new Error(subjectUsageMessage(usageCount));
+  try {
+    const deleted = await database.execute({
+      sql: `DELETE FROM subjects WHERE id = ? AND is_active = 0
+        AND NOT EXISTS (SELECT 1 FROM learning_spaces WHERE learning_spaces.subject_id = subjects.id)
+        RETURNING id`,
+      args: [subjectId],
+    });
+    if (deleted.rows[0]) return;
+  } catch (error) {
+    const currentUsageCount = await subjectUsageCount(subjectId);
+    if (currentUsageCount > 0) throw new Error(subjectUsageMessage(currentUsageCount));
+    throw error;
+  }
+  const currentUsageCount = await subjectUsageCount(subjectId);
+  if (currentUsageCount > 0) throw new Error(subjectUsageMessage(currentUsageCount));
+  throw new Error("Vak niet gevonden.");
+}
+
 async function listSubjects(activeOnly: boolean): Promise<Subject[]> {
-  const result = await (await getDatabase()).execute(`SELECT * FROM subjects
-    ${activeOnly ? "WHERE is_active = 1" : ""}
-    ORDER BY sort_order, LOWER(name), id`);
+  const result = await (await getDatabase()).execute(`SELECT subjects.*,
+    (SELECT COUNT(*) FROM learning_spaces WHERE learning_spaces.subject_id = subjects.id) AS usage_count
+    FROM subjects ${activeOnly ? "WHERE subjects.is_active = 1" : ""}
+    ORDER BY subjects.sort_order, LOWER(subjects.name), subjects.id`);
   return result.rows.map(subjectFromRow);
 }
 
 async function requireSubject(subjectId: string): Promise<void> {
   const result = await (await getDatabase()).execute({ sql: "SELECT 1 FROM subjects WHERE id = ?", args: [subjectId] });
   if (!result.rows[0]) throw new Error("Vak niet gevonden.");
+}
+
+async function requireSubjectRecord(subjectId: string): Promise<Subject> {
+  const result = await (await getDatabase()).execute({
+    sql: `SELECT subjects.*,
+      (SELECT COUNT(*) FROM learning_spaces WHERE learning_spaces.subject_id = subjects.id) AS usage_count
+      FROM subjects WHERE subjects.id = ?`,
+    args: [subjectId],
+  });
+  if (!result.rows[0]) throw new Error("Vak niet gevonden.");
+  return subjectFromRow(result.rows[0]);
+}
+
+async function subjectUsageCount(subjectId: string): Promise<number> {
+  const result = await (await getDatabase()).execute({ sql: "SELECT COUNT(*) AS usage_count FROM learning_spaces WHERE subject_id = ?", args: [subjectId] });
+  return Number(result.rows[0]?.usage_count ?? 0);
+}
+
+function subjectUsageMessage(count: number): string {
+  return `Dit vak wordt nog gebruikt door ${count} ${count === 1 ? "leeromgeving" : "leeromgevingen"}.`;
 }
 
 async function validatedUniqueSubjectName(value: string, excludeSubjectId?: string): Promise<string> {
@@ -133,6 +216,7 @@ function subjectFromRow(row: DatabaseRow): Subject {
     name: String(row.name),
     sortOrder: Number(row.sort_order),
     isActive: Number(row.is_active) === 1,
+    usageCount: Number(row.usage_count ?? 0),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };

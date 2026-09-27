@@ -46,6 +46,9 @@ describe("LearningSpace subjects", () => {
       expect.objectContaining({ collection_label_singular: "Portfolio", collection_label_plural: "Portfolio's" }),
     ]);
     expect((await upgraded.execute("SELECT version FROM schema_migrations WHERE version = '044_learning_space_collection_terminology'")).rows).toHaveLength(1);
+    expect((await upgraded.execute("SELECT DISTINCT exercise_label_singular, exercise_label_plural FROM learning_spaces")).rows).toEqual([
+      expect.objectContaining({ exercise_label_singular: "Oefening", exercise_label_plural: "Oefeningen" }),
+    ]);
     expect((await upgraded.execute("PRAGMA foreign_key_list(learning_spaces)")).rows).toContainEqual(
       expect.objectContaining({ table: "subjects", from: "subject_id", to: "id" }),
     );
@@ -94,6 +97,25 @@ describe("LearningSpace subjects", () => {
       collectionLabelPlural: "Oefeningen",
     })).rejects.toThrow("label in voor het enkelvoud");
     expect(await getLearningSpace(space.id)).toMatchObject({ collectionLabelSingular: "Oefening", collectionLabelPlural: "Oefeningen" });
+  });
+
+  it("trims custom exercise labels and rejects empty labels without changing stored terminology", async () => {
+    await useFreshDatabase();
+    const space = (await getLearningSpace("space-5"))!;
+
+    await updateLearningSpace(space.id, {
+      ...inputFor(space, space.subjectId),
+      exerciseLabelSingular: "  Vraag  ",
+      exerciseLabelPlural: "  Vragen  ",
+    });
+    expect(await getLearningSpace(space.id)).toMatchObject({ exerciseLabelSingular: "Vraag", exerciseLabelPlural: "Vragen" });
+
+    await expect(updateLearningSpace(space.id, {
+      ...inputFor((await getLearningSpace(space.id))!, space.subjectId),
+      exerciseLabelSingular: "   ",
+      exerciseLabelPlural: "Vragen",
+    })).rejects.toThrow("label in voor het enkelvoud");
+    expect(await getLearningSpace(space.id)).toMatchObject({ exerciseLabelSingular: "Vraag", exerciseLabelPlural: "Vragen" });
   });
 });
 

@@ -1043,6 +1043,43 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE learning_spaces ADD COLUMN collection_label_plural TEXT NOT NULL DEFAULT 'Portfolio''s'",
     ],
   },
+  {
+    version: "045_user_learning_space_preferences",
+    statements: [
+      `CREATE TABLE user_learning_space_preferences (
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        sort_order INTEGER NOT NULL CHECK(sort_order >= 0),
+        PRIMARY KEY(user_id, learning_space_id)
+      )`,
+      "CREATE INDEX user_learning_space_preferences_order_index ON user_learning_space_preferences(user_id, sort_order, learning_space_id)",
+    ],
+  },
+  {
+    version: "046_learning_space_exercise_terminology",
+    statements: [
+      "ALTER TABLE learning_spaces ADD COLUMN exercise_label_singular TEXT NOT NULL DEFAULT 'Oefening'",
+      "ALTER TABLE learning_spaces ADD COLUMN exercise_label_plural TEXT NOT NULL DEFAULT 'Oefeningen'",
+    ],
+  },
+  {
+    version: "047_learning_space_header_assets",
+    statements: [
+      `CREATE TABLE learning_space_header_assets (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL UNIQUE REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        learning_space_source_id TEXT NOT NULL REFERENCES learning_space_sources(id) ON DELETE CASCADE,
+        source_id TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        extension TEXT NOT NULL CHECK(extension IN ('png', 'jpg')),
+        last_modified_at TEXT,
+        source_version TEXT,
+        indexed_at TEXT NOT NULL
+      )`,
+      "CREATE INDEX learning_space_header_assets_source_index ON learning_space_header_assets(learning_space_source_id)",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

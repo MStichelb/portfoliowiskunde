@@ -9,7 +9,8 @@ import type { IndexedPortfolio } from "@/lib/domain";
 import { listErrorReportExerciseIdentities, normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
 import { ErrorReportRateLimitError } from "@/lib/error-report-rate-limit";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
-import { normalizeCollectionTerminology } from "@/lib/collection-terminology";
+import type { IndexedLearningSpaceHeader } from "@/lib/learning-space-header";
+import { normalizeCollectionTerminology, normalizeExerciseTerminology } from "@/lib/collection-terminology";
 import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRelativePath } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { ExerciseNotePosition } from "@/lib/exercise-note";
@@ -199,6 +200,8 @@ export interface LearningSpace {
   subjectIsActive: boolean;
   collectionLabelSingular: string;
   collectionLabelPlural: string;
+  exerciseLabelSingular: string;
+  exerciseLabelPlural: string;
   name: string;
   slug: string;
   shortLabel: string;
@@ -258,12 +261,14 @@ export interface LearningSpaceInput {
   subjectId: string;
   collectionLabelSingular?: string;
   collectionLabelPlural?: string;
+  exerciseLabelSingular?: string;
+  exerciseLabelPlural?: string;
   name: string;
   slug: string;
   shortLabel: string;
   description?: string;
   cardColor?: string;
-  sortOrder: number;
+  sortOrder?: number;
   sourceType: StorageSourceType;
   storageConnectionId?: string | null;
   localSourcePath?: string | null;
@@ -328,6 +333,7 @@ function learningSpaceFromRow(row: DatabaseRow, sources: LearningSpaceSource[]):
   return {
     id: text(row, "id"), subjectId: text(row, "subject_id"), subjectName: text(row, "subject_name"), subjectIsActive: bool(row.subject_is_active),
     collectionLabelSingular: text(row, "collection_label_singular"), collectionLabelPlural: text(row, "collection_label_plural"),
+    exerciseLabelSingular: text(row, "exercise_label_singular"), exerciseLabelPlural: text(row, "exercise_label_plural"),
     name: text(row, "name"), slug: text(row, "slug"), shortLabel: text(row, "short_label"),
     description: text(row, "description"), cardColor: text(row, "card_color"),
     sortOrder: Number(row.sort_order), isActive: bool(row.is_active) && archivedAt === null, archivedAt,
@@ -416,6 +422,7 @@ export async function createLearningSpaceForOwner(input: LearningSpaceInput, own
 async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUserId: string | null): Promise<LearningSpace> {
   await requireActiveSubject(input.subjectId);
   const terminology = normalizeCollectionTerminology({ singular: input.collectionLabelSingular, plural: input.collectionLabelPlural });
+  const exerciseTerminology = normalizeExerciseTerminology({ singular: input.exerciseLabelSingular, plural: input.exerciseLabelPlural });
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
   const template = await getDefaultSourceProfileTemplate();
@@ -424,9 +431,9 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
   const profileClone = prepareSourceProfileTemplateClone({ ...template, name: profileName }, id, profileOwnerUserId, now);
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
   const mirror = input.mirrorSource ?? null;
-  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, subject_id, collection_label_singular, collection_label_plural, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
+  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, subject_id, collection_label_singular, collection_label_plural, exercise_label_singular, exercise_label_plural, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
     local_source_path, onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, google_drive_folder_id, google_drive_folder_label, created_at, updated_at)
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM subjects WHERE id = ? AND is_active = 1`, args: [id, input.subjectId, terminology.singular, terminology.plural, input.name, input.slug, input.shortLabel, input.description ?? DEFAULT_LEARNING_SPACE_DESCRIPTION, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder,
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM learning_spaces)), 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM subjects WHERE id = ? AND is_active = 1`, args: [id, input.subjectId, terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, input.name, input.slug, input.shortLabel, input.description ?? DEFAULT_LEARNING_SPACE_DESCRIPTION, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder ?? null,
       legacyStorageProvider(primary.providerType), primary.providerType, primary.localSourcePath ?? null, primary.oneDriveDriveId ?? null,
       primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now, input.subjectId] }];
   statements.push(...profileClone.statements);
@@ -455,6 +462,10 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
     { singular: input.collectionLabelSingular, plural: input.collectionLabelPlural },
     { singular: existing.collectionLabelSingular, plural: existing.collectionLabelPlural },
   );
+  const exerciseTerminology = normalizeExerciseTerminology(
+    { singular: input.exerciseLabelSingular, plural: input.exerciseLabelPlural },
+    { singular: existing.exerciseLabelSingular, plural: existing.exerciseLabelPlural },
+  );
   const primary = preserveStorageConnection(input.primarySource ?? sourceFromLegacyInput(input), existing.primarySource);
   const mirror = input.mirrorSource === undefined ? sourceToInput(existing.mirrorSource) : preserveStorageConnection(input.mirrorSource, existing.mirrorSource);
   if (existing.mirrorSource?.isActive && !mirror) throw new Error("Schakel eerst terug naar de primaire bron voordat je de actieve mirror verwijdert.");
@@ -467,10 +478,10 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
   const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET subject_id = CASE
       WHEN ? = ? OR EXISTS (SELECT 1 FROM subjects WHERE id = ? AND is_active = 1) THEN ?
       ELSE '__invalid-subject__' END,
-    collection_label_singular = ?, collection_label_plural = ?, name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
+    collection_label_singular = ?, collection_label_plural = ?, exercise_label_singular = ?, exercise_label_plural = ?, name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
     local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, google_drive_folder_id = ?, google_drive_folder_label = ?, updated_at = ? WHERE id = ?`,
     args: [input.subjectId, existing.subjectId, input.subjectId, input.subjectId,
-      terminology.singular, terminology.plural, input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder,
+      terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder ?? existing.sortOrder,
       legacyStorageProvider(active.providerType), active.providerType,
       local?.localSourcePath ?? existing.localSourcePath,
       oneDrive?.oneDriveDriveId ?? existing.oneDriveDriveId, oneDrive?.oneDriveFolderId ?? existing.oneDriveFolderId,
@@ -603,15 +614,38 @@ export async function getThemes(learningSpaceId: string): Promise<Theme[]> {
   return result.rows.map((row) => ({ id: text(row, "id"), learningSpaceId: text(row, "learning_space_id"), name: text(row, "name"), sortOrder: Number(row.sort_order) }));
 }
 
-export async function createTheme(learningSpaceId: string, name: string, sortOrder: number): Promise<void> {
+export async function createTheme(learningSpaceId: string, name: string, sortOrder?: number): Promise<void> {
   const database = await getDatabase();
   const now = new Date().toISOString();
-  await database.execute({ sql: "INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", args: [randomUUID(), learningSpaceId, name, sortOrder, now, now] });
+  if (sortOrder !== undefined) {
+    await database.execute({ sql: "INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", args: [randomUUID(), learningSpaceId, name, sortOrder, now, now] });
+    return;
+  }
+  await database.execute({
+    sql: `INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at)
+      SELECT ?, ?, ?, COALESCE(MAX(sort_order), 0) + 10, ?, ? FROM themes WHERE learning_space_id = ?`,
+    args: [randomUUID(), learningSpaceId, name, now, now, learningSpaceId],
+  });
 }
 
-export async function updateTheme(id: string, learningSpaceId: string, name: string, sortOrder: number): Promise<void> {
+export async function updateTheme(id: string, learningSpaceId: string, name: string): Promise<void> {
   const database = await getDatabase();
-  await database.execute({ sql: "UPDATE themes SET name = ?, sort_order = ?, updated_at = ? WHERE id = ? AND learning_space_id = ?", args: [name, sortOrder, new Date().toISOString(), id, learningSpaceId] });
+  await database.execute({ sql: "UPDATE themes SET name = ?, updated_at = ? WHERE id = ? AND learning_space_id = ?", args: [name, new Date().toISOString(), id, learningSpaceId] });
+}
+
+export async function moveTheme(id: string, learningSpaceId: string, direction: "up" | "down"): Promise<boolean> {
+  const themes = await getThemes(learningSpaceId);
+  const currentIndex = themes.findIndex((theme) => theme.id === id);
+  if (currentIndex < 0) return false;
+  const targetIndex = currentIndex + (direction === "up" ? -1 : 1);
+  if (targetIndex < 0 || targetIndex >= themes.length) return false;
+  [themes[currentIndex], themes[targetIndex]] = [themes[targetIndex], themes[currentIndex]];
+  const now = new Date().toISOString();
+  await executeBatch(themes.map((theme, index) => ({
+    sql: "UPDATE themes SET sort_order = ?, updated_at = ? WHERE id = ? AND learning_space_id = ?",
+    args: [(index + 1) * 10, now, theme.id, learningSpaceId],
+  })));
+  return true;
 }
 
 export async function deleteTheme(id: string, learningSpaceId: string): Promise<void> {
@@ -731,6 +765,7 @@ export interface PersistIndexOptions {
   sourceId?: string;
   activateSourceId?: string;
   mirrorCompletedAt?: string;
+  header?: IndexedLearningSpaceHeader | null;
 }
 
 export async function persistIndex(
@@ -780,6 +815,22 @@ export async function persistIndex(
     { sql: "UPDATE solution_assets SET is_indexed = 0 WHERE variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [spaceId] },
     { sql: "UPDATE source_resource_assets SET is_indexed = 0 WHERE learning_space_id = ?", args: [spaceId] },
   ];
+
+  if (Object.hasOwn(options, "header")) {
+    statements.push({ sql: "DELETE FROM learning_space_header_assets WHERE learning_space_id = ?", args: [spaceId] });
+    if (options.header) {
+      if (!source || source.role !== "primary") throw new Error("De LearningSpace-header moet uit de primaire bron komen.");
+      statements.push({
+        sql: `INSERT INTO learning_space_header_assets
+          (id, learning_space_id, learning_space_source_id, source_id, relative_path, file_name, extension,
+            last_modified_at, source_version, indexed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [stableId("learning-space-header", spaceId), spaceId, source.id, options.header.sourceId,
+          options.header.relativePath, options.header.fileName, options.header.extension,
+          options.header.lastModifiedAt, options.header.sourceVersion, startedAt],
+      });
+    }
+  }
 
   for (const portfolio of portfolios) {
     const portfolioId = portfolioIds.get(portfolio.code) ?? (legacyDefaultSpaceId === spaceId ? `portfolio-${portfolio.code}` : stableId("portfolio", spaceId, portfolio.code));

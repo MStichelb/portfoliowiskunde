@@ -16,6 +16,7 @@ import {
 import { compareSourceManifests, sourceManifestFromIndex, type SourceComparison, type SourceManifestEntry } from "@/lib/source-comparison";
 import { SourceAccessError, SourceConfigurationError } from "@/lib/source-errors";
 import { getActiveSourceProfileConfigForLearningSpace } from "@/lib/source-profiles";
+import { detectLearningSpaceHeader, type IndexedLearningSpaceHeader } from "@/lib/learning-space-header";
 import { getStorageProviderForSource } from "@/lib/storage";
 import { indexSource } from "@/lib/storage/portfolio-indexer";
 import type { StorageProvider } from "@/lib/storage/provider";
@@ -94,6 +95,7 @@ export async function switchLearningSpaceSource(
       sourceId: inspected.source.id,
       activateSourceId: inspected.source.id,
       mirrorCompletedAt: inspected.mirrorCompletedAt ?? undefined,
+      ...(inspected.header === undefined ? {} : { header: inspected.header }),
     });
     return { ...preview, switched: true, confirmationRequired: false };
   } catch (error) {
@@ -120,6 +122,7 @@ async function inspectSwitchTarget(
   portfolios: IndexedPortfolio[];
   mirrorCompletedAt: string | null;
   comparison: SourceComparison;
+  header: IndexedLearningSpaceHeader | null | undefined;
 }> {
   const [space, source] = await Promise.all([
     (dependencies.getSpace ?? getLearningSpace)(learningSpaceId),
@@ -135,6 +138,7 @@ async function inspectSwitchTarget(
   const readiness = configured.provider.getReadinessMetadata?.();
   const sourceProfileConfig = await getActiveSourceProfileConfigForLearningSpace(learningSpaceId);
   const portfolios = await (dependencies.index ?? indexSource)(configured.provider, sourceProfileConfig);
+  const header = source.role === "primary" ? await detectLearningSpaceHeader(configured.provider) : undefined;
   const [currentManifest, currentWarnings] = await Promise.all([
     (dependencies.getCurrentManifest ?? getIndexedSourceManifest)(learningSpaceId),
     dependencies.getCurrentWarnings
@@ -149,6 +153,7 @@ async function inspectSwitchTarget(
   return {
     source,
     portfolios,
+    header,
     mirrorCompletedAt: readiness?.mirrorCompletedAt ?? null,
     comparison: compareSourceManifests(currentManifest, sourceManifestFromIndex(portfolios), currentWarnings, targetWarnings),
   };

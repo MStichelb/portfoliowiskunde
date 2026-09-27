@@ -3,13 +3,14 @@ import Link from "next/link";
 
 import { dismissHandledReportNotificationsAction } from "@/app/student-error-report-actions";
 import type { StudentHandledReportNotification } from "@/lib/student-error-reports";
+import { formatTerminologyLabel } from "@/lib/collection-terminology";
 
 export function StudentHandledReportNotificationBanner({ notification }: { notification: StudentHandledReportNotification | null }) {
   if (!notification) return null;
   const singular = notification.count === 1;
   const message = singular
     ? notification.exerciseCode
-      ? `Je melding over oefening ${notification.exerciseCode} werd behandeld. Bedankt voor je scherpe blik!`
+      ? `Je melding over ${formatTerminologyLabel(notification.exerciseLabelSingular ?? "Oefening", "inline")} ${notification.exerciseCode} werd behandeld. Bedankt voor je scherpe blik!`
       : "Je foutmelding werd behandeld. Bedankt voor je scherpe blik!"
     : `${notification.count} van je meldingen werden behandeld. Bedankt voor je scherpe blik!`;
 

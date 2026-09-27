@@ -10,6 +10,7 @@ import { SolutionVariantHeading } from "@/app/components/solution-variant-headin
 import { isNextPrefetchRequest, preparePublicIndex } from "@/lib/public-index";
 import { requirePublicLearningSpaceAccess } from "@/lib/learning-space-access";
 import { getLearningSpaceBySlug, getVisibleExercise, type ExerciseResource } from "@/lib/repositories";
+import { formatTerminologyLabel } from "@/lib/collection-terminology";
 
 export const dynamic = "force-dynamic";
 
@@ -30,8 +31,8 @@ export default async function LearningSpaceExercisePage({ params }: { params: Pr
   if (reportVariants.length === 0) reportVariants.push("standard");
 
   return <main className="page-shell solution-page">
-    <Link href={`/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}`} className="secondary-button compact-back-button"><ArrowLeft size={17} aria-hidden />Terug naar {space.collectionLabelSingular}</Link>
-    <header className="exercise-page-heading"><p className="eyebrow">{space.collectionLabelSingular} {exercise.portfolioCode} • {exercise.portfolioTitle}</p><h1>Oefening {exercise.code}</h1><p>{exercise.sectionTitle}</p></header>
+    <Link href={`/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}`} className="secondary-button compact-back-button"><ArrowLeft size={17} aria-hidden />Terug naar {formatTerminologyLabel(space.collectionLabelSingular, "inline")}</Link>
+    <header className="exercise-page-heading"><p className="eyebrow">{formatTerminologyLabel(space.collectionLabelSingular, "standalone")} {exercise.portfolioCode} • {exercise.portfolioTitle}</p><h1>{formatTerminologyLabel(space.exerciseLabelSingular, "standalone")} {exercise.code}</h1><p>{exercise.sectionTitle}</p></header>
     <ExerciseSolutionWithNote customNote={exercise.customNote} noteLabel={exercise.noteLabel} notePosition={exercise.notePosition}>
       {resources.map((resource) => <Variant resource={resource} spaceSlug={space.slug} key={resource.id} />)}
     </ExerciseSolutionWithNote>

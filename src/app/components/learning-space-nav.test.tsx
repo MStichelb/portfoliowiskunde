@@ -8,6 +8,7 @@ import { LearningSpaceNav } from "./learning-space-nav";
 const base: LearningSpace = {
   id: "space-5", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
   collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
   name: "Vijfde jaar wiskunde", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
   sortOrder: 50, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "local", localSourcePath: null,
   oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: null,
@@ -47,11 +48,12 @@ describe("LearningSpace admin navigation", () => {
 
   it("uses per-space terminology without deriving it from the subject", () => {
     const markup = renderToStaticMarkup(<LearningSpaceNav
-      current={{ ...base, subjectId: "subject-fysica", subjectName: "Fysica", collectionLabelSingular: "Practicum", collectionLabelPlural: "Practicums" }}
+      current={{ ...base, subjectId: "subject-fysica", subjectName: "Fysica", collectionLabelSingular: "bunDEL", collectionLabelPlural: "bUNDELS" }}
       section="portfolios"
     />);
 
-    expect(markup).toContain("Practicums");
+    expect(markup).toContain("Bundels");
+    expect(markup).not.toContain("bUNDELS");
     expect(markup).not.toContain("Portfolio&#x27;s");
     expect(markup).toContain('href="/admin/5"');
   });

@@ -41,4 +41,12 @@ describe("PortfolioErrorReportForm", () => {
     expect(markup).toContain('name="exerciseCode"');
     expect(markup).toContain("Melding versturen");
   });
+
+  it("uses the configured exercise label in the input and suggestions", () => {
+    const markup = renderToStaticMarkup(<PortfolioErrorReportForm portfolioId="portfolio-1" documents={["assignment"]} exercises={[standardExercise]} exerciseLabelSingular="vraag" initiallyOpen />);
+
+    expect(markup).toContain("Vraag");
+    expect(markup).toContain('<option value="5">Vraag 5</option>');
+    expect(markup).not.toContain("Oefening 5");
+  });
 });

@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthorizationError } from "./authorization";
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { createUser, type AppUser } from "./identity";
-import { createSubject, listActiveSubjects, listSubjectsForManagement, renameSubject, setSubjectActive, updateSubjectSortOrder } from "./subjects";
+import { archiveSubject, createSubject, listActiveSubjects, listSubjectsForManagement, moveSubject, permanentlyDeleteSubject, renameSubject, restoreSubject, setSubjectActive, updateSubjectSortOrder } from "./subjects";
 
 let temporaryDirectory: string | undefined;
 let superadmin: AppUser;
@@ -36,7 +36,7 @@ describe("subjects", () => {
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '042_subjects'")).rows).toHaveLength(1);
     expect((await database.execute("PRAGMA index_list(subjects)")).rows.map((row) => row.name)).toContain("subjects_normalized_name_unique");
     expect(await listSubjectsForManagement(superadmin)).toEqual([
-      expect.objectContaining({ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true }),
+      expect.objectContaining({ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, usageCount: 2 }),
     ]);
   });
 
@@ -53,6 +53,30 @@ describe("subjects", () => {
     ]);
     await expect(updateSubjectSortOrder(superadmin, physics.id, -1)).rejects.toThrow("nul of groter");
     await expect(updateSubjectSortOrder(superadmin, physics.id, 1.5)).rejects.toThrow("geheel getal");
+  });
+
+  it("places new subjects at the bottom of the active list without a supplied order", async () => {
+    await createSubject(superadmin, { name: "Fysica", sortOrder: 40 });
+
+    const chemistry = await createSubject(superadmin, { name: "Chemie" });
+
+    expect(chemistry).toMatchObject({ name: "Chemie", sortOrder: 50, isActive: true, usageCount: 0 });
+    expect((await listActiveSubjects()).map((subject) => subject.name)).toEqual(["Wiskunde", "Fysica", "Chemie"]);
+  });
+
+  it("moves only active subjects and rejects both active-list boundaries", async () => {
+    const physics = await createSubject(superadmin, { name: "Fysica" });
+    const chemistry = await createSubject(superadmin, { name: "Chemie" });
+
+    await expect(moveSubject(superadmin, physics.id, "up")).resolves.toBe(true);
+    expect((await listActiveSubjects()).map((subject) => subject.name)).toEqual(["Fysica", "Wiskunde", "Chemie"]);
+    await expect(moveSubject(superadmin, physics.id, "down")).resolves.toBe(true);
+    expect((await listActiveSubjects()).map((subject) => subject.name)).toEqual(["Wiskunde", "Fysica", "Chemie"]);
+    await expect(moveSubject(superadmin, "subject-wiskunde", "up")).resolves.toBe(false);
+    await expect(moveSubject(superadmin, chemistry.id, "down")).resolves.toBe(false);
+
+    await archiveSubject(superadmin, physics.id);
+    await expect(moveSubject(superadmin, physics.id, "up")).resolves.toBe(false);
   });
 
   it("keeps normalized names unique in preflight and directly in the database", async () => {
@@ -107,8 +131,31 @@ describe("subjects", () => {
       expect.objectContaining({ name: "Wiskunde", isActive: true }),
     ]);
 
-    await setSubjectActive(superadmin, physics.id, true);
-    expect((await listActiveSubjects()).map((subject) => subject.name)).toEqual(["Fysica", "Wiskunde"]);
+    await restoreSubject(superadmin, physics.id);
+    expect((await listActiveSubjects()).map((subject) => subject.name)).toEqual(["Wiskunde", "Fysica"]);
+    expect((await listActiveSubjects())[1].sortOrder).toBe(20);
+  });
+
+  it("blocks hard delete for linked subjects without changing LearningSpaces", async () => {
+    const database = await getDatabase();
+    const before = (await database.execute("SELECT id, subject_id FROM learning_spaces ORDER BY id")).rows;
+    await archiveSubject(superadmin, "subject-wiskunde");
+
+    await expect(permanentlyDeleteSubject(superadmin, "subject-wiskunde"))
+      .rejects.toThrow("Dit vak wordt nog gebruikt door 2 leeromgevingen.");
+
+    expect((await database.execute("SELECT id, subject_id FROM learning_spaces ORDER BY id")).rows).toEqual(before);
+    expect((await database.execute("SELECT id FROM subjects WHERE id = 'subject-wiskunde'")).rows).toHaveLength(1);
+    expect((await database.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
+  });
+
+  it("permanently deletes an archived subject only when it is unused", async () => {
+    const chemistry = await createSubject(superadmin, { name: "Chemie" });
+    await archiveSubject(superadmin, chemistry.id);
+
+    await expect(permanentlyDeleteSubject(superadmin, chemistry.id)).resolves.toBeUndefined();
+
+    expect((await listSubjectsForManagement(superadmin)).some((subject) => subject.id === chemistry.id)).toBe(false);
   });
 
   it.each([
@@ -120,6 +167,10 @@ describe("subjects", () => {
     await expect(renameSubject(actor(), "subject-wiskunde", "Rekenen")).rejects.toBeInstanceOf(AuthorizationError);
     await expect(updateSubjectSortOrder(actor(), "subject-wiskunde", 20)).rejects.toBeInstanceOf(AuthorizationError);
     await expect(setSubjectActive(actor(), "subject-wiskunde", false)).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(moveSubject(actor(), "subject-wiskunde", "down")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(archiveSubject(actor(), "subject-wiskunde")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(restoreSubject(actor(), "subject-wiskunde")).rejects.toBeInstanceOf(AuthorizationError);
+    await expect(permanentlyDeleteSubject(actor(), "subject-wiskunde")).rejects.toBeInstanceOf(AuthorizationError);
   });
 });
 

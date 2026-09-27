@@ -8,7 +8,7 @@ import { listErrorReportExerciseIdentities } from "@/lib/error-report-exercise-c
 import { isNextPrefetchRequest, preparePublicIndex } from "@/lib/public-index";
 import { requirePublicLearningSpaceAccess } from "@/lib/learning-space-access";
 import { getLearningSpaceBySlug, getStudentPortfolio, type ErrorReportDocumentKind } from "@/lib/repositories";
-import { miscellaneousCollectionLabel } from "@/lib/collection-terminology";
+import { formatTerminologyLabel } from "@/lib/collection-terminology";
 
 export const dynamic = "force-dynamic";
 
@@ -25,5 +25,8 @@ export default async function LearningSpacePortfolioPage({ params }: { params: P
     return [resource.documentKind === "final-solutions" ? "final_solutions" : resource.documentKind];
   });
   const reportExercises = listErrorReportExerciseIdentities(portfolio.sections);
-  return <main className="page-shell student-page"><header className="page-header"><p className="eyebrow">{portfolio.themeName ?? miscellaneousCollectionLabel(space.collectionLabelPlural)} • {space.collectionLabelSingular} {portfolio.code}</p><h1>{portfolio.title}</h1><PortfolioDocumentsWithMessage portfolioId={portfolio.id} spaceSlug={space.slug} resources={portfolio.globalResources} customText={portfolio.customText} customTextPosition={portfolio.customTextPosition} /></header>{portfolio.sections.map((section) => <section className="section" key={section.id}><h2>{section.order}. {section.title}</h2><ol className="exercise-grid">{section.exercises.map((exercise) => <li key={exercise.id}>{exercise.visible ? <Link href={`/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(exercise.id)}`} className="exercise-link">Oefening {exercise.code}</Link> : <span className="exercise-hidden">Oefening {exercise.code}<small>Niet beschikbaar</small></span>}</li>)}</ol></section>)}{user ? <PortfolioErrorReportForm portfolioId={portfolio.id} documents={documents} exercises={reportExercises} /> : null}</main>;
+  const themePrefix = portfolio.themeName ? `${portfolio.themeName} • ` : "";
+  const collectionLabel = formatTerminologyLabel(space.collectionLabelSingular, "standalone");
+  const exerciseLabel = formatTerminologyLabel(space.exerciseLabelSingular, "standalone");
+  return <main className="page-shell student-page"><header className="page-header"><p className="eyebrow">{themePrefix}{collectionLabel} {portfolio.code}</p><h1>{portfolio.title}</h1><PortfolioDocumentsWithMessage portfolioId={portfolio.id} spaceSlug={space.slug} resources={portfolio.globalResources} customText={portfolio.customText} customTextPosition={portfolio.customTextPosition} /></header>{portfolio.sections.map((section) => <section className="section" key={section.id}><h2>{section.order}. {section.title}</h2><ol className="exercise-grid">{section.exercises.map((exercise) => <li key={exercise.id}>{exercise.visible ? <Link href={`/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(exercise.id)}`} className="exercise-link">{exerciseLabel} {exercise.code}</Link> : <span className="exercise-hidden">{exerciseLabel} {exercise.code}<small>Niet beschikbaar</small></span>}</li>)}</ol></section>)}{user ? <PortfolioErrorReportForm portfolioId={portfolio.id} documents={documents} exercises={reportExercises} exerciseLabelSingular={space.exerciseLabelSingular} /> : null}</main>;
 }
