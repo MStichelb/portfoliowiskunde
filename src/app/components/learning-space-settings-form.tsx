@@ -5,11 +5,12 @@ import { CircleHelp } from "lucide-react";
 import Link from "next/link";
 
 import { saveLearningSpaceEditorPermissionsAction, type AdminActionState } from "@/app/admin/actions";
-import { COLLECTION_LABEL_MAX_LENGTH, DEFAULT_COLLECTION_LABEL_PLURAL, DEFAULT_COLLECTION_LABEL_SINGULAR, DEFAULT_EXERCISE_LABEL_PLURAL, DEFAULT_EXERCISE_LABEL_SINGULAR } from "@/lib/collection-terminology";
+import { COLLECTION_LABEL_MAX_LENGTH, DEFAULT_COLLECTION_LABEL_PLURAL, DEFAULT_COLLECTION_LABEL_SINGULAR, DEFAULT_EXERCISE_LABEL_PLURAL, DEFAULT_EXERCISE_LABEL_SHORT, DEFAULT_EXERCISE_LABEL_SINGULAR, EXERCISE_LABEL_SHORT_MAX_LENGTH } from "@/lib/collection-terminology";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
 import type { Subject } from "@/lib/subjects";
 import { LearningSpaceLifecycleActions } from "./learning-space-lifecycle-actions";
 import { EditorPermissionsToggle } from "./editor-permissions-toggle";
+import { ExerciseLevelPresentationSettings } from "./exercise-level-presentation-settings";
 
 export function LearningSpaceSettingsForm({
   space,
@@ -44,6 +45,7 @@ export function LearningSpaceSettingsForm({
         <label className="field-full">Beschrijving<textarea name="description" defaultValue={space.description} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
       </div>
       <div className="settings-card-actions settings-card-lifecycle-actions">
+        <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
         <LearningSpaceLifecycleActions
           space={space}
           showManage={false}
@@ -53,7 +55,6 @@ export function LearningSpaceSettingsForm({
           deleteConfirmTitle="Leeromgeving permanent verwijderen?"
           deleteConfirmText="Deze actie kan niet ongedaan worden gemaakt. De leeromgeving en bijhorende configuratie worden permanent verwijderd."
         />
-        <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
       </div>
     </section>
 
@@ -78,8 +79,10 @@ export function LearningSpaceSettingsForm({
         <div className="settings-grid">
           <label>Enkelvoud<input name="exerciseLabelSingular" defaultValue={space.exerciseLabelSingular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SINGULAR}</small></label>
           <label>Meervoud<input name="exerciseLabelPlural" defaultValue={space.exerciseLabelPlural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_PLURAL}</small></label>
+          <label>Verkorte naam<input name="exerciseLabelShort" defaultValue={space.exerciseLabelShort ?? DEFAULT_EXERCISE_LABEL_SHORT} maxLength={EXERCISE_LABEL_SHORT_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SHORT} - Laat leeg om enkel het nummer te tonen.</small></label>
         </div>
       </div>
+      <ExerciseLevelPresentationSettings initialPresentation={space.levelPresentation} />
       <div className="settings-card-actions"><button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button></div>
     </section>
 

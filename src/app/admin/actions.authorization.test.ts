@@ -132,6 +132,46 @@ describe("moveThemeAction authorization", () => {
     mocks.getLearningSpace.mockResolvedValue({ id: "space-5" });
   });
 
+  it("validates and forwards LearningSpace level presentation settings", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher", "owner-1"));
+    mocks.requireLearningSpaceConfiguration.mockResolvedValue(undefined);
+    const form = validForm("owner-space");
+    form.set("id", "space-5");
+    for (const [level, count] of [["opwarmer", "1"], ["basis", "2"], ["uitdaging", "3"], ["verdieping", "1"]]) {
+      form.set(`levelName_${level}`, level === "basis" ? "Kern" : level);
+      form.set(`levelSymbol_${level}`, "circle");
+      form.set(`levelCount_${level}`, count);
+      form.set(`levelColor_${level}`, "#ABCDEF");
+      if (level === "basis" || level === "verdieping") form.set(`levelShowPublicBackground_${level}`, "true");
+    }
+
+    await expect(saveLearningSpaceAction({ error: null }, form)).rejects.toThrow("REDIRECT:/admin/owner-space/instellingen?saved=1");
+    expect(mocks.updateLearningSpace).toHaveBeenCalledWith("space-5", expect.objectContaining({
+      levelPresentation: {
+        opwarmer: { displayName: "opwarmer", symbolId: "circle", count: 1, color: "#ABCDEF", showPublicBackground: false },
+        basis: { displayName: "Kern", symbolId: "circle", count: 2, color: "#ABCDEF", showPublicBackground: true },
+        uitdaging: { displayName: "uitdaging", symbolId: "circle", count: 3, color: "#ABCDEF", showPublicBackground: false },
+        verdieping: { displayName: "verdieping", symbolId: "circle", count: 1, color: "#ABCDEF", showPublicBackground: true },
+      },
+    }));
+  });
+
+  it("rejects an invalid LearningSpace level presentation before persistence", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher", "owner-1"));
+    mocks.requireLearningSpaceConfiguration.mockResolvedValue(undefined);
+    const form = validForm("owner-space");
+    form.set("id", "space-5");
+    for (const level of ["opwarmer", "basis", "uitdaging", "verdieping"]) {
+      form.set(`levelName_${level}`, level);
+      form.set(`levelSymbol_${level}`, "star");
+      form.set(`levelCount_${level}`, level === "basis" ? "5" : "1");
+      form.set(`levelColor_${level}`, "#ABCDEF");
+    }
+
+    await expect(saveLearningSpaceAction({ error: null }, form)).resolves.toEqual({ error: "Kies voor Basis een aantal van 1 tot en met 4." });
+    expect(mocks.updateLearningSpace).not.toHaveBeenCalled();
+  });
+
   it("requires the existing LearningSpace management permission", async () => {
     mocks.requireLearningSpaceManagement.mockRejectedValueOnce(new Error("Geen beheerrechten"));
     const form = themeMoveForm("theme-1", "space-5", "up");

@@ -4,7 +4,7 @@ import { requireLearningSpaceManagement } from "@/lib/authorization";
 import type { DatabaseRow } from "@/lib/database";
 import { getDatabase } from "@/lib/database";
 import type { AppUser } from "@/lib/identity";
-import { portfolioCodeFromRelativePath } from "@/lib/parser";
+import { relativePathBelongsToDirectory } from "@/lib/parser";
 import type { LearningSpaceSourceRole, StorageSourceType } from "@/lib/repositories";
 
 export type SourceStatusAssessmentState = "no_problem_detected" | "attention_required" | "unknown";
@@ -206,7 +206,7 @@ export async function getLearningSpaceSourceStatus(
     }),
     database.execute({
       sql: `SELECT id, COALESCE(portfolio_code, code) AS portfolio_code,
-        COALESCE(title_override, title) AS portfolio_title
+        COALESCE(title_override, title) AS portfolio_title, relative_path
         FROM portfolios
         WHERE learning_space_id = ? AND archived_at IS NULL`,
       args: [learningSpaceId],
@@ -397,28 +397,22 @@ function unknownMissingContent(): UnknownMissingSourceContent {
 }
 
 function knownWarnings(finishedAt: string, rows: DatabaseRow[], portfolioRows: DatabaseRow[]): LearningSpaceSourceWarnings {
-  const portfoliosByCode = new Map<string, DatabaseRow[]>();
-  for (const portfolio of portfolioRows) {
-    const code = text(portfolio.portfolio_code);
-    portfoliosByCode.set(code, [...(portfoliosByCode.get(code) ?? []), portfolio]);
-  }
   const items = rows.map((row): LearningSpaceSourceStatusWarning => ({
     severity: row.severity === "info" ? "info" : row.severity === "warning" ? "warning" : "unknown",
     relativePath: text(row.relative_path),
     message: text(row.message),
-    portfolio: warningPortfolio(row, portfoliosByCode),
+    portfolio: warningPortfolio(row, portfolioRows),
   }));
   return { state: "known", basedOnSuccessfulSyncAt: finishedAt, count: items.length, items };
 }
 
-function warningPortfolio(row: DatabaseRow, portfoliosByCode: Map<string, DatabaseRow[]>): LearningSpaceSourceStatusWarning["portfolio"] {
-  const code = portfolioCodeFromRelativePath(text(row.relative_path));
-  if (!code) return null;
-  const matches = portfoliosByCode.get(code) ?? [];
+function warningPortfolio(row: DatabaseRow, portfolios: DatabaseRow[]): LearningSpaceSourceStatusWarning["portfolio"] {
+  const warningPath = text(row.relative_path);
+  const matches = portfolios.filter((portfolio) => relativePathBelongsToDirectory(warningPath, text(portfolio.relative_path)));
   if (matches.length !== 1) return null;
   return {
     id: text(matches[0].id),
-    code,
+    code: text(matches[0].portfolio_code),
     title: text(matches[0].portfolio_title),
   };
 }

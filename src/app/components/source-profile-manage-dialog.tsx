@@ -29,10 +29,11 @@ export function SourceProfileManageDialog({
   const [globalResourcesDirty, setGlobalResourcesDirty] = useState(false);
   const [exerciseScannerDirty, setExerciseScannerDirty] = useState(false);
   const [exerciseResourcesDirty, setExerciseResourcesDirty] = useState(false);
+  const [levelRecognitionDirty, setLevelRecognitionDirty] = useState(false);
   const [closePrompt, setClosePrompt] = useState(false);
   const [sharedPrompt, setSharedPrompt] = useState(false);
   const [splitTarget, setSplitTarget] = useState("");
-  const dirty = name !== profile.name || globalResourcesDirty || exerciseScannerDirty || exerciseResourcesDirty;
+  const dirty = name !== profile.name || globalResourcesDirty || exerciseScannerDirty || exerciseResourcesDirty || levelRecognitionDirty;
   const shared = profile.usageCount > 1;
   const router = useRouter();
 
@@ -120,13 +121,16 @@ const leave = useCallback(() => {
 
           <SourceProfileExerciseConfigurationEditors
             key={profile.id}
+            portfolioScanner={profile.config.scanner.portfolio}
             scanner={profile.config.scanner.exercise}
             resources={profile.config.exerciseResources}
+            levelRecognition={profile.config.levelRecognition}
             ownerIdField="sourceProfileId"
             ownerId={profile.id}
             editorKey={profile.id}
             onScannerDirtyChange={setExerciseScannerDirty}
             onResourcesDirtyChange={setExerciseResourcesDirty}
+            onLevelRecognitionDirtyChange={setLevelRecognitionDirty}
           />
 
         </div>

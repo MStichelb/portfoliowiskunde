@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { ErrorReportForm } from "@/app/components/error-report-form";
+import { ExerciseLevelBadge } from "@/app/components/exercise-level-badge";
 import { ExerciseSolutionWithNote } from "@/app/components/exercise-solution-with-note";
 import { SolutionImage } from "@/app/components/solution-image";
 import { SolutionVariantHeading } from "@/app/components/solution-variant-heading";
@@ -32,7 +33,7 @@ export default async function LearningSpaceExercisePage({ params }: { params: Pr
 
   return <main className="page-shell solution-page">
     <Link href={`/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}`} className="secondary-button compact-back-button"><ArrowLeft size={17} aria-hidden />Terug naar {formatTerminologyLabel(space.collectionLabelSingular, "inline")}</Link>
-    <header className="exercise-page-heading"><p className="eyebrow">{formatTerminologyLabel(space.collectionLabelSingular, "standalone")} {exercise.portfolioCode} • {exercise.portfolioTitle}</p><h1>{formatTerminologyLabel(space.exerciseLabelSingular, "standalone")} {exercise.code}</h1><p>{exercise.sectionTitle}</p></header>
+    <header className="exercise-page-heading"><p className="eyebrow">{formatTerminologyLabel(space.collectionLabelSingular, "standalone")} {exercise.portfolioCode} • {exercise.portfolioTitle}</p><div className="public-exercise-title">{exercise.effectiveLevel ? <ExerciseLevelBadge level={exercise.effectiveLevel} presentation={space.levelPresentation} context="public" /> : null}<h1>{formatTerminologyLabel(space.exerciseLabelSingular, "standalone")} {exercise.code}</h1></div><p>{exercise.sectionTitle}</p></header>
     <ExerciseSolutionWithNote customNote={exercise.customNote} noteLabel={exercise.noteLabel} notePosition={exercise.notePosition}>
       {resources.map((resource) => <Variant resource={resource} spaceSlug={space.slug} key={resource.id} />)}
     </ExerciseSolutionWithNote>

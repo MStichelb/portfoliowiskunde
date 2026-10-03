@@ -1,10 +1,13 @@
 import type {
+  ExerciseLevelRecognitionConfig,
   ExerciseMode,
   ExerciseResourceConfig,
   ExerciseResourceDirectoryContextRecognition,
   ExerciseResourceFileContextRecognition,
   ExerciseScannerConfig,
+  PortfolioScannerConfig,
 } from "@/lib/source-profile-config";
+import { DEFAULT_PORTFOLIO_SCANNER_CONFIG } from "@/lib/source-profile-config";
 
 export type SourceStructurePreviewNode = {
   kind: "folder" | "file";
@@ -25,21 +28,40 @@ type ExerciseContext = "file" | "directory";
 export function buildSourceStructurePreview(
   scanner: ExerciseScannerConfig,
   resources: readonly ExerciseResourceConfig[],
+  levelRecognition: ExerciseLevelRecognitionConfig = { method: "none" },
+  portfolioScanner: PortfolioScannerConfig = DEFAULT_PORTFOLIO_SCANNER_CONFIG,
 ): SourceStructurePreview {
-  const root: SourceStructurePreviewNode = { kind: "folder", name: "Portfolio 1", children: [] };
+  const portfolioMarker = safeStem(portfolioScanner.marker, "Portfolio");
+  const compactMarker = portfolioMarker.length === 1;
+  const root: SourceStructurePreviewNode = {
+    kind: "folder",
+    name: `${portfolioMarker}${compactMarker ? "1_" : "1A - "}Stelsels oplossen`,
+    children: [],
+  };
+  const sectionOne = ensureFolder(root, "1 Inleiding");
+  const sectionTwo = ensureFolder(root, "2 - Methode van Gauss-Jordan");
+  ensureFolder(root, "3_Toepassingen");
   const notes = new Set<string>();
-  const exerciseOne = exerciseToken(scanner, 1);
-  const exerciseTwo = exerciseToken(scanner, 2);
+  const exerciseOne = exampleExerciseName(scanner, 1, "basis", levelRecognition);
+  const exerciseTwo = exampleExerciseName(scanner, 2, "uitdaging", levelRecognition);
+  const exerciseOneRoot = exampleExerciseRoot(sectionOne, "basis", levelRecognition);
+  const exerciseTwoRoot = exampleExerciseRoot(sectionTwo, "uitdaging", levelRecognition);
 
   if (scanner.exerciseMode === "files") {
-    addFileExercise(root, exerciseOne, resources, notes);
+    addFileExercise(exerciseOneRoot, exerciseOne, resources, notes, levelRecognition, "basis");
   } else if (scanner.exerciseMode === "directories") {
-    addDirectoryExercise(root, exerciseOne, resources, notes);
+    addDirectoryExercise(exerciseOneRoot, exerciseOne, resources, notes, levelRecognition, "basis");
   } else {
-    addFileExercise(root, exerciseOne, resources, notes);
-    addDirectoryExercise(root, exerciseTwo, resources, notes);
+    addFileExercise(exerciseOneRoot, exerciseOne, resources, notes, levelRecognition, "basis");
+    addDirectoryExercise(exerciseTwoRoot, exerciseTwo, resources, notes, levelRecognition, "uitdaging");
     notes.add("In deze stand mogen beide vormen door elkaar voorkomen. Je hoeft dus niet elke oefening zowel als bestand als map te maken.");
   }
+
+  addPath(root, [{ kind: "file", name: "header.png" }]);
+  notes.add(`Geldige portfolionamen zijn bijvoorbeeld “${portfolioMarker} 1A Stelsels”, “${portfolioMarker} 1A - Stelsels”, “${portfolioMarker} 1A_Stelsels” en “${portfolioMarker}1A-Stelsels”.`);
+  notes.add("Onderdelen staan rechtstreeks onder het portfolio en beginnen met een nummer; een structurele map ‘Uitwerkingen’ is niet nodig.");
+
+  addLevelRecognitionNote(notes, levelRecognition, resources);
 
   if (resources.some((resource) => resource.location.scope === "alongside_and_subdirectory")) {
     notes.add("Bij ‘direct … of in een submap’ toont dit voorbeeld één geldige plaats. De andere ingestelde plaats is ook toegestaan.");
@@ -58,6 +80,8 @@ function addFileExercise(
   exerciseName: string,
   resources: readonly ExerciseResourceConfig[],
   notes: Set<string>,
+  levelRecognition: ExerciseLevelRecognitionConfig,
+  level: "basis" | "uitdaging",
 ) {
   addPath(root, [{ kind: "file", name: `${exerciseName}.png` }]);
 
@@ -65,17 +89,20 @@ function addFileExercise(
     const recognition = resource.recognition.file;
     if (!recognition) continue;
     const extension = preferredExtension(resource);
-    const fileName = fileContextName(exerciseName, resource, recognition, extension);
+    const fileName = withResourceLevelMarker(
+      fileContextName(exerciseName, resource, recognition, extension),
+      resource.id,
+      level,
+      levelRecognition,
+    );
     if (!fileName) continue;
 
-    if (resource.location.scope === "subdirectory") {
+    if (resource.location.scope !== "alongside_exercise") {
       addPath(root, [
         { kind: "folder", name: resource.location.subdirectory },
         { kind: "file", name: fileName },
       ]);
     } else {
-      // For the combined location we deliberately show the direct variant. The
-      // accompanying note explains that the configured subdirectory is valid too.
       addPath(root, [{ kind: "file", name: fileName }]);
     }
   }
@@ -90,6 +117,8 @@ function addDirectoryExercise(
   exerciseName: string,
   resources: readonly ExerciseResourceConfig[],
   notes: Set<string>,
+  levelRecognition: ExerciseLevelRecognitionConfig,
+  level: "basis" | "uitdaging",
 ) {
   const exerciseFolder = ensureFolder(root, exerciseName);
 
@@ -97,10 +126,15 @@ function addDirectoryExercise(
     const recognition = resource.recognition.directory;
     if (!recognition) continue;
     const extension = preferredExtension(resource);
-    const fileName = directoryContextName(exerciseName, resource, recognition, extension);
+    const fileName = withResourceLevelMarker(
+      directoryContextName(exerciseName, resource, recognition, extension),
+      resource.id,
+      level,
+      levelRecognition,
+    );
     if (!fileName) continue;
 
-    if (resource.location.scope === "subdirectory") {
+    if (resource.location.scope !== "alongside_exercise") {
       addPath(exerciseFolder, [
         { kind: "folder", name: resource.location.subdirectory },
         { kind: "file", name: fileName },
@@ -163,6 +197,72 @@ function preferredExtension(resource: ExerciseResourceConfig): string {
 function exerciseToken(scanner: ExerciseScannerConfig, number: number): string {
   if (scanner.numberLocation === "start") return String(number);
   return `${scanner.marker || "Oef"}${number}`;
+}
+
+function exampleExerciseRoot(
+  root: SourceStructurePreviewNode,
+  level: "basis" | "uitdaging",
+  recognition: ExerciseLevelRecognitionConfig,
+): SourceStructurePreviewNode {
+  if (recognition.method !== "subdirectory") return root;
+  const folderName = safeStem(recognition.mapping[level], "");
+  return folderName ? ensureFolder(root, folderName) : root;
+}
+
+function exampleExerciseName(
+  scanner: ExerciseScannerConfig,
+  number: number,
+  level: "basis" | "uitdaging",
+  recognition: ExerciseLevelRecognitionConfig,
+): string {
+  const name = exerciseToken(scanner, number);
+  if (recognition.method !== "marker" || recognition.source.type !== "exercise_directory") return name;
+  const marker = levelMarker(recognition, level);
+  return marker ? `${name}-${marker}` : name;
+}
+
+function withResourceLevelMarker(
+  fileName: string | null,
+  resourceId: string,
+  level: "basis" | "uitdaging",
+  recognition: ExerciseLevelRecognitionConfig,
+): string | null {
+  if (!fileName || recognition.method !== "marker" || recognition.source.type !== "exercise_resource" || recognition.source.resourceId !== resourceId) {
+    return fileName;
+  }
+  const marker = levelMarker(recognition, level);
+  if (!marker) return fileName;
+  const extensionIndex = fileName.lastIndexOf(".");
+  if (extensionIndex < 1) return `${fileName}-${marker}`;
+  return `${fileName.slice(0, extensionIndex)}-${marker}${fileName.slice(extensionIndex)}`;
+}
+
+function levelMarker(
+  recognition: Extract<ExerciseLevelRecognitionConfig, { method: "marker" }>,
+  level: "basis" | "uitdaging",
+): string {
+  const code = safeStem(recognition.mapping[level], "");
+  if (!code) return "";
+  return recognition.convention === "prefixed_code" ? `${safeStem(recognition.prefix, "")}${code}` : code;
+}
+
+function addLevelRecognitionNote(
+  notes: Set<string>,
+  recognition: ExerciseLevelRecognitionConfig,
+  resources: readonly ExerciseResourceConfig[],
+) {
+  if (recognition.method === "none") return;
+  if (recognition.method === "subdirectory") {
+    notes.add("De ingestelde submapnaam bepaalt in dit voorbeeld automatisch het interne oefeningniveau.");
+    return;
+  }
+  if (recognition.source.type === "exercise_directory") {
+    notes.add("De ingestelde code in de naam van de oefeningsmap bepaalt automatisch het interne oefeningniveau.");
+    return;
+  }
+  const sourceResourceId = recognition.source.resourceId;
+  const label = resources.find((resource) => resource.id === sourceResourceId)?.label ?? "het gekozen onderdeel";
+  notes.add(`De ingestelde code in de bestandsnaam van “${label}” bepaalt automatisch het interne oefeningniveau.`);
 }
 
 function modeLabel(mode: ExerciseMode): string {

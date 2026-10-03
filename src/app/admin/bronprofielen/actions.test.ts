@@ -159,12 +159,14 @@ describe("central source profile actions", () => {
     data.set("sourceProfileId", "profile-1");
     data.set("name", " Nieuwe naam ");
     data.set("resourcesJson", JSON.stringify([{ id: "manual", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic" }]));
+    data.set("portfolioScannerJson", JSON.stringify({ marker: "Bundel" }));
     data.set("exerciseScannerJson", JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.exercise));
     data.set("exerciseResourcesJson", JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources));
     data.set("saveMode", "all");
     await expect(saveManagedSourceProfileAction(data)).rejects.toThrow("saved=profileUpdated");
     expect(mocks.saveManagedSourceProfile).toHaveBeenLastCalledWith(expect.objectContaining({ id: "superadmin" }), "profile-1", expect.objectContaining({
       name: "Nieuwe naam",
+      portfolioScanner: { marker: "Bundel" },
       exerciseScanner: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.exercise,
       exerciseResources: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources,
       mode: "all",
@@ -191,6 +193,7 @@ describe("central source profile actions", () => {
     data.set("sourceProfileId", "profile-1");
     data.set("name", "Profiel");
     data.set("resourcesJson", JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources));
+    data.set("portfolioScannerJson", JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.portfolio));
     data.set("exerciseScannerJson", JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.exercise));
     data.set("exerciseResourcesJson", JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources));
     data.set("saveMode", "all");
@@ -249,6 +252,7 @@ describe("central source profile actions", () => {
   it("saves template metadata and both resource groups through one top-level save action", async () => {
     const form = templateForm("template-1", " Nieuwe naam ", " Nieuwe beschrijving ");
     form.set("resourcesJson", JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources));
+    form.set("portfolioScannerJson", JSON.stringify({ marker: "H" }));
     form.set("exerciseScannerJson", JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.exercise));
     form.set("exerciseResourcesJson", JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources));
 
@@ -260,8 +264,10 @@ describe("central source profile actions", () => {
         name: "Nieuwe naam",
         description: "Nieuwe beschrijving",
         resources: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources,
+        portfolioScanner: { marker: "H" },
         exerciseScanner: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.exercise,
         exerciseResources: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources,
+        levelRecognition: { method: "none" },
       },
     );
   });

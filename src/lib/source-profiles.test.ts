@@ -48,8 +48,11 @@ describe("source profile config", () => {
     expect(() => parseStoredSourceProfileConfig(2, JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG))).toThrow();
   });
 
-  it("normalizes legacy V1 config without resource lists to both legacy resource definitions", () => {
+  it("normalizes stored V1 config and supplies the current portfolio scanner", () => {
     expect(parseSourceProfileConfig({ configVersion: 1, scanner: { convention: "legacy_portfolio_v1" } })).toEqual(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    expect(parseSourceProfileConfig({ configVersion: 1, scanner: { portfolio: { marker: " Bundel " } } }).scanner.portfolio)
+      .toEqual({ marker: "Bundel" });
+    expect(() => parseSourceProfileConfig({ configVersion: 1, scanner: { portfolio: { marker: "" } } })).toThrow("portfoliomarker");
     expect(LEGACY_GLOBAL_RESOURCE_CONFIGS.map((resource) => resource.label)).toEqual(["Opgaven", "Hints", "Eindoplossingen"]);
     expect(LEGACY_EXERCISE_RESOURCE_CONFIGS.map((resource) => resource.label)).toEqual(["Uitwerking", "Alternatieve uitwerking"]);
   });

@@ -11,6 +11,8 @@ import { adminExerciseNoteReturnHref } from "@/lib/admin-routes";
 import { CollectionTerminologyError } from "@/lib/collection-terminology";
 import { requireLearningSpaceConfiguration, requireLearningSpaceCreation, requireLearningSpaceManagement } from "@/lib/authorization";
 import { exerciseNoteSchema } from "@/lib/exercise-note";
+import { EXERCISE_LEVELS, validateExerciseLevelOverrideInput, type ExerciseLevel, type ExerciseLevelOverrideInput } from "@/lib/exercise-level";
+import { validateExerciseLevelPresentation } from "@/lib/exercise-level-presentation";
 import { errorReportTeacherResponseSchema } from "@/lib/error-report-teacher-response";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { parseBrusselsDateTime, type ChildVisibilityMode, type PortfolioVisibilityMode } from "@/lib/publication";
@@ -32,6 +34,7 @@ import {
   setExercisePublication,
   setExerciseVisibility,
   setExerciseAlternativeVisibility,
+  setExerciseLevelOverride,
   setExerciseNote,
   setPortfolioPublication,
   setPortfolioTitle,
@@ -419,6 +422,31 @@ export async function saveExerciseNoteAction(formData: FormData) {
   redirect(adminExerciseNoteReturnHref(space.slug, exercise.portfolioId, exercise.id, stringValue(formData, "returnContext")));
 }
 
+export async function saveExerciseLevelAction(formData: FormData) {
+  const id = stringValue(formData, "id");
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  await requireSpaceManagement(learningSpaceId);
+  const exercise = id ? await getAdminExercise(id) : null;
+  if (!exercise || exercise.learningSpaceId !== learningSpaceId) throw new Error("Oefening niet gevonden.");
+
+  const choice = stringValue(formData, "levelChoice");
+  let input: ExerciseLevelOverrideInput;
+  if (choice === "inherit" || choice === "none") input = validateExerciseLevelOverrideInput({ mode: choice });
+  else if (choice.startsWith("level:")) input = validateExerciseLevelOverrideInput({ mode: "level", level: choice.slice("level:".length) });
+  else throw new Error("Ongeldige modus voor het oefeningniveau.");
+
+  await setExerciseLevelOverride(exercise.id, input);
+  const space = await getLearningSpace(learningSpaceId);
+  if (!space) throw new Error("Leeromgeving niet gevonden.");
+  revalidatePath("/admin");
+  revalidatePath(`/admin/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}`);
+  revalidatePath(`/admin/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(exercise.id)}`);
+  if (stringValue(formData, "returnContext") === "portfolio") {
+    redirect(`/admin/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}#exercise-${encodeURIComponent(exercise.id)}`);
+  }
+  redirect(`/admin/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(exercise.id)}?levelSaved=1`);
+}
+
 export async function deleteExerciseNoteAction(formData: FormData) {
   const id = stringValue(formData, "id");
   if (!id) throw new Error("Oefening niet gevonden.");
@@ -631,6 +659,7 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const collectionLabelPlural = formData.has("collectionLabelPlural") ? String(formData.get("collectionLabelPlural") ?? "") : undefined;
   const exerciseLabelSingular = formData.has("exerciseLabelSingular") ? String(formData.get("exerciseLabelSingular") ?? "") : undefined;
   const exerciseLabelPlural = formData.has("exerciseLabelPlural") ? String(formData.get("exerciseLabelPlural") ?? "") : undefined;
+  const exerciseLabelShort = formData.has("exerciseLabelShort") ? String(formData.get("exerciseLabelShort") ?? "") : undefined;
   const name = stringValue(formData, "name");
   const slug = stringValue(formData, "slug").toLowerCase();
   const shortLabel = stringValue(formData, "shortLabel");
@@ -647,11 +676,20 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const googleDriveFolderLabel = stringValue(formData, "googleDriveFolderLabel");
   const sortOrderValue = stringValue(formData, "sortOrder");
   const sortOrder = sortOrderValue ? Number(sortOrderValue) : undefined;
+  const levelPresentation = formData.has("levelSymbol_opwarmer")
+    ? validateExerciseLevelPresentation(Object.fromEntries(EXERCISE_LEVELS.map((level: ExerciseLevel) => [level, {
+      displayName: stringValue(formData, `levelName_${level}`),
+      symbolId: stringValue(formData, `levelSymbol_${level}`),
+      count: stringValue(formData, `levelCount_${level}`),
+      color: stringValue(formData, `levelColor_${level}`),
+      showPublicBackground: formData.has(`levelShowPublicBackground_${level}`),
+    }])))
+    : undefined;
   if (!subjectId) throw new SubjectSelectionError("Kies een vak.");
   if (!name || !shortLabel || description.length > 240 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik geldige algemene instellingen.");
   if (cardColorInput && !isHexColor(cardColorInput)) throw new Error("Kies een geldige kaartkleur.");
   if (sortOrder !== undefined && (!Number.isFinite(sortOrder) || sortOrder < 0)) throw new Error("De interne volgorde is ongeldig.");
-  const common = { subjectId, collectionLabelSingular, collectionLabelPlural, exerciseLabelSingular, exerciseLabelPlural, name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder, sourceType };
+  const common = { subjectId, collectionLabelSingular, collectionLabelPlural, exerciseLabelSingular, exerciseLabelPlural, exerciseLabelShort, name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder, sourceType, levelPresentation };
   if (!hasRoleSources) {
     if (sourceType === "local") return { ...common, localSourcePath: localSourcePath ? path.resolve(localSourcePath) : null };
     if (sourceType === "onedrive") {

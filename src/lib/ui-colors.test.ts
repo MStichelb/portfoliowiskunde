@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cardColorStyle, DEFAULT_PORTFOLIO_COLOR, isHexColor, normalizeHexColor } from "./ui-colors";
+import { cardColorStyle, DEFAULT_PORTFOLIO_COLOR, deriveLightColor, isHexColor, normalizeHexColor } from "./ui-colors";
 
 describe("configurable card colors", () => {
   it("normalizes supported six-digit hex colors", () => {
@@ -12,5 +12,9 @@ describe("configurable card colors", () => {
     expect(normalizeHexColor("red", DEFAULT_PORTFOLIO_COLOR)).toBe(DEFAULT_PORTFOLIO_COLOR);
     expect(isHexColor("#fff")).toBe(false);
     expect(cardColorStyle("invalid", DEFAULT_PORTFOLIO_COLOR)["--card-color"]).toBe(DEFAULT_PORTFOLIO_COLOR);
+  });
+
+  it("derives the same soft 20 percent accent tint used by colored cards", () => {
+    expect(deriveLightColor("#123456", DEFAULT_PORTFOLIO_COLOR)).toBe("#D0D6DD");
   });
 });

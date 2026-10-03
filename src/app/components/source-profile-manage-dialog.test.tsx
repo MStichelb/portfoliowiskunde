@@ -16,8 +16,12 @@ const action = async () => undefined;
 
 describe("SourceProfileManageDialog", () => {
   it("uses one sticky save flow for the profile name, global resources and exercise resources", () => {
+    const config = {
+      ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
+      scanner: { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner, portfolio: { marker: "Bundel" } },
+    };
     const markup = renderToStaticMarkup(<SourceProfileManageDialog
-      profile={profile({ usageCount: 1, usages: [usage("space-5", "5WIS")] })}
+      profile={profile({ config, usageCount: 1, usages: [usage("space-5", "5WIS")] })}
       saveAction={action}
       archiveAction={action}
     />);
@@ -27,6 +31,11 @@ describe("SourceProfileManageDialog", () => {
     expect(markup).toContain("Globale documenten");
     expect(markup).toContain('name="resourcesJson"');
     expect(markup).toContain("Oefeningen herkennen");
+    expect(markup).toContain("Portfoliomarker");
+    expect(markup).toContain('name="portfolioScannerJson"');
+    expect(markup).toContain('value="Bundel"');
+    expect(markup).toContain("Bundel1A - Stelsels oplossen");
+    expect(markup).toContain("1 Inleiding");
     expect(markup).toContain('name="exerciseScannerJson"');
     expect(markup).toContain("Onderdelen per oefening");
     expect(markup).toContain('name="exerciseResourcesJson"');

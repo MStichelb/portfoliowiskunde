@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { LearningSpace } from "@/lib/repositories";
+import { DEFAULT_EXERCISE_LEVEL_PRESENTATION } from "@/lib/exercise-level-presentation";
 
 import { LearningSpaceSettingsForm } from "./learning-space-settings-form";
 
@@ -14,6 +15,7 @@ const space: LearningSpace = {
   localSourcePath: "C:\\Portfolio", oneDriveDriveId: null, oneDriveFolderId: null,
   oneDriveFolderPath: null, googleDriveFolderId: null, googleDriveFolderLabel: null,
   sources: [], activeSourceId: null, primarySource: null, mirrorSource: null,
+  levelPresentation: DEFAULT_EXERCISE_LEVEL_PRESENTATION,
 };
 const subjects = [{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, usageCount: 0, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" }];
 
@@ -41,6 +43,26 @@ describe("LearningSpaceSettingsForm", () => {
     expect(markup).toContain("Om een eigen afbeelding bovenaan het portfolio weer te geven, plaats je de gewenste afbeelding als &#x27;header.png&#x27; of &#x27;header.jpg&#x27; in de bronmap van de leeromgeving. Zo niet wordt de standaardheader gebruikt.");
     expect(markup).toContain("Benaming portfolio&#x27;s");
     expect(markup).toContain("Benaming oefeningen");
+    expect(markup).toContain("Niveaus");
+    expect(markup).toContain('name="levelSymbol_opwarmer"');
+    expect(markup).toContain('name="levelCount_verdieping"');
+    expect(markup).toContain('name="levelName_basis" value="Basis"');
+    expect(markup).toContain('type="color" name="levelColor_uitdaging" value="#C00000"');
+    const publicBackgroundInput = markup.match(/<input[^>]*name="levelShowPublicBackground_opwarmer"[^>]*>/)?.[0] ?? "";
+    expect(publicBackgroundInput).toContain('type="checkbox"');
+    expect(publicBackgroundInput).toContain('value="true"');
+    expect(publicBackgroundInput).not.toContain('checked=""');
+    expect(markup).toContain(">Achtergrond<input");
+    expect(markup.match(/exercise-level-badge-symbol-only/g)).toHaveLength(4);
+    expect(markup).toContain('aria-label="Herstel standaardinstellingen voor Opwarmer"');
+    expect(markup).not.toContain("exercise-level-presentation-heading");
+    expect(markup).not.toContain("<strong>Opwarmer</strong>");
+    expect(markup).toContain("★");
+    expect(markup).toContain("★★");
+    expect(markup).toContain("★★★");
+    expect(markup).toContain("◆");
+    expect(markup).toContain('<option value="large_circle">⬤ Grote bol</option>');
+    expect(markup.indexOf('name="levelName_opwarmer"')).toBeLessThan(markup.indexOf('aria-label="Herstel standaardinstellingen voor Opwarmer"'));
     expect(markup).toContain('name="collectionLabelSingular" value="Portfolio"');
     expect(markup).toContain('name="collectionLabelPlural" value="Portfolio&#x27;s"');
     expect(markup).toContain('name="exerciseLabelSingular" value="Oefening"');
@@ -68,6 +90,40 @@ describe("LearningSpaceSettingsForm", () => {
     expect(markup).not.toContain("Herstellen");
     expect(markup).not.toContain("Leeromgeving verwijderen");
     expect((markup.match(/<form/g) ?? [])).toHaveLength(1);
+  });
+
+  it("uses the save flow as implicit Enter submit instead of the archive action", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} subjects={subjects} canPermanentlyDelete action={() => ({ error: null })} />);
+    const firstSubmit = markup.match(/<button[^>]*type="submit"[^>]*>[^<]*/)?.[0] ?? "";
+
+    expect(firstSubmit).toContain("Instellingen opslaan");
+    expect(firstSubmit).not.toContain("formAction");
+    expect(markup.indexOf(firstSubmit)).toBeLessThan(markup.indexOf("Archiveren"));
+    expect((markup.match(/<form/g) ?? [])).toHaveLength(1);
+  });
+
+  it("renders a custom fixed-symbol presentation in the personalization card", () => {
+    const circlePresentation = {
+      opwarmer: { ...DEFAULT_EXERCISE_LEVEL_PRESENTATION.opwarmer, displayName: "Instap", symbolId: "circle" as const },
+      basis: { ...DEFAULT_EXERCISE_LEVEL_PRESENTATION.basis, displayName: "Kern", symbolId: "circle" as const, color: "#123456", showPublicBackground: true },
+      uitdaging: { ...DEFAULT_EXERCISE_LEVEL_PRESENTATION.uitdaging, displayName: "Sterk", symbolId: "circle" as const },
+      verdieping: { ...DEFAULT_EXERCISE_LEVEL_PRESENTATION.verdieping, displayName: "Extra", symbolId: "large_circle" as const, count: 4 },
+    };
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={{ ...space, levelPresentation: circlePresentation }} subjects={subjects} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+
+    expect(markup).toContain('<option value="circle" selected="">● Bol</option>');
+    expect(markup).toContain("●●●");
+    expect(markup).toContain('<option value="large_circle" selected="">⬤ Grote bol</option>');
+    expect(markup).toContain("⬤⬤⬤⬤");
+    expect(markup).toContain('name="levelName_basis" value="Kern"');
+    expect(markup).toContain("background-color:#D0D6DD");
+    expect(markup).toContain("color:#123456");
+    const publicBackgroundInput = markup.match(/<input[^>]*name="levelShowPublicBackground_basis"[^>]*>/)?.[0] ?? "";
+    expect(publicBackgroundInput).toContain('type="checkbox"');
+    expect(publicBackgroundInput).toContain('value="true"');
+    expect(publicBackgroundInput).toContain('checked=""');
+    expect(markup.match(/exercise-level-badge-symbol-only/g)).toHaveLength(3);
+    expect(markup).not.toContain('name="levelSymbol_opwarmer" type="text"');
   });
 
   it("orders the general fields without exposing the internal sorting value", () => {

@@ -10,6 +10,7 @@ import {
   INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP,
   MIGRATED_SOURCE_PROFILE_SNAPSHOT_PREFIX,
 } from "@/lib/source-profile-config";
+import { DEFAULT_EXERCISE_LEVEL_PRESENTATION } from "@/lib/exercise-level-presentation";
 
 export interface DatabaseMigration {
   version: string;
@@ -1078,6 +1079,97 @@ export const migrations: DatabaseMigration[] = [
         indexed_at TEXT NOT NULL
       )`,
       "CREATE INDEX learning_space_header_assets_source_index ON learning_space_header_assets(learning_space_source_id)",
+    ],
+  },
+  {
+    version: "048_exercise_levels",
+    statements: [
+      "ALTER TABLE exercises ADD COLUMN level_source TEXT CHECK(level_source IS NULL OR level_source IN ('opwarmer', 'basis', 'uitdaging', 'verdieping'))",
+      "ALTER TABLE exercises ADD COLUMN level_override_mode TEXT NOT NULL DEFAULT 'inherit' CHECK(level_override_mode IN ('inherit', 'level', 'none'))",
+      `ALTER TABLE exercises ADD COLUMN level_override TEXT
+        CHECK((level_override IS NULL OR level_override IN ('opwarmer', 'basis', 'uitdaging', 'verdieping'))
+          AND (level_override_mode <> 'level' OR level_override IS NOT NULL))`,
+    ],
+  },
+  {
+    version: "049_learning_space_level_presentation",
+    statements: [
+      `CREATE TABLE learning_space_level_presentations (
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        level TEXT NOT NULL CHECK(level IN ('opwarmer', 'basis', 'uitdaging', 'verdieping')),
+        symbol_id TEXT NOT NULL CHECK(symbol_id IN ('star', 'circle', 'diamond', 'square', 'triangle')),
+        symbol_count INTEGER NOT NULL CHECK(symbol_count BETWEEN 1 AND 4),
+        PRIMARY KEY (learning_space_id, level)
+      )`,
+      "INSERT INTO learning_space_level_presentations (learning_space_id, level, symbol_id, symbol_count) SELECT id, 'opwarmer', 'star', 1 FROM learning_spaces",
+      "INSERT INTO learning_space_level_presentations (learning_space_id, level, symbol_id, symbol_count) SELECT id, 'basis', 'star', 2 FROM learning_spaces",
+      "INSERT INTO learning_space_level_presentations (learning_space_id, level, symbol_id, symbol_count) SELECT id, 'uitdaging', 'star', 3 FROM learning_spaces",
+      "INSERT INTO learning_space_level_presentations (learning_space_id, level, symbol_id, symbol_count) SELECT id, 'verdieping', 'diamond', 1 FROM learning_spaces",
+    ],
+  },
+  {
+    version: "050_learning_space_level_presentation_labels_colors",
+    statements: [
+      "ALTER TABLE learning_space_level_presentations ADD COLUMN display_name TEXT NOT NULL DEFAULT 'Niveau' CHECK(length(trim(display_name)) BETWEEN 1 AND 40)",
+      `ALTER TABLE learning_space_level_presentations ADD COLUMN color TEXT NOT NULL DEFAULT '#DCEFE5'
+        CHECK(length(color) = 7 AND substr(color, 1, 1) = '#' AND substr(color, 2) NOT GLOB '*[^0-9A-Fa-f]*')`,
+      `UPDATE learning_space_level_presentations SET display_name = CASE level
+        WHEN 'opwarmer' THEN 'Opwarmer' WHEN 'basis' THEN 'Basis'
+        WHEN 'uitdaging' THEN 'Uitdaging' ELSE 'Verdieping' END`,
+      `UPDATE learning_space_level_presentations SET color = CASE level
+        WHEN 'opwarmer' THEN '#DCEFE5' WHEN 'basis' THEN '#FFF0C7'
+        WHEN 'uitdaging' THEN '#F3DDDD' ELSE '#E2EDF2' END`,
+    ],
+  },
+  {
+    version: "051_learning_space_level_accent_colors",
+    statements: [
+      `UPDATE learning_space_level_presentations SET color = CASE level
+        WHEN 'opwarmer' THEN '#174A36' WHEN 'basis' THEN '#6C4700'
+        WHEN 'uitdaging' THEN '#74353B' ELSE '#23566A' END
+        WHERE (level = 'opwarmer' AND upper(color) = '#DCEFE5')
+          OR (level = 'basis' AND upper(color) = '#FFF0C7')
+          OR (level = 'uitdaging' AND upper(color) = '#F3DDDD')
+          OR (level = 'verdieping' AND upper(color) = '#E2EDF2')`,
+    ],
+  },
+  {
+    version: "052_learning_space_level_symbols_colors",
+    statements: [
+      `CREATE TABLE learning_space_level_presentations_next (
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        level TEXT NOT NULL CHECK(level IN ('opwarmer', 'basis', 'uitdaging', 'verdieping')),
+        symbol_id TEXT NOT NULL CHECK(symbol_id IN ('star', 'circle', 'large_circle', 'diamond', 'square', 'triangle')),
+        symbol_count INTEGER NOT NULL CHECK(symbol_count BETWEEN 1 AND 4),
+        display_name TEXT NOT NULL DEFAULT 'Niveau' CHECK(length(trim(display_name)) BETWEEN 1 AND 40),
+        color TEXT NOT NULL DEFAULT ${sqlText(DEFAULT_EXERCISE_LEVEL_PRESENTATION.opwarmer.color)}
+          CHECK(length(color) = 7 AND substr(color, 1, 1) = '#' AND substr(color, 2) NOT GLOB '*[^0-9A-Fa-f]*'),
+        PRIMARY KEY (learning_space_id, level)
+      )`,
+      `INSERT INTO learning_space_level_presentations_next (learning_space_id, level, symbol_id, symbol_count, display_name, color)
+        SELECT learning_space_id, level, symbol_id, symbol_count, display_name,
+          CASE
+            WHEN level = 'opwarmer' AND upper(color) = '#174A36' THEN ${sqlText(DEFAULT_EXERCISE_LEVEL_PRESENTATION.opwarmer.color)}
+            WHEN level = 'basis' AND upper(color) = '#6C4700' THEN ${sqlText(DEFAULT_EXERCISE_LEVEL_PRESENTATION.basis.color)}
+            WHEN level = 'uitdaging' AND upper(color) = '#74353B' THEN ${sqlText(DEFAULT_EXERCISE_LEVEL_PRESENTATION.uitdaging.color)}
+            WHEN level = 'verdieping' AND upper(color) = '#23566A' THEN ${sqlText(DEFAULT_EXERCISE_LEVEL_PRESENTATION.verdieping.color)}
+            ELSE color
+          END
+        FROM learning_space_level_presentations`,
+      "DROP TABLE learning_space_level_presentations",
+      "ALTER TABLE learning_space_level_presentations_next RENAME TO learning_space_level_presentations",
+    ],
+  },
+  {
+    version: "053_learning_space_level_public_background",
+    statements: [
+      "ALTER TABLE learning_space_level_presentations ADD COLUMN show_public_background INTEGER NOT NULL DEFAULT 0 CHECK(show_public_background IN (0, 1))",
+    ],
+  },
+  {
+    version: "054_learning_space_exercise_short_label",
+    statements: [
+      "ALTER TABLE learning_spaces ADD COLUMN exercise_label_short TEXT NOT NULL DEFAULT 'Oef.' CHECK(length(exercise_label_short) <= 12)",
     ],
   },
 ];

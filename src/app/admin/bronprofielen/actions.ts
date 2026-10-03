@@ -112,8 +112,10 @@ export async function saveManagedSourceProfileAction(formData: FormData): Promis
     const result = await saveManagedSourceProfile(user, sourceProfileId, {
       name: value(formData, "name"),
       resources: parseResources(formData),
+      portfolioScanner: parsePortfolioScanner(formData),
       exerciseScanner: parseExerciseScanner(formData),
       exerciseResources: parseExerciseResources(formData),
+      levelRecognition: parseLevelRecognition(formData),
       mode,
       targetLearningSpaceId: value(formData, "targetLearningSpaceId") || undefined,
     });
@@ -155,8 +157,10 @@ export async function saveSourceProfileTemplateAction(formData: FormData): Promi
       name: value(formData, "name"),
       description: value(formData, "description") || null,
       resources: parseResources(formData),
+      portfolioScanner: parsePortfolioScanner(formData),
       exerciseScanner: parseExerciseScanner(formData),
       exerciseResources: parseExerciseResources(formData),
+      levelRecognition: parseLevelRecognition(formData),
     });
   });
 }
@@ -286,5 +290,17 @@ function parseExerciseResources(formData: FormData): unknown {
   const raw = value(formData, "exerciseResourcesJson");
   if (!raw) throw new Error("Onderdelen per oefening ontbreken.");
   try { return JSON.parse(raw) as unknown; } catch { throw new Error("Onderdelen per oefening hebben een ongeldig formaat."); }
+}
+
+function parsePortfolioScanner(formData: FormData): unknown {
+  const raw = value(formData, "portfolioScannerJson");
+  if (!raw) throw new Error("Instellingen voor portfolioherkenning ontbreken.");
+  try { return JSON.parse(raw) as unknown; } catch { throw new Error("Instellingen voor portfolioherkenning hebben een ongeldig formaat."); }
+}
+
+function parseLevelRecognition(formData: FormData): unknown {
+  const raw = value(formData, "levelRecognitionJson");
+  if (!raw) return { method: "none" };
+  try { return JSON.parse(raw) as unknown; } catch { throw new Error("Instellingen voor niveauherkenning hebben een ongeldig formaat."); }
 }
 

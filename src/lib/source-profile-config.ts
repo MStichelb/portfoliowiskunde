@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { EXERCISE_LEVELS, type ExerciseLevel } from "@/lib/exercise-level";
+
 export const BUILT_IN_DEFAULT_SOURCE_PROFILE_ID = "source-profile-standard-portfolio";
 export const BUILT_IN_DEFAULT_SOURCE_PROFILE_NAME = "Standaard portfolio";
 export const BUILT_IN_DEFAULT_SOURCE_PROFILE_DESCRIPTION = "Ingebouwd profiel voor de huidige portfolio- en bestandsconventies.";
@@ -29,6 +31,8 @@ export const exerciseResourceLocationScopes = ["alongside_exercise", "subdirecto
 export const exerciseResourceDisplayModes = ["always", "collapsible_group", "collapsible_each"] as const;
 export const exerciseNumberLocations = ["after_text", "start"] as const;
 export const exerciseModes = ["files", "directories", "files_and_directories"] as const;
+export const exerciseLevelRecognitionMethods = ["none", "subdirectory", "marker"] as const;
+export const exerciseLevelMarkerConventions = ["suffix_code", "prefixed_code"] as const;
 export const globalResourceIcons = [
   "file-text",
   "lightbulb",
@@ -128,6 +132,65 @@ export const exerciseScannerSchema = z.object({
     ctx.addIssue({ code: "custom", path: ["marker"], message: "Vul de tekst in die vóór het oefeningsnummer staat." });
   }
 });
+
+export const portfolioScannerSchema = z.object({
+  marker: z.string().trim().min(1, "De portfoliomarker is verplicht.").max(40, "De portfoliomarker mag maximaal 40 tekens bevatten."),
+}).strict();
+
+const exerciseLevelRecognitionSourceSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("exercise_directory") }).strict(),
+  z.object({ type: z.literal("exercise_resource"), resourceId: globalResourceIdSchema }).strict(),
+]);
+
+const exerciseLevelMappingSchema = z.object({
+  opwarmer: z.string().trim().max(40),
+  basis: z.string().trim().max(40),
+  uitdaging: z.string().trim().max(40),
+  verdieping: z.string().trim().max(40),
+}).strict();
+
+function uniqueConfiguredLevelValues(
+  mapping: Record<ExerciseLevel, string>,
+  ctx: z.RefinementCtx,
+  label: string,
+) {
+  const owners = new Map<string, ExerciseLevel>();
+  for (const level of EXERCISE_LEVELS) {
+    const value = mapping[level].trim().toLocaleLowerCase("nl");
+    if (!value) continue;
+    const previous = owners.get(value);
+    if (previous) {
+      ctx.addIssue({ code: "custom", path: ["mapping", level], message: `${label} moet uniek zijn; dezelfde waarde is al ingesteld voor ${previous}.` });
+    } else owners.set(value, level);
+  }
+}
+
+export const exerciseLevelRecognitionSchema = z.discriminatedUnion("method", [
+  z.object({ method: z.literal("none") }).strict(),
+  z.object({
+    method: z.literal("subdirectory"),
+    source: exerciseLevelRecognitionSourceSchema,
+    mapping: exerciseLevelMappingSchema,
+  }).strict().superRefine((value, ctx) => uniqueConfiguredLevelValues(value.mapping, ctx, "Mapnaam")),
+  z.object({
+    method: z.literal("marker"),
+    source: exerciseLevelRecognitionSourceSchema,
+    convention: z.enum(exerciseLevelMarkerConventions),
+    prefix: z.string().trim().max(20).regex(/^[A-Za-z0-9]*$/, "Gebruik alleen letters en cijfers in de herkenner."),
+    mapping: exerciseLevelMappingSchema.superRefine((mapping, ctx) => {
+      for (const level of EXERCISE_LEVELS) {
+        if (mapping[level] && !/^[A-Za-z0-9]+$/.test(mapping[level])) {
+          ctx.addIssue({ code: "custom", path: [level], message: "Gebruik alleen letters en cijfers in een niveaucode." });
+        }
+      }
+    }),
+  }).strict().superRefine((value, ctx) => {
+    uniqueConfiguredLevelValues(value.mapping, ctx, "Niveaucode");
+    if (value.convention === "prefixed_code" && !value.prefix) {
+      ctx.addIssue({ code: "custom", path: ["prefix"], message: "Vul een herkenner in voor herkenner + code." });
+    }
+  }),
+]);
 
 const exerciseResourceFileExtensionsSchema = z.array(z.enum(exerciseResourceFileExtensions))
   .min(1, "Kies minstens één toegestaan bestandstype.")
@@ -254,6 +317,8 @@ export type ExerciseResourceLocationScope = typeof exerciseResourceLocationScope
 export type ExerciseResourceDisplayMode = typeof exerciseResourceDisplayModes[number];
 export type ExerciseNumberLocation = typeof exerciseNumberLocations[number];
 export type ExerciseMode = typeof exerciseModes[number];
+export type ExerciseLevelRecognitionMethod = typeof exerciseLevelRecognitionMethods[number];
+export type ExerciseLevelMarkerConvention = typeof exerciseLevelMarkerConventions[number];
 export type GlobalResourceIcon = typeof globalResourceIcons[number];
 
 export const globalResourceSelectableIcons = [
@@ -291,11 +356,13 @@ export type GlobalResourceConfig = z.infer<typeof globalResourceConfigSchema>;
 export type SourceFileGlobalResource = z.infer<typeof sourceFileGlobalResourceSchema>;
 export type ExternalLinkGlobalResource = z.infer<typeof externalLinkGlobalResourceSchema>;
 export type ExerciseScannerConfig = z.infer<typeof exerciseScannerSchema>;
+export type PortfolioScannerConfig = z.infer<typeof portfolioScannerSchema>;
 export type ExerciseResourceFileContextRecognition = z.infer<typeof exerciseResourceFileContextRecognitionSchema>;
 export type ExerciseResourceDirectoryContextRecognition = z.infer<typeof exerciseResourceDirectoryContextRecognitionSchema>;
 export type ExerciseResourceRecognition = z.infer<typeof exerciseResourceRecognitionSchema>;
 export type ExerciseResourceLocation = z.infer<typeof exerciseResourceLocationSchema>;
 export type ExerciseResourceConfig = z.infer<typeof exerciseResourceConfigSchema>;
+export type ExerciseLevelRecognitionConfig = z.infer<typeof exerciseLevelRecognitionSchema>;
 
 export const LEGACY_GLOBAL_RESOURCE_CONFIGS: GlobalResourceConfig[] = [
   {
@@ -386,14 +453,33 @@ export const DEFAULT_EXERCISE_SCANNER_CONFIG: ExerciseScannerConfig = {
   marker: "Oef",
 };
 
-export const sourceProfileConfigV1Schema = z.object({
+export const DEFAULT_PORTFOLIO_SCANNER_CONFIG: PortfolioScannerConfig = {
+  marker: "Portfolio",
+};
+
+export const DEFAULT_EXERCISE_LEVEL_RECOGNITION_CONFIG: ExerciseLevelRecognitionConfig = { method: "none" };
+export const DEFAULT_EXERCISE_LEVEL_SUBDIRECTORY_MAPPING: Record<ExerciseLevel, string> = {
+  opwarmer: "Opwarmer",
+  basis: "Basis",
+  uitdaging: "Uitdaging",
+  verdieping: "Verdieping",
+};
+export const DEFAULT_EXERCISE_LEVEL_MARKER_MAPPING: Record<ExerciseLevel, string> = {
+  opwarmer: "O",
+  basis: "B",
+  uitdaging: "U",
+  verdieping: "V",
+};
+
+const canonicalSourceProfileConfigV1Schema = z.object({
   configVersion: z.literal(1),
   scanner: z.object({
-    convention: z.literal("legacy_portfolio_v1"),
+    portfolio: portfolioScannerSchema,
     exercise: exerciseScannerSchema.default(() => ({ ...DEFAULT_EXERCISE_SCANNER_CONFIG })),
   }).strict(),
   globalResources: globalResourceListSchema.default(() => LEGACY_GLOBAL_RESOURCE_CONFIGS.map(cloneGlobalResourceConfig)),
   exerciseResources: exerciseResourceListSchema.default(() => LEGACY_EXERCISE_RESOURCE_CONFIGS.map(cloneExerciseResourceConfig)),
+  levelRecognition: exerciseLevelRecognitionSchema.default(() => ({ ...DEFAULT_EXERCISE_LEVEL_RECOGNITION_CONFIG })),
 }).strict().superRefine((config, ctx) => {
   for (const [index, resource] of config.exerciseResources.entries()) {
     const activeRules = config.scanner.exercise.exerciseMode === "files"
@@ -409,16 +495,37 @@ export const sourceProfileConfigV1Schema = z.object({
       });
     }
   }
+  const levelRecognition = config.levelRecognition;
+  if ("source" in levelRecognition && levelRecognition.source.type === "exercise_resource") {
+    const resourceId = levelRecognition.source.resourceId;
+    if (!config.exerciseResources.some((resource) => resource.id === resourceId)) {
+      ctx.addIssue({ code: "custom", path: ["levelRecognition", "source", "resourceId"], message: "Kies een bestaand onderdeel per oefening als niveaubron." });
+    }
+  }
 });
+
+export const sourceProfileConfigV1Schema = z.preprocess((value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const config = value as Record<string, unknown>;
+  if (!config.scanner || typeof config.scanner !== "object" || Array.isArray(config.scanner)) return value;
+  const scanner = config.scanner as Record<string, unknown>;
+  if (scanner.convention !== "legacy_portfolio_v1" || scanner.portfolio !== undefined) return value;
+  const { convention: _discardedConvention, ...currentScanner } = scanner;
+  return { ...config, scanner: { ...currentScanner, portfolio: { ...DEFAULT_PORTFOLIO_SCANNER_CONFIG } } };
+}, canonicalSourceProfileConfigV1Schema);
 
 export type SourceProfileConfigV1 = z.infer<typeof sourceProfileConfigV1Schema>;
 export type SourceProfileConfig = SourceProfileConfigV1;
 
 export const BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG: SourceProfileConfigV1 = {
   configVersion: 1,
-  scanner: { convention: "legacy_portfolio_v1", exercise: { ...DEFAULT_EXERCISE_SCANNER_CONFIG } },
+  scanner: {
+    portfolio: { ...DEFAULT_PORTFOLIO_SCANNER_CONFIG },
+    exercise: { ...DEFAULT_EXERCISE_SCANNER_CONFIG },
+  },
   globalResources: LEGACY_GLOBAL_RESOURCE_CONFIGS.map(cloneGlobalResourceConfig),
   exerciseResources: LEGACY_EXERCISE_RESOURCE_CONFIGS.map(cloneExerciseResourceConfig),
+  levelRecognition: { ...DEFAULT_EXERCISE_LEVEL_RECOGNITION_CONFIG },
 };
 
 export const BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG_JSON = JSON.stringify(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);

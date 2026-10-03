@@ -3,7 +3,7 @@
 import { ChevronDown, FileText, Folder, Info } from "lucide-react";
 
 import styles from "./portfolio-resource-scanner-v2.module.css";
-import type { ExerciseResourceConfig, ExerciseScannerConfig } from "@/lib/source-profile-config";
+import type { ExerciseLevelRecognitionConfig, ExerciseResourceConfig, ExerciseScannerConfig, PortfolioScannerConfig } from "@/lib/source-profile-config";
 import {
   buildSourceStructurePreview,
   type SourceStructurePreviewNode,
@@ -11,12 +11,16 @@ import {
 
 export function SourceProfileStructurePreview({
   scanner,
+  portfolioScanner,
   resources,
+  levelRecognition,
 }: {
   scanner: ExerciseScannerConfig;
+  portfolioScanner: PortfolioScannerConfig;
   resources: readonly ExerciseResourceConfig[];
+  levelRecognition: ExerciseLevelRecognitionConfig;
 }) {
-  const preview = buildSourceStructurePreview(scanner, resources);
+  const preview = buildSourceStructurePreview(scanner, resources, levelRecognition, portfolioScanner);
 
   return <section className={styles.structurePreview} aria-labelledby="source-structure-preview-heading">
     <details open>

@@ -12,19 +12,35 @@ import {
 } from "./parser";
 
 describe("portfolio parser", () => {
-  it("herkent portfoliomappen met lettercode en flexibele spaties", () => {
-    expect(parsePortfolioDirectory(" Portfolio 3A - Toepassingen ")).toEqual({
-      code: "3A",
-      title: "Toepassingen",
-    });
+  it.each([
+    ["Portfolio 1A Stelsels", "Portfolio", "1A", "Stelsels"],
+    ["Portfolio 1A - Stelsels", "portfolio", "1A", "Stelsels"],
+    ["Portfolio 1A_Stelsels", "Portfolio", "1A", "Stelsels"],
+    ["Portfolio1A-Stelsels", "Portfolio", "1A", "Stelsels"],
+    ["H1 Stelsels", "H", "1", "Stelsels"],
+    ["H1-Stelsels", "h", "1", "Stelsels"],
+    ["H1_Stelsels", "H", "1", "Stelsels"],
+    ["Bundel 2B Matrices", "Bundel", "2B", "Matrices"],
+    ["Bundel2B-Matrices", "Bundel", "2B", "Matrices"],
+    ["Reeks X Extra", "Reeks", "X", "Extra"],
+  ])("herkent %s met marker %s", (name, marker, code, title) => {
+    expect(parsePortfolioDirectory(name, { marker })).toEqual({ code, title });
   });
 
-  it("herkent en normaliseert puur alfabetische portfolio-ID's", () => {
-    expect(parsePortfolioDirectory("Portfolio X - Kwadraten")).toEqual({ code: "X", title: "Kwadraten" });
-    expect(parsePortfolioDirectory("Portfolio x - Kwadraten")).toEqual({ code: "X", title: "Kwadraten" });
-    for (const id of ["1", "12", "2A", "12B", "A", "B", "X"]) {
-      expect(parsePortfolioDirectory(`Portfolio ${id} - Test`)).toMatchObject({ code: id });
-    }
+  it("vereist de geconfigureerde niet-lege marker en een titel", () => {
+    expect(parsePortfolioDirectory("Portfolio 1 Stelsels", { marker: "Bundel" })).toBeNull();
+    expect(parsePortfolioDirectory("01 Stelsels", { marker: "Portfolio" })).toBeNull();
+    expect(parsePortfolioDirectory("Portfolio 1", { marker: "Portfolio" })).toBeNull();
+    expect(parsePortfolioDirectory("Portfolio 1 Stelsels", { marker: "" })).toBeNull();
+  });
+
+  it.each([
+    "H1B Stelsels",
+    "H1B-Stelsels",
+    "H1B_Stelsels",
+    "H1B - Stelsels",
+  ])("normaliseert equivalente portfoliomappen: %s", (name) => {
+    expect(parsePortfolioDirectory(name, { marker: "H" })).toEqual({ code: "1B", title: "Stelsels" });
   });
 
   it("herkent een begrensde Portfolio-prefix voor documentnamen", () => {
@@ -45,10 +61,16 @@ describe("portfolio parser", () => {
   });
 
   it("herkent onderdeelmappen", () => {
-    expect(parseSectionDirectory("1 - Differentiaalvergelijkingen")).toEqual({
-      order: 1,
-      title: "Differentiaalvergelijkingen",
-    });
+    expect(parseSectionDirectory("1 - Methode van Gauss-Jordan")).toEqual({ order: 1, title: "Methode van Gauss-Jordan" });
+    expect(parseSectionDirectory("1 Methode van Gauss-Jordan")).toEqual({ order: 1, title: "Methode van Gauss-Jordan" });
+    expect(parseSectionDirectory("1_Methode van Gauss-Jordan")).toEqual({ order: 1, title: "Methode van Gauss-Jordan" });
+    expect(parseSectionDirectory("2. Stelsels")).toEqual({ order: 2, title: "Stelsels" });
+    expect(parseSectionDirectory("2.Stelsels")).toEqual({ order: 2, title: "Stelsels" });
+    expect(parseSectionDirectory("2.1 Stelsels")).toBeNull();
+    expect(parseSectionDirectory("10 - Toepassingen")).toEqual({ order: 10, title: "Toepassingen" });
+    expect(parseSectionDirectory("2A Methode")).toEqual({ order: 2, title: "A Methode" });
+    expect(parseSectionDirectory("Uitwerkingen")).toBeNull();
+    expect(parseSectionDirectory("1 - 2026")).toBeNull();
   });
 
 
@@ -140,9 +162,8 @@ describe("portfolio parser", () => {
     expect(parseSolutionFileName("Uitwerkingen portfolio 3.pdf")).toBeNull();
     expect(parseSolutionFileName("PF3-Oef2b-alt(1)(2).png")).toBeNull();
     expect(parseSolutionFileName("PF3-Oef2b--bewijs.png")).toBeNull();
-    expect(parsePortfolioDirectory("Portfolio 2A3 - Ambigu")).toBeNull();
-    expect(parsePortfolioDirectory("Portfolio X1 - Ambigu")).toBeNull();
-    expect(parsePortfolioDirectory("Portfolio X Y - Vrije tekst")).toBeNull();
+    expect(parsePortfolioDirectory("Portfolio 2A3 - Ambigu", { marker: "Portfolio" })).toBeNull();
+    expect(parsePortfolioDirectory("Portfolio X1 - Ambigu", { marker: "Portfolio" })).toBeNull();
     expect(parseSolutionFileName("PF2A3-Oef1.png")).toBeNull();
     expect(parseSolutionFileName("PFX1-Oef1.png")).toBeNull();
   });

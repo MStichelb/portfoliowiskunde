@@ -21,17 +21,14 @@ const tree: Record<string, StorageEntry[]> = {
   "Portfolio 3 - Toepassingen": [
     { name: "Portfolio 3 - Toepassingen.pdf", relativePath: "Portfolio 3 - Toepassingen/Portfolio 3 - Toepassingen.pdf", kind: "file" },
     { name: "Eindoplossingen portfolio 3 - Toepassingen.pdf", relativePath: "Portfolio 3 - Toepassingen/Eindoplossingen portfolio 3 - Toepassingen.pdf", kind: "file" },
-    { name: "Uitwerkingen", relativePath: "Portfolio 3 - Toepassingen/Uitwerkingen", kind: "directory" },
+    { name: "1 - Afgeleiden", relativePath: "Portfolio 3 - Toepassingen/1 - Afgeleiden", kind: "directory" },
   ],
-  "Portfolio 3 - Toepassingen/Uitwerkingen": [
-    { name: "1 - Afgeleiden", relativePath: "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden", kind: "directory" },
-  ],
-  "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden": [
-    { name: "PF3-Oef2b(1).png", relativePath: "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden/PF3-Oef2b(1).png", kind: "file" },
-    { name: "PF3-Oef2b(2).png", relativePath: "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden/PF3-Oef2b(2).png", kind: "file" },
-    { name: "PF3-Oef2b-alt(1).png", relativePath: "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden/PF3-Oef2b-alt(1).png", kind: "file" },
-    { name: "PF4-Oef7.png", relativePath: "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden/PF4-Oef7.png", kind: "file" },
-    { name: "onduidelijk.png", relativePath: "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden/onduidelijk.png", kind: "file" },
+  "Portfolio 3 - Toepassingen/1 - Afgeleiden": [
+    { name: "PF3-Oef2b(1).png", relativePath: "Portfolio 3 - Toepassingen/1 - Afgeleiden/PF3-Oef2b(1).png", kind: "file" },
+    { name: "PF3-Oef2b(2).png", relativePath: "Portfolio 3 - Toepassingen/1 - Afgeleiden/PF3-Oef2b(2).png", kind: "file" },
+    { name: "PF3-Oef2b-alt(1).png", relativePath: "Portfolio 3 - Toepassingen/1 - Afgeleiden/PF3-Oef2b-alt(1).png", kind: "file" },
+    { name: "PF4-Oef7.png", relativePath: "Portfolio 3 - Toepassingen/1 - Afgeleiden/PF4-Oef7.png", kind: "file" },
+    { name: "onduidelijk.png", relativePath: "Portfolio 3 - Toepassingen/1 - Afgeleiden/onduidelijk.png", kind: "file" },
   ],
 };
 
@@ -444,13 +441,15 @@ describe("portfolio indexer", () => {
 
     it("laat meerdere fallback-onderdelen toe wanneer locatie of bestandstype ze eenduidig maakt", async () => {
       const portfolioPath = "Portfolio 8 - Fallbacks";
-      const assetsPath = `${portfolioPath}/assets`;
+      const sectionPath = `${portfolioPath}/1 Fallbacks`;
+      const assetsPath = `${sectionPath}/assets`;
       const fallbackProvider: StorageProvider = {
         id: "multiple-fallbacks",
         async list(relativePath = "") {
           if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
-          if (relativePath === portfolioPath) return [
-            { name: "PF8-Oef1.pdf", relativePath: `${portfolioPath}/PF8-Oef1.pdf`, kind: "file" },
+          if (relativePath === portfolioPath) return [{ name: "1 Fallbacks", relativePath: sectionPath, kind: "directory" }];
+          if (relativePath === sectionPath) return [
+            { name: "PF8-Oef1.pdf", relativePath: `${sectionPath}/PF8-Oef1.pdf`, kind: "file" },
             { name: "assets", relativePath: assetsPath, kind: "directory" },
           ];
           if (relativePath === assetsPath) return [
@@ -473,16 +472,16 @@ describe("portfolio indexer", () => {
       expect(portfolio.warnings).toHaveLength(0);
     });
 
-    it("herkent een portfolio zonder onderdelen en zoekt uitwerkingen in een submap", async () => {
+    it("behandelt een expliciete resource-map Uitwerkingen niet als structurele container", async () => {
       const portfolioPath = "Portfolio 8 - Zonder onderdelen";
-      const assetsPath = `${portfolioPath}/assets`;
+      const assetsPath = `${portfolioPath}/Uitwerkingen`;
       const noSectionsProvider: StorageProvider = {
         id: "no-sections",
         async list(relativePath = "") {
           if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
           if (relativePath === portfolioPath) return [
             { name: "PF8-Oef1.pdf", relativePath: `${portfolioPath}/PF8-Oef1.pdf`, kind: "file" },
-            { name: "assets", relativePath: assetsPath, kind: "directory" },
+            { name: "Uitwerkingen", relativePath: assetsPath, kind: "directory" },
           ];
           if (relativePath === assetsPath) return [
             { name: "PF8-Oef1uitwerking.png", relativePath: `${assetsPath}/PF8-Oef1uitwerking.png`, kind: "file" },
@@ -494,25 +493,23 @@ describe("portfolio indexer", () => {
       };
       const config = profileConfig([], [
         { id: "assignment", kind: "source_file", label: "Opgave", icon: "file-text", order: 10, semanticRole: "assignment", location: { scope: "alongside_exercise" }, recognition: { target: "fallback", fileExtensions: ["pdf"] }, allowMultiple: false, displayMode: "always" },
-        { id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 20, semanticRole: "worked_solution", location: { scope: "subdirectory", subdirectory: "assets" }, recognition: { target: "after_exercise_number", operator: "starts_with", value: "uitwerking", caseSensitive: false, fileExtensions: ["png"] }, allowMultiple: true, displayMode: "collapsible_group" },
+        { id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 20, semanticRole: "worked_solution", location: { scope: "subdirectory", subdirectory: "Uitwerkingen" }, recognition: { target: "after_exercise_number", operator: "starts_with", value: "uitwerking", caseSensitive: false, fileExtensions: ["png"] }, allowMultiple: true, displayMode: "collapsible_group" },
       ]);
       const [portfolio] = await indexSource(noSectionsProvider, config);
-      expect(portfolio.sections).toHaveLength(1);
-      expect(portfolio.sections[0].title).toBe("Oefeningen");
-      const exercise = portfolio.sections[0].exercises[0];
-      expect(exercise.code).toBe("1");
-      expect(exercise.assets.map((asset) => asset.fileName)).toEqual(["PF8-Oef1.pdf", "PF8-Oef1uitwerking.png", "PF8-Oef1uitwerkingvervolg.png"]);
+      expect(portfolio.sections).toEqual([]);
     });
 
     it("kan voor één onderdeel zowel bij de oefening als in een vaste submap zoeken", async () => {
       const portfolioPath = "Portfolio 8 - Gemengd";
-      const assetsPath = `${portfolioPath}/assets`;
+      const sectionPath = `${portfolioPath}/1 Gemengd`;
+      const assetsPath = `${sectionPath}/assets`;
       const mixedProvider: StorageProvider = {
         id: "mixed-location",
         async list(relativePath = "") {
           if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
-          if (relativePath === portfolioPath) return [
-            { name: "PF8-Oef2-uitwerking-a.png", relativePath: `${portfolioPath}/PF8-Oef2-uitwerking-a.png`, kind: "file" },
+          if (relativePath === portfolioPath) return [{ name: "1 Gemengd", relativePath: sectionPath, kind: "directory" }];
+          if (relativePath === sectionPath) return [
+            { name: "PF8-Oef2-uitwerking-a.png", relativePath: `${sectionPath}/PF8-Oef2-uitwerking-a.png`, kind: "file" },
             { name: "assets", relativePath: assetsPath, kind: "directory" },
           ];
           if (relativePath === assetsPath) return [
@@ -537,12 +534,14 @@ describe("portfolio indexer", () => {
 
     it("herkent oefeningsmappen en bestandsnaamregels binnen zo'n map", async () => {
       const portfolioPath = "Portfolio 9 - Mappen";
-      const exercisePath = `${portfolioPath}/Oef3a`;
+      const sectionPath = `${portfolioPath}/1 Mappen`;
+      const exercisePath = `${sectionPath}/Oef3a`;
       const folderProvider: StorageProvider = {
         id: "exercise-folders",
         async list(relativePath = "") {
           if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
-          if (relativePath === portfolioPath) return [{ name: "Oef3a", relativePath: exercisePath, kind: "directory" }];
+          if (relativePath === portfolioPath) return [{ name: "1 Mappen", relativePath: sectionPath, kind: "directory" }];
+          if (relativePath === sectionPath) return [{ name: "Oef3a", relativePath: exercisePath, kind: "directory" }];
           if (relativePath === exercisePath) return [
             { name: "opgave.pdf", relativePath: `${exercisePath}/opgave.pdf`, kind: "file" },
             { name: "uitwerking.png", relativePath: `${exercisePath}/uitwerking.png`, kind: "file" },
@@ -628,8 +627,8 @@ describe("portfolio indexer", () => {
       const [portfolio] = await indexSource(fileExerciseSubdirectoryProvider(["Oef3.png", "Oef4.png"]), config);
 
       expect(portfolio.sections[0].exercises.map((exercise) => [exercise.code, exercise.assets[0].relativePath])).toEqual([
-        ["3", "Portfolio X - Bestandoefeningen/Uitwerkingen/Oef3.png"],
-        ["4", "Portfolio X - Bestandoefeningen/Uitwerkingen/Oef4.png"],
+        ["3", "Portfolio X - Bestandoefeningen/1 Bestandoefeningen/Uitwerkingen/Oef3.png"],
+        ["4", "Portfolio X - Bestandoefeningen/1 Bestandoefeningen/Uitwerkingen/Oef4.png"],
       ]);
       expect(portfolio.warnings).toHaveLength(0);
     });
@@ -669,7 +668,7 @@ describe("portfolio indexer", () => {
       }], { exerciseMode: "directories", numberLocation: "after_text", marker: "Oef" });
       const [portfolio] = await indexSource(directoryExerciseProvider({ assets: ["hint.jpg"] }), config);
 
-      expect(portfolio.sections[0].exercises[0].assets[0]).toMatchObject({ resourceId: "hints", relativePath: "Portfolio X - Mapoefeningen/Oef3/assets/hint.jpg" });
+      expect(portfolio.sections[0].exercises[0].assets[0]).toMatchObject({ resourceId: "hints", relativePath: "Portfolio X - Mapoefeningen/1 Mapoefeningen/Oef3/assets/hint.jpg" });
     });
 
     it("laat een directory-fallback geen file-oefening kapen", async () => {
@@ -689,7 +688,7 @@ describe("portfolio indexer", () => {
   it("indexeert Portfolio X en koppelt PFX-assets zonder speciale infrastructuur", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-x-index-"));
     const portfolioPath = "Portfolio X - Kwadraten";
-    const sectionPath = path.join(temporaryDirectory, portfolioPath, "Uitwerkingen", "1 - Basis");
+    const sectionPath = path.join(temporaryDirectory, portfolioPath, "1 - Basis");
     await mkdir(sectionPath, { recursive: true });
     await Promise.all([
       path.join(temporaryDirectory, portfolioPath, "Portfolio X - Kwadraten.pdf"),
@@ -718,11 +717,94 @@ describe("portfolio indexer", () => {
     expect((await indexSource(sortingProvider)).map((portfolio) => portfolio.code)).toEqual(["1", "2", "2A", "2B", "3", "10", "11", "12", "A", "X"]);
   });
 
+  it("gebruikt de bronprofielmarker voor portfoliomappen", async () => {
+    const portfolioPath = "Bundel2B-Matrices";
+    const customProvider: StorageProvider = {
+      id: "custom-portfolio-marker",
+      async list(relativePath = "") {
+        return relativePath ? [] : [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+    const config = {
+      ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
+      scanner: { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner, portfolio: { marker: "Bundel" } },
+    };
+
+    await expect(indexSource(customProvider, config)).resolves.toEqual([
+      expect.objectContaining({ code: "2B", title: "Matrices" }),
+    ]);
+  });
+
+  it("herkent alleen directe numeriek-startende onderdeelmappen", async () => {
+    const portfolioPath = "Portfolio 30 Onderdelen";
+    const sectionProvider: StorageProvider = {
+      id: "direct-sections",
+      async list(relativePath = "") {
+        if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+        if (relativePath === portfolioPath) return [
+          { name: "1 Inleiding", relativePath: `${portfolioPath}/1 Inleiding`, kind: "directory" },
+          { name: "2A Methode", relativePath: `${portfolioPath}/2A Methode`, kind: "directory" },
+          { name: "10_Toepassingen", relativePath: `${portfolioPath}/10_Toepassingen`, kind: "directory" },
+          { name: "Uitwerkingen", relativePath: `${portfolioPath}/Uitwerkingen`, kind: "directory" },
+        ];
+        return [];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+
+    const [portfolio] = await indexSource(sectionProvider);
+    expect(portfolio.sections.map((section) => [section.order, section.title])).toEqual([
+      [1, "Inleiding"],
+      [2, "A Methode"],
+      [10, "Toepassingen"],
+    ]);
+  });
+
+  it("waarschuwt en scant niets bij een dubbele genormaliseerde portfoliocode", async () => {
+    const duplicateProvider: StorageProvider = {
+      id: "duplicate-portfolios",
+      async list(relativePath = "") {
+        if (relativePath) throw new Error("Conflicterende portfolio's mogen niet worden geopend.");
+        return [
+          { name: "Portfolio 1A Eerste", relativePath: "Portfolio 1A Eerste", kind: "directory" },
+          { name: "portfolio1a-Tweede", relativePath: "portfolio1a-Tweede", kind: "directory" },
+        ];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+
+    const portfolios = await indexSource(duplicateProvider);
+    expect(portfolios).toHaveLength(2);
+    expect(portfolios.every((portfolio) => portfolio.code === "1A" && portfolio.sections.length === 0)).toBe(true);
+    expect(portfolios.every((portfolio) => portfolio.warnings.some((warning) => warning.message.includes("Dubbele portfoliocode 1A")))).toBe(true);
+  });
+
+  it("waarschuwt en negeert alle mappen met een dubbel onderdeelnummer", async () => {
+    const portfolioPath = "Portfolio 31 Conflicten";
+    const duplicateSectionProvider: StorageProvider = {
+      id: "duplicate-sections",
+      async list(relativePath = "") {
+        if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+        if (relativePath === portfolioPath) return [
+          { name: "2 Eerste", relativePath: `${portfolioPath}/2 Eerste`, kind: "directory" },
+          { name: "02_Tweede", relativePath: `${portfolioPath}/02_Tweede`, kind: "directory" },
+        ];
+        return [];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+
+    const [portfolio] = await indexSource(duplicateSectionProvider);
+    expect(portfolio.sections).toEqual([]);
+    expect(portfolio.warnings).toContainEqual(expect.objectContaining({ message: expect.stringContaining("Dubbel onderdeelnummer 2") }));
+  });
+
   it("waarschuwt bij een ambigu oefeningnummer in plaats van een letter uit de onderdeeltekst op te eten", async () => {
     const ambiguousProvider: StorageProvider = {
       ...provider,
       async list(relativePath = "") {
-        if (relativePath === "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden") return [
+        if (relativePath === "Portfolio 3 - Toepassingen/1 - Afgeleiden") return [
           { name: "PF3-Oef3uitwerking.png", relativePath: `${relativePath}/PF3-Oef3uitwerking.png`, kind: "file" },
         ];
         return tree[relativePath] ?? [];
@@ -737,7 +819,7 @@ describe("portfolio indexer", () => {
     const collisionProvider: StorageProvider = {
       ...provider,
       async list(relativePath = "") {
-        if (relativePath === "Portfolio 3 - Toepassingen/Uitwerkingen/1 - Afgeleiden") return [
+        if (relativePath === "Portfolio 3 - Toepassingen/1 - Afgeleiden") return [
           { name: "PF3-Oef10.png", relativePath: `${relativePath}/PF3-Oef10.png`, kind: "file" },
           { name: "PF8-Oef10.png", relativePath: `${relativePath}/PF8-Oef10.png`, kind: "file" },
         ];
@@ -750,7 +832,7 @@ describe("portfolio indexer", () => {
     expect(portfolio.warnings.some((warning) => warning.path.endsWith("PF8-Oef10.png"))).toBe(false);
   });
 
-  it("negeert alle bestanden rechtstreeks onder Uitwerkingen en scant alleen geldige onderdeelmappen", async () => {
+  it("negeert Uitwerkingen en daaronder geneste mappen als scannerstructuur", async () => {
     const portfolioPath = "Portfolio 4 - De bepaalde integraal";
     const solutionsPath = `${portfolioPath}/Uitwerkingen`;
     const sectionPath = `${solutionsPath}/4 - Hyperbolische functies`;
@@ -773,10 +855,96 @@ describe("portfolio indexer", () => {
     };
 
     const [portfolio] = await indexSource(sectionOnlyProvider);
-    expect(portfolio.sections).toHaveLength(1);
-    expect(portfolio.sections[0].exercises.map((exercise) => exercise.code)).toEqual(["1", "30c"]);
-    expect(portfolio.sections[0].exercises.some((exercise) => exercise.code === "5" || exercise.code === "10")).toBe(false);
+    expect(portfolio.sections).toEqual([]);
     expect(portfolio.warnings).toHaveLength(0);
+  });
+});
+
+describe("automatic exercise level recognition", () => {
+  it("recognizes a configured level folder inside the current exercise context", async () => {
+    const portfolioPath = "Portfolio 20 - Niveaus";
+    const sectionPath = `${portfolioPath}/1 Niveaus`;
+    const levelPath = `${sectionPath}/bAsIs`;
+    const scopedProvider: StorageProvider = {
+      id: "level-subdirectories",
+      async list(relativePath = "") {
+        if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+        if (relativePath === portfolioPath) return [{ name: "1 Niveaus", relativePath: sectionPath, kind: "directory" }];
+        if (relativePath === sectionPath) return [
+          { name: "bAsIs", relativePath: levelPath, kind: "directory" },
+          { name: "Basisextra", relativePath: `${sectionPath}/Basisextra`, kind: "directory" },
+        ];
+        if (relativePath === levelPath) return [{ name: "Oef1.png", relativePath: `${levelPath}/Oef1.png`, kind: "file" }];
+        if (relativePath === `${sectionPath}/Basisextra`) return [{ name: "Oef2.png", relativePath: `${sectionPath}/Basisextra/Oef2.png`, kind: "file" }];
+        return [];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+    const config = profileConfig([], undefined, undefined, {
+      method: "subdirectory", source: { type: "exercise_resource", resourceId: "worked-solution" },
+      mapping: { opwarmer: "Opwarmer", basis: "Basis", uitdaging: "Uitdaging", verdieping: "Verdieping" },
+    });
+
+    const [portfolio] = await indexSource(scopedProvider, config);
+
+    expect(portfolio.sections[0].exercises.map((exercise) => [exercise.code, exercise.levelSource])).toEqual([["1", "basis"]]);
+  });
+
+  it("uses only the configured exercise resource and returns null when that resource is absent", async () => {
+    const config = profileConfig([], [
+      { id: "assignment", kind: "source_file", label: "Opgave", icon: "file-text", order: 10, semanticRole: "assignment", location: { scope: "alongside_exercise" }, recognition: { file: { target: "fallback" }, directory: null, fileExtensions: ["pdf"] }, allowMultiple: false, displayMode: "always" },
+      { id: "worked", kind: "source_file", label: "Uitwerking", icon: "notebook-pen", order: 20, semanticRole: "worked_solution", location: { scope: "alongside_exercise" }, recognition: { file: { target: "fallback" }, directory: null, fileExtensions: ["png"] }, allowMultiple: false, displayMode: "always" },
+    ], { exerciseMode: "files", numberLocation: "after_text", marker: "Oef" }, {
+      method: "marker", source: { type: "exercise_resource", resourceId: "assignment" }, convention: "suffix_code", prefix: "",
+      mapping: { opwarmer: "O", basis: "B", uitdaging: "U", verdieping: "V" },
+    });
+    const [portfolio] = await indexSource(exerciseFilesProvider(["Oef1_B.pdf", "Oef1_U.png", "Oef2_U.png"]), config);
+
+    expect(portfolio.sections[0].exercises.map((exercise) => [exercise.code, exercise.levelSource])).toEqual([
+      ["1", "basis"],
+      ["2", null],
+    ]);
+  });
+
+  it("recognizes a prefixed marker in an exercise directory name", async () => {
+    const portfolioPath = "Portfolio 21 - Mapniveau";
+    const sectionPath = `${portfolioPath}/1 Mapniveau`;
+    const exercisePath = `${sectionPath}/Oef2_Niv3`;
+    const directoryProvider: StorageProvider = {
+      id: "level-directory-marker",
+      async list(relativePath = "") {
+        if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+        if (relativePath === portfolioPath) return [{ name: "1 Mapniveau", relativePath: sectionPath, kind: "directory" }];
+        if (relativePath === sectionPath) return [{ name: "Oef2_Niv3", relativePath: exercisePath, kind: "directory" }];
+        if (relativePath === exercisePath) return [{ name: "uitwerking.png", relativePath: `${exercisePath}/uitwerking.png`, kind: "file" }];
+        return [];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+    const config = profileConfig([], undefined, { exerciseMode: "directories", numberLocation: "after_text", marker: "Oef" }, {
+      method: "marker", source: { type: "exercise_directory" }, convention: "prefixed_code", prefix: "Niv",
+      mapping: { opwarmer: "1", basis: "2", uitdaging: "3", verdieping: "4" },
+    });
+
+    const [portfolio] = await indexSource(directoryProvider, config);
+
+    expect(portfolio.sections[0].exercises[0]).toMatchObject({ code: "2", levelSource: "uitdaging" });
+  });
+
+  it("stores no source level and emits the existing sync warning on conflicting resource markers", async () => {
+    const config = profileConfig([], [{
+      id: "assignment", kind: "source_file", label: "Opgave", icon: "file-text", order: 10, semanticRole: "assignment",
+      location: { scope: "alongside_exercise" }, recognition: { file: { target: "fallback" }, directory: null, fileExtensions: ["pdf"] },
+      allowMultiple: true, displayMode: "always",
+    }], { exerciseMode: "files", numberLocation: "after_text", marker: "Oef" }, {
+      method: "marker", source: { type: "exercise_resource", resourceId: "assignment" }, convention: "suffix_code", prefix: "",
+      mapping: { opwarmer: "O", basis: "B", uitdaging: "U", verdieping: "V" },
+    });
+
+    const [portfolio] = await indexSource(exerciseFilesProvider(["Oef3_B.pdf", "Oef3_U.pdf"]), config);
+
+    expect(portfolio.sections[0].exercises[0].levelSource).toBeNull();
+    expect(portfolio.warnings).toContainEqual(expect.objectContaining({ message: expect.stringContaining("niet eenduidig") }));
   });
 });
 
@@ -785,12 +953,14 @@ function profileConfig(
   globalResources: SourceProfileConfig["globalResources"],
   exerciseResources?: unknown,
   exerciseScanner: SourceProfileConfig["scanner"]["exercise"] = { exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Oef" },
+  levelRecognition: SourceProfileConfig["levelRecognition"] = { method: "none" },
 ): SourceProfileConfig {
   return parseSourceProfileConfig({
     configVersion: 1,
     scanner: { convention: "legacy_portfolio_v1", exercise: exerciseScanner },
     globalResources,
     ...(exerciseResources ? { exerciseResources } : {}),
+    levelRecognition,
   });
 }
 
@@ -831,13 +1001,15 @@ function locationAwareConfig(exerciseMode: ExerciseMode): SourceProfileConfig {
 
 function locationAwareExerciseProvider(): StorageProvider {
   const portfolioPath = "Portfolio X - Contextafhankelijk";
-  const exercisePath = `${portfolioPath}/Oef2`;
+  const sectionPath = `${portfolioPath}/1 Context`;
+  const exercisePath = `${sectionPath}/Oef2`;
   return {
     id: "location-aware-exercises",
     async list(relativePath = "") {
       if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
-      if (relativePath === portfolioPath) return [
-        { name: "Oef1-uitwerking.png", relativePath: `${portfolioPath}/Oef1-uitwerking.png`, kind: "file" },
+      if (relativePath === portfolioPath) return [{ name: "1 Context", relativePath: sectionPath, kind: "directory" }];
+      if (relativePath === sectionPath) return [
+        { name: "Oef1-uitwerking.png", relativePath: `${sectionPath}/Oef1-uitwerking.png`, kind: "file" },
         { name: "Oef2", relativePath: exercisePath, kind: "directory" },
       ];
       if (relativePath === exercisePath) return [
@@ -853,14 +1025,16 @@ function locationAwareExerciseProvider(): StorageProvider {
 
 function fileExerciseSubdirectoryProvider(resourceFileNames: readonly string[]): StorageProvider {
   const portfolioPath = "Portfolio X - Bestandoefeningen";
-  const resourcePath = `${portfolioPath}/Uitwerkingen`;
+  const sectionPath = `${portfolioPath}/1 Bestandoefeningen`;
+  const resourcePath = `${sectionPath}/Uitwerkingen`;
   return {
     id: "file-exercise-subdirectory",
     async list(relativePath = "") {
       if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
-      if (relativePath === portfolioPath) return [
-        { name: "Oef3.png", relativePath: `${portfolioPath}/Oef3.png`, kind: "file" },
-        { name: "Oef4.png", relativePath: `${portfolioPath}/Oef4.png`, kind: "file" },
+      if (relativePath === portfolioPath) return [{ name: "1 Bestandoefeningen", relativePath: sectionPath, kind: "directory" }];
+      if (relativePath === sectionPath) return [
+        { name: "Oef3.png", relativePath: `${sectionPath}/Oef3.png`, kind: "file" },
+        { name: "Oef4.png", relativePath: `${sectionPath}/Oef4.png`, kind: "file" },
         { name: "Uitwerkingen", relativePath: resourcePath, kind: "directory" },
       ];
       if (relativePath === resourcePath) return resourceFileNames.map((name) => ({ name, relativePath: `${resourcePath}/${name}`, kind: "file" as const }));
@@ -872,13 +1046,15 @@ function fileExerciseSubdirectoryProvider(resourceFileNames: readonly string[]):
 
 function directoryExerciseProvider(files: { direct?: readonly string[]; assets?: readonly string[] }): StorageProvider {
   const portfolioPath = "Portfolio X - Mapoefeningen";
-  const exercisePath = `${portfolioPath}/Oef3`;
+  const sectionPath = `${portfolioPath}/1 Mapoefeningen`;
+  const exercisePath = `${sectionPath}/Oef3`;
   const assetsPath = `${exercisePath}/assets`;
   return {
     id: "directory-exercise-context",
     async list(relativePath = "") {
       if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
-      if (relativePath === portfolioPath) return [{ name: "Oef3", relativePath: exercisePath, kind: "directory" }];
+      if (relativePath === portfolioPath) return [{ name: "1 Mapoefeningen", relativePath: sectionPath, kind: "directory" }];
+      if (relativePath === sectionPath) return [{ name: "Oef3", relativePath: exercisePath, kind: "directory" }];
       if (relativePath === exercisePath) return [
         ...(files.direct ?? []).map((name) => ({ name, relativePath: `${exercisePath}/${name}`, kind: "file" as const })),
         ...(files.assets ? [{ name: "assets", relativePath: assetsPath, kind: "directory" as const }] : []),
@@ -892,8 +1068,7 @@ function directoryExerciseProvider(files: { direct?: readonly string[]; assets?:
 
 function exerciseFilesProvider(fileNames: string[]): StorageProvider {
   const portfolioPath = "Portfolio 3 - Toepassingen";
-  const solutionsPath = `${portfolioPath}/Uitwerkingen`;
-  const sectionPath = `${solutionsPath}/1 - Afgeleiden`;
+  const sectionPath = `${portfolioPath}/1 - Afgeleiden`;
   return {
     id: "exercise-files-fixture",
     async list(relativePath = "") {
@@ -901,9 +1076,8 @@ function exerciseFilesProvider(fileNames: string[]): StorageProvider {
       if (relativePath === portfolioPath) return [
         { name: "Portfolio 3 - Toepassingen.pdf", relativePath: `${portfolioPath}/Portfolio 3 - Toepassingen.pdf`, kind: "file" },
         { name: "Eindoplossingen portfolio 3.pdf", relativePath: `${portfolioPath}/Eindoplossingen portfolio 3.pdf`, kind: "file" },
-        { name: "Uitwerkingen", relativePath: solutionsPath, kind: "directory" },
+        { name: "1 - Afgeleiden", relativePath: sectionPath, kind: "directory" },
       ];
-      if (relativePath === solutionsPath) return [{ name: "1 - Afgeleiden", relativePath: sectionPath, kind: "directory" }];
       if (relativePath === sectionPath) return fileNames.map((name) => ({ name, relativePath: `${sectionPath}/${name}`, kind: "file" as const }));
       return [];
     },
