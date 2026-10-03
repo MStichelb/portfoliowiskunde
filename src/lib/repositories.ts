@@ -8,8 +8,22 @@ import { executeBatch, getDatabase } from "@/lib/database";
 import type { IndexedPortfolio } from "@/lib/domain";
 import { listErrorReportExerciseIdentities, normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
 import { ErrorReportRateLimitError } from "@/lib/error-report-rate-limit";
+import {
+  exerciseLevelMetadata,
+  validateExerciseLevelOverrideInput,
+  type ExerciseLevelMetadata,
+  type ExerciseLevelOverrideInput,
+} from "@/lib/exercise-level";
+import {
+  DEFAULT_EXERCISE_LEVEL_PRESENTATION,
+  exerciseLevelPresentationFromRows,
+  validateExerciseLevelPresentation,
+  type ExerciseLevelPresentation,
+} from "@/lib/exercise-level-presentation";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
-import { comparePortfolioIds, comparePortfolioRelativePaths, portfolioCodeFromRelativePath } from "@/lib/parser";
+import type { IndexedLearningSpaceHeader } from "@/lib/learning-space-header";
+import { normalizeCollectionTerminology, normalizeExerciseShortLabel, normalizeExerciseTerminology } from "@/lib/collection-terminology";
+import { comparePortfolioIds, comparePortfolioRelativePaths, relativePathBelongsToDirectory } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { ExerciseNotePosition } from "@/lib/exercise-note";
 import { LEGACY_SUPERADMIN_USER_ID } from "@/lib/identity";
@@ -35,6 +49,7 @@ import {
   type GlobalResourceSemanticRole,
 } from "@/lib/source-profile-config";
 import { getActiveSourceProfileForLearningSpace } from "@/lib/source-profiles";
+import { requireActiveSubject } from "@/lib/subjects";
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
 import {
   resolveChildPublication,
@@ -75,7 +90,7 @@ export interface ExerciseResource {
   assets: ExerciseResourceAsset[];
 }
 
-export interface AdminExercise {
+export interface AdminExercise extends ExerciseLevelMetadata {
   id: string;
   code: string;
   visible: boolean;
@@ -168,7 +183,7 @@ export interface StudentPortfolio {
     id: string;
     title: string;
     order: number;
-    exercises: Array<{ id: string; code: string; visible: boolean; hasAlternativeSolution: boolean }>;
+    exercises: Array<{ id: string; code: string; visible: boolean; hasAlternativeSolution: boolean } & ExerciseLevelMetadata>;
   }>;
 }
 
@@ -192,6 +207,14 @@ export interface SyncSummary {
 
 export interface LearningSpace {
   id: string;
+  subjectId: string;
+  subjectName: string;
+  subjectIsActive: boolean;
+  collectionLabelSingular: string;
+  collectionLabelPlural: string;
+  exerciseLabelSingular: string;
+  exerciseLabelPlural: string;
+  exerciseLabelShort?: string;
   name: string;
   slug: string;
   shortLabel: string;
@@ -212,6 +235,7 @@ export interface LearningSpace {
   activeSourceId: string | null;
   primarySource: LearningSpaceSource | null;
   mirrorSource: LearningSpaceSource | null;
+  levelPresentation?: ExerciseLevelPresentation;
 }
 
 export type StorageSourceType = "local" | "onedrive" | "google_drive";
@@ -248,12 +272,18 @@ export interface LearningSpaceSourceInput {
 }
 
 export interface LearningSpaceInput {
+  subjectId: string;
+  collectionLabelSingular?: string;
+  collectionLabelPlural?: string;
+  exerciseLabelSingular?: string;
+  exerciseLabelPlural?: string;
+  exerciseLabelShort?: string;
   name: string;
   slug: string;
   shortLabel: string;
   description?: string;
   cardColor?: string;
-  sortOrder: number;
+  sortOrder?: number;
   sourceType: StorageSourceType;
   storageConnectionId?: string | null;
   localSourcePath?: string | null;
@@ -264,6 +294,7 @@ export interface LearningSpaceInput {
   googleDriveFolderLabel?: string | null;
   primarySource?: LearningSpaceSourceInput;
   mirrorSource?: LearningSpaceSourceInput | null;
+  levelPresentation?: ExerciseLevelPresentation;
 }
 
 export interface Theme {
@@ -290,6 +321,16 @@ function stableId(prefix: string, ...parts: string[]): string {
   return `${prefix}-${hash}`;
 }
 
+function incrementCount(counts: Map<string, number>, key: string): void {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
+}
+
+function groupBy<T>(items: readonly T[], keyFor: (item: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const item of items) groups.set(keyFor(item), [...(groups.get(keyFor(item)) ?? []), item]);
+  return groups;
+}
+
 function learningSpaceSourceFromRow(row: DatabaseRow): LearningSpaceSource {
   const validationStatus = nullableText(row, "last_validation_status");
   return {
@@ -305,7 +346,7 @@ function learningSpaceSourceFromRow(row: DatabaseRow): LearningSpaceSource {
   };
 }
 
-function learningSpaceFromRow(row: DatabaseRow, sources: LearningSpaceSource[]): LearningSpace {
+function learningSpaceFromRow(row: DatabaseRow, sources: LearningSpaceSource[], levelPresentation: ExerciseLevelPresentation): LearningSpace {
   const activeSource = sources.find((source) => source.isActive) ?? null;
   const primarySource = sources.find((source) => source.role === "primary") ?? null;
   const mirrorSource = sources.find((source) => source.role === "mirror") ?? null;
@@ -316,7 +357,11 @@ function learningSpaceFromRow(row: DatabaseRow, sources: LearningSpaceSource[]):
   const googleDriveSource = providerSource("google_drive");
   const archivedAt = nullableText(row, "archived_at");
   return {
-    id: text(row, "id"), name: text(row, "name"), slug: text(row, "slug"), shortLabel: text(row, "short_label"),
+    id: text(row, "id"), subjectId: text(row, "subject_id"), subjectName: text(row, "subject_name"), subjectIsActive: bool(row.subject_is_active),
+    collectionLabelSingular: text(row, "collection_label_singular"), collectionLabelPlural: text(row, "collection_label_plural"),
+    exerciseLabelSingular: text(row, "exercise_label_singular"), exerciseLabelPlural: text(row, "exercise_label_plural"),
+    exerciseLabelShort: text(row, "exercise_label_short"),
+    name: text(row, "name"), slug: text(row, "slug"), shortLabel: text(row, "short_label"),
     description: text(row, "description"), cardColor: text(row, "card_color"),
     sortOrder: Number(row.sort_order), isActive: bool(row.is_active) && archivedAt === null, archivedAt,
     editorsCanManageAccess: bool(row.editors_can_manage_access), sourceType,
@@ -326,7 +371,7 @@ function learningSpaceFromRow(row: DatabaseRow, sources: LearningSpaceSource[]):
     oneDriveFolderPath: oneDriveSource?.oneDriveFolderPath ?? nullableText(row, "onedrive_folder_path"),
     googleDriveFolderId: googleDriveSource?.googleDriveFolderId ?? nullableText(row, "google_drive_folder_id"),
     googleDriveFolderLabel: googleDriveSource?.googleDriveFolderLabel ?? nullableText(row, "google_drive_folder_label"),
-    sources, activeSourceId: activeSource?.id ?? null, primarySource, mirrorSource,
+    sources, activeSourceId: activeSource?.id ?? null, primarySource, mirrorSource, levelPresentation,
   };
 }
 
@@ -337,31 +382,35 @@ function storageSourceType(value: string): StorageSourceType {
 
 export async function getLearningSpaces(activeOnly = false): Promise<LearningSpace[]> {
   const database = await getDatabase();
-  const result = await database.execute(`SELECT * FROM learning_spaces${activeOnly ? " WHERE is_active = 1 AND archived_at IS NULL" : ""} ORDER BY sort_order, name`);
+  const result = await database.execute(`${learningSpaceSelect()}${activeOnly ? " WHERE learning_spaces.is_active = 1 AND learning_spaces.archived_at IS NULL" : ""} ORDER BY learning_spaces.sort_order, learning_spaces.name`);
   return hydrateLearningSpaces(result.rows);
 }
 
 export async function getLearningSpaceBySlug(slug: string): Promise<LearningSpace | null> {
   const database = await getDatabase();
-  const result = await database.execute({ sql: "SELECT * FROM learning_spaces WHERE slug = ? AND is_active = 1 AND archived_at IS NULL", args: [slug] });
+  const result = await database.execute({ sql: `${learningSpaceSelect()} WHERE learning_spaces.slug = ? AND learning_spaces.is_active = 1 AND learning_spaces.archived_at IS NULL`, args: [slug] });
   return (await hydrateLearningSpaces(result.rows))[0] ?? null;
 }
 
 export async function getAdminLearningSpaceBySlug(slug: string): Promise<LearningSpace | null> {
   const database = await getDatabase();
-  const result = await database.execute({ sql: "SELECT * FROM learning_spaces WHERE slug = ?", args: [slug] });
+  const result = await database.execute({ sql: `${learningSpaceSelect()} WHERE learning_spaces.slug = ?`, args: [slug] });
   return (await hydrateLearningSpaces(result.rows))[0] ?? null;
 }
 
 export async function getLearningSpace(id: string): Promise<LearningSpace | null> {
   const database = await getDatabase();
-  const result = await database.execute({ sql: "SELECT * FROM learning_spaces WHERE id = ?", args: [id] });
+  const result = await database.execute({ sql: `${learningSpaceSelect()} WHERE learning_spaces.id = ?`, args: [id] });
   return (await hydrateLearningSpaces(result.rows))[0] ?? null;
 }
 
 async function hydrateLearningSpaces(rows: DatabaseRow[]): Promise<LearningSpace[]> {
   if (rows.length === 0) return [];
-  const sourceRows = await (await getDatabase()).execute("SELECT * FROM learning_space_sources ORDER BY learning_space_id, role");
+  const database = await getDatabase();
+  const [sourceRows, levelRows] = await Promise.all([
+    database.execute("SELECT * FROM learning_space_sources ORDER BY learning_space_id, role"),
+    database.execute("SELECT * FROM learning_space_level_presentations ORDER BY learning_space_id, level"),
+  ]);
   const sourcesBySpace = new Map<string, LearningSpaceSource[]>();
   for (const row of sourceRows.rows) {
     const source = learningSpaceSourceFromRow(row);
@@ -369,7 +418,31 @@ async function hydrateLearningSpaces(rows: DatabaseRow[]): Promise<LearningSpace
     sources.push(source);
     sourcesBySpace.set(source.learningSpaceId, sources);
   }
-  return rows.map((row) => learningSpaceFromRow(row, sourcesBySpace.get(text(row, "id")) ?? []));
+  const levelRowsBySpace = new Map<string, DatabaseRow[]>();
+  for (const row of levelRows.rows) {
+    const learningSpaceId = text(row, "learning_space_id");
+    const presentations = levelRowsBySpace.get(learningSpaceId) ?? [];
+    presentations.push(row);
+    levelRowsBySpace.set(learningSpaceId, presentations);
+  }
+  return rows.map((row) => {
+    const id = text(row, "id");
+    const presentationRows = levelRowsBySpace.get(id) ?? [];
+    const levelPresentation = exerciseLevelPresentationFromRows(presentationRows.map((item) => ({
+      level: item.level,
+      displayName: item.display_name,
+      symbolId: item.symbol_id,
+      count: item.symbol_count,
+      color: item.color,
+      showPublicBackground: bool(item.show_public_background),
+    })));
+    return learningSpaceFromRow(row, sourcesBySpace.get(id) ?? [], levelPresentation);
+  });
+}
+
+function learningSpaceSelect(): string {
+  return `SELECT learning_spaces.*, subjects.name AS subject_name, subjects.is_active AS subject_is_active
+    FROM learning_spaces JOIN subjects ON subjects.id = learning_spaces.subject_id`;
 }
 
 export async function getLearningSpaceSource(id: string): Promise<LearningSpaceSource | null> {
@@ -397,6 +470,10 @@ export async function createLearningSpaceForOwner(input: LearningSpaceInput, own
 }
 
 async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUserId: string | null): Promise<LearningSpace> {
+  await requireActiveSubject(input.subjectId);
+  const terminology = normalizeCollectionTerminology({ singular: input.collectionLabelSingular, plural: input.collectionLabelPlural });
+  const exerciseTerminology = normalizeExerciseTerminology({ singular: input.exerciseLabelSingular, plural: input.exerciseLabelPlural });
+  const exerciseLabelShort = normalizeExerciseShortLabel(input.exerciseLabelShort);
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
   const template = await getDefaultSourceProfileTemplate();
@@ -405,11 +482,13 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
   const profileClone = prepareSourceProfileTemplateClone({ ...template, name: profileName }, id, profileOwnerUserId, now);
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
   const mirror = input.mirrorSource ?? null;
-  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
+  const levelPresentation = validateExerciseLevelPresentation(input.levelPresentation ?? DEFAULT_EXERCISE_LEVEL_PRESENTATION);
+  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, subject_id, collection_label_singular, collection_label_plural, exercise_label_singular, exercise_label_plural, exercise_label_short, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
     local_source_path, onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, google_drive_folder_id, google_drive_folder_label, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, args: [id, input.name, input.slug, input.shortLabel, input.description ?? DEFAULT_LEARNING_SPACE_DESCRIPTION, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder,
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM learning_spaces)), 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM subjects WHERE id = ? AND is_active = 1`, args: [id, input.subjectId, terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, input.description ?? DEFAULT_LEARNING_SPACE_DESCRIPTION, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder ?? null,
       legacyStorageProvider(primary.providerType), primary.providerType, primary.localSourcePath ?? null, primary.oneDriveDriveId ?? null,
-      primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now] }];
+      primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now, input.subjectId] }];
+  statements.push(...levelPresentationStatements(id, levelPresentation));
   statements.push(...profileClone.statements);
   statements.push(sourceUpsertStatement(id, "primary", primary, true, now));
   if (mirror) statements.push(sourceUpsertStatement(id, "mirror", mirror, false, now));
@@ -422,6 +501,7 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
   try {
     await executeBatch(statements);
   } catch (error) {
+    await requireActiveSubject(input.subjectId);
     rethrowUniqueNameConflict(error, SOURCE_PROFILE_NAME_UNIQUE_INDEX, SOURCE_PROFILE_NAME_CONFLICT_MESSAGE);
   }
   return (await getLearningSpace(id))!;
@@ -430,6 +510,16 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
 export async function updateLearningSpace(id: string, input: LearningSpaceInput): Promise<void> {
   const existing = await getLearningSpace(id);
   if (!existing) throw new Error("Leeromgeving niet gevonden.");
+  if (input.subjectId !== existing.subjectId) await requireActiveSubject(input.subjectId);
+  const terminology = normalizeCollectionTerminology(
+    { singular: input.collectionLabelSingular, plural: input.collectionLabelPlural },
+    { singular: existing.collectionLabelSingular, plural: existing.collectionLabelPlural },
+  );
+  const exerciseTerminology = normalizeExerciseTerminology(
+    { singular: input.exerciseLabelSingular, plural: input.exerciseLabelPlural },
+    { singular: existing.exerciseLabelSingular, plural: existing.exerciseLabelPlural },
+  );
+  const exerciseLabelShort = normalizeExerciseShortLabel(input.exerciseLabelShort, existing.exerciseLabelShort);
   const primary = preserveStorageConnection(input.primarySource ?? sourceFromLegacyInput(input), existing.primarySource);
   const mirror = input.mirrorSource === undefined ? sourceToInput(existing.mirrorSource) : preserveStorageConnection(input.mirrorSource, existing.mirrorSource);
   if (existing.mirrorSource?.isActive && !mirror) throw new Error("Schakel eerst terug naar de primaire bron voordat je de actieve mirror verwijdert.");
@@ -438,19 +528,30 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
   const local = configured.find((source) => source.providerType === "local");
   const oneDrive = configured.find((source) => source.providerType === "onedrive");
   const googleDrive = configured.find((source) => source.providerType === "google_drive");
+  const levelPresentation = validateExerciseLevelPresentation(input.levelPresentation ?? existing.levelPresentation ?? DEFAULT_EXERCISE_LEVEL_PRESENTATION);
   const now = new Date().toISOString();
-  const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
+  const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET subject_id = CASE
+      WHEN ? = ? OR EXISTS (SELECT 1 FROM subjects WHERE id = ? AND is_active = 1) THEN ?
+      ELSE '__invalid-subject__' END,
+    collection_label_singular = ?, collection_label_plural = ?, exercise_label_singular = ?, exercise_label_plural = ?, exercise_label_short = ?, name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
     local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, google_drive_folder_id = ?, google_drive_folder_label = ?, updated_at = ? WHERE id = ?`,
-    args: [input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder,
+    args: [input.subjectId, existing.subjectId, input.subjectId, input.subjectId,
+      terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder ?? existing.sortOrder,
       legacyStorageProvider(active.providerType), active.providerType,
       local?.localSourcePath ?? existing.localSourcePath,
       oneDrive?.oneDriveDriveId ?? existing.oneDriveDriveId, oneDrive?.oneDriveFolderId ?? existing.oneDriveFolderId,
       oneDrive?.oneDriveFolderPath ?? existing.oneDriveFolderPath, googleDrive?.googleDriveFolderId ?? existing.googleDriveFolderId,
       googleDrive?.googleDriveFolderLabel ?? existing.googleDriveFolderLabel, now, id] }];
+  statements.push(...levelPresentationStatements(id, levelPresentation));
   statements.push(sourceUpsertStatement(id, "primary", primary, existing.primarySource?.isActive ?? !existing.mirrorSource?.isActive, now));
   if (mirror) statements.push(sourceUpsertStatement(id, "mirror", mirror, existing.mirrorSource?.isActive ?? false, now));
   else statements.push({ sql: "DELETE FROM learning_space_sources WHERE learning_space_id = ? AND role = 'mirror' AND is_active = 0", args: [id] });
-  await executeBatch(statements);
+  try {
+    await executeBatch(statements);
+  } catch (error) {
+    if (input.subjectId !== existing.subjectId) await requireActiveSubject(input.subjectId);
+    throw error;
+  }
 }
 
 export async function setLearningSpaceEditorsCanManageAccess(id: string, enabled: boolean): Promise<void> {
@@ -569,15 +670,49 @@ export async function getThemes(learningSpaceId: string): Promise<Theme[]> {
   return result.rows.map((row) => ({ id: text(row, "id"), learningSpaceId: text(row, "learning_space_id"), name: text(row, "name"), sortOrder: Number(row.sort_order) }));
 }
 
-export async function createTheme(learningSpaceId: string, name: string, sortOrder: number): Promise<void> {
+export async function createTheme(learningSpaceId: string, name: string, sortOrder?: number): Promise<void> {
   const database = await getDatabase();
   const now = new Date().toISOString();
-  await database.execute({ sql: "INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", args: [randomUUID(), learningSpaceId, name, sortOrder, now, now] });
+  if (sortOrder !== undefined) {
+    await database.execute({ sql: "INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", args: [randomUUID(), learningSpaceId, name, sortOrder, now, now] });
+    return;
+  }
+  await database.execute({
+    sql: `INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at)
+      SELECT ?, ?, ?, COALESCE(MAX(sort_order), 0) + 10, ?, ? FROM themes WHERE learning_space_id = ?`,
+    args: [randomUUID(), learningSpaceId, name, now, now, learningSpaceId],
+  });
 }
 
-export async function updateTheme(id: string, learningSpaceId: string, name: string, sortOrder: number): Promise<void> {
+function levelPresentationStatements(learningSpaceId: string, presentation: ExerciseLevelPresentation): InStatement[] {
+  return Object.entries(presentation).map(([level, item]) => ({
+    sql: `INSERT INTO learning_space_level_presentations (learning_space_id, level, display_name, symbol_id, symbol_count, color, show_public_background)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(learning_space_id, level) DO UPDATE SET display_name = excluded.display_name,
+        symbol_id = excluded.symbol_id, symbol_count = excluded.symbol_count, color = excluded.color,
+        show_public_background = excluded.show_public_background`,
+    args: [learningSpaceId, level, item.displayName, item.symbolId, item.count, item.color, item.showPublicBackground ? 1 : 0],
+  }));
+}
+
+export async function updateTheme(id: string, learningSpaceId: string, name: string): Promise<void> {
   const database = await getDatabase();
-  await database.execute({ sql: "UPDATE themes SET name = ?, sort_order = ?, updated_at = ? WHERE id = ? AND learning_space_id = ?", args: [name, sortOrder, new Date().toISOString(), id, learningSpaceId] });
+  await database.execute({ sql: "UPDATE themes SET name = ?, updated_at = ? WHERE id = ? AND learning_space_id = ?", args: [name, new Date().toISOString(), id, learningSpaceId] });
+}
+
+export async function moveTheme(id: string, learningSpaceId: string, direction: "up" | "down"): Promise<boolean> {
+  const themes = await getThemes(learningSpaceId);
+  const currentIndex = themes.findIndex((theme) => theme.id === id);
+  if (currentIndex < 0) return false;
+  const targetIndex = currentIndex + (direction === "up" ? -1 : 1);
+  if (targetIndex < 0 || targetIndex >= themes.length) return false;
+  [themes[currentIndex], themes[targetIndex]] = [themes[targetIndex], themes[currentIndex]];
+  const now = new Date().toISOString();
+  await executeBatch(themes.map((theme, index) => ({
+    sql: "UPDATE themes SET sort_order = ?, updated_at = ? WHERE id = ? AND learning_space_id = ?",
+    args: [(index + 1) * 10, now, theme.id, learningSpaceId],
+  })));
+  return true;
 }
 
 export async function deleteTheme(id: string, learningSpaceId: string): Promise<void> {
@@ -697,6 +832,7 @@ export interface PersistIndexOptions {
   sourceId?: string;
   activateSourceId?: string;
   mirrorCompletedAt?: string;
+  header?: IndexedLearningSpaceHeader | null;
 }
 
 export async function persistIndex(
@@ -713,23 +849,135 @@ export async function persistIndex(
     throw new Error("De synchronisatiebron hoort niet bij deze leeromgeving.");
   }
   if (options.activateSourceId && source?.id !== options.activateSourceId) throw new Error("Het switchdoel is ongeldig.");
+  const writesExerciseLevelSource = !source || source.role === "primary";
   const startedAt = new Date().toISOString();
   const runId = randomUUID();
   const warnings = [...portfolios.flatMap((portfolio) => portfolio.warnings)];
-  const existingAssets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.file_name, solution_assets.source_version, solution_variants.kind
+  const portfolioCodeCounts = new Map<string, number>();
+  for (const portfolio of portfolios) portfolioCodeCounts.set(portfolio.code, (portfolioCodeCounts.get(portfolio.code) ?? 0) + 1);
+  const indexablePortfolios = portfolios.filter((portfolio) => portfolioCodeCounts.get(portfolio.code) === 1);
+  const existingAssets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.source_id,
+      solution_assets.file_name, solution_assets.extension, solution_assets.step, solution_assets.source_version,
+      solution_assets.is_indexed, solution_assets.archived_at, solution_variants.kind
     FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
     JOIN exercises ON exercises.id = solution_variants.exercise_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
-    WHERE solution_assets.is_indexed = 1 AND portfolios.learning_space_id = ?`, args: [spaceId] });
+    WHERE portfolios.learning_space_id = ?`, args: [spaceId] });
+  const existingResourceAssets = await database.execute({ sql: `SELECT id, portfolio_id, exercise_id, resource_scope, resource_id,
+      source_id, relative_path, file_name, extension, step, source_version, is_indexed, archived_at
+    FROM source_resource_assets WHERE learning_space_id = ?`, args: [spaceId] });
   const existingPortfolios = await database.execute({ sql: "SELECT id, portfolio_code FROM portfolios WHERE learning_space_id = ?", args: [spaceId] });
   const portfolioIds = new Map(existingPortfolios.rows.map((row) => [text(row, "portfolio_code"), text(row, "id")]));
   const legacyDefaultSpaceId = await getSetting("legacy_default_learning_space_id");
-  const assetKey = (variantId: string, relativePath: string) => `${variantId}\u0000${relativePath}`;
-  const existingAssetVersions = new Map(existingAssets.rows.map((row) => [
-    assetKey(text(row, "variant_id"), text(row, "relative_path")),
-    { id: text(row, "id"), fileName: text(row, "file_name"), variant: text(row, "kind"), sourceVersion: nullableText(row, "source_version") },
+  const resolvedPortfolioIds = new Map(indexablePortfolios.map((portfolio) => [
+    portfolio.code,
+    portfolioIds.get(portfolio.code) ?? (legacyDefaultSpaceId === spaceId ? `portfolio-${portfolio.code}` : stableId("portfolio", spaceId, portfolio.code)),
   ]));
+  const assetKey = (variantId: string, relativePath: string) => `${variantId}\u0000${relativePath}`;
+  const solutionAssetLogicalKey = (variantId: string, step: number, extension: string) => `${variantId}\u0000${step}\u0000${extension.toLowerCase()}`;
+  const resourceAssetExactKey = (scope: string, resourceId: string, sourceAssetId: string) => `${scope}\u0000${resourceId}\u0000${sourceAssetId}`;
+  const resourceAssetLogicalKey = (scope: string, parentId: string, resourceId: string, step: number, extension: string) =>
+    `${scope}\u0000${parentId}\u0000${resourceId}\u0000${step}\u0000${extension.toLowerCase()}`;
+  const existingSolutionAssetRows = existingAssets.rows.map((row) => ({
+    id: text(row, "id"), variantId: text(row, "variant_id"), relativePath: text(row, "relative_path"), sourceId: text(row, "source_id"),
+    fileName: text(row, "file_name"), extension: text(row, "extension"), step: Number(row.step),
+    variant: text(row, "kind"), sourceVersion: nullableText(row, "source_version"), isIndexed: bool(row.is_indexed),
+  }));
+  const activeSolutionAssetRows = existingSolutionAssetRows.filter((asset) => asset.isIndexed);
+  const existingAssetVersions = new Map(activeSolutionAssetRows.map((asset) => [assetKey(asset.variantId, asset.relativePath), asset]));
+  const existingSolutionAssetsByPathKey = new Map(existingSolutionAssetRows.map((asset) => [assetKey(asset.variantId, asset.relativePath), asset]));
+  const existingSolutionAssetsByLogicalKey = groupBy(activeSolutionAssetRows, (asset) => solutionAssetLogicalKey(asset.variantId, asset.step, asset.extension));
+  const existingResourceAssetRows = existingResourceAssets.rows.map((row) => ({
+    id: text(row, "id"), portfolioId: text(row, "portfolio_id"), exerciseId: nullableText(row, "exercise_id"),
+    scope: text(row, "resource_scope"), resourceId: text(row, "resource_id"), sourceId: text(row, "source_id"),
+    relativePath: text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension"),
+    step: Number(row.step), sourceVersion: nullableText(row, "source_version"), isIndexed: bool(row.is_indexed),
+  }));
+  const existingResourceAssetsByExactKey = new Map(existingResourceAssetRows.map((asset) => [resourceAssetExactKey(asset.scope, asset.resourceId, asset.sourceId), asset]));
+  const activeResourceAssetsByExactKey = new Map(existingResourceAssetRows.filter((asset) => asset.isIndexed).map((asset) => [resourceAssetExactKey(asset.scope, asset.resourceId, asset.sourceId), asset]));
+  const existingResourceAssetsByLogicalKey = groupBy(existingResourceAssetRows.filter((asset) => asset.isIndexed), (asset) => resourceAssetLogicalKey(
+    asset.scope, asset.scope === "portfolio" ? asset.portfolioId : asset.exerciseId ?? "", asset.resourceId, asset.step, asset.extension,
+  ));
+  const incomingSolutionAssetCounts = new Map<string, number>();
+  const incomingSolutionPathCounts = new Map<string, number>();
+  const incomingResourceAssetCounts = new Map<string, number>();
+  const incomingResourceExactCounts = new Map<string, number>();
+  for (const portfolio of indexablePortfolios) {
+    const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
+    for (const asset of portfolio.resourceAssets) {
+      incrementCount(incomingResourceAssetCounts, resourceAssetLogicalKey("portfolio", portfolioId, asset.resourceId, 1, asset.extension));
+      incrementCount(incomingResourceExactCounts, resourceAssetExactKey("portfolio", asset.resourceId, asset.sourceId));
+    }
+    for (const section of portfolio.sections) {
+      const sectionId = `${portfolioId}-section-${section.order}`;
+      for (const exercise of section.exercises) {
+        const exerciseId = `${sectionId}-exercise-${exercise.code}`;
+        for (const asset of exercise.assets) {
+          incrementCount(incomingResourceAssetCounts, resourceAssetLogicalKey("exercise", exerciseId, asset.resourceId, asset.parsed.step, asset.parsed.extension));
+          incrementCount(incomingResourceExactCounts, resourceAssetExactKey("exercise", asset.resourceId, asset.sourceId));
+          if (asset.legacyVariant) {
+            const variantId = `${exerciseId}-${asset.legacyVariant}`;
+            incrementCount(incomingSolutionAssetCounts, solutionAssetLogicalKey(variantId, asset.parsed.step, asset.parsed.extension));
+            incrementCount(incomingSolutionPathCounts, assetKey(variantId, asset.relativePath));
+          }
+        }
+      }
+    }
+  }
   const seenAssetKeys = new Set<string>();
   const seenVariantIds = new Set<string>();
+  const reconciledSolutionAssetIds = new Set<string>();
+  const reconciledResourceAssetIds = new Set<string>();
+  const reportedResourceConflicts = new Set<string>();
+  const reportedSolutionConflicts = new Set<string>();
+  const resourceReconciliationCandidate = (exactKey: string, logicalKey: string) => {
+    if ((incomingResourceExactCounts.get(exactKey) ?? 0) > 1) return { kind: "conflict" as const };
+    if (activeResourceAssetsByExactKey.has(exactKey) || incomingResourceAssetCounts.get(logicalKey) !== 1) return null;
+    const candidates = (existingResourceAssetsByLogicalKey.get(logicalKey) ?? []).filter((asset) => !reconciledResourceAssetIds.has(asset.id));
+    if (candidates.length !== 1) return candidates.length > 1 ? { kind: "conflict" as const } : null;
+    const candidate = candidates[0];
+    const occupied = existingResourceAssetsByExactKey.get(exactKey);
+    if (!occupied || occupied.id === candidate.id) return { kind: "reconcile" as const, candidate, stale: null };
+    const occupiedLogicalKey = resourceAssetLogicalKey(
+      occupied.scope, occupied.scope === "portfolio" ? occupied.portfolioId : occupied.exerciseId ?? "",
+      occupied.resourceId, occupied.step, occupied.extension,
+    );
+    if (occupied.isIndexed || occupiedLogicalKey !== logicalKey) return { kind: "conflict" as const };
+    return { kind: "reconcile" as const, candidate, stale: occupied };
+  };
+  const reportResourceConflict = (exactKey: string, path: string) => {
+    if (reportedResourceConflicts.has(exactKey)) return;
+    reportedResourceConflicts.add(exactKey);
+    warnings.push({
+      severity: "warning",
+      path,
+      message: "Dezelfde bronidentiteit hoort bij meerdere mogelijke onderdelen. Het bestand is niet automatisch gekoppeld.",
+    });
+  };
+  const solutionReconciliationCandidate = (pathKey: string, logicalKey: string) => {
+    if ((incomingSolutionPathCounts.get(pathKey) ?? 0) > 1) return { kind: "conflict" as const };
+    if (existingAssetVersions.has(pathKey)) return null;
+    const occupied = existingSolutionAssetsByPathKey.get(pathKey);
+    if (occupied && solutionAssetLogicalKey(occupied.variantId, occupied.step, occupied.extension) !== logicalKey) {
+      return { kind: "conflict" as const };
+    }
+    if (incomingSolutionAssetCounts.get(logicalKey) !== 1) return null;
+    const candidates = (existingSolutionAssetsByLogicalKey.get(logicalKey) ?? [])
+      .filter((asset) => !reconciledSolutionAssetIds.has(asset.id));
+    if (candidates.length !== 1) return candidates.length > 1 ? { kind: "conflict" as const } : null;
+    const candidate = candidates[0];
+    if (!occupied || occupied.id === candidate.id) return { kind: "reconcile" as const, candidate, stale: null };
+    if (occupied.isIndexed) return { kind: "conflict" as const };
+    return { kind: "reconcile" as const, candidate, stale: occupied };
+  };
+  const reportSolutionConflict = (pathKey: string, path: string) => {
+    if (reportedSolutionConflicts.has(pathKey)) return;
+    reportedSolutionConflicts.add(pathKey);
+    warnings.push({
+      severity: "warning",
+      path,
+      message: "De uitwerking hoort bij meerdere mogelijke historische bestanden. Het bestand is niet automatisch gekoppeld.",
+    });
+  };
   let added = 0;
   let updated = 0;
 
@@ -737,7 +985,7 @@ export async function persistIndex(
     {
       sql: `INSERT INTO sync_runs (id, learning_space_id, source_id, started_at, portfolio_count, warning_count, status, provider_type)
         VALUES (?, ?, ?, ?, ?, ?, 'running', ?)`,
-      args: [runId, spaceId, sourceId ?? null, startedAt, portfolios.length, warnings.length, providerType],
+      args: [runId, spaceId, sourceId ?? null, startedAt, indexablePortfolios.length, warnings.length, providerType],
     },
     { sql: "UPDATE portfolios SET is_indexed = 0 WHERE learning_space_id = ?", args: [spaceId] },
     { sql: "UPDATE sections SET is_indexed = 0 WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [spaceId] },
@@ -747,8 +995,24 @@ export async function persistIndex(
     { sql: "UPDATE source_resource_assets SET is_indexed = 0 WHERE learning_space_id = ?", args: [spaceId] },
   ];
 
-  for (const portfolio of portfolios) {
-    const portfolioId = portfolioIds.get(portfolio.code) ?? (legacyDefaultSpaceId === spaceId ? `portfolio-${portfolio.code}` : stableId("portfolio", spaceId, portfolio.code));
+  if (Object.hasOwn(options, "header")) {
+    statements.push({ sql: "DELETE FROM learning_space_header_assets WHERE learning_space_id = ?", args: [spaceId] });
+    if (options.header) {
+      if (!source || source.role !== "primary") throw new Error("De LearningSpace-header moet uit de primaire bron komen.");
+      statements.push({
+        sql: `INSERT INTO learning_space_header_assets
+          (id, learning_space_id, learning_space_source_id, source_id, relative_path, file_name, extension,
+            last_modified_at, source_version, indexed_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [stableId("learning-space-header", spaceId), spaceId, source.id, options.header.sourceId,
+          options.header.relativePath, options.header.fileName, options.header.extension,
+          options.header.lastModifiedAt, options.header.sourceVersion, startedAt],
+      });
+    }
+  }
+
+  for (const portfolio of indexablePortfolios) {
+    const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
     statements.push({
       sql: `INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, assignment_pdf_path, assignment_pdf_source_id,
         hints_document_path, hints_document_source_id, final_solutions_pdf_path, final_solutions_pdf_source_id, is_indexed, indexed_at, last_seen_at)
@@ -765,7 +1029,27 @@ export async function persistIndex(
 
     for (const resourceAsset of portfolio.resourceAssets) {
       const resourceAssetId = stableId("source-resource-asset", spaceId, "portfolio", resourceAsset.resourceId, resourceAsset.sourceId);
-      statements.push({
+      const logicalKey = resourceAssetLogicalKey("portfolio", portfolioId, resourceAsset.resourceId, 1, resourceAsset.extension);
+      const exactKey = resourceAssetExactKey("portfolio", resourceAsset.resourceId, resourceAsset.sourceId);
+      const reconciliation = resourceReconciliationCandidate(exactKey, logicalKey);
+      if (reconciliation?.kind === "conflict") {
+        reportResourceConflict(exactKey, resourceAsset.relativePath);
+        continue;
+      }
+      if (reconciliation?.kind === "reconcile") {
+        reconciledResourceAssetIds.add(reconciliation.candidate.id);
+        if (reconciliation.stale) statements.push({
+          sql: "DELETE FROM source_resource_assets WHERE id = ? AND is_indexed = 0",
+          args: [reconciliation.stale.id],
+        });
+        statements.push({
+          sql: `UPDATE source_resource_assets SET portfolio_id = ?, exercise_id = NULL, semantic_role = ?, source_id = ?,
+            relative_path = ?, file_name = ?, extension = ?, step = 1, last_modified_at = ?, source_version = ?,
+            is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = ? WHERE id = ?`,
+          args: [portfolioId, resourceAsset.semanticRole, resourceAsset.sourceId, resourceAsset.relativePath, resourceAsset.fileName,
+            resourceAsset.extension, resourceAsset.lastModifiedAt, resourceAsset.sourceVersion, startedAt, reconciliation.candidate.id],
+        });
+      } else statements.push({
         sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
           semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed,
           missing_since, archived_at, last_seen_at)
@@ -793,7 +1077,14 @@ export async function persistIndex(
 
       for (const exercise of section.exercises) {
         const exerciseId = `${sectionId}-exercise-${exercise.code}`;
-        statements.push({
+        statements.push(writesExerciseLevelSource ? {
+          sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, level_source, visibility_mode, visible, is_indexed, last_seen_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'visible', 1, 1, ?)
+            ON CONFLICT(id) DO UPDATE SET exercise_number = excluded.exercise_number,
+              exercise_suffix = excluded.exercise_suffix, level_source = excluded.level_source,
+              is_indexed = 1, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
+          args: [exerciseId, portfolioId, sectionId, exercise.code, exercise.number, exercise.suffix, exercise.levelSource ?? null, startedAt],
+        } : {
           sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, visibility_mode, visible, is_indexed, last_seen_at)
             VALUES (?, ?, ?, ?, ?, ?, 'visible', 1, 1, ?)
             ON CONFLICT(id) DO UPDATE SET exercise_number = excluded.exercise_number,
@@ -803,7 +1094,27 @@ export async function persistIndex(
 
         for (const asset of exercise.assets) {
           const resourceAssetId = stableId("source-resource-asset", spaceId, "exercise", asset.resourceId, asset.sourceId);
-          statements.push({
+          const logicalKey = resourceAssetLogicalKey("exercise", exerciseId, asset.resourceId, asset.parsed.step, asset.parsed.extension);
+          const exactKey = resourceAssetExactKey("exercise", asset.resourceId, asset.sourceId);
+          const reconciliation = resourceReconciliationCandidate(exactKey, logicalKey);
+          if (reconciliation?.kind === "conflict") {
+            reportResourceConflict(exactKey, asset.relativePath);
+            continue;
+          }
+          if (reconciliation?.kind === "reconcile") {
+            reconciledResourceAssetIds.add(reconciliation.candidate.id);
+            if (reconciliation.stale) statements.push({
+              sql: "DELETE FROM source_resource_assets WHERE id = ? AND is_indexed = 0",
+              args: [reconciliation.stale.id],
+            });
+            statements.push({
+              sql: `UPDATE source_resource_assets SET portfolio_id = ?, exercise_id = ?, semantic_role = ?, source_id = ?,
+                relative_path = ?, file_name = ?, extension = ?, step = ?, last_modified_at = ?, source_version = ?,
+                is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = ? WHERE id = ?`,
+              args: [portfolioId, exerciseId, asset.semanticRole, asset.sourceId, asset.relativePath, asset.fileName,
+                asset.parsed.extension, asset.parsed.step, asset.lastModifiedAt, asset.sourceVersion, startedAt, reconciliation.candidate.id],
+            });
+          } else statements.push({
             sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
               semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed,
               missing_since, archived_at, last_seen_at)
@@ -830,12 +1141,35 @@ export async function persistIndex(
             args: [variantId, exerciseId, variant, variant === "standard" ? "Standaard" : "Alternatief"],
           });
           for (const asset of variantAssets) {
+            const pathKey = assetKey(variantId, asset.relativePath);
+            const previousAtPath = existingAssetVersions.get(pathKey);
+            const logicalKey = solutionAssetLogicalKey(variantId, asset.parsed.step, asset.parsed.extension);
+            const reconciliation = solutionReconciliationCandidate(pathKey, logicalKey);
+            if (reconciliation?.kind === "conflict") {
+              reportSolutionConflict(pathKey, asset.relativePath);
+              continue;
+            }
+            if (reconciliation?.kind === "reconcile") {
+              reconciledSolutionAssetIds.add(reconciliation.candidate.id);
+              seenAssetKeys.add(assetKey(variantId, reconciliation.candidate.relativePath));
+              updated += 1;
+              if (reconciliation.stale) statements.push({
+                sql: "DELETE FROM solution_assets WHERE id = ? AND is_indexed = 0",
+                args: [reconciliation.stale.id],
+              });
+              statements.push({
+                sql: `UPDATE solution_assets SET relative_path = ?, source_id = ?, file_name = ?, extension = ?, step = ?,
+                  last_modified_at = ?, source_version = ?, is_indexed = 1, archived_at = NULL, missing_since = NULL WHERE id = ?`,
+                args: [asset.relativePath, asset.sourceId, asset.fileName, asset.parsed.extension, asset.parsed.step,
+                  asset.lastModifiedAt, asset.sourceVersion, reconciliation.candidate.id],
+              });
+              continue;
+            }
+
             const assetId = stableId("asset", variantId, asset.relativePath);
-            const logicalAssetKey = assetKey(variantId, asset.relativePath);
-            seenAssetKeys.add(logicalAssetKey);
-            const previousAsset = existingAssetVersions.get(logicalAssetKey);
-            if (previousAsset === undefined) added += 1;
-            else if (previousAsset.sourceVersion !== asset.sourceVersion) updated += 1;
+            seenAssetKeys.add(pathKey);
+            if (previousAtPath === undefined) added += 1;
+            else if (previousAtPath.sourceVersion !== asset.sourceVersion) updated += 1;
             statements.push({
               sql: `INSERT INTO solution_assets (id, variant_id, relative_path, source_id, file_name, extension, step,
                 last_modified_at, source_version, is_indexed, missing_since)
@@ -1180,6 +1514,7 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
             return {
               id: exerciseId,
               code: text(exercise, "exercise_code"),
+              ...exerciseLevelMetadataFromRow(exercise),
               visible: childMode(exercise) === "visible",
               visibilityMode: exercisePublication.mode,
               publishFrom: exercisePublication.publishFrom,
@@ -1231,14 +1566,19 @@ export async function getLatestWarnings(learningSpaceId?: string) {
 }
 
 export async function getActiveWarningCounts(learningSpaceId?: string): Promise<Map<string, number>> {
-  const warnings = await getLatestWarnings(learningSpaceId);
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
-  const portfolios = await getAdminPortfolios(spaceId);
+  const database = await getDatabase();
+  const [warnings, portfolios] = await Promise.all([
+    getLatestWarnings(spaceId),
+    database.execute({ sql: "SELECT id, relative_path FROM portfolios WHERE learning_space_id = ? AND archived_at IS NULL", args: [spaceId] }),
+  ]);
   const counts = new Map<string, number>();
   for (const warning of warnings) {
-    const portfolioCode = portfolioCodeFromRelativePath(warning.relativePath);
-    const portfolio = portfolios.find((item) => item.code === portfolioCode);
-    if (portfolio) counts.set(portfolio.id, (counts.get(portfolio.id) ?? 0) + 1);
+    const matches = portfolios.rows.filter((portfolio) => relativePathBelongsToDirectory(warning.relativePath, text(portfolio, "relative_path")));
+    if (matches.length === 1) {
+      const portfolioId = text(matches[0], "id");
+      counts.set(portfolioId, (counts.get(portfolioId) ?? 0) + 1);
+    }
   }
   return counts;
 }
@@ -1246,8 +1586,11 @@ export async function getActiveWarningCounts(learningSpaceId?: string): Promise<
 export async function getPortfolioWarnings(portfolioId: string, learningSpaceId?: string) {
   const portfolio = await getAdminPortfolio(portfolioId, learningSpaceId);
   if (!portfolio) return [];
+  const database = await getDatabase();
+  const pathResult = await database.execute({ sql: "SELECT relative_path FROM portfolios WHERE id = ? AND learning_space_id = ?", args: [portfolio.id, portfolio.learningSpaceId] });
+  const portfolioPath = pathResult.rows[0] ? text(pathResult.rows[0], "relative_path") : "";
   return (await getLatestWarnings(portfolio.learningSpaceId))
-    .filter((warning) => portfolioCodeFromRelativePath(warning.relativePath) === portfolio.code);
+    .filter((warning) => relativePathBelongsToDirectory(warning.relativePath, portfolioPath));
 }
 
 export async function setPortfolioPublication(id: string, mode: PortfolioVisibilityMode, limited: boolean, publishFrom: string | null, publishUntil: string | null): Promise<void> {
@@ -1320,6 +1663,14 @@ export async function setExerciseAlternativeVisibility(id: string, showAlternati
   await database.execute({ sql: "UPDATE exercises SET show_alternative_to_students = ? WHERE id = ?", args: [showAlternativeToStudents ? 1 : 0, id] });
 }
 
+export async function setExerciseLevelOverride(id: string, input: ExerciseLevelOverrideInput): Promise<void> {
+  const override = validateExerciseLevelOverrideInput(input);
+  await (await getDatabase()).execute({
+    sql: "UPDATE exercises SET level_override_mode = ?, level_override = ? WHERE id = ?",
+    args: [override.mode, override.mode === "level" ? override.level : null, id],
+  });
+}
+
 export async function setExerciseNote(id: string, customNote: string | null, noteLabel: string | null, notePosition: ExerciseNotePosition): Promise<void> {
   await (await getDatabase()).execute({
     sql: "UPDATE exercises SET custom_note = ?, note_label = ?, note_position = ? WHERE id = ?",
@@ -1388,6 +1739,7 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
           const exercisePublication = { mode: childMode(exercise), limited: false, publishFrom: null, publishUntil: null };
           return {
             id: text(exercise, "id"), code: text(exercise, "exercise_code"),
+            ...exerciseLevelMetadataFromRow(exercise),
             visible: resolveChildPublication(exercisePublication, sectionStatus, now).state === "visible",
             hasAlternativeSolution: bool(exercise.has_alternative_solution),
           };
@@ -1442,6 +1794,7 @@ export async function getVisibleExercise(id: string, learningSpaceId?: string) {
   const visibleAssetRows = assets.rows.filter((asset) => text(asset, "kind") !== "alternative" || bool(exercise.show_alternative_to_students));
   return {
     id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"),
+    ...exerciseLevelMetadataFromRow(exercise),
     portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
     customNote: nullableText(exercise, "custom_note"), noteLabel: nullableText(exercise, "note_label"), notePosition: text(exercise, "note_position") as ExerciseNotePosition,
     resources: exerciseResourceReadModel(exerciseResources, visibleAssetRows, resourceAssets.rows, { includeUnavailable: false, showAlternative: bool(exercise.show_alternative_to_students) }),
@@ -1451,16 +1804,26 @@ export async function getVisibleExercise(id: string, learningSpaceId?: string) {
 
 export async function getAdminExercise(id: string, learningSpaceId?: string) {
   const database = await getDatabase();
-  const result = await database.execute({ sql: `SELECT exercises.exercise_code, exercises.custom_note, exercises.note_label, exercises.note_position, exercises.is_indexed AS exercise_is_indexed, exercises.archived_at AS exercise_archived_at,
-    sections.title AS section_title, sections.is_indexed AS section_is_indexed, portfolios.id AS portfolio_id, portfolios.portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override, portfolios.learning_space_id, portfolios.is_indexed AS portfolio_is_indexed
+  const result = await database.execute({ sql: `SELECT exercises.exercise_code, exercises.custom_note, exercises.note_label, exercises.note_position,
+    exercises.level_source, exercises.level_override_mode, exercises.level_override, exercises.visibility_mode,
+    exercises.show_alternative_to_students,
+    exercises.is_indexed AS exercise_is_indexed, exercises.archived_at AS exercise_archived_at,
+    sections.title AS section_title, sections.visibility_mode AS section_visibility_mode,
+    sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from,
+    sections.publish_until AS section_publish_until, sections.is_indexed AS section_is_indexed,
+    portfolios.id AS portfolio_id, portfolios.portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override,
+    portfolios.visible AS portfolio_visible, portfolios.publication_limited AS portfolio_publication_limited,
+    portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until,
+    portfolios.learning_space_id, portfolios.is_indexed AS portfolio_is_indexed
     FROM exercises JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
     WHERE exercises.id = ? AND exercises.archived_at IS NULL${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`, args: learningSpaceId ? [id, learningSpaceId] : [id] });
   const exercise = result.rows[0];
   if (!exercise) return null;
   const assets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.file_name, solution_assets.extension, solution_assets.step,
-      solution_assets.last_modified_at, solution_variants.kind, solution_variants.label
+      solution_assets.last_modified_at, solution_assets.is_indexed, solution_variants.is_indexed AS variant_is_indexed,
+      solution_variants.kind, solution_variants.label
     FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
-    WHERE solution_variants.exercise_id = ? AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1
+    WHERE solution_variants.exercise_id = ? AND solution_assets.archived_at IS NULL
     ORDER BY CASE solution_variants.kind WHEN 'standard' THEN 0 ELSE 1 END, solution_assets.step, solution_assets.file_name`, args: [id] });
   const resourceAssets = await database.execute({
     sql: `SELECT id, resource_id, file_name, extension, step, last_modified_at, is_indexed
@@ -1470,6 +1833,18 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     args: [id],
   });
   const isIndexed = bool(exercise.exercise_is_indexed) && bool(exercise.section_is_indexed) && bool(exercise.portfolio_is_indexed);
+  const now = new Date();
+  const portfolioStatus = resolvePortfolioPublication({
+    visible: bool(exercise.portfolio_visible), limited: bool(exercise.portfolio_publication_limited),
+    publishFrom: nullableText(exercise, "portfolio_publish_from"), publishUntil: nullableText(exercise, "portfolio_publish_until"),
+  }, now);
+  const sectionStatus = resolveChildPublication({
+    mode: childMode({ visibility_mode: exercise.section_visibility_mode }), limited: bool(exercise.section_publication_limited),
+    publishFrom: nullableText(exercise, "section_publish_from"), publishUntil: nullableText(exercise, "section_publish_until"),
+  }, portfolioStatus, now);
+  const visibilityMode = childMode(exercise);
+  const effectiveStatus = resolveChildPublication({ mode: visibilityMode, limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now);
+  const indexedAssetRows = assets.rows.filter((asset) => bool(asset.is_indexed) && bool(asset.variant_is_indexed));
   const sourceProfile = await getActiveSourceProfileForLearningSpace(text(exercise, "learning_space_id"));
   const exerciseResources = sourceProfile?.config.exerciseResources ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
   return {
@@ -1477,6 +1852,14 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     portfolioId: text(exercise, "portfolio_id"),
     learningSpaceId: text(exercise, "learning_space_id"),
     code: text(exercise, "exercise_code"),
+    ...exerciseLevelMetadataFromRow(exercise),
+    visible: visibilityMode === "visible",
+    visibilityMode,
+    effectiveStatus,
+    showAlternativeToStudents: bool(exercise.show_alternative_to_students),
+    standardAssets: assets.rows.filter((asset) => text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
+    alternativeAssets: assets.rows.filter((asset) => text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
+    missingAssets: assets.rows.filter((asset) => !bool(asset.is_indexed)).length,
     sectionTitle: text(exercise, "section_title"),
     portfolioCode: text(exercise, "portfolio_code"),
     portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
@@ -1484,8 +1867,8 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     customNote: nullableText(exercise, "custom_note"),
     noteLabel: nullableText(exercise, "note_label"),
     notePosition: text(exercise, "note_position") as ExerciseNotePosition,
-    resources: exerciseResourceReadModel(exerciseResources, assets.rows, resourceAssets.rows, { includeUnavailable: true, showAlternative: true }),
-    assets: assets.rows.map((asset) => ({
+    resources: exerciseResourceReadModel(exerciseResources, indexedAssetRows, resourceAssets.rows, { includeUnavailable: true, showAlternative: true }),
+    assets: indexedAssetRows.map((asset) => ({
       id: text(asset, "id"),
       fileName: text(asset, "file_name"),
       extension: text(asset, "extension"),
@@ -1495,6 +1878,14 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
       lastModifiedAt: nullableText(asset, "last_modified_at"),
     })),
   };
+}
+
+function exerciseLevelMetadataFromRow(row: DatabaseRow): ExerciseLevelMetadata {
+  return exerciseLevelMetadata({
+    levelSource: row.level_source,
+    levelOverrideMode: row.level_override_mode,
+    levelOverride: row.level_override,
+  });
 }
 
 export async function getAdminAsset(id: string, learningSpaceId?: string) {

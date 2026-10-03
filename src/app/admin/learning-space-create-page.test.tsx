@@ -4,12 +4,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   getManageableLearningSpaceIds: vi.fn(),
+  getAccessibleLearningSpaceIds: vi.fn(),
   getLearningSpaces: vi.fn(),
+  listActiveSubjects: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
-vi.mock("@/lib/authorization", () => ({ getManageableLearningSpaceIds: mocks.getManageableLearningSpaceIds }));
+vi.mock("@/lib/authorization", () => ({
+  getManageableLearningSpaceIds: mocks.getManageableLearningSpaceIds,
+  getAccessibleLearningSpaceIds: mocks.getAccessibleLearningSpaceIds,
+}));
 vi.mock("@/lib/repositories", () => ({ getLearningSpaces: mocks.getLearningSpaces }));
+vi.mock("@/lib/subjects", () => ({ listActiveSubjects: mocks.listActiveSubjects }));
 vi.mock("@/app/components/page-banner", () => ({ PageBanner: () => null }));
 vi.mock("./actions", () => ({ createLearningSpaceAction: vi.fn() }));
 
@@ -20,6 +26,8 @@ describe("admin LearningSpace creation entry point", () => {
     vi.clearAllMocks();
     mocks.getLearningSpaces.mockResolvedValue([]);
     mocks.getManageableLearningSpaceIds.mockResolvedValue([]);
+    mocks.getAccessibleLearningSpaceIds.mockResolvedValue([]);
+    mocks.listActiveSubjects.mockResolvedValue([{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true }]);
   });
 
   it.each(["teacher", "superadmin"] as const)("shows the creation trigger to an active %s", async (role) => {
@@ -77,6 +85,17 @@ describe("admin LearningSpace creation entry point", () => {
     expect(markup).toContain('role="dialog"');
     expect(markup).toContain('role="alert"');
     expect(markup).toContain("Controleer de ingevulde gegevens.");
+  });
+
+  it("loads active subjects and renders an explicit required choice", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher"));
+
+    const markup = renderToStaticMarkup(await AdminPage({ searchParams: Promise.resolve({ create: "1" }) }));
+
+    expect(mocks.listActiveSubjects).toHaveBeenCalledOnce();
+    expect(markup).toContain('name="subjectId"');
+    expect(markup).toContain("Kies een vak");
+    expect(markup).toContain("Wiskunde");
   });
 });
 

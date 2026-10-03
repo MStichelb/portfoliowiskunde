@@ -16,4 +16,11 @@ describe("AdminExercisePreviewToolbar", () => {
     expect(markup).toContain("Adminweergave");
     expect(markup).not.toContain('href="/google/portfolio/');
   });
+
+  it("uses the configured collection term without changing the technical route", () => {
+    const markup = renderToStaticMarkup(<AdminExercisePreviewToolbar portfolioHref="/admin/fysica/portfolio/item-1" collectionLabelSingular="bunDEL" />);
+
+    expect(markup).toContain("Terug naar bundel");
+    expect(markup).toContain('href="/admin/fysica/portfolio/item-1"');
+  });
 });

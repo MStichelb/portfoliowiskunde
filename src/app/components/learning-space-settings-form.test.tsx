@@ -2,32 +2,71 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import type { LearningSpace } from "@/lib/repositories";
+import { DEFAULT_EXERCISE_LEVEL_PRESENTATION } from "@/lib/exercise-level-presentation";
 
 import { LearningSpaceSettingsForm } from "./learning-space-settings-form";
 
 const space: LearningSpace = {
-  id: "space-6", name: "Zesde jaar", slug: "6", shortLabel: "6WIS", description: "Oefenmateriaal",
+  id: "space-6", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
+  collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
+  name: "Zesde jaar", slug: "6", shortLabel: "6WIS", description: "Oefenmateriaal",
   cardColor: "#DCEFE9", sortOrder: 6, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "local",
   localSourcePath: "C:\\Portfolio", oneDriveDriveId: null, oneDriveFolderId: null,
   oneDriveFolderPath: null, googleDriveFolderId: null, googleDriveFolderLabel: null,
   sources: [], activeSourceId: null, primarySource: null, mirrorSource: null,
+  levelPresentation: DEFAULT_EXERCISE_LEVEL_PRESENTATION,
 };
+const subjects = [{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, usageCount: 0, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" }];
 
 describe("LearningSpaceSettingsForm", () => {
-  it("keeps all general fields and places a save button in both settings cards", () => {
-    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} canPermanentlyDelete action={() => ({ error: null })} />);
+  it("keeps general settings separate from the existing-space personalization card", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} subjects={subjects} canPermanentlyDelete action={() => ({ error: null })} />);
     const generalStart = markup.indexOf('id="general-settings-heading"');
+    const personalizationStart = markup.indexOf('id="personalization-settings-heading"');
     const editorPermissionsStart = markup.indexOf('id="editor-permissions-heading"');
     const sourceStart = markup.indexOf('id="source-settings-heading"');
     const saveButtons = [...markup.matchAll(/class="primary-button settings-save-button"/g)].map((match) => match.index ?? -1);
 
     expect(markup).toContain("Weergavenaam");
+    expect(markup).toContain('name="subjectId"');
+    expect(markup).toContain('<option value="subject-wiskunde" selected="">Wiskunde</option>');
     expect(markup).toContain("Met deze naam verschijnt de leeromgeving bij de leerlingen.");
     expect(markup).toContain("URL");
     expect(markup).toContain("Kort label");
-    expect(markup).toContain("Sortering");
+    expect(markup).not.toContain("Sortering");
+    expect(markup).not.toContain('type="number"');
     expect(markup).toContain("Beschrijving");
     expect(markup).toContain("Kleur");
+    expect(markup).toContain("Personalisatie");
+    expect(markup).toContain("Header");
+    expect(markup).toContain("Om een eigen afbeelding bovenaan het portfolio weer te geven, plaats je de gewenste afbeelding als &#x27;header.png&#x27; of &#x27;header.jpg&#x27; in de bronmap van de leeromgeving. Zo niet wordt de standaardheader gebruikt.");
+    expect(markup).toContain("Benaming portfolio&#x27;s");
+    expect(markup).toContain("Benaming oefeningen");
+    expect(markup).toContain("Niveaus");
+    expect(markup).toContain('name="levelSymbol_opwarmer"');
+    expect(markup).toContain('name="levelCount_verdieping"');
+    expect(markup).toContain('name="levelName_basis" value="Basis"');
+    expect(markup).toContain('type="color" name="levelColor_uitdaging" value="#C00000"');
+    const publicBackgroundInput = markup.match(/<input[^>]*name="levelShowPublicBackground_opwarmer"[^>]*>/)?.[0] ?? "";
+    expect(publicBackgroundInput).toContain('type="checkbox"');
+    expect(publicBackgroundInput).toContain('value="true"');
+    expect(publicBackgroundInput).not.toContain('checked=""');
+    expect(markup).toContain(">Achtergrond<input");
+    expect(markup.match(/exercise-level-badge-symbol-only/g)).toHaveLength(4);
+    expect(markup).toContain('aria-label="Herstel standaardinstellingen voor Opwarmer"');
+    expect(markup).not.toContain("exercise-level-presentation-heading");
+    expect(markup).not.toContain("<strong>Opwarmer</strong>");
+    expect(markup).toContain("★");
+    expect(markup).toContain("★★");
+    expect(markup).toContain("★★★");
+    expect(markup).toContain("◆");
+    expect(markup).toContain('<option value="large_circle">⬤ Grote bol</option>');
+    expect(markup.indexOf('name="levelName_opwarmer"')).toBeLessThan(markup.indexOf('aria-label="Herstel standaardinstellingen voor Opwarmer"'));
+    expect(markup).toContain('name="collectionLabelSingular" value="Portfolio"');
+    expect(markup).toContain('name="collectionLabelPlural" value="Portfolio&#x27;s"');
+    expect(markup).toContain('name="exerciseLabelSingular" value="Oefening"');
+    expect(markup).toContain('name="exerciseLabelPlural" value="Oefeningen"');
     expect(markup).toContain("Bewerkersrechten");
     expect(markup).toContain("Bewerkers kunnen geen toegang beheren");
     expect(markup).toContain("Alleen de eigenaar en hoofdbeheerders mogen Smartschoolgroepen en individuele leerlingen aan deze leeromgeving koppelen.");
@@ -37,21 +76,76 @@ describe("LearningSpaceSettingsForm", () => {
     expect(editorPermissionsSwitch).toContain('type="button"');
     expect(editorPermissionsSwitch).toContain('aria-checked="false"');
     expect(editorPermissionsSwitch).not.toContain("formAction");
-    expect(editorPermissionsStart).toBeGreaterThan(generalStart);
+    expect(personalizationStart).toBeGreaterThan(generalStart);
+    expect(editorPermissionsStart).toBeGreaterThan(personalizationStart);
     expect(editorPermissionsStart).toBeLessThan(sourceStart);
-    expect(saveButtons).toHaveLength(2);
+    expect(saveButtons).toHaveLength(3);
     expect(saveButtons[0]).toBeGreaterThan(generalStart);
-    expect(saveButtons[0]).toBeLessThan(sourceStart);
-    expect(saveButtons[1]).toBeGreaterThan(sourceStart);
-    expect((markup.match(/>Instellingen opslaan<\/button>/g) ?? [])).toHaveLength(2);
+    expect(saveButtons[0]).toBeLessThan(personalizationStart);
+    expect(saveButtons[1]).toBeGreaterThan(personalizationStart);
+    expect(saveButtons[1]).toBeLessThan(editorPermissionsStart);
+    expect(saveButtons[2]).toBeGreaterThan(sourceStart);
+    expect((markup.match(/>Instellingen opslaan<\/button>/g) ?? [])).toHaveLength(3);
     expect(markup).toContain("Archiveren");
     expect(markup).not.toContain("Herstellen");
     expect(markup).not.toContain("Leeromgeving verwijderen");
     expect((markup.match(/<form/g) ?? [])).toHaveLength(1);
   });
 
+  it("uses the save flow as implicit Enter submit instead of the archive action", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} subjects={subjects} canPermanentlyDelete action={() => ({ error: null })} />);
+    const firstSubmit = markup.match(/<button[^>]*type="submit"[^>]*>[^<]*/)?.[0] ?? "";
+
+    expect(firstSubmit).toContain("Instellingen opslaan");
+    expect(firstSubmit).not.toContain("formAction");
+    expect(markup.indexOf(firstSubmit)).toBeLessThan(markup.indexOf("Archiveren"));
+    expect((markup.match(/<form/g) ?? [])).toHaveLength(1);
+  });
+
+  it("renders a custom fixed-symbol presentation in the personalization card", () => {
+    const circlePresentation = {
+      opwarmer: { ...DEFAULT_EXERCISE_LEVEL_PRESENTATION.opwarmer, displayName: "Instap", symbolId: "circle" as const },
+      basis: { ...DEFAULT_EXERCISE_LEVEL_PRESENTATION.basis, displayName: "Kern", symbolId: "circle" as const, color: "#123456", showPublicBackground: true },
+      uitdaging: { ...DEFAULT_EXERCISE_LEVEL_PRESENTATION.uitdaging, displayName: "Sterk", symbolId: "circle" as const },
+      verdieping: { ...DEFAULT_EXERCISE_LEVEL_PRESENTATION.verdieping, displayName: "Extra", symbolId: "large_circle" as const, count: 4 },
+    };
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={{ ...space, levelPresentation: circlePresentation }} subjects={subjects} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+
+    expect(markup).toContain('<option value="circle" selected="">● Bol</option>');
+    expect(markup).toContain("●●●");
+    expect(markup).toContain('<option value="large_circle" selected="">⬤ Grote bol</option>');
+    expect(markup).toContain("⬤⬤⬤⬤");
+    expect(markup).toContain('name="levelName_basis" value="Kern"');
+    expect(markup).toContain("background-color:#D0D6DD");
+    expect(markup).toContain("color:#123456");
+    const publicBackgroundInput = markup.match(/<input[^>]*name="levelShowPublicBackground_basis"[^>]*>/)?.[0] ?? "";
+    expect(publicBackgroundInput).toContain('type="checkbox"');
+    expect(publicBackgroundInput).toContain('value="true"');
+    expect(publicBackgroundInput).toContain('checked=""');
+    expect(markup.match(/exercise-level-badge-symbol-only/g)).toHaveLength(3);
+    expect(markup).not.toContain('name="levelSymbol_opwarmer" type="text"');
+  });
+
+  it("orders the general fields without exposing the internal sorting value", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} subjects={subjects} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+    const name = markup.indexOf("Weergavenaam");
+    const url = markup.indexOf(">URL<");
+    const shortLabel = markup.indexOf("Kort label");
+    const subject = markup.indexOf(">Vak<");
+    const description = markup.indexOf("Beschrijving");
+
+    expect((markup.match(/>Vak</g) ?? [])).toHaveLength(1);
+    expect(name).toBeLessThan(subject);
+    expect(subject).toBeLessThan(url);
+    expect(url).toBeLessThan(shortLabel);
+    expect(shortLabel).toBeLessThan(description);
+    expect(markup).not.toContain("Alleen actieve vakken kunnen als nieuwe keuze worden ingesteld.");
+    expect(markup).toContain('class="settings-grid general-settings-grid"');
+    expect(markup).toContain('type="hidden" name="sortOrder" value="6"');
+  });
+
   it("preserves a stored Local provider and orders provider options", () => {
-    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} subjects={subjects} canPermanentlyDelete={false} action={() => ({ error: null })} />);
     const oneDrive = markup.indexOf('<option value="onedrive">');
     const googleDrive = markup.indexOf('<option value="google_drive">');
     const local = markup.indexOf('<option value="local" selected="">');
@@ -69,7 +163,7 @@ describe("LearningSpaceSettingsForm", () => {
       localSourcePath: null,
       googleDriveFolderId: "folder-6",
       googleDriveFolderLabel: "Mirror 6",
-    }} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+    }} subjects={subjects} canPermanentlyDelete={false} action={() => ({ error: null })} />);
 
     expect(markup).toContain('<option value="google_drive" selected="">Google Drive</option>');
     expect(markup).toContain('name="primaryGoogleDriveFolderId"');
@@ -84,14 +178,14 @@ describe("LearningSpaceSettingsForm", () => {
       oneDriveDriveId: "drive-6",
       oneDriveFolderId: "folder-6",
       oneDriveFolderPath: "Portfolio/6WIS",
-    }} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+    }} subjects={subjects} canPermanentlyDelete={false} action={() => ({ error: null })} />);
 
     expect(markup).toContain('href="/admin/verbindingen">Verbindingen</a>');
     expect(markup).not.toContain("Mijn verbindingen");
   });
 
   it("shows the persisted editor access delegation setting", () => {
-    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={{ ...space, editorsCanManageAccess: true }} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={{ ...space, editorsCanManageAccess: true }} subjects={subjects} canPermanentlyDelete={false} action={() => ({ error: null })} />);
 
     const editorPermissionsSwitch = markup.match(/<button[^>]*role="switch"[^>]*>/)?.[0] ?? "";
     expect(editorPermissionsSwitch).toContain('aria-checked="true"');
@@ -102,8 +196,8 @@ describe("LearningSpaceSettingsForm", () => {
 
   it("shows restore to an owner and reserves archived deletion for a superadmin", () => {
     const archivedSpace = { ...space, isActive: false, archivedAt: "2026-09-01T00:00:00.000Z" };
-    const ownerMarkup = renderToStaticMarkup(<LearningSpaceSettingsForm space={archivedSpace} canPermanentlyDelete={false} action={() => ({ error: null })} />);
-    const superadminMarkup = renderToStaticMarkup(<LearningSpaceSettingsForm space={archivedSpace} canPermanentlyDelete action={() => ({ error: null })} />);
+    const ownerMarkup = renderToStaticMarkup(<LearningSpaceSettingsForm space={archivedSpace} subjects={subjects} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+    const superadminMarkup = renderToStaticMarkup(<LearningSpaceSettingsForm space={archivedSpace} subjects={subjects} canPermanentlyDelete action={() => ({ error: null })} />);
 
     expect(ownerMarkup).toContain("Herstellen");
     expect(ownerMarkup).not.toContain("Archiveren");
@@ -112,5 +206,17 @@ describe("LearningSpaceSettingsForm", () => {
     expect(superadminMarkup).toContain("Leeromgeving verwijderen");
     expect(superadminMarkup).toContain('aria-label="Leeromgeving permanent verwijderen?"');
     expect((superadminMarkup.match(/<form/g) ?? [])).toHaveLength(1);
+  });
+
+  it("keeps the current inactive subject visible without offering other inactive subjects", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm
+      space={{ ...space, subjectId: "subject-fysica", subjectName: "Fysica", subjectIsActive: false }}
+      subjects={subjects}
+      canPermanentlyDelete={false}
+      action={() => ({ error: null })}
+    />);
+
+    expect(markup).toContain('<option value="subject-fysica" selected="">Fysica (inactief)</option>');
+    expect(markup).toContain('<option value="subject-wiskunde">Wiskunde</option>');
   });
 });

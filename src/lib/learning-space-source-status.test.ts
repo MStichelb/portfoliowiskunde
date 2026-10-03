@@ -368,6 +368,7 @@ async function insertFailedSync(
 
 async function configureDualSource(): Promise<void> {
   await updateLearningSpace("space-5", {
+    subjectId: "subject-wiskunde",
     name: "5de jaar",
     slug: "5",
     shortLabel: "5",

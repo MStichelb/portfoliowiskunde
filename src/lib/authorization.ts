@@ -20,8 +20,16 @@ export function canManageSourceProfileTemplates(user: AppUser | null): boolean {
   return Boolean(user && user.status === "active" && user.role === "superadmin");
 }
 
+export function canManageSubjects(user: AppUser | null): boolean {
+  return Boolean(user && user.status === "active" && user.role === "superadmin");
+}
+
 export function requireSourceProfileTemplateManagement(user: AppUser | null): void {
   if (!canManageSourceProfileTemplates(user)) throw new AuthorizationError("Alleen een hoofdbeheerder kan appbrede bronprofielsjablonen beheren.");
+}
+
+export function requireSubjectManagement(user: AppUser | null): void {
+  if (!canManageSubjects(user)) throw new AuthorizationError("Alleen een hoofdbeheerder kan vakken beheren.");
 }
 
 export async function getAccessibleLearningSpaceIds(user: AppUser | null): Promise<string[]> {

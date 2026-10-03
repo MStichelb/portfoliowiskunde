@@ -35,7 +35,10 @@ describe("ActiveSourceBadge", () => {
 function spaceWithActiveSource(role: LearningSpaceSource["role"], providerType: LearningSpaceSource["providerType"]): LearningSpace {
   const activeSource = source(role, providerType, true);
   return {
-    id: "space-test", name: "Test", slug: "test", shortLabel: "T", description: "Testomgeving", cardColor: "#DCEFE9", sortOrder: 1, isActive: true,
+    id: "space-test", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
+    collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+    exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
+    name: "Test", slug: "test", shortLabel: "T", description: "Testomgeving", cardColor: "#DCEFE9", sortOrder: 1, isActive: true,
     archivedAt: null, editorsCanManageAccess: false, sourceType: providerType, localSourcePath: null, oneDriveDriveId: null,
     oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: null,
     googleDriveFolderLabel: null, sources: [activeSource], activeSourceId: activeSource.id,

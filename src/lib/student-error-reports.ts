@@ -23,6 +23,8 @@ export interface StudentErrorReport {
   portfolioCode: string;
   portfolioTitle: string;
   learningSpaceName: string;
+  collectionLabelSingular: string;
+  exerciseLabelSingular: string;
   locationLabel: string;
 }
 
@@ -30,6 +32,7 @@ export interface StudentHandledReportNotification {
   reportIds: string[];
   count: number;
   exerciseCode: string | null;
+  exerciseLabelSingular: string | null;
   singleLearningSpaceId: string | null;
 }
 
@@ -59,6 +62,7 @@ export async function listPendingHandledReportNotificationsForCurrentUser(now = 
     reportIds: reports.map(({ report }) => report.reportId),
     count: reports.length,
     exerciseCode: reports.length === 1 && reports[0].report.isMatchedExercise ? reports[0].report.exerciseCode : null,
+    exerciseLabelSingular: reports.length === 1 && reports[0].report.isMatchedExercise ? reports[0].report.exerciseLabelSingular : null,
     singleLearningSpaceId: context.accessibleLearningSpaceIds.length === 1 ? context.accessibleLearningSpaceIds[0] : null,
   };
 }
@@ -104,7 +108,8 @@ async function getCurrentStudentErrorReportContext(now: Date): Promise<CurrentSt
       portfolios.visible AS portfolio_visible, portfolios.publication_limited,
       portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until,
       portfolios.is_indexed AS portfolio_is_indexed, portfolios.archived_at AS portfolio_archived_at,
-      learning_spaces.name AS learning_space_name
+      learning_spaces.name AS learning_space_name,
+      learning_spaces.collection_label_singular, learning_spaces.exercise_label_singular
       FROM error_reports
       INNER JOIN error_report_issues ON error_report_issues.id = error_reports.issue_id
       INNER JOIN error_report_threads ON error_report_threads.id = error_report_issues.thread_id
@@ -190,6 +195,8 @@ function studentErrorReportFromRow(row: DatabaseRow): CurrentStudentErrorReport 
       portfolioCode: text(row, "portfolio_code"),
       portfolioTitle: text(row, "portfolio_title"),
       learningSpaceName: text(row, "learning_space_name"),
+      collectionLabelSingular: text(row, "collection_label_singular"),
+      exerciseLabelSingular: text(row, "exercise_label_singular"),
       locationLabel: studentErrorReportLocationLabel(documentKind, variant),
     },
   };

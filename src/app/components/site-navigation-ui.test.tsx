@@ -189,6 +189,16 @@ describe("SiteNavigation admin context", () => {
     expect(markup).toMatch(/<a[^>]*aria-label="Startpagina"[^>]*href="\/"/);
   });
 
+  it("preserves the effective personal order supplied by the root read model", () => {
+    navigation.pathname = "/6";
+    const markup = renderToStaticMarkup(<SiteNavigation spaces={[
+      { slug: "6", name: "Zesde jaar", shortLabel: "6WIS" },
+      { slug: "5", name: "Vijfde jaar", shortLabel: "5WIS" },
+    ]} user={{ firstName: "Leerling", role: "student" }} />);
+
+    expect(markup.indexOf(">6WIS</a>")).toBeLessThan(markup.indexOf(">5WIS</a>"));
+  });
+
   it("renders no ordinary navigation on the login and break-glass pages", () => {
     navigation.pathname = "/aanmelden";
     expect(renderToStaticMarkup(<SiteNavigation spaces={[]} user={null} />)).toBe("");

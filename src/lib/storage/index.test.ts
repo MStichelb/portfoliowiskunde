@@ -24,13 +24,13 @@ describe("LearningSpace provider selection", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     const space = await createLearningSpace({
-      name: "Nieuwe leeromgeving", slug: "nieuw", shortLabel: "Nieuw", sortOrder: 99,
+      subjectId: "subject-wiskunde", name: "Nieuwe leeromgeving", slug: "nieuw", shortLabel: "Nieuw", sortOrder: 99,
       sourceType: "local", localSourcePath: null,
     });
 
     await expect(hasConfiguredActiveSource(space.id)).resolves.toBe(false);
     await updateLearningSpace(space.id, {
-      name: space.name, slug: space.slug, shortLabel: space.shortLabel, sortOrder: space.sortOrder,
+      subjectId: space.subjectId, name: space.name, slug: space.slug, shortLabel: space.shortLabel, sortOrder: space.sortOrder,
       sourceType: "local", localSourcePath: temporaryDirectory,
     });
     await expect(hasConfiguredActiveSource(space.id)).resolves.toBe(true);
@@ -42,17 +42,18 @@ describe("LearningSpace provider selection", () => {
     process.env.GOOGLE_SERVICE_ACCOUNT_JSON_B64 = validCredentials();
     resetDatabaseForTests();
 
-    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: temporaryDirectory });
+    await updateLearningSpace("space-5", { subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: temporaryDirectory });
     await expect(getStorageProviderWithType("space-5")).resolves.toMatchObject({ type: "local", provider: { id: "local-filesystem" } });
 
     await updateLearningSpace("space-5", {
+      subjectId: "subject-wiskunde",
       name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
       storageConnectionId: "connection-onedrive-user-legacy-superadmin",
       oneDriveDriveId: "drive-id", oneDriveFolderId: "folder-id",
     });
     await expect(getStorageProviderWithType("space-5")).resolves.toMatchObject({ type: "onedrive", provider: { id: "onedrive" } });
 
-    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "google_drive", googleDriveFolderId: "google-root-id" });
+    await updateLearningSpace("space-5", { subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "google_drive", googleDriveFolderId: "google-root-id" });
     await expect(getStorageProviderWithType("space-5")).resolves.toMatchObject({ type: "google_drive", provider: { id: "google-drive" } });
   });
 
@@ -65,6 +66,7 @@ describe("LearningSpace provider selection", () => {
     await Promise.all([mkdir(primaryRoot), mkdir(mirrorRoot)]);
     await Promise.all([writeFile(path.join(primaryRoot, "primary.txt"), "primary"), writeFile(path.join(mirrorRoot, "mirror.txt"), "mirror")]);
     await updateLearningSpace("space-5", {
+      subjectId: "subject-wiskunde",
       name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local",
       primarySource: { providerType: "local", localSourcePath: primaryRoot },
       mirrorSource: { providerType: "local", localSourcePath: mirrorRoot },

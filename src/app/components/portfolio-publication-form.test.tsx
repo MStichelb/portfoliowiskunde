@@ -17,12 +17,13 @@ describe("PortfolioPublicationForm", () => {
       customTextPosition="below_documents"
       themeId="theme-analysis"
       themes={[{ id: "theme-analysis", name: "Analyse" }, { id: "theme-algebra", name: "Algebra" }]}
+      miscellaneousLabel="Overige portfolio's"
       action={() => undefined}
     />);
 
     expect(markup).toContain("Bericht voor leerlingen");
     expect(markup).toContain("Eerste regel\nTweede regel</textarea>");
-    expect(markup).toContain("Optionele tekst die op de portfoliopagina bij de documentknoppen wordt getoond.");
+    expect(markup).toContain("Optionele tekst die op de detailpagina bij de documentknoppen wordt getoond.");
     expect(markup).toContain("Positie van bericht");
     expect(markup).toContain('name="customTextPosition" value="below_documents"');
     expect(markup).toContain('aria-pressed="true" class="selected">Onder de documentknoppen</button>');
@@ -45,12 +46,13 @@ describe("PortfolioPublicationForm", () => {
       customTextPosition="above_documents"
       themeId={null}
       themes={[{ id: "theme-analysis", name: "Analyse" }]}
+      miscellaneousLabel="Overige Oefeningen"
       action={() => undefined}
     />);
 
     expect(markup).toContain('<textarea name="customText"');
     expect(markup).toContain('name="customTextPosition" value="above_documents"');
     expect(markup).toContain('aria-pressed="true" class="selected">Boven de documentknoppen</button>');
-    expect(markup).toContain('<option value="" selected="">Overige portfolio&#x27;s</option>');
+    expect(markup).toContain('<option value="" selected="">Overige Oefeningen</option>');
   });
 });

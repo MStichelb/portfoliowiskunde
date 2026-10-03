@@ -343,6 +343,7 @@ async function setupDatabase() {
 
 async function configureDualSource() {
   await updateLearningSpace("space-5", {
+    subjectId: "subject-wiskunde",
     name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
     primarySource: {
       providerType: "onedrive", storageConnectionId: "connection-onedrive-user-legacy-superadmin",
@@ -430,8 +431,7 @@ function portfolioProvider(
   options: { omitExercise?: boolean; sourceIdPrefix?: string; sourceVersion?: string; exerciseFileName?: string } = {},
 ): StorageProvider {
   const portfolio = "Portfolio 1 - Functies";
-  const solutions = `${portfolio}/Uitwerkingen`;
-  const section = `${solutions}/1 - Basis`;
+  const section = `${portfolio}/1 - Basis`;
   const sourceIdPrefix = options.sourceIdPrefix ?? prefix;
   const sourceVersion = options.sourceVersion ?? `${prefix}-v1`;
   const file = (relativePath: string): StorageEntry => ({
@@ -442,8 +442,7 @@ function portfolioProvider(
   const directory = (relativePath: string): StorageEntry => ({ name: relativePath.split("/").at(-1)!, relativePath, sourceId: `${sourceIdPrefix}:${relativePath}`, kind: "directory" });
   const tree: Record<string, StorageEntry[]> = {
     "": [directory(portfolio)],
-    [portfolio]: [file(`${portfolio}/Portfolio 1 - Functies.pdf`), file(`${portfolio}/Eindoplossingen portfolio 1.pdf`), directory(solutions)],
-    [solutions]: [directory(section)],
+    [portfolio]: [file(`${portfolio}/Portfolio 1 - Functies.pdf`), file(`${portfolio}/Eindoplossingen portfolio 1.pdf`), directory(section)],
     [section]: options.omitExercise ? [] : [file(`${section}/${options.exerciseFileName ?? "PF1-Oef1.png"}`)],
   };
   return { id: prefix, async list(relativePath = "") { return tree[relativePath] ?? []; }, async readFile() { return Buffer.from(""); } };

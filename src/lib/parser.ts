@@ -5,15 +5,14 @@ import type {
   ParsedSectionDirectory,
   ParsedSolutionFile,
 } from "@/lib/domain";
-import type { ExerciseScannerConfig } from "@/lib/source-profile-config";
+import type { ExerciseScannerConfig, PortfolioScannerConfig } from "@/lib/source-profile-config";
 
 type ExerciseNumberScannerConfig = Pick<ExerciseScannerConfig, "numberLocation" | "marker">;
 
 const PORTFOLIO_ID_SOURCE = "(?:\\d+[a-z]*|[a-z]+)";
-const PORTFOLIO_DIRECTORY = new RegExp(`^portfolio\\s+(${PORTFOLIO_ID_SOURCE})\\s*-\\s*(.+)$`, "i");
 const PORTFOLIO_DOCUMENT_PREFIX = new RegExp(`^portfolio\\s+(${PORTFOLIO_ID_SOURCE})(?=\\s|-|\\.|$)`, "i");
 const HINTS_DOCUMENT_PREFIX = new RegExp(`^hints\\s+portfolio\\s+(${PORTFOLIO_ID_SOURCE})(?=\\s|-|\\.|$)`, "i");
-const SECTION_DIRECTORY = /^(\d+)\s*-\s*(.+)$/;
+const SECTION_DIRECTORY = /^(\d+)(?:[\s_-]*|\.\s*)(\p{L}.*)$/u;
 const SOLUTION_PREFIX = new RegExp(`^pf(${PORTFOLIO_ID_SOURCE})\\s*-\\s*oef(\\d+)([a-z]?)(.*)\\.(pdf|png|jpe?g)$`, "i");
 const STEP_TOKEN = /\((\d+)\)/g;
 const NUMERIC_PORTFOLIO_ID = /^(\d+)([A-Z]*)$/;
@@ -40,21 +39,11 @@ export function comparePortfolioIds(left: string, right: string): number {
   return compareText(leftId.code, rightId.code);
 }
 
-export function portfolioCodeFromRelativePath(relativePath: string): string | null {
-  const rootDirectory = relativePath.replaceAll("\\", "/").replace(/^\.\//, "").split("/")[0];
-  return parsePortfolioDirectory(rootDirectory)?.code ?? null;
-}
-
 export function comparePortfolioRelativePaths(left: string, right: string): number {
-  const leftCode = portfolioCodeFromRelativePath(left);
-  const rightCode = portfolioCodeFromRelativePath(right);
-  if (leftCode && rightCode) {
-    const codeOrder = comparePortfolioIds(leftCode, rightCode);
-    if (codeOrder !== 0) return codeOrder;
-  } else if (leftCode !== rightCode) {
-    return leftCode ? -1 : 1;
-  }
-  return compareText(left.replaceAll("\\", "/"), right.replaceAll("\\", "/"));
+  return left.replaceAll("\\", "/").localeCompare(right.replaceAll("\\", "/"), "nl", {
+    numeric: true,
+    sensitivity: "base",
+  });
 }
 
 export function looksLikeSolutionFileName(name: string): boolean {
@@ -63,13 +52,20 @@ export function looksLikeSolutionFileName(name: string): boolean {
 
 export function parsePortfolioDirectory(
   name: string,
+  config: PortfolioScannerConfig,
 ): ParsedPortfolioDirectory | null {
-  const match = name.trim().match(PORTFOLIO_DIRECTORY);
+  const marker = config.marker.trim();
+  if (!marker) return null;
+  const pattern = new RegExp(`^${escapeRegExp(marker)}[\\s_-]*(${PORTFOLIO_ID_SOURCE})[\\s_-]+(.+)$`, "i");
+  const match = name.trim().match(pattern);
   if (!match) return null;
+
+  const title = match[2].trim();
+  if (!title) return null;
 
   return {
     code: normalizePortfolioCode(match[1]),
-    title: match[2].trim(),
+    title,
   };
 }
 
@@ -87,7 +83,15 @@ export function parseSectionDirectory(name: string): ParsedSectionDirectory | nu
   const match = name.trim().match(SECTION_DIRECTORY);
   if (!match) return null;
 
-  return { order: Number(match[1]), title: match[2].trim() };
+  const order = Number(match[1]);
+  if (!Number.isSafeInteger(order)) return null;
+  return { order, title: match[2].trim() };
+}
+
+export function relativePathBelongsToDirectory(relativePath: string, directoryPath: string): boolean {
+  const candidate = normalizeRelativePath(relativePath);
+  const directory = normalizeRelativePath(directoryPath);
+  return Boolean(directory) && (candidate === directory || candidate.startsWith(`${directory}/`));
 }
 
 export function findExerciseNumberCandidates(
@@ -215,4 +219,12 @@ function portfolioIdParts(code: string):
 function compareText(left: string, right: string): number {
   if (left === right) return 0;
   return left < right ? -1 : 1;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeRelativePath(value: string): string {
+  return value.replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/+$/g, "");
 }

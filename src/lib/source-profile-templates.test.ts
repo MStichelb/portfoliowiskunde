@@ -415,9 +415,19 @@ describe("global source profile templates", () => {
       name: "Verboden",
       description: null,
       resources: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources,
+      portfolioScanner: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.portfolio,
       exerciseScanner: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.exercise,
       exerciseResources: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources,
     })).rejects.toThrow();
+
+    await expect(saveSourceProfileTemplate(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, {
+      name: "Ongeldige marker",
+      description: null,
+      resources: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources,
+      portfolioScanner: { marker: "   " },
+      exerciseScanner: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.exercise,
+      exerciseResources: BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources,
+    })).rejects.toThrow("portfoliomarker");
 
     await saveSourceProfileTemplate(superadmin, INITIAL_SOURCE_PROFILE_TEMPLATE_ID, {
       name: "Aangepast sjabloon",
@@ -425,6 +435,7 @@ describe("global source profile templates", () => {
       resources: [{
         id: "formula", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic",
       }],
+      portfolioScanner: { marker: "Bundel" },
       exerciseScanner: { numberLocation: "after_text", marker: "Vraag" },
       exerciseResources: [{
         id: "assignment-part", kind: "source_file", label: "Opgave", icon: "file-text", order: 10, semanticRole: "assignment",
@@ -435,6 +446,7 @@ describe("global source profile templates", () => {
     const updated = await getDefaultSourceProfileTemplate();
     expect(updated).toMatchObject({ name: "Aangepast sjabloon", description: "Nieuwe beschrijving" });
     expect(updated.config.globalResources).toEqual([expect.objectContaining({ id: "formula" })]);
+    expect(updated.config.scanner.portfolio).toEqual({ marker: "Bundel" });
     expect(updated.config.scanner.exercise).toEqual({ exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Vraag" });
     expect(updated.config.exerciseResources).toEqual([expect.objectContaining({ id: "assignment-part", semanticRole: "assignment", allowMultiple: false, displayMode: "always" })]);
   });
@@ -522,7 +534,7 @@ async function insertTemplate(id: string, name: string): Promise<void> {
 }
 
 function spaceInput(slug: string) {
-  return { name: slug, slug, shortLabel: slug, sortOrder: 90, sourceType: "local" as const, localSourcePath: null };
+  return { subjectId: "subject-wiskunde", name: slug, slug, shortLabel: slug, sortOrder: 90, sourceType: "local" as const, localSourcePath: null };
 }
 
 async function useFreshDatabase(prefix: string): Promise<void> {

@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
+import type { IndexedPortfolio } from "./domain";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "./source-profile-config";
 import { adminExercisePortfolioHref } from "./admin-routes";
 import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolioDocument, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getPublicAsset, getPublicPortfolioDocument, getPublicResourceAsset, getAdminResourceAsset, getStudentPortfolios, getThemes, getVisibleExercise, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, setExerciseAlternativeVisibility, setExerciseNote, setExercisePublication, setLearningSpaceEditorsCanManageAccess, setPortfolioCardColor, setPortfolioExternalLinks, setPortfolioPublication, setPortfolioTheme, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
@@ -28,6 +29,317 @@ afterEach(async () => {
 });
 
 describe("persistIndex", () => {
+  it("reconciles equivalent portfolio and section renames by logical identity while real deletion remains missing", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-rename-reconciliation-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    await persistIndex([renameReconciliationFixture({
+      portfolioPath: "H1B_Stelsels oplossen",
+      sectionPath: "H1B_Stelsels oplossen/2 Stelsels oplossen met Gauss-Jordan",
+      fileName: "PF1B-Oef15-B.png",
+      sourceId: "old-file-source",
+      levelSource: "basis",
+    })], "local", "space-6");
+    const database = await getDatabase();
+    const original = (await database.execute(`SELECT portfolios.id AS portfolio_id, sections.id AS section_id, exercises.id AS exercise_id,
+      solution_assets.id AS asset_id FROM portfolios JOIN sections ON sections.portfolio_id = portfolios.id
+      JOIN exercises ON exercises.section_id = sections.id JOIN solution_variants ON solution_variants.exercise_id = exercises.id
+      JOIN solution_assets ON solution_assets.variant_id = solution_variants.id WHERE portfolios.learning_space_id = 'space-6'`)).rows[0];
+    const portfolioId = String(original.portfolio_id);
+    const sectionId = String(original.section_id);
+    const exerciseId = String(original.exercise_id);
+    const assetId = String(original.asset_id);
+    const originalResourceAssetIds = (await database.execute("SELECT id FROM source_resource_assets ORDER BY id")).rows.map((row) => String(row.id));
+    await database.batch([
+      { sql: "UPDATE portfolios SET title_override = 'Eigen titel' WHERE id = ?", args: [portfolioId] },
+      { sql: "UPDATE exercises SET custom_note = 'Bewaren' WHERE id = ?", args: [exerciseId] },
+    ]);
+
+    const renamed = await persistIndex([renameReconciliationFixture({
+      portfolioPath: "H1B - Stelsels oplossen",
+      sectionPath: "H1B - Stelsels oplossen/2_Stelsels oplossen met Gauss-Jordan",
+      fileName: "PF1B-Oef15-U.png",
+      sourceId: "renamed-file-source",
+      levelSource: "uitdaging",
+    })], "local", "space-6");
+
+    expect(renamed).toMatchObject({ added: 0, missing: 0 });
+    expect((await database.execute("SELECT id, relative_path, title_override FROM portfolios WHERE learning_space_id = 'space-6'")).rows).toEqual([
+      expect.objectContaining({ id: portfolioId, relative_path: "H1B - Stelsels oplossen", title_override: "Eigen titel" }),
+    ]);
+    expect((await database.execute({ sql: "SELECT id, relative_path FROM sections WHERE portfolio_id = ?", args: [portfolioId] })).rows).toEqual([
+      expect.objectContaining({ id: sectionId, relative_path: "H1B - Stelsels oplossen/2_Stelsels oplossen met Gauss-Jordan" }),
+    ]);
+    expect((await database.execute({ sql: "SELECT id, level_source, custom_note FROM exercises WHERE id = ?", args: [exerciseId] })).rows[0]).toMatchObject({
+      id: exerciseId, level_source: "uitdaging", custom_note: "Bewaren",
+    });
+    expect((await database.execute("SELECT id, relative_path, source_id, is_indexed, missing_since FROM solution_assets")).rows).toEqual([
+      expect.objectContaining({ id: assetId, relative_path: "H1B - Stelsels oplossen/2_Stelsels oplossen met Gauss-Jordan/PF1B-Oef15-U.png", source_id: "renamed-file-source", is_indexed: 1, missing_since: null }),
+    ]);
+    const reconciledResourceAssets = await database.execute("SELECT id, relative_path, is_indexed, missing_since FROM source_resource_assets ORDER BY id");
+    expect(reconciledResourceAssets.rows.map((row) => String(row.id))).toEqual(originalResourceAssetIds);
+    expect(reconciledResourceAssets.rows).toHaveLength(2);
+    expect(reconciledResourceAssets.rows.every((row) => Number(row.is_indexed) === 1 && row.missing_since === null)).toBe(true);
+    expect((await getLatestWarnings("space-6")).some((warning) => /ontbreekt|onvolledig/i.test(warning.message))).toBe(false);
+
+    const deleted = await persistIndex([renameReconciliationFixture({
+      portfolioPath: "H1B - Stelsels oplossen",
+      sectionPath: "H1B - Stelsels oplossen/2. Stelsels oplossen met Gauss-Jordan",
+      fileName: null,
+      sourceId: null,
+      levelSource: "uitdaging",
+    })], "local", "space-6");
+    expect(deleted.missing).toBe(1);
+    expect((await getLatestWarnings("space-6")).some((warning) => /ontbreekt/i.test(warning.message))).toBe(true);
+  });
+
+  it("reconciles a rename when an archived resource row already occupies the returning source identity", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-rename-unique-key-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    await persistIndex([renameReconciliationFixture({
+      portfolioPath: "H1B - Stelsels",
+      sectionPath: "H1B - Stelsels/2_Stelsels",
+      fileName: "PF1B-Oef15-U.png",
+      sourceId: "current-source",
+      levelSource: "uitdaging",
+    })], "local", "space-6");
+    const database = await getDatabase();
+    const current = (await database.execute("SELECT * FROM source_resource_assets WHERE resource_scope = 'exercise' AND resource_id = 'worked-solution'")).rows[0];
+    await database.execute({
+      sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
+        semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed,
+        missing_since, archived_at, last_seen_at) VALUES (?, ?, ?, ?, 'exercise', ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+      args: ["archived-returning-resource", String(current.learning_space_id), String(current.portfolio_id), String(current.exercise_id),
+        String(current.resource_id), String(current.semantic_role), "returning-source", "H1B_Stelsels/2 Stelsels/PF1B-Oef15-B.png",
+        "PF1B-Oef15-B.png", String(current.extension), Number(current.step), current.last_modified_at == null ? null : String(current.last_modified_at), current.source_version == null ? null : String(current.source_version),
+        "2026-10-02T10:00:00.000Z", "2026-10-02T10:05:00.000Z", "2026-10-02T10:00:00.000Z"],
+    });
+
+    await expect(persistIndex([renameReconciliationFixture({
+      portfolioPath: "H1B_Stelsels",
+      sectionPath: "H1B_Stelsels/2 Stelsels",
+      fileName: "PF1B-Oef15-B.png",
+      sourceId: "returning-source",
+      levelSource: "basis",
+    })], "local", "space-6")).resolves.toMatchObject({ added: 0, missing: 0 });
+
+    const rows = await database.execute("SELECT id, source_id, relative_path, is_indexed, archived_at FROM source_resource_assets WHERE resource_scope = 'exercise' AND resource_id = 'worked-solution'");
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]).toMatchObject({ source_id: "returning-source", relative_path: "H1B_Stelsels/2 Stelsels/PF1B-Oef15-B.png", is_indexed: 1, archived_at: null });
+    expect((await getLatestWarnings("space-6")).some((warning) => /ontbreekt|onvolledig/i.test(warning.message))).toBe(false);
+  });
+
+  it("reconciles a renamed solution when an archived solution asset occupies the returning path", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-solution-rename-unique-key-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    await persistIndex([renameReconciliationFixture({
+      portfolioPath: "H1B - Stelsels",
+      sectionPath: "H1B - Stelsels/2_Stelsels",
+      fileName: "PF1B-Oef15-U.png",
+      sourceId: "current-source",
+      levelSource: "uitdaging",
+    })], "local", "space-6");
+    const database = await getDatabase();
+    const current = (await database.execute("SELECT * FROM solution_assets")).rows[0];
+    await database.execute({
+      sql: `INSERT INTO solution_assets (id, variant_id, relative_path, source_id, file_name, extension, step,
+        last_modified_at, source_version, is_indexed, missing_since, archived_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+      args: ["archived-returning-solution", String(current.variant_id), "H1B_Stelsels/2 Stelsels/PF1B-Oef15-B.png",
+        "returning-source", "PF1B-Oef15-B.png", String(current.extension), Number(current.step),
+        current.last_modified_at == null ? null : String(current.last_modified_at), current.source_version == null ? null : String(current.source_version),
+        "2026-10-02T10:00:00.000Z", "2026-10-02T10:05:00.000Z"],
+    });
+
+    await expect(persistIndex([renameReconciliationFixture({
+      portfolioPath: "H1B_Stelsels",
+      sectionPath: "H1B_Stelsels/2 Stelsels",
+      fileName: "PF1B-Oef15-B.png",
+      sourceId: "returning-source",
+      levelSource: "basis",
+    })], "local", "space-6")).resolves.toMatchObject({ added: 0, missing: 0 });
+
+    const rows = await database.execute("SELECT id, variant_id, source_id, relative_path, is_indexed, missing_since, archived_at FROM solution_assets");
+    expect(rows.rows).toHaveLength(1);
+    expect(rows.rows[0]).toMatchObject({
+      id: String(current.id),
+      variant_id: String(current.variant_id),
+      source_id: "returning-source",
+      relative_path: "H1B_Stelsels/2 Stelsels/PF1B-Oef15-B.png",
+      is_indexed: 1,
+      missing_since: null,
+      archived_at: null,
+    });
+    expect((await getLatestWarnings("space-6")).some((warning) => /ontbreekt|onvolledig/i.test(warning.message))).toBe(false);
+  });
+
+  it("preserves standard and alternative variant assets and multi-step ordering across a section rename", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-solution-variant-rename-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    const original = renameReconciliationFixture({
+      portfolioPath: "H1B_Stelsels",
+      sectionPath: "H1B_Stelsels/2 Stelsels",
+      fileName: "PF1B-Oef15-B(1).png",
+      sourceId: "standard-step-1-old",
+      levelSource: "basis",
+    });
+    addLegacySolutionAsset(original, "standard", 2, "PF1B-Oef15-B(2).png", "standard-step-2-old");
+    addLegacySolutionAsset(original, "alternative", 1, "PF1B-Oef15-B-Alt.png", "alternative-step-1-old");
+    await persistIndex([original], "local", "space-6");
+    const database = await getDatabase();
+    const before = (await database.execute(`SELECT solution_assets.id, solution_assets.step, solution_variants.id AS variant_id, solution_variants.kind
+      FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+      ORDER BY solution_variants.kind, solution_assets.step`)).rows;
+
+    const renamed = renameReconciliationFixture({
+      portfolioPath: "H1B_Stelsels",
+      sectionPath: "H1B_Stelsels/2_Stelsels",
+      fileName: "PF1B-Oef15-U(1).png",
+      sourceId: "standard-step-1-new",
+      levelSource: "uitdaging",
+    });
+    addLegacySolutionAsset(renamed, "standard", 2, "PF1B-Oef15-U(2).png", "standard-step-2-new");
+    addLegacySolutionAsset(renamed, "alternative", 1, "PF1B-Oef15-U-Alt.png", "alternative-step-1-new");
+    await expect(persistIndex([renamed], "local", "space-6")).resolves.toMatchObject({ added: 0, missing: 0 });
+
+    const after = (await database.execute(`SELECT solution_assets.id, solution_assets.step, solution_assets.relative_path,
+        solution_assets.is_indexed, solution_variants.id AS variant_id, solution_variants.kind
+      FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+      ORDER BY solution_variants.kind, solution_assets.step`)).rows;
+    expect(after).toHaveLength(3);
+    expect(after.map((row) => [String(row.id), String(row.variant_id), String(row.kind), Number(row.step)]))
+      .toEqual(before.map((row) => [String(row.id), String(row.variant_id), String(row.kind), Number(row.step)]));
+    expect(after.every((row) => Number(row.is_indexed) === 1 && String(row.relative_path).includes("/2_Stelsels/"))).toBe(true);
+    expect(Number((await database.execute(`SELECT COUNT(*) AS count FROM (
+      SELECT variant_id, relative_path FROM solution_assets GROUP BY variant_id, relative_path HAVING COUNT(*) > 1
+    )`)).rows[0].count)).toBe(0);
+    expect(Number((await database.execute("SELECT COUNT(*) AS count FROM source_resource_assets WHERE resource_scope = 'exercise' AND is_indexed = 1")).rows[0].count)).toBe(3);
+    expect((await getLatestWarnings("space-6")).some((warning) => /ontbreekt|onvolledig/i.test(warning.message))).toBe(false);
+
+    renamed.sections[0].exercises[0].assets = renamed.sections[0].exercises[0].assets
+      .filter((asset) => asset.legacyVariant !== "standard" || asset.parsed.step !== 2);
+    await expect(persistIndex([renamed], "local", "space-6")).resolves.toMatchObject({ missing: 1 });
+    const partial = (await database.execute(`SELECT solution_assets.step, solution_assets.is_indexed, solution_variants.kind,
+        solution_variants.is_indexed AS variant_is_indexed
+      FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+      ORDER BY solution_variants.kind, solution_assets.step`)).rows;
+    expect(partial).toEqual([
+      expect.objectContaining({ kind: "alternative", step: 1, is_indexed: 1, variant_is_indexed: 1 }),
+      expect.objectContaining({ kind: "standard", step: 1, is_indexed: 1, variant_is_indexed: 1 }),
+      expect.objectContaining({ kind: "standard", step: 2, is_indexed: 0, variant_is_indexed: 1 }),
+    ]);
+    expect((await getLatestWarnings("space-6")).filter((warning) => warning.message.includes("onvolledig"))).toHaveLength(1);
+  });
+
+  it("does not replace an unrelated archived solution asset that occupies a rename target", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-solution-rename-conflict-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    await persistIndex([renameReconciliationFixture({
+      portfolioPath: "H1B - Stelsels",
+      sectionPath: "H1B - Stelsels/2_Stelsels",
+      fileName: "PF1B-Oef15-U.png",
+      sourceId: "current-source",
+      levelSource: "uitdaging",
+    })], "local", "space-6");
+    const database = await getDatabase();
+    const current = (await database.execute("SELECT * FROM solution_assets")).rows[0];
+    await database.execute({
+      sql: `INSERT INTO solution_assets (id, variant_id, relative_path, source_id, file_name, extension, step,
+        last_modified_at, source_version, is_indexed, missing_since, archived_at)
+        VALUES (?, ?, ?, ?, ?, ?, 2, ?, ?, 0, ?, ?)`,
+      args: ["archived-unrelated-solution", String(current.variant_id), "H1B_Stelsels/2 Stelsels/PF1B-Oef15-B.png",
+        "unrelated-source", "PF1B-Oef15-B.png", String(current.extension), current.last_modified_at == null ? null : String(current.last_modified_at),
+        current.source_version == null ? null : String(current.source_version), "2026-10-02T10:00:00.000Z", "2026-10-02T10:05:00.000Z"],
+    });
+
+    await expect(persistIndex([renameReconciliationFixture({
+      portfolioPath: "H1B_Stelsels",
+      sectionPath: "H1B_Stelsels/2 Stelsels",
+      fileName: "PF1B-Oef15-B.png",
+      sourceId: "returning-source",
+      levelSource: "basis",
+    })], "local", "space-6")).resolves.toMatchObject({ missing: 1 });
+
+    const rows = await database.execute("SELECT id, step, source_id FROM solution_assets ORDER BY id");
+    expect(rows.rows).toHaveLength(2);
+    expect(rows.rows).toContainEqual(expect.objectContaining({ id: "archived-unrelated-solution", step: 2, source_id: "unrelated-source" }));
+    expect((await getLatestWarnings("space-6")).some((warning) => warning.message.includes("meerdere mogelijke historische bestanden"))).toBe(true);
+  });
+
+  it("keeps different resource identities separate while reconciling their renamed source metadata", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-rename-distinct-resources-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    const first = renameReconciliationFixture({
+      portfolioPath: "H1B_Stelsels",
+      sectionPath: "H1B_Stelsels/2 Stelsels",
+      fileName: "PF1B-Oef15-B.png",
+      sourceId: "shared-old-source",
+      levelSource: "basis",
+    });
+    addDistinctExerciseResource(first, "hint", "hint", "shared-old-source", "PF1B-Oef15-B.png");
+    await persistIndex([first], "local", "space-6");
+    const database = await getDatabase();
+    const before = (await database.execute("SELECT id, resource_id FROM source_resource_assets WHERE resource_scope = 'exercise' ORDER BY resource_id")).rows;
+
+    const renamed = renameReconciliationFixture({
+      portfolioPath: "H1B - Stelsels",
+      sectionPath: "H1B - Stelsels/2_Stelsels",
+      fileName: "PF1B-Oef15-U.png",
+      sourceId: "shared-new-source",
+      levelSource: "uitdaging",
+    });
+    addDistinctExerciseResource(renamed, "hint", "hint", "shared-new-source", "PF1B-Oef15-U.png");
+    await expect(persistIndex([renamed], "local", "space-6")).resolves.toMatchObject({ missing: 0 });
+
+    const after = (await database.execute("SELECT id, resource_id, source_id FROM source_resource_assets WHERE resource_scope = 'exercise' ORDER BY resource_id")).rows;
+    expect(after).toHaveLength(2);
+    expect(after.map((row) => [String(row.id), String(row.resource_id)])).toEqual(before.map((row) => [String(row.id), String(row.resource_id)]));
+    expect(after.map((row) => String(row.source_id))).toEqual(["shared-new-source", "shared-new-source"]);
+  });
+
+  it("does not merge an ambiguous source identity that occurs for two logical exercises", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-rename-ambiguous-resource-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    const indexed = renameReconciliationFixture({
+      portfolioPath: "H1B - Stelsels",
+      sectionPath: "H1B - Stelsels/2 Stelsels",
+      fileName: "gedeeld.png",
+      sourceId: "ambiguous-source",
+      levelSource: "basis",
+    });
+    const first = indexed.sections[0].exercises[0].assets[0];
+    first.legacyVariant = null;
+    indexed.sections[0].exercises.push({
+      code: "16",
+      number: 16,
+      suffix: "",
+      levelSource: "basis",
+      assets: [{
+        ...first,
+        relativePath: `${indexed.sections[0].relativePath}/gedeeld-tweede.png`,
+        parsed: { ...first.parsed, exerciseNumber: 16, exerciseCode: "16" },
+      }],
+    });
+
+    await expect(persistIndex([indexed], "local", "space-6")).resolves.toMatchObject({ missing: 0 });
+    const database = await getDatabase();
+    expect(Number((await database.execute("SELECT COUNT(*) AS count FROM source_resource_assets WHERE resource_scope = 'exercise'")).rows[0].count)).toBe(0);
+    expect((await getLatestWarnings("space-6")).filter((warning) => warning.message.includes("meerdere mogelijke onderdelen"))).toHaveLength(1);
+  });
+
   it("coordinates synchronization with an expiring database lease", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-lease-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
@@ -62,10 +374,10 @@ describe("persistIndex", () => {
     expect(Number((await database.execute("SELECT COUNT(*) AS count FROM solution_assets")).rows[0].count)).toBe(5);
     expect(Number((await database.execute({ sql: "SELECT visible FROM exercises WHERE id = ?", args: [String(exercise.rows[0].id)] })).rows[0].visible)).toBe(1);
 
-    source.setVersion("Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png", "replacement-v2");
-    source.setSourceId("Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png", "google-replacement-id");
+    source.setVersion("Portfolio 3 - Toepassingen van integralen/1 - Integralen/PF3-Oef2(1).png", "replacement-v2");
+    source.setSourceId("Portfolio 3 - Toepassingen van integralen/1 - Integralen/PF3-Oef2(1).png", "google-replacement-id");
     await expect(persistIndex(await indexSource(source), "local")).resolves.toMatchObject({ updated: 1, missing: 0 });
-    const updated = await database.execute({ sql: "SELECT source_id, source_version FROM solution_assets WHERE relative_path = ?", args: ["Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png"] });
+    const updated = await database.execute({ sql: "SELECT source_id, source_version FROM solution_assets WHERE relative_path = ?", args: ["Portfolio 3 - Toepassingen van integralen/1 - Integralen/PF3-Oef2(1).png"] });
     expect(updated.rows[0].source_version).toBe("replacement-v2");
     expect(updated.rows[0].source_id).toBe("google-replacement-id");
     expect(Number((await database.execute("SELECT COUNT(*) AS count FROM solution_assets")).rows[0].count)).toBe(5);
@@ -261,7 +573,7 @@ describe("persistIndex", () => {
     provider.renameExercise("PF8-Oef2-hint-extra.png");
     await persistIndex(await indexSource(provider, config), "local", "space-6");
     expect((await database.execute("SELECT id, relative_path, is_indexed, missing_since FROM source_resource_assets WHERE resource_id = 'exercise-hint'")).rows).toEqual([
-      expect.objectContaining({ id: String(hintRow.id), relative_path: "Portfolio 8 - Test/Uitwerkingen/1 - Test/PF8-Oef2-hint-extra.png", is_indexed: 1, missing_since: null }),
+      expect.objectContaining({ id: String(hintRow.id), relative_path: "Portfolio 8 - Test/1 - Test/PF8-Oef2-hint-extra.png", is_indexed: 1, missing_since: null }),
     ]);
 
     provider.removeExercise();
@@ -275,7 +587,7 @@ describe("persistIndex", () => {
     provider.restoreExercise("PF8-Oef2-hint-restored.png");
     await persistIndex(await indexSource(provider, config), "local", "space-6");
     expect((await database.execute("SELECT id, relative_path, is_indexed, missing_since, archived_at FROM source_resource_assets WHERE resource_id = 'exercise-hint'")).rows).toEqual([
-      expect.objectContaining({ id: String(hintRow.id), relative_path: "Portfolio 8 - Test/Uitwerkingen/1 - Test/PF8-Oef2-hint-restored.png", is_indexed: 1, missing_since: null, archived_at: null }),
+      expect.objectContaining({ id: String(hintRow.id), relative_path: "Portfolio 8 - Test/1 - Test/PF8-Oef2-hint-restored.png", is_indexed: 1, missing_since: null, archived_at: null }),
     ]);
   });
 
@@ -324,7 +636,7 @@ describe("persistIndex", () => {
     resetDatabaseForTests();
     const source = createTwoPortfolioProvider();
     await persistIndex(await indexSource(source), "local");
-    const removed = "Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png";
+    const removed = "Portfolio 3 - Toepassingen van integralen/1 - Integralen/PF3-Oef2(1).png";
     source.remove(removed);
     source.remove(removed.replace("(1)", "(2)"));
     source.remove(removed.replace("(1)", "-alt(1)"));
@@ -345,7 +657,7 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     const source = createTwoPortfolioProvider();
-    const standardFirst = "Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png";
+    const standardFirst = "Portfolio 3 - Toepassingen van integralen/1 - Integralen/PF3-Oef2(1).png";
     const standardSecond = standardFirst.replace("(1)", "(2)");
     const alternativeSecond = standardFirst.replace("(1)", "-alt(2)");
     source.add(alternativeSecond);
@@ -423,8 +735,12 @@ describe("persistIndex", () => {
     resetDatabaseForTests();
     await persistIndex(await indexSource(createTwoPortfolioProvider()), "local");
     const database = await getDatabase();
-    const assetId = String((await database.execute("SELECT id FROM solution_assets ORDER BY id LIMIT 1")).rows[0].id);
-    const exerciseId = String((await database.execute("SELECT id FROM exercises WHERE portfolio_id = 'portfolio-3' ORDER BY id LIMIT 1")).rows[0].id);
+    const selected = (await database.execute(`SELECT solution_assets.id AS asset_id, exercises.id AS exercise_id
+      FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+      JOIN exercises ON exercises.id = solution_variants.exercise_id
+      WHERE exercises.portfolio_id = 'portfolio-3' ORDER BY solution_assets.id LIMIT 1`)).rows[0];
+    const assetId = String(selected.asset_id);
+    const exerciseId = String(selected.exercise_id);
     expect(await getPublicAsset(assetId)).toBeNull();
     await setPortfolioPublication("portfolio-3", "visible", false, null, null);
     expect(await getPublicAsset(assetId)).not.toBeNull();
@@ -575,7 +891,7 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await updateLearningSpace("space-5", {
-      name: "Google", slug: "google", shortLabel: "G", sortOrder: 50, sourceType: "google_drive", googleDriveFolderId: "google-root-id",
+      subjectId: "subject-wiskunde", name: "Google", slug: "google", shortLabel: "G", sortOrder: 50, sourceType: "google_drive", googleDriveFolderId: "google-root-id",
     });
     const index = await indexSource(createPortfolioProvider("1", "PF1-Oef1.png"));
     await persistIndex(index, "google_drive", "space-5");
@@ -601,8 +917,8 @@ describe("persistIndex", () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-space-create-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
-    await expect(createLearningSpace({ name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, sourceType: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4", sourceType: "local", isActive: true, archivedAt: null, editorsCanManageAccess: false });
-    await expect(createLearningSpace({ name: "Dubbel", slug: "fysica-4", shortLabel: "D", sortOrder: 41, sourceType: "local", localSourcePath: null })).rejects.toThrow();
+    await expect(createLearningSpace({ subjectId: "subject-wiskunde", name: "Fysica 4de jaar", slug: "fysica-4", shortLabel: "F4", sortOrder: 40, sourceType: "local", localSourcePath: null })).resolves.toMatchObject({ slug: "fysica-4", sourceType: "local", isActive: true, archivedAt: null, editorsCanManageAccess: false });
+    await expect(createLearningSpace({ subjectId: "subject-wiskunde", name: "Dubbel", slug: "fysica-4", shortLabel: "D", sortOrder: 41, sourceType: "local", localSourcePath: null })).rejects.toThrow();
   });
 
   it("persists editor delegation without changing its safe default", async () => {
@@ -622,7 +938,7 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await updateLearningSpace("space-5", {
-      name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Publieke beschrijving",
+      subjectId: "subject-wiskunde", name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Publieke beschrijving",
       cardColor: "#A1B2C3", sortOrder: 50, sourceType: "local", localSourcePath: null,
     });
     expect(await getLearningSpace("space-5")).toMatchObject({
@@ -676,11 +992,11 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await updateLearningSpace("space-5", {
-      name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
+      subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
       oneDriveDriveId: "drive-five", oneDriveFolderId: "folder-five", oneDriveFolderPath: "Wiskunde/5",
     });
     await updateLearningSpace("space-5", {
-      name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "google_drive",
+      subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "google_drive",
       googleDriveFolderId: "google-folder-five", googleDriveFolderLabel: "Mirror 5de jaar",
     });
     expect((await getLearningSpaces()).find((space) => space.id === "space-5")).toMatchObject({
@@ -688,7 +1004,7 @@ describe("persistIndex", () => {
       googleDriveFolderId: "google-folder-five", googleDriveFolderLabel: "Mirror 5de jaar",
     });
     await updateLearningSpace("space-5", {
-      name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
+      subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "onedrive",
       oneDriveDriveId: "drive-five", oneDriveFolderId: "folder-five", oneDriveFolderPath: "Wiskunde/5",
     });
     expect((await getLearningSpaces()).find((space) => space.id === "space-5")).toMatchObject({
@@ -701,7 +1017,7 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     const source = createTwoPortfolioProvider();
-    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "V", sortOrder: 55, sourceType: "google_drive", googleDriveFolderId: "mirror-five", googleDriveFolderLabel: "Mirror vijf" });
+    await updateLearningSpace("space-5", { subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "V", sortOrder: 55, sourceType: "google_drive", googleDriveFolderId: "mirror-five", googleDriveFolderLabel: "Mirror vijf" });
     await persistIndex(await indexSource(source), "local", "space-5");
     await persistIndex(await indexSource(source), "local", "space-6");
     await createTheme("space-5", "Integralen", 3);
@@ -732,7 +1048,7 @@ describe("persistIndex", () => {
     expect((await getAdminPortfolios("space-5"))[0]).toMatchObject({ visible: true, limited: true, publishFrom: "2026-09-01T08:00:00.000Z", publishUntil: "2027-06-30T16:00:00.000Z" });
     expect(await getThemes("space-5")).toHaveLength(1);
     expect((await getAdminPortfolios("space-6")).some((portfolio) => portfolio.code === "3")).toBe(true);
-    expect(source.has("Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png")).toBe(true);
+    expect(source.has("Portfolio 3 - Toepassingen van integralen/1 - Integralen/PF3-Oef2(1).png")).toBe(true);
   });
 
   it("refuses to permanently delete an active LearningSpace", async () => {
@@ -780,7 +1096,7 @@ describe("persistIndex", () => {
     expect((await database.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
     expect((await getAdminPortfolios("space-6")).map((portfolio) => portfolio.id)).toEqual(retainedPortfolioIds);
     expect(await getThemes("space-6")).toEqual([expect.objectContaining({ name: "Te behouden thema" })]);
-    expect(source.has("Portfolio 3 - Toepassingen van integralen/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png")).toBe(true);
+    expect(source.has("Portfolio 3 - Toepassingen van integralen/1 - Integralen/PF3-Oef2(1).png")).toBe(true);
   });
 
   it("normalizes missing and inaccessible local source paths without changing existing indexed state", async () => {
@@ -788,9 +1104,9 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await persistIndex(await indexSource(createTwoPortfolioProvider()), "local", "space-6");
-    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: null });
+    await updateLearningSpace("space-5", { subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: null });
     await expect(synchronizeSource("space-5")).rejects.toBeInstanceOf(SourceConfigurationError);
-    await updateLearningSpace("space-5", { name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: path.join(temporaryDirectory, "does-not-exist") });
+    await updateLearningSpace("space-5", { subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "local", localSourcePath: path.join(temporaryDirectory, "does-not-exist") });
     await expect(synchronizeSource("space-5")).rejects.toBeInstanceOf(SourceAccessError);
     expect((await getAdminPortfolios("space-6")).some((portfolio) => portfolio.code === "3")).toBe(true);
   });
@@ -882,6 +1198,109 @@ describe("persistIndex", () => {
   });
 });
 
+function addDistinctExerciseResource(
+  portfolio: IndexedPortfolio,
+  resourceId: string,
+  semanticRole: "hint",
+  sourceId: string,
+  fileName: string,
+): void {
+  const exercise = portfolio.sections[0].exercises[0];
+  const source = exercise.assets[0];
+  exercise.assets.push({
+    ...source,
+    resourceId,
+    semanticRole,
+    legacyVariant: null,
+    sourceId,
+    fileName,
+    relativePath: `${portfolio.sections[0].relativePath}/${fileName}`,
+  });
+}
+
+function addLegacySolutionAsset(
+  portfolio: IndexedPortfolio,
+  variant: "standard" | "alternative",
+  step: number,
+  fileName: string,
+  sourceId: string,
+): void {
+  const exercise = portfolio.sections[0].exercises[0];
+  const source = exercise.assets[0];
+  exercise.assets.push({
+    ...source,
+    resourceId: variant === "standard" ? "worked-solution" : "alternative-solution",
+    semanticRole: variant === "standard" ? "worked_solution" : "alternative_solution",
+    legacyVariant: variant,
+    relativePath: `${portfolio.sections[0].relativePath}/${fileName}`,
+    sourceId,
+    fileName,
+    parsed: { ...source.parsed, variant, step },
+  });
+}
+
+function renameReconciliationFixture({
+  portfolioPath,
+  sectionPath,
+  fileName,
+  sourceId,
+  levelSource,
+}: {
+  portfolioPath: string;
+  sectionPath: string;
+  fileName: string | null;
+  sourceId: string | null;
+  levelSource: "basis" | "uitdaging";
+}): IndexedPortfolio {
+  const asset = fileName && sourceId ? {
+    resourceId: "worked-solution",
+    semanticRole: "worked_solution" as const,
+    legacyVariant: "standard" as const,
+    relativePath: `${sectionPath}/${fileName}`,
+    sourceId,
+    fileName,
+    lastModifiedAt: "2026-10-03T10:00:00.000Z",
+    sourceVersion: "v1",
+    parsed: {
+      portfolioCode: "1B",
+      exerciseNumber: 15,
+      exerciseSuffix: "",
+      exerciseCode: "15",
+      variant: "standard" as const,
+      step: 1,
+      extension: "png" as const,
+    },
+  } : null;
+  return {
+    code: "1B",
+    title: "Stelsels oplossen",
+    relativePath: portfolioPath,
+    assignmentPdfPath: null,
+    assignmentPdfSourceId: null,
+    hintsDocumentPath: null,
+    hintsDocumentSourceId: null,
+    finalSolutionsPdfPath: null,
+    finalSolutionsPdfSourceId: null,
+    resourceAssets: [{
+      resourceId: "header",
+      semanticRole: "generic",
+      relativePath: `${portfolioPath}/header.png`,
+      sourceId: `${portfolioPath}/header.png`,
+      fileName: "header.png",
+      extension: "png",
+      lastModifiedAt: "2026-10-03T10:00:00.000Z",
+      sourceVersion: "v1",
+    }],
+    sections: [{
+      order: 2,
+      title: "Stelsels oplossen met Gauss-Jordan",
+      relativePath: sectionPath,
+      exercises: [{ code: "15", number: 15, suffix: "", levelSource, assets: asset ? [asset] : [] }],
+    }],
+    warnings: [],
+  };
+}
+
 function createTwoPortfolioProvider() {
   const versions = new Map<string, string>();
   const sourceIds = new Map<string, string>();
@@ -889,14 +1308,14 @@ function createTwoPortfolioProvider() {
   const directory = (relativePath: string): StorageEntry => ({ name: relativePath.split("/").at(-1)!, relativePath, sourceId: relativePath, kind: "directory" });
   const p3 = "Portfolio 3 - Toepassingen van integralen";
   const p4 = "Portfolio 4 - De bepaalde integraal";
+  const p3Section = `${p3}/1 - Integralen`;
+  const p4Section = `${p4}/1 - Bepaalde integraal`;
   const tree: Record<string, StorageEntry[]> = {
     "": [directory(p3), directory(p4)],
-    [p3]: [file(`${p3}/Portfolio 3 - Toepassingen van integralen.pdf`), file(`${p3}/Eindoplossingen portfolio 3.pdf`), directory(`${p3}/Uitwerkingen`)],
-    [`${p3}/Uitwerkingen`]: [directory(`${p3}/Uitwerkingen/1 - Integralen`)],
-    [`${p3}/Uitwerkingen/1 - Integralen`]: [file(`${p3}/Uitwerkingen/1 - Integralen/PF3-Oef2(1).png`), file(`${p3}/Uitwerkingen/1 - Integralen/PF3-Oef2(2).png`), file(`${p3}/Uitwerkingen/1 - Integralen/PF3-Oef2-alt(1).png`)],
-    [p4]: [file(`${p4}/Portfolio 4 - De bepaalde integraal.pdf`), file(`${p4}/Eindoplossingen portfolio 4.pdf`), directory(`${p4}/Uitwerkingen`)],
-    [`${p4}/Uitwerkingen`]: [file(`${p4}/Uitwerkingen/Uitgewerkte oefeningen - versie 2324.docx`), directory(`${p4}/Uitwerkingen/1 - Bepaalde integraal`)],
-    [`${p4}/Uitwerkingen/1 - Bepaalde integraal`]: [file(`${p4}/Uitwerkingen/1 - Bepaalde integraal/PF4-Oef1.png`), file(`${p4}/Uitwerkingen/1 - Bepaalde integraal/PF4-Oef1-alt.png`)],
+    [p3]: [file(`${p3}/Portfolio 3 - Toepassingen van integralen.pdf`), file(`${p3}/Eindoplossingen portfolio 3.pdf`), directory(p3Section)],
+    [p3Section]: [file(`${p3Section}/PF3-Oef2(1).png`), file(`${p3Section}/PF3-Oef2(2).png`), file(`${p3Section}/PF3-Oef2-alt(1).png`)],
+    [p4]: [file(`${p4}/Portfolio 4 - De bepaalde integraal.pdf`), file(`${p4}/Eindoplossingen portfolio 4.pdf`), directory(p4Section)],
+    [p4Section]: [file(`${p4Section}/PF4-Oef1.png`), file(`${p4Section}/PF4-Oef1-alt.png`)],
   };
   return {
     id: "fixture",
@@ -936,8 +1355,7 @@ function createProfileDrivenPortfolioProvider(): StorageProvider {
 
 function createGenericResourceProvider() {
   const portfolio = "Portfolio 8 - Test";
-  const solutions = `${portfolio}/Uitwerkingen`;
-  const section = `${solutions}/1 - Test`;
+  const section = `${portfolio}/1 - Test`;
   let exerciseFileName: string | null = "PF8-Oef2-hint.png";
 
   const file = (name: string, relativePath: string, sourceId: string): StorageEntry => ({
@@ -957,9 +1375,8 @@ function createGenericResourceProvider() {
         file("Portfolio 8 - Test.pdf", `${portfolio}/Portfolio 8 - Test.pdf`, "portfolio-8-assignment"),
         file("Eindoplossingen portfolio 8.pdf", `${portfolio}/Eindoplossingen portfolio 8.pdf`, "portfolio-8-final"),
         file("Lesvideo portfolio 8.png", `${portfolio}/Lesvideo portfolio 8.png`, "lesson-video-source"),
-        { name: "Uitwerkingen", relativePath: solutions, sourceId: "portfolio-8-solutions", kind: "directory" as const },
+        { name: "1 - Test", relativePath: section, sourceId: "portfolio-8-section-1", kind: "directory" as const },
       ];
-      if (relativePath === solutions) return [{ name: "1 - Test", relativePath: section, sourceId: "portfolio-8-section-1", kind: "directory" as const }];
       if (relativePath === section) return exerciseFileName
         ? [file(exerciseFileName, `${section}/${exerciseFileName}`, "exercise-hint-source")]
         : [];
@@ -982,14 +1399,13 @@ function createSingleAssetProvider(fileName: string) {
 
 function createPortfolioProvider(code: string, fileName: string) {
   const portfolio = `Portfolio ${code} - Test`;
-  const section = `${portfolio}/Uitwerkingen/1 - Test`;
+  const section = `${portfolio}/1 - Test`;
   const file = (): StorageEntry => ({ name: fileName, relativePath: `${section}/${fileName}`, sourceId: `${section}/${fileName}`, kind: "file", sourceVersion: "v1", lastModifiedAt: "2026-08-12T10:00:00.000Z" });
   return {
     id: "single-asset-fixture",
     async list(relativePath = "") {
       if (relativePath === "") return [{ name: portfolio, relativePath: portfolio, kind: "directory" as const }];
-      if (relativePath === portfolio) return [{ name: `Portfolio ${code} - Test.pdf`, relativePath: `${portfolio}/Portfolio ${code} - Test.pdf`, kind: "file" as const }, { name: `Eindoplossingen portfolio ${code}.pdf`, relativePath: `${portfolio}/Eindoplossingen portfolio ${code}.pdf`, kind: "file" as const }, { name: "Uitwerkingen", relativePath: `${portfolio}/Uitwerkingen`, kind: "directory" as const }];
-      if (relativePath === `${portfolio}/Uitwerkingen`) return [{ name: "1 - Test", relativePath: section, kind: "directory" as const }];
+      if (relativePath === portfolio) return [{ name: `Portfolio ${code} - Test.pdf`, relativePath: `${portfolio}/Portfolio ${code} - Test.pdf`, kind: "file" as const }, { name: `Eindoplossingen portfolio ${code}.pdf`, relativePath: `${portfolio}/Eindoplossingen portfolio ${code}.pdf`, kind: "file" as const }, { name: "1 - Test", relativePath: section, kind: "directory" as const }];
       if (relativePath === section) return [file()];
       return [];
     },

@@ -1,4 +1,5 @@
 import type { ExerciseResourceSemanticRole, GlobalResourceSemanticRole } from "@/lib/source-profile-config";
+import type { ExerciseLevel } from "@/lib/exercise-level";
 
 export type SolutionVariantKind = "standard" | "alternative";
 
@@ -67,6 +68,7 @@ export interface IndexedExercise {
   code: string;
   number: number;
   suffix: string;
+  levelSource?: ExerciseLevel | null;
   assets: IndexedAsset[];
 }
 

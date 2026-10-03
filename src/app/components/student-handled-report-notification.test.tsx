@@ -12,10 +12,10 @@ describe("StudentHandledReportNotificationBanner", () => {
 
   it("renders the singular exercise message, accessible controls and no report content", () => {
     const markup = renderToStaticMarkup(<StudentHandledReportNotificationBanner notification={{
-      reportIds: ["report-1"], count: 1, exerciseCode: "12a", singleLearningSpaceId: "space-5",
+      reportIds: ["report-1"], count: 1, exerciseCode: "12a", exerciseLabelSingular: "OpGavE", singleLearningSpaceId: "space-5",
     }} />);
 
-    expect(markup).toContain("Je melding over oefening 12a werd behandeld. Bedankt voor je scherpe blik!");
+    expect(markup).toContain("Je melding over opgave 12a werd behandeld. Bedankt voor je scherpe blik!");
     expect(markup).toContain("Bekijk melding");
     expect(markup).toContain('href="/mijn-meldingen"');
     expect(markup).toContain('role="region"');
@@ -25,7 +25,7 @@ describe("StudentHandledReportNotificationBanner", () => {
 
   it("uses the safe singular fallback for an unmatched exercise", () => {
     const markup = renderToStaticMarkup(<StudentHandledReportNotificationBanner notification={{
-      reportIds: ["report-1"], count: 1, exerciseCode: null, singleLearningSpaceId: "space-5",
+      reportIds: ["report-1"], count: 1, exerciseCode: null, exerciseLabelSingular: null, singleLearningSpaceId: "space-5",
     }} />);
     expect(markup).toContain("Je foutmelding werd behandeld. Bedankt voor je scherpe blik!");
     expect(markup).not.toContain("oefening null");
@@ -33,7 +33,7 @@ describe("StudentHandledReportNotificationBanner", () => {
 
   it("aggregates multiple reports into exactly one banner", () => {
     const markup = renderToStaticMarkup(<StudentHandledReportNotificationBanner notification={{
-      reportIds: ["report-1", "report-2", "report-3"], count: 3, exerciseCode: null, singleLearningSpaceId: null,
+      reportIds: ["report-1", "report-2", "report-3"], count: 3, exerciseCode: null, exerciseLabelSingular: null, singleLearningSpaceId: null,
     }} />);
     expect(markup).toContain("3 van je meldingen werden behandeld. Bedankt voor je scherpe blik!");
     expect(markup).toContain("Bekijk mijn meldingen");

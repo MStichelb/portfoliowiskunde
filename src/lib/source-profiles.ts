@@ -14,12 +14,16 @@ import {
   BUILT_IN_DEFAULT_SOURCE_PROFILE_NAME,
   BUILT_IN_DEFAULT_SOURCE_PROFILE_TIMESTAMP,
   exerciseResourceListSchema,
+  exerciseLevelRecognitionSchema,
   exerciseScannerSchema,
+  portfolioScannerSchema,
   globalResourceListSchema,
   parseSourceProfileConfig,
   parseStoredSourceProfileConfig,
   type ExerciseResourceConfig,
+  type ExerciseLevelRecognitionConfig,
   type ExerciseScannerConfig,
+  type PortfolioScannerConfig,
   type GlobalResourceConfig,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
@@ -278,8 +282,10 @@ export async function saveManagedSourceProfile(
   input: {
     name: string;
     resources: unknown;
+    portfolioScanner?: unknown;
     exerciseScanner?: unknown;
     exerciseResources?: unknown;
+    levelRecognition?: unknown;
     mode: ManagedSourceProfileSaveMode;
     targetLearningSpaceId?: string;
   },
@@ -292,14 +298,21 @@ export async function saveManagedSourceProfile(
   const exerciseScanner: ExerciseScannerConfig = input.exerciseScanner === undefined
     ? profile.config.scanner.exercise
     : exerciseScannerSchema.parse(input.exerciseScanner);
+  const portfolioScanner: PortfolioScannerConfig = input.portfolioScanner === undefined
+    ? profile.config.scanner.portfolio
+    : portfolioScannerSchema.parse(input.portfolioScanner);
   const exerciseResources: ExerciseResourceConfig[] = input.exerciseResources === undefined
     ? profile.config.exerciseResources
     : exerciseResourceListSchema.parse(input.exerciseResources);
+  const levelRecognition: ExerciseLevelRecognitionConfig = input.levelRecognition === undefined
+    ? profile.config.levelRecognition
+    : exerciseLevelRecognitionSchema.parse(input.levelRecognition);
   const config = parseSourceProfileConfig({
     ...profile.config,
-    scanner: { ...profile.config.scanner, exercise: exerciseScanner },
+    scanner: { portfolio: portfolioScanner, exercise: exerciseScanner },
     globalResources,
     exerciseResources,
+    levelRecognition,
   });
 
   if (input.mode === "copy") {

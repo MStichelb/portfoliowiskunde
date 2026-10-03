@@ -18,7 +18,7 @@ describe("ErrorReportSortControls", () => {
   it("defaults visually to date and shows the unfiltered portfolio placeholder", () => {
     const markup = renderControls("date");
     expect(markup).toMatch(/<button(?=[^>]*type="button")(?=[^>]*aria-pressed="true")[^>]*>/);
-    expect(markup).toContain('<option value="" selected="">Filter op portfolio</option>');
+    expect(markup).toContain('<option value="" selected="">Filter op Portfolio</option>');
     expect(markup).toContain('<option value="portfolio-2">2 - Matrices</option>');
     expect(markup).toContain('<option value="portfolio-X">X - Kwadraten</option>');
     expect(markup).toContain("lucide-calendar-arrow-up");
@@ -32,6 +32,15 @@ describe("ErrorReportSortControls", () => {
     expect(markup).toContain('aria-pressed="false" class="secondary-button"');
     expect(markup).toContain('aria-pressed="true" class="primary-button"');
     expect(markup).toContain('<option value="portfolio-X" selected="">X - Kwadraten</option>');
+  });
+
+  it("uses a configured collection term without changing technical filter values", () => {
+    const markup = renderToStaticMarkup(<ErrorReportSortControls sort="portfolio" selectedPortfolio={null} portfolios={portfolios} onSort={noop} onPortfolioChange={noop} onReset={noop} collectionLabelSingular="Oefening" />);
+
+    expect(markup).toContain("Sorteer op Oefening");
+    expect(markup).toContain("Filter op Oefening");
+    expect(markup).toContain('id="error-report-portfolio-filter"');
+    expect(markup).toContain('aria-label="Oefeningfilter wissen"');
   });
 
   it("connects the FunnelX button to the filter reset", () => {

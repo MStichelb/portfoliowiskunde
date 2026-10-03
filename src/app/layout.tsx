@@ -8,6 +8,7 @@ import { getManageableLearningSpaceIds } from "@/lib/authorization";
 import { getPublicEmergencyAccess, getPubliclyAccessibleLearningSpaceIds } from "@/lib/public-access";
 import { getLearningSpaces } from "@/lib/repositories";
 import { userFirstName } from "@/lib/identity";
+import { orderLearningSpacesForUser } from "@/lib/user-learning-space-order";
 import { listManagedMemberships } from "@/lib/user-management";
 
 import "./globals.css";
@@ -36,11 +37,12 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     getPublicEmergencyAccess(),
     user ? listManagedMemberships() : Promise.resolve([]),
   ]);
-  const accessible = spaces.filter((space) => accessibleIds.includes(space.id));
-  const manageable = spaces.filter((space) => manageableIds.includes(space.id));
+  const orderedSpaces = user ? await orderLearningSpacesForUser(user.id, spaces) : spaces;
+  const accessible = orderedSpaces.filter((space) => accessibleIds.includes(space.id));
+  const manageable = orderedSpaces.filter((space) => manageableIds.includes(space.id));
   const directIds = new Set(memberships.filter((membership) => membership.userId === user?.id
     && (membership.role === "owner" || membership.role === "editor")).map((membership) => membership.learningSpaceId));
-  const direct = spaces.filter((space) => directIds.has(space.id));
+  const direct = orderedSpaces.filter((space) => directIds.has(space.id));
   return (
     <html lang="nl" className={sourceSans3.variable}>
       <body>

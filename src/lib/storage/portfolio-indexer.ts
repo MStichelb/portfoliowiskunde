@@ -7,6 +7,7 @@ import type {
   ParsedSolutionFile,
   SolutionVariantKind,
 } from "@/lib/domain";
+import { detectExerciseLevelFromSource, type ExerciseLevelDetectionSource } from "@/lib/exercise-level-detection";
 import {
   comparePortfolioIds,
   findExerciseNumberCandidates,
@@ -24,6 +25,7 @@ import {
   sortExerciseResources,
   sortGlobalResources,
   exerciseResourceFileExtensions,
+  type ExerciseLevelRecognitionConfig,
   type ExerciseResourceConfig,
   type ExerciseResourceFileExtension,
   type ExerciseResourceFileNameMatchOperator,
@@ -50,11 +52,26 @@ export async function indexSource(
     .filter((resource): resource is SourceFileGlobalResource => resource.kind === "source_file");
   const exerciseResources = sortExerciseResources(sourceProfileConfig.exerciseResources);
   const legacyExerciseVariants = legacyExerciseResourceVariants(exerciseResources);
+  const candidates = [...rootEntries].sort(compareEntries).flatMap((entry) => {
+    if (entry.kind !== "directory") return [];
+    const parsed = parsePortfolioDirectory(entry.name, sourceProfileConfig.scanner.portfolio);
+    return parsed ? [{ entry, parsed }] : [];
+  });
+  const portfolioNamesByCode = new Map<string, string[]>();
+  for (const candidate of candidates) {
+    portfolioNamesByCode.set(candidate.parsed.code, [...(portfolioNamesByCode.get(candidate.parsed.code) ?? []), candidate.entry.name]);
+  }
 
-  for (const entry of [...rootEntries].sort(compareEntries)) {
-    if (entry.kind !== "directory") continue;
-    const parsedPortfolio = parsePortfolioDirectory(entry.name);
-    if (!parsedPortfolio) continue;
+  for (const { entry, parsed: parsedPortfolio } of candidates) {
+    const duplicateNames = portfolioNamesByCode.get(parsedPortfolio.code) ?? [];
+    if (duplicateNames.length > 1) {
+      portfolios.push(conflictedPortfolio(entry, parsedPortfolio.code, parsedPortfolio.title, {
+        severity: "warning",
+        path: entry.relativePath,
+        message: `Dubbele portfoliocode ${parsedPortfolio.code} herkend in mappen: ${duplicateNames.join(", ")}. Geen van deze portfolio's wordt gesynchroniseerd.`,
+      }));
+      continue;
+    }
     portfolios.push(await indexPortfolio(
       provider,
       entry,
@@ -64,6 +81,7 @@ export async function indexSource(
       exerciseResources,
       legacyExerciseVariants,
       sourceProfileConfig.scanner.exercise,
+      sourceProfileConfig.levelRecognition,
     ));
   }
 
@@ -79,6 +97,7 @@ async function indexPortfolio(
   exerciseResources: readonly ExerciseResourceConfig[],
   legacyExerciseVariants: ReadonlyMap<string, SolutionVariantKind>,
   scanner: ExerciseScannerConfig,
+  levelRecognition: ExerciseLevelRecognitionConfig,
 ): Promise<IndexedPortfolio> {
   const warnings: IndexWarning[] = [];
   const entries = [...await provider.list(directory.relativePath)].sort(compareEntries);
@@ -90,7 +109,7 @@ async function indexPortfolio(
   const hintsDocument = hintsResource ? matchedGlobalResources.get(hintsResource.id) : undefined;
   const finalSolutionsDocument = finalAnswerResource ? matchedGlobalResources.get(finalAnswerResource.id) : undefined;
 
-  const contexts = await discoverExerciseContexts(provider, directory, entries, exerciseResources, scanner);
+  const contexts = discoverExerciseContexts(directory, entries, warnings);
   const sections = await Promise.all(contexts.map((context) => indexExerciseContext(
     provider,
     context,
@@ -99,6 +118,7 @@ async function indexPortfolio(
     exerciseResources,
     legacyExerciseVariants,
     scanner,
+    levelRecognition,
   )));
 
   return {
@@ -136,44 +156,59 @@ interface ExerciseContext {
   order: number;
   title: string;
   relativePath: string;
-  implicit: boolean;
 }
 
-async function discoverExerciseContexts(
-  provider: StorageProvider,
+function discoverExerciseContexts(
   portfolioDirectory: StorageEntry,
   rootEntries: readonly StorageEntry[],
-  exerciseResources: readonly ExerciseResourceConfig[],
-  scanner: ExerciseScannerConfig,
-): Promise<ExerciseContext[]> {
-  const directSections = sectionContexts(rootEntries);
-  if (directSections.length > 0) return directSections;
-
-  const legacyContainer = rootEntries.find((entry) => entry.kind === "directory" && canonicalName(entry.name) === "uitwerkingen");
-  if (legacyContainer) {
-    const configuredAsFileResourceSubdirectory = exerciseModeIncludesFiles(scanner.exerciseMode) && exerciseResources.some((resource) =>
-      resource.recognition.file
-      && resource.location.scope !== "alongside_exercise"
-      && canonicalName(resource.location.subdirectory) === canonicalName(legacyContainer.name));
-    if (configuredAsFileResourceSubdirectory) {
-      return [{ order: 0, title: "Oefeningen", relativePath: portfolioDirectory.relativePath, implicit: true }];
-    }
-    const legacyEntries = [...await provider.list(legacyContainer.relativePath)].sort(compareEntries);
-    const legacySections = sectionContexts(legacyEntries);
-    if (legacySections.length > 0) return legacySections;
-    return [{ order: 0, title: "Oefeningen", relativePath: legacyContainer.relativePath, implicit: true }];
-  }
-
-  return [{ order: 0, title: "Oefeningen", relativePath: portfolioDirectory.relativePath, implicit: true }];
+  warnings: IndexWarning[],
+): ExerciseContext[] {
+  return sectionContexts(rootEntries, portfolioDirectory.relativePath, warnings);
 }
 
-function sectionContexts(entries: readonly StorageEntry[]): ExerciseContext[] {
-  return entries.flatMap((entry) => {
+function sectionContexts(entries: readonly StorageEntry[], portfolioPath: string, warnings: IndexWarning[]): ExerciseContext[] {
+  const sections = entries.flatMap((entry) => {
     if (entry.kind !== "directory") return [];
     const section = parseSectionDirectory(entry.name);
     if (!section) return [];
-    return [{ order: section.order, title: section.title, relativePath: entry.relativePath, implicit: false }];
-  }).sort((left, right) => left.order - right.order || left.title.localeCompare(right.title, "nl"));
+    return [{ order: section.order, title: section.title, relativePath: entry.relativePath, sourceName: entry.name }];
+  });
+  const namesByOrder = new Map<number, string[]>();
+  for (const section of sections) namesByOrder.set(section.order, [...(namesByOrder.get(section.order) ?? []), section.sourceName]);
+  const duplicateOrders = new Set([...namesByOrder].filter(([, names]) => names.length > 1).map(([order]) => order));
+  for (const order of [...duplicateOrders].sort((left, right) => left - right)) {
+    warnings.push({
+      severity: "warning",
+      path: portfolioPath,
+      message: `Dubbel onderdeelnummer ${order} herkend in mappen: ${(namesByOrder.get(order) ?? []).join(", ")}. Geen van deze onderdelen wordt gescand.`,
+    });
+  }
+  return sections
+    .filter((section) => !duplicateOrders.has(section.order))
+    .map(({ sourceName: _sourceName, ...section }) => section)
+    .sort((left, right) => left.order - right.order || left.title.localeCompare(right.title, "nl"));
+}
+
+function conflictedPortfolio(
+  directory: StorageEntry,
+  code: string,
+  title: string,
+  warning: IndexWarning,
+): IndexedPortfolio {
+  return {
+    code,
+    title,
+    relativePath: directory.relativePath,
+    assignmentPdfPath: null,
+    assignmentPdfSourceId: null,
+    hintsDocumentPath: null,
+    hintsDocumentSourceId: null,
+    finalSolutionsPdfPath: null,
+    finalSolutionsPdfSourceId: null,
+    resourceAssets: [],
+    sections: [],
+    warnings: [warning],
+  };
 }
 
 interface LocatedExerciseFile {
@@ -181,12 +216,16 @@ interface LocatedExerciseFile {
   location: "alongside" | "subdirectory";
   subdirectory: string | null;
   directoryIdentity: ParsedExerciseIdentity | null;
+  directorySegments: string[];
+  exerciseDirectoryName: string | null;
+  exerciseDirectorySegments: string[];
 }
 
 interface MatchedExerciseFile {
   file: StorageEntry;
   resource: ExerciseResourceConfig;
   identity: ParsedExerciseIdentity;
+  source: LocatedExerciseFile;
 }
 
 async function indexExerciseContext(
@@ -197,31 +236,34 @@ async function indexExerciseContext(
   exerciseResources: readonly ExerciseResourceConfig[],
   legacyExerciseVariants: ReadonlyMap<string, SolutionVariantKind>,
   scanner: ExerciseScannerConfig,
+  levelRecognition: ExerciseLevelRecognitionConfig,
 ): Promise<IndexedPortfolio["sections"][number]> {
-  const files = await collectExerciseFiles(provider, context.relativePath, exerciseResources, scanner);
-  const grouped = new Map<string, { resource: ExerciseResourceConfig; identity: ParsedExerciseIdentity; files: StorageEntry[] }>();
+  const files = await collectExerciseFiles(provider, context.relativePath, exerciseResources, scanner, levelRecognition);
+  const grouped = new Map<string, { resource: ExerciseResourceConfig; identity: ParsedExerciseIdentity; files: LocatedExerciseFile[] }>();
 
   for (const candidate of files) {
     const match = matchExerciseFile(candidate, exerciseResources, scanner, warnings);
     if (!match) continue;
     const key = `${match.identity.exerciseCode}\u0000${match.resource.id}`;
     const group = grouped.get(key) ?? { resource: match.resource, identity: match.identity, files: [] };
-    if (!group.files.some((file) => file.relativePath === match.file.relativePath)) group.files.push(match.file);
+    if (!group.files.some((file) => file.file.relativePath === match.file.relativePath)) group.files.push(match.source);
     grouped.set(key, group);
   }
 
   const exercises = new Map<string, IndexedPortfolio["sections"][number]["exercises"][number]>();
+  const resourceSources = new Map<string, Map<string, ExerciseLevelDetectionSource[]>>();
+  const directorySources = new Map<string, ExerciseLevelDetectionSource[]>();
   const resourceOrder = new Map(exerciseResources.map((resource) => [resource.id, resource.order]));
 
   for (const group of [...grouped.values()].sort((left, right) => compareExerciseIdentities(left.identity, right.identity)
     || left.resource.order - right.resource.order
     || left.resource.id.localeCompare(right.resource.id))) {
-    const sortedFiles = group.files.sort(compareEntries);
+    const sortedFiles = group.files.sort((left, right) => compareEntries(left.file, right.file));
     if (!group.resource.allowMultiple && sortedFiles.length > 1) {
       warnings.push({
         severity: "warning",
         path: context.relativePath,
-        message: `Meerdere bestanden herkend voor ${group.resource.label} bij oefening ${group.identity.exerciseCode}: ${sortedFiles.map((file) => file.name).join(", ")}. Dit onderdeel laat maar één bestand toe; er is niets gekozen.`,
+        message: `Meerdere bestanden herkend voor ${group.resource.label} bij oefening ${group.identity.exerciseCode}: ${sortedFiles.map((file) => file.file.name).join(", ")}. Dit onderdeel laat maar één bestand toe; er is niets gekozen.`,
       });
       continue;
     }
@@ -230,10 +272,23 @@ async function indexExerciseContext(
       code: group.identity.exerciseCode,
       number: group.identity.exerciseNumber,
       suffix: group.identity.exerciseSuffix,
+      levelSource: null,
       assets: [],
     };
-    sortedFiles.forEach((file, index) => {
-      exercise.assets.push(toIndexedExerciseAsset(file, portfolioCode, group.identity, group.resource, index + 1, legacyExerciseVariants));
+    sortedFiles.forEach((located, index) => {
+      exercise.assets.push(toIndexedExerciseAsset(located.file, portfolioCode, group.identity, group.resource, index + 1, legacyExerciseVariants));
+      const perResource = resourceSources.get(group.identity.exerciseCode) ?? new Map<string, ExerciseLevelDetectionSource[]>();
+      const sources = perResource.get(group.resource.id) ?? [];
+      sources.push({ name: located.file.name, directorySegments: located.directorySegments });
+      perResource.set(group.resource.id, sources);
+      resourceSources.set(group.identity.exerciseCode, perResource);
+      if (located.exerciseDirectoryName) {
+        const directories = directorySources.get(group.identity.exerciseCode) ?? [];
+        if (!directories.some((source) => source.name === located.exerciseDirectoryName && source.directorySegments.join("\u0000") === located.exerciseDirectorySegments.join("\u0000"))) {
+          directories.push({ name: located.exerciseDirectoryName, directorySegments: located.exerciseDirectorySegments });
+        }
+        directorySources.set(group.identity.exerciseCode, directories);
+      }
     });
     exercises.set(group.identity.exerciseCode, exercise);
   }
@@ -242,6 +297,18 @@ async function indexExerciseContext(
     exercise.assets.sort((left, right) => (resourceOrder.get(left.resourceId) ?? 999) - (resourceOrder.get(right.resourceId) ?? 999)
       || left.fileName.localeCompare(right.fileName, "nl")
       || left.relativePath.localeCompare(right.relativePath, "nl"));
+    const sources = levelRecognition.method === "none"
+      ? []
+      : levelRecognition.source.type === "exercise_directory"
+        ? directorySources.get(exercise.code) ?? []
+        : resourceSources.get(exercise.code)?.get(levelRecognition.source.resourceId) ?? [];
+    const detected = detectExerciseLevelFromSource(sources, levelRecognition);
+    exercise.levelSource = detected.level;
+    if (detected.conflict) warnings.push({
+      severity: "warning",
+      path: context.relativePath,
+      message: `Niveau van oefening ${exercise.code} kon niet eenduidig worden herkend. Geen bronniveau ingesteld.`,
+    });
   }
 
   return {
@@ -257,37 +324,98 @@ async function collectExerciseFiles(
   contextPath: string,
   resources: readonly ExerciseResourceConfig[],
   scanner: ExerciseScannerConfig,
+  levelRecognition: ExerciseLevelRecognitionConfig,
 ): Promise<LocatedExerciseFile[]> {
   const entries = [...await provider.list(contextPath)].sort(compareEntries);
   const configuredSubdirectories = [...new Set(resources.flatMap((resource) => resource.location.scope === "alongside_exercise" ? [] : [canonicalName(resource.location.subdirectory)]))];
+  const levelSubdirectories = levelRecognition.method === "subdirectory"
+    ? [...new Set(Object.values(levelRecognition.mapping).map(canonicalName).filter(Boolean))]
+    : [];
   const files: LocatedExerciseFile[] = [];
   const seen = new Set<string>();
 
-  const add = (file: StorageEntry, location: LocatedExerciseFile["location"], subdirectory: string | null, directoryIdentity: ParsedExerciseIdentity | null) => {
+  const add = (
+    file: StorageEntry,
+    location: LocatedExerciseFile["location"],
+    subdirectory: string | null,
+    directoryIdentity: ParsedExerciseIdentity | null,
+    directorySegments: string[],
+    exerciseDirectoryName: string | null,
+    exerciseDirectorySegments: string[],
+  ) => {
     if (file.kind !== "file") return;
     const key = `${file.relativePath}\u0000${directoryIdentity?.exerciseCode ?? ""}`;
     if (seen.has(key)) return;
     seen.add(key);
-    files.push({ file, location, subdirectory, directoryIdentity });
+    files.push({ file, location, subdirectory, directoryIdentity, directorySegments, exerciseDirectoryName, exerciseDirectorySegments });
+  };
+
+  const collectExerciseDirectory = async (directory: StorageEntry, parentSegments: string[]) => {
+    const identity = parseExerciseDirectoryForLevelRecognition(directory.name, scanner, levelRecognition);
+    if (!identity) return;
+    const exerciseSegments = [...parentSegments, directory.name];
+    const exerciseEntries = [...await provider.list(directory.relativePath)].sort(compareEntries);
+    for (const child of exerciseEntries) if (child.kind === "file") add(child, "alongside", null, identity, exerciseSegments, directory.name, exerciseSegments);
+    await collectConfiguredSubdirectoryFiles(provider, exerciseEntries, configuredSubdirectories, identity, exerciseSegments, directory.name, exerciseSegments, add);
+
+    for (const levelDirectory of exerciseEntries.filter((entry) => entry.kind === "directory" && levelSubdirectories.includes(canonicalName(entry.name)))) {
+      const levelEntries = [...await provider.list(levelDirectory.relativePath)].sort(compareEntries);
+      const levelSegments = [...exerciseSegments, levelDirectory.name];
+      for (const child of levelEntries) if (child.kind === "file") add(child, "alongside", null, identity, levelSegments, directory.name, exerciseSegments);
+      await collectConfiguredSubdirectoryFiles(provider, levelEntries, configuredSubdirectories, identity, levelSegments, directory.name, exerciseSegments, add);
+    }
   };
 
   if (exerciseModeIncludesFiles(scanner.exerciseMode)) {
-    for (const entry of entries) if (entry.kind === "file") add(entry, "alongside", null, null);
-    await collectConfiguredSubdirectoryFiles(provider, entries, configuredSubdirectories, null, add);
+    for (const entry of entries) if (entry.kind === "file") add(entry, "alongside", null, null, [], null, []);
+    await collectConfiguredSubdirectoryFiles(provider, entries, configuredSubdirectories, null, [], null, [], add);
   }
 
   if (exerciseModeIncludesDirectories(scanner.exerciseMode)) {
     for (const entry of entries) {
       if (entry.kind !== "directory") continue;
-      const identity = parseExerciseDirectoryIdentity(entry.name, scanner);
-      if (!identity) continue;
-      const exerciseEntries = [...await provider.list(entry.relativePath)].sort(compareEntries);
-      for (const child of exerciseEntries) if (child.kind === "file") add(child, "alongside", null, identity);
-      await collectConfiguredSubdirectoryFiles(provider, exerciseEntries, configuredSubdirectories, identity, add);
+      await collectExerciseDirectory(entry, []);
+    }
+  }
+
+  // Only configured level folders directly inside this exercise context are
+  // traversed. Portfolio/section ancestors and unrelated nested folders never
+  // participate in level recognition.
+  for (const levelDirectory of entries.filter((entry) => entry.kind === "directory" && levelSubdirectories.includes(canonicalName(entry.name)))) {
+    const levelEntries = [...await provider.list(levelDirectory.relativePath)].sort(compareEntries);
+    const levelSegments = [levelDirectory.name];
+    if (exerciseModeIncludesFiles(scanner.exerciseMode)) {
+      for (const child of levelEntries) if (child.kind === "file") add(child, "alongside", null, null, levelSegments, null, []);
+      await collectConfiguredSubdirectoryFiles(provider, levelEntries, configuredSubdirectories, null, levelSegments, null, [], add);
+    }
+    if (exerciseModeIncludesDirectories(scanner.exerciseMode)) {
+      for (const child of levelEntries) {
+        if (child.kind === "directory") await collectExerciseDirectory(child, levelSegments);
+      }
     }
   }
 
   return files.sort((left, right) => compareEntries(left.file, right.file));
+}
+
+function parseExerciseDirectoryForLevelRecognition(
+  name: string,
+  scanner: ExerciseScannerConfig,
+  levelRecognition: ExerciseLevelRecognitionConfig,
+): ParsedExerciseIdentity | null {
+  const direct = parseExerciseDirectoryIdentity(name, scanner);
+  if (direct || levelRecognition.method !== "marker" || levelRecognition.source.type !== "exercise_directory") return direct;
+  const tokens = Object.values(levelRecognition.mapping).filter(Boolean).map((code) =>
+    levelRecognition.convention === "prefixed_code" ? `${levelRecognition.prefix}${code}` : code);
+  let withoutMarkers = name;
+  for (const token of tokens) {
+    withoutMarkers = withoutMarkers.replace(new RegExp(`(^|[-_.\\s])${escapeRegExp(token)}(?=$|[-_.\\s])`, "gi"), "$1");
+  }
+  return parseExerciseDirectoryIdentity(withoutMarkers.replace(/[-_.\s]+$/g, ""), scanner);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function collectConfiguredSubdirectoryFiles(
@@ -295,13 +423,16 @@ async function collectConfiguredSubdirectoryFiles(
   entries: readonly StorageEntry[],
   subdirectories: readonly string[],
   directoryIdentity: ParsedExerciseIdentity | null,
-  add: (file: StorageEntry, location: LocatedExerciseFile["location"], subdirectory: string | null, directoryIdentity: ParsedExerciseIdentity | null) => void,
+  baseSegments: string[],
+  exerciseDirectoryName: string | null,
+  exerciseDirectorySegments: string[],
+  add: (file: StorageEntry, location: LocatedExerciseFile["location"], subdirectory: string | null, directoryIdentity: ParsedExerciseIdentity | null, directorySegments: string[], exerciseDirectoryName: string | null, exerciseDirectorySegments: string[]) => void,
 ): Promise<void> {
   for (const subdirectory of subdirectories) {
     const directory = entries.find((entry) => entry.kind === "directory" && canonicalName(entry.name) === subdirectory);
     if (!directory) continue;
     const children = [...await provider.list(directory.relativePath)].sort(compareEntries);
-    for (const child of children) if (child.kind === "file") add(child, "subdirectory", subdirectory, directoryIdentity);
+    for (const child of children) if (child.kind === "file") add(child, "subdirectory", subdirectory, directoryIdentity, [...baseSegments, directory.name], exerciseDirectoryName, exerciseDirectorySegments);
   }
 }
 
@@ -371,7 +502,7 @@ function matchExerciseFile(
 
   const resource = preferred[0].resource;
   const identities = dedupeIdentities(preferred);
-  if (identities.length === 1) return { file: candidate.file, resource, identity: identities[0].identity };
+  if (identities.length === 1) return { file: candidate.file, resource, identity: identities[0].identity, source: candidate };
 
   const boundaryCandidates = identities.filter((item) => item.hasBoundaryAfterNumber);
   const pool = boundaryCandidates.length > 0 ? boundaryCandidates : identities;
@@ -382,7 +513,7 @@ function matchExerciseFile(
   // (handled above) is allowed to decide. Filename rules themselves must never turn
   // `Oef3uitwerking` into exercise `3u` merely because `3u` is the longest candidate.
   if (longestCandidates.length === 1 && boundaryCandidates.length > 0) {
-    return { file: candidate.file, resource, identity: longestCandidates[0].identity };
+    return { file: candidate.file, resource, identity: longestCandidates[0].identity, source: candidate };
   }
 
   warnings.push({

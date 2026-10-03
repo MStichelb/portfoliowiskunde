@@ -2,16 +2,18 @@ import { notFound } from "next/navigation";
 
 import { AdminExercisePreviewToolbar } from "@/app/components/admin-exercise-preview-toolbar";
 import { AdminSpaceHeader } from "@/app/components/admin-space-header";
+import { ExerciseAdminControls } from "@/app/components/exercise-admin-controls";
 import { SolutionImage } from "@/app/components/solution-image";
 import { SolutionVariantHeading } from "@/app/components/solution-variant-heading";
 import { requireAdminUser } from "@/lib/auth";
 import { canManageLearningSpace } from "@/lib/authorization";
 import { adminExercisePortfolioHref } from "@/lib/admin-routes";
+import { formatTerminologyLabel } from "@/lib/collection-terminology";
 import { getAdminExercise, getAdminLearningSpaceBySlug, type ExerciseResource } from "@/lib/repositories";
 
 export const dynamic = "force-dynamic";
 
-export default async function LearningSpaceAdminExercisePage({ params }: { params: Promise<{ spaceSlug: string; id: string }> }) {
+export default async function LearningSpaceAdminExercisePage({ params, searchParams }: { params: Promise<{ spaceSlug: string; id: string }>; searchParams?: Promise<{ levelSaved?: string }> }) {
   const user = await requireAdminUser();
   const { spaceSlug, id } = await params;
   const space = await getAdminLearningSpaceBySlug(spaceSlug);
@@ -20,11 +22,28 @@ export default async function LearningSpaceAdminExercisePage({ params }: { param
   if (!exercise) notFound();
 
   const resources = exercise.resources.filter((resource) => resource.available && resource.legacyVariant !== null);
+  const levelSaved = (await searchParams)?.levelSaved === "1";
 
   return <main className="page-shell admin-page admin-space-page solution-page">
     <AdminSpaceHeader current={space} section="portfolios" user={user} />
-    <AdminExercisePreviewToolbar portfolioHref={adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id)} />
-    <h2>Oefening {exercise.code}</h2><p>{exercise.portfolioTitle} - {exercise.sectionTitle}</p>
+    <AdminExercisePreviewToolbar portfolioHref={adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id)} collectionLabelSingular={space.collectionLabelSingular} />
+    <h2>{formatTerminologyLabel(space.exerciseLabelSingular, "standalone")} {exercise.code}</h2><p>{exercise.portfolioTitle} - {exercise.sectionTitle}</p>
+    <section className="admin-card exercise-admin-controls-card" aria-label={`Beheer ${formatTerminologyLabel(space.exerciseLabelSingular, "inline")} ${exercise.code}`}>
+      {levelSaved ? <p className="save-feedback" role="status">Niveau opgeslagen.</p> : null}
+      <div className="admin-summary-table" role="region" aria-label={`Beheer ${formatTerminologyLabel(space.exerciseLabelSingular, "inline")} ${exercise.code}`} tabIndex={0}>
+        <table>
+          <thead><tr><th>Niveau</th><th>Notitie</th><th>Eigen status</th><th>Effectieve status</th><th>Alternatieve uitwerking tonen</th><th title="Uitwerking, alternatieve uitwerking">Aantal bestanden</th></tr></thead>
+          <tbody><tr><ExerciseAdminControls
+            exercise={{ ...exercise, configuredVisible: exercise.visibilityMode === "visible", status: exercise.effectiveStatus }}
+            portfolioId={exercise.portfolioId}
+            learningSpaceId={space.id}
+            levelPresentation={space.levelPresentation}
+            exerciseLabelSingular={space.exerciseLabelSingular}
+            returnContext="exercise"
+          /></tr></tbody>
+        </table>
+      </div>
+    </section>
     {!exercise.isIndexed
       ? <p className="form-message" role="status">Deze oefening is niet meer aanwezig in de bronmap. De historische metadata blijft behouden tot je de index opschoont.</p>
       : resources.map((resource) => <Variant resource={resource} spaceSlug={space.slug} key={resource.id} />)}

@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   canConfigureLearningSpace: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
   getSourceProfileForLearningSpaceCard: vi.fn(),
+  listActiveSubjects: vi.fn(),
   settingsForm: vi.fn(),
   sourceProfileCard: vi.fn(),
   saveLearningSpaceAction: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: mocks.canConfigureLearningSpace }));
 vi.mock("@/lib/repositories", () => ({ getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug }));
 vi.mock("@/lib/source-profiles", () => ({ getSourceProfileForLearningSpaceCard: mocks.getSourceProfileForLearningSpaceCard }));
+vi.mock("@/lib/subjects", () => ({ listActiveSubjects: mocks.listActiveSubjects }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("../../actions", () => ({ saveLearningSpaceAction: mocks.saveLearningSpaceAction }));
 vi.mock("@/app/components/admin-space-header", () => ({
@@ -49,6 +51,7 @@ describe("LearningSpace settings page", () => {
     mocks.canConfigureLearningSpace.mockResolvedValue(true);
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
     mocks.getSourceProfileForLearningSpaceCard.mockResolvedValue({ id: "profile-1", name: "Standaard portfolio" });
+    mocks.listActiveSubjects.mockResolvedValue(subjects);
   });
 
   it("passes superadmin delete rights into settings while preserving the active source", async () => {
@@ -59,6 +62,7 @@ describe("LearningSpace settings page", () => {
 
     expect(mocks.settingsForm).toHaveBeenCalledWith(expect.objectContaining({
       space,
+      subjects,
       canPermanentlyDelete: true,
       action: mocks.saveLearningSpaceAction,
     }));
@@ -129,8 +133,12 @@ function user(role: AppUser["role"]): AppUser {
 }
 
 const space: LearningSpace = {
-  id: "space-5", name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
+  id: "space-5", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
+  collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
+  name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
   sortOrder: 5, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "local", localSourcePath: "C:\\Portfolio", oneDriveDriveId: null,
   oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: null, googleDriveFolderLabel: null, sources: [],
   activeSourceId: null, primarySource: null, mirrorSource: null,
 };
+const subjects = [{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, usageCount: 0, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" }];

@@ -12,12 +12,16 @@ import {
   INITIAL_SOURCE_PROFILE_TEMPLATE_NAME,
   INITIAL_SOURCE_PROFILE_TEMPLATE_TIMESTAMP,
   exerciseResourceListSchema,
+  exerciseLevelRecognitionSchema,
   exerciseScannerSchema,
+  portfolioScannerSchema,
   globalResourceListSchema,
   parseSourceProfileConfig,
   parseStoredSourceProfileConfig,
   type ExerciseResourceConfig,
+  type ExerciseLevelRecognitionConfig,
   type ExerciseScannerConfig,
+  type PortfolioScannerConfig,
   type GlobalResourceConfig,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
@@ -132,19 +136,26 @@ export async function createSourceProfileTemplate(
 export async function saveSourceProfileTemplate(
   user: AppUser,
   templateId: string,
-  input: SourceProfileTemplateMetadataInput & { resources: unknown; exerciseScanner: unknown; exerciseResources: unknown },
+  input: SourceProfileTemplateMetadataInput & { resources: unknown; portfolioScanner?: unknown; exerciseScanner: unknown; exerciseResources: unknown; levelRecognition?: unknown },
 ): Promise<void> {
   requireSourceProfileTemplateManagement(user);
   const template = await getSourceProfileTemplate(templateId);
   const metadata = await validatedUniqueTemplateMetadata(input, templateId);
   const globalResources: GlobalResourceConfig[] = globalResourceListSchema.parse(input.resources);
   const exerciseScanner: ExerciseScannerConfig = exerciseScannerSchema.parse(input.exerciseScanner);
+  const portfolioScanner: PortfolioScannerConfig = input.portfolioScanner === undefined
+    ? template.config.scanner.portfolio
+    : portfolioScannerSchema.parse(input.portfolioScanner);
   const exerciseResources: ExerciseResourceConfig[] = exerciseResourceListSchema.parse(input.exerciseResources);
+  const levelRecognition: ExerciseLevelRecognitionConfig = input.levelRecognition === undefined
+    ? template.config.levelRecognition
+    : exerciseLevelRecognitionSchema.parse(input.levelRecognition);
   const config = parseSourceProfileConfig({
     ...template.config,
-    scanner: { ...template.config.scanner, exercise: exerciseScanner },
+    scanner: { portfolio: portfolioScanner, exercise: exerciseScanner },
     globalResources,
     exerciseResources,
+    levelRecognition,
   });
   try {
     await (await getDatabase()).execute({

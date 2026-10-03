@@ -11,6 +11,7 @@ import { ErrorReportNoteForm } from "@/app/components/error-report-note-form";
 import { ErrorReportResponseButton } from "@/app/components/error-report-response-button";
 import { ErrorReportSortControls } from "@/app/components/error-report-sort-controls";
 import { PublicationStatus } from "@/app/components/publication-status";
+import { DEFAULT_COLLECTION_LABEL_SINGULAR, DEFAULT_EXERCISE_LABEL_SINGULAR, formatTerminologyLabel } from "@/lib/collection-terminology";
 import {
   errorReportViewReducer,
   filterGroupedErrorReportThreads,
@@ -21,12 +22,14 @@ import {
 } from "@/lib/error-report-sort";
 import type { ErrorReportDocumentKind, ErrorReportIssueDetail, ErrorReportThreadIssueDetail, GroupedErrorReportThread } from "@/lib/repositories";
 
-export function GroupedErrorReportThreadInbox({ threads, issuesByThread, learningSpaceId, oldDoneCount, spaceSlug }: {
+export function GroupedErrorReportThreadInbox({ threads, issuesByThread, learningSpaceId, oldDoneCount, spaceSlug, collectionLabelSingular = DEFAULT_COLLECTION_LABEL_SINGULAR, exerciseLabelSingular = DEFAULT_EXERCISE_LABEL_SINGULAR }: {
   threads: GroupedErrorReportThread[];
   issuesByThread: Record<string, ErrorReportThreadIssueDetail[]>;
   learningSpaceId: string;
   oldDoneCount: number;
   spaceSlug: string;
+  collectionLabelSingular?: string;
+  exerciseLabelSingular?: string;
 }) {
   const [state, dispatch] = useReducer(errorReportViewReducer, initialErrorReportViewState);
   const portfolios = useMemo(() => groupedErrorReportThreadPortfolioFilterOptions(threads), [threads]);
@@ -47,12 +50,13 @@ export function GroupedErrorReportThreadInbox({ threads, issuesByThread, learnin
       sort={state.sortMode}
       selectedPortfolio={state.selectedPortfolio}
       portfolios={portfolios}
+      collectionLabelSingular={collectionLabelSingular}
       onSort={(sortMode) => dispatch({ type: "sort", sortMode })}
       onPortfolioChange={(portfolioId) => dispatch({ type: "filter", portfolioId })}
       onReset={() => dispatch({ type: "reset-filter" })}
     />
-    <GroupedErrorReportThreadGroup title="PINNED" threads={openGroups.pinned} issuesByThread={issuesByThread} spaceSlug={spaceSlug} />
-    <GroupedErrorReportThreadGroup title="TO DO" threads={openGroups.todo} issuesByThread={issuesByThread} spaceSlug={spaceSlug} />
+    <GroupedErrorReportThreadGroup title="PINNED" threads={openGroups.pinned} issuesByThread={issuesByThread} spaceSlug={spaceSlug} collectionLabelSingular={collectionLabelSingular} exerciseLabelSingular={exerciseLabelSingular} />
+    <GroupedErrorReportThreadGroup title="TO DO" threads={openGroups.todo} issuesByThread={issuesByThread} spaceSlug={spaceSlug} collectionLabelSingular={collectionLabelSingular} exerciseLabelSingular={exerciseLabelSingular} />
     <details className="report-group done-group">
       <summary><h2>DONE <span>{done.length}</span></h2></summary>
       {oldDoneCount > 0 ? <div className="done-group-actions"><ConfirmActionButton
@@ -63,28 +67,32 @@ export function GroupedErrorReportThreadInbox({ threads, issuesByThread, learnin
         confirmTitle="Afgewerkte meldingen verwijderen"
         confirmText={`${oldDoneCount} ${oldDoneCount === 1 ? "afgewerkte thread wordt" : "afgewerkte threads worden"} permanent verwijderd, inclusief alle onderliggende meldingen.`}
       /></div> : null}
-      <GroupedErrorReportThreadCards threads={done} issuesByThread={issuesByThread} spaceSlug={spaceSlug} />
+      <GroupedErrorReportThreadCards threads={done} issuesByThread={issuesByThread} spaceSlug={spaceSlug} collectionLabelSingular={collectionLabelSingular} exerciseLabelSingular={exerciseLabelSingular} />
     </details>
   </>;
 }
 
-function GroupedErrorReportThreadGroup({ title, threads, issuesByThread, spaceSlug }: {
+function GroupedErrorReportThreadGroup({ title, threads, issuesByThread, spaceSlug, collectionLabelSingular, exerciseLabelSingular }: {
   title: string;
   threads: GroupedErrorReportThread[];
   issuesByThread: Record<string, ErrorReportThreadIssueDetail[]>;
   spaceSlug: string;
+  collectionLabelSingular: string;
+  exerciseLabelSingular: string;
 }) {
-  return <section className="report-group"><h2>{title} <span>{threads.length}</span></h2><GroupedErrorReportThreadCards threads={threads} issuesByThread={issuesByThread} spaceSlug={spaceSlug} /></section>;
+  return <section className="report-group"><h2>{title} <span>{threads.length}</span></h2><GroupedErrorReportThreadCards threads={threads} issuesByThread={issuesByThread} spaceSlug={spaceSlug} collectionLabelSingular={collectionLabelSingular} exerciseLabelSingular={exerciseLabelSingular} /></section>;
 }
 
-export function GroupedErrorReportThreadCards({ threads, issuesByThread, spaceSlug }: {
+export function GroupedErrorReportThreadCards({ threads, issuesByThread, spaceSlug, collectionLabelSingular = DEFAULT_COLLECTION_LABEL_SINGULAR, exerciseLabelSingular = DEFAULT_EXERCISE_LABEL_SINGULAR }: {
   threads: GroupedErrorReportThread[];
   issuesByThread: Record<string, ErrorReportThreadIssueDetail[]>;
   spaceSlug: string;
+  collectionLabelSingular?: string;
+  exerciseLabelSingular?: string;
 }) {
   return threads.length === 0
     ? <p className="empty-state">Geen meldingen.</p>
-    : <div className="report-card-list">{threads.map((thread) => <GroupedErrorReportThreadCard key={thread.id} thread={thread} issues={issuesByThread[thread.id] ?? []} spaceSlug={spaceSlug} />)}</div>;
+    : <div className="report-card-list">{threads.map((thread) => <GroupedErrorReportThreadCard key={thread.id} thread={thread} issues={issuesByThread[thread.id] ?? []} spaceSlug={spaceSlug} collectionLabelSingular={collectionLabelSingular} exerciseLabelSingular={exerciseLabelSingular} />)}</div>;
 }
 
 export function errorReportDocumentLabel(kind: ErrorReportDocumentKind): string {
@@ -100,10 +108,12 @@ export function errorReportLocationLabel(issue: Pick<ErrorReportThreadIssueDetai
   return `${errorReportDocumentLabel(issue.documentKind)} - Alternatieve uitwerking`;
 }
 
-function GroupedErrorReportThreadCard({ thread, issues, spaceSlug }: {
+function GroupedErrorReportThreadCard({ thread, issues, spaceSlug, collectionLabelSingular, exerciseLabelSingular }: {
   thread: GroupedErrorReportThread;
   issues: ErrorReportThreadIssueDetail[];
   spaceSlug: string;
+  collectionLabelSingular: string;
+  exerciseLabelSingular: string;
 }) {
   const todo = thread.status === "TODO";
   const previewHref = thread.exerciseId
@@ -111,18 +121,21 @@ function GroupedErrorReportThreadCard({ thread, issues, spaceSlug }: {
     : null;
   const reportLabel = `${thread.reportCount} ${thread.reportCount === 1 ? "melding" : "meldingen"}`;
   const canToggleVisibility = thread.exerciseId !== null && thread.solutionStatus !== null && thread.solutionConfiguredVisible !== null;
+  const collectionLabel = formatTerminologyLabel(collectionLabelSingular, "standalone");
+  const exerciseLabel = formatTerminologyLabel(exerciseLabelSingular, "standalone");
+  const exerciseLabelInline = formatTerminologyLabel(exerciseLabelSingular, "inline");
 
   return <article className="report-card">
     <div className="report-card-heading">
       <div>
-        <strong>Portfolio {thread.portfolioCode}: {thread.portfolioTitle}</strong>
+        <strong>{collectionLabel} {thread.portfolioCode}: {thread.portfolioTitle}</strong>
         <span className="report-exercise-context">
-          {thread.isMatchedExercise ? `${thread.sectionTitle} - ` : ""}Oefening {thread.exerciseCode}
+          {thread.isMatchedExercise ? `${thread.sectionTitle} - ` : ""}{exerciseLabel} {thread.exerciseCode}
           {!thread.isMatchedExercise ? <span className="report-unmatched-warning" title="Niet automatisch gekoppeld" aria-label="Niet automatisch gekoppeld" role="img"><TriangleAlert size={17} aria-hidden /></span> : null}
         </span>
       </div>
       <div className="report-actions">
-        {previewHref ? <Link href={previewHref} className="icon-button" title="Oefening als admin bekijken" aria-label="Oefening als admin bekijken"><Search size={16} aria-hidden /></Link> : null}
+        {previewHref ? <Link href={previewHref} className="icon-button" title={`${exerciseLabel} als admin bekijken`} aria-label={`${exerciseLabel} als admin bekijken`}><Search size={16} aria-hidden /></Link> : null}
         {canToggleVisibility ? <form action={toggleReportedExerciseVisibilityAction}>
           <input type="hidden" name="exerciseId" value={thread.exerciseId!} />
           <input type="hidden" name="portfolioId" value={thread.portfolioId} />
@@ -132,6 +145,7 @@ function GroupedErrorReportThreadCard({ thread, issues, spaceSlug }: {
         {thread.exerciseId ? <ExerciseNoteButton
           exerciseId={thread.exerciseId}
           exerciseCode={thread.exerciseCode}
+          exerciseLabelSingular={exerciseLabelSingular}
           noteLabel={thread.noteLabel}
           customNote={thread.customNote}
           notePosition={thread.notePosition ?? "above_solution"}
@@ -154,16 +168,17 @@ function GroupedErrorReportThreadCard({ thread, issues, spaceSlug }: {
       </span>)}
     </div>
     <div className="report-content">
-      <ThreadReportDetails thread={thread} issues={issues} reportLabel={reportLabel} />
+      <ThreadReportDetails thread={thread} issues={issues} reportLabel={reportLabel} exerciseLabelSingular={exerciseLabelInline} />
       <ErrorReportNoteForm threadId={thread.id} note={thread.adminNote} />
     </div>
   </article>;
 }
 
-function ThreadReportDetails({ thread, issues, reportLabel }: {
+function ThreadReportDetails({ thread, issues, reportLabel, exerciseLabelSingular }: {
   thread: GroupedErrorReportThread;
   issues: ErrorReportThreadIssueDetail[];
   reportLabel: string;
+  exerciseLabelSingular: string;
 }) {
   const activityDate = thread.latestReportAt ?? thread.updatedAt;
   return <details className="issue-report-details">
@@ -177,7 +192,7 @@ function ThreadReportDetails({ thread, issues, reportLabel }: {
           <div className="issue-report-item-heading">
             <p className="report-message">{report.message}</p>
             <div className="issue-report-actions">
-              <ErrorReportResponseButton reportId={report.id} exerciseCode={thread.exerciseCode} locationLabel={errorReportLocationLabel(issue)} reporterLabel={reporterLabel} teacherResponse={report.teacherResponse} />
+              <ErrorReportResponseButton reportId={report.id} exerciseCode={thread.exerciseCode} exerciseLabelSingular={exerciseLabelSingular} locationLabel={errorReportLocationLabel(issue)} reporterLabel={reporterLabel} teacherResponse={report.teacherResponse} />
               <form action={errorReportStatusAction}>
                 <input type="hidden" name="id" value={report.id} />
                 <input type="hidden" name="status" value={treated ? "OPEN" : "DONE"} />

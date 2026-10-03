@@ -5,6 +5,7 @@ import { indexSource } from "@/lib/storage/portfolio-indexer";
 import { getStorageProviderWithType } from "@/lib/storage";
 import { SourceAccessError, SourceConfigurationError } from "@/lib/source-errors";
 import { getActiveSourceProfileConfigForLearningSpace } from "@/lib/source-profiles";
+import { detectLearningSpaceHeader } from "@/lib/learning-space-header";
 import type { StorageProvider } from "@/lib/storage/provider";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
 
@@ -41,7 +42,10 @@ export async function synchronizeSource(learningSpaceId?: string, dependencies: 
     const readiness = configured.provider.getReadinessMetadata?.();
     stage = "indexing";
     const sourceProfileConfig = await getActiveSourceProfileConfigForLearningSpace(configured.space.id);
-    const portfolios = await (dependencies.index ?? indexSource)(configured.provider, sourceProfileConfig);
+    const [portfolios, header] = await Promise.all([
+      (dependencies.index ?? indexSource)(configured.provider, sourceProfileConfig),
+      configured.source?.role === "mirror" ? Promise.resolve(undefined) : detectLearningSpaceHeader(configured.provider),
+    ]);
     const currentSpace = await getLearningSpace(configured.space.id);
     if (!currentSpace?.isActive) {
       return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true, skipReason: "archived" as const };
@@ -50,6 +54,7 @@ export async function synchronizeSource(learningSpaceId?: string, dependencies: 
     const result = await persistIndex(portfolios, configured.type, configured.space.id, {
       sourceId: configured.source?.id,
       mirrorCompletedAt: readiness?.mirrorCompletedAt,
+      ...(header === undefined ? {} : { header }),
     });
     return { portfolios: portfolios.length, ...result, skipped: false };
   } catch (error) {

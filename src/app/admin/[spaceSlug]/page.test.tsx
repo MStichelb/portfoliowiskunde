@@ -88,6 +88,28 @@ describe("LearningSpace portfolio management source status", () => {
     expect(markup).toContain('class="warning-count"');
     expect(markup).toContain("2 waarschuwingen");
   });
+
+  it("uses the configured collection terminology in the LearningSpace overview", async () => {
+    mocks.getAdminLearningSpaceBySlug.mockResolvedValue({
+      ...space,
+      subjectId: "subject-fysica",
+      subjectName: "Fysica",
+      collectionLabelSingular: "bunDEL",
+      collectionLabelPlural: "BUNDELS",
+      exerciseLabelSingular: "OpGavE",
+      exerciseLabelPlural: "OPGAVEN",
+    });
+    mocks.getAdminPortfolios.mockResolvedValue([{
+      id: "portfolio-1", code: "1", title: "Krachten", themeId: null, effectiveStatus: "visible", sections: [],
+    }]);
+
+    const markup = renderToStaticMarkup(await LearningSpaceAdminPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+
+    expect(markup).not.toContain("Overige Bundels");
+    expect(markup).toContain("Opgaven");
+    expect(markup).toContain('aria-label="Bundel beheren"');
+    expect(markup).toContain('href="/admin/5/portfolio/portfolio-1"');
+  });
 });
 
 const teacher = {
@@ -96,7 +118,10 @@ const teacher = {
 };
 
 const space = {
-  id: "space-5", name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
+  id: "space-5", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
+  collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
+  name: "Vijfde jaar", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
   sortOrder: 5, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "onedrive" as const, localSourcePath: null,
   oneDriveDriveId: "drive", oneDriveFolderId: "folder", oneDriveFolderPath: "Portfolio/5", googleDriveFolderId: null,
   googleDriveFolderLabel: null, sources: [], activeSourceId: null, primarySource: null, mirrorSource: null,

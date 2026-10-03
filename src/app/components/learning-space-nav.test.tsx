@@ -6,7 +6,10 @@ import type { LearningSpace } from "@/lib/repositories";
 import { LearningSpaceNav } from "./learning-space-nav";
 
 const base: LearningSpace = {
-  id: "space-5", name: "Vijfde jaar wiskunde", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
+  id: "space-5", subjectId: "subject-wiskunde", subjectName: "Wiskunde", subjectIsActive: true,
+  collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
+  name: "Vijfde jaar wiskunde", slug: "5", shortLabel: "5WIS", description: "Oefenmateriaal", cardColor: "#DCEFE9",
   sortOrder: 50, isActive: true, archivedAt: null, editorsCanManageAccess: false, sourceType: "local", localSourcePath: null,
   oneDriveDriveId: null, oneDriveFolderId: null, oneDriveFolderPath: null, googleDriveFolderId: null,
   googleDriveFolderLabel: null, sources: [], activeSourceId: null, primarySource: null, mirrorSource: null,
@@ -41,5 +44,17 @@ describe("LearningSpace admin navigation", () => {
     expect(access).toBeLessThan(publicPage);
     expect(markup).toContain('href="/admin/5/toegang"');
     expect(markup).toContain('class="space-link-current" href="/admin/5/toegang"');
+  });
+
+  it("uses per-space terminology without deriving it from the subject", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceNav
+      current={{ ...base, subjectId: "subject-fysica", subjectName: "Fysica", collectionLabelSingular: "bunDEL", collectionLabelPlural: "bUNDELS" }}
+      section="portfolios"
+    />);
+
+    expect(markup).toContain("Bundels");
+    expect(markup).not.toContain("bUNDELS");
+    expect(markup).not.toContain("Portfolio&#x27;s");
+    expect(markup).toContain('href="/admin/5"');
   });
 });

@@ -22,13 +22,14 @@ vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("../../actions", () => ({
   createThemeAction: vi.fn(),
   deleteThemeAction: vi.fn(),
+  moveThemeAction: vi.fn(),
   saveThemeAction: vi.fn(),
 }));
 vi.mock("@/app/components/admin-space-header", () => ({
   AdminSpaceHeader: ({ section }: { section: string }) => <div data-section={section}>Leeromgevingheader</div>,
 }));
 vi.mock("@/app/components/confirm-action-button", () => ({
-  ConfirmActionButton: ({ label }: { label: React.ReactNode }) => <button>{label}</button>,
+  ConfirmActionButton: ({ label, confirmTitle }: { label: React.ReactNode; confirmTitle: string }) => <button aria-label={confirmTitle}>{label}</button>,
 }));
 
 import ThemesPage from "./page";
@@ -51,12 +52,24 @@ describe("LearningSpace themes page", () => {
   });
 
   it("renders existing themes instead of the empty state", async () => {
-    mocks.getThemes.mockResolvedValue([{ id: "theme-1", learningSpaceId: space.id, name: "Analyse", sortOrder: 1 }]);
+    mocks.getThemes.mockResolvedValue([
+      { id: "theme-1", learningSpaceId: space.id, name: "Analyse", sortOrder: 10 },
+      { id: "theme-2", learningSpaceId: space.id, name: "Meetkunde", sortOrder: 20 },
+      { id: "theme-3", learningSpaceId: space.id, name: "Statistiek", sortOrder: 30 },
+    ]);
 
     const markup = renderToStaticMarkup(await ThemesPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
 
     expect(markup).toContain("Analyse");
     expect(markup).not.toContain("Nog geen thema&#x27;s.");
+    expect(markup).not.toContain("Sortering");
+    expect(markup).not.toContain('name="sortOrder"');
+    expect(markup.match(/aria-label="Themanaam opslaan"/g)).toHaveLength(3);
+    expect(markup.match(/aria-label="Thema verwijderen"/g)).toHaveLength(3);
+    expect(markup).toMatch(/disabled="" aria-label="Thema omhoog verplaatsen"/);
+    expect(markup).toMatch(/disabled="" aria-label="Thema omlaag verplaatsen"/);
+    expect(markup).toContain('name="direction" value="up"');
+    expect(markup).toContain('name="direction" value="down"');
   });
 });
 
@@ -73,6 +86,13 @@ const user: AppUser = {
 
 const space: LearningSpace = {
   id: "space-5",
+  subjectId: "subject-wiskunde",
+  subjectName: "Wiskunde",
+  subjectIsActive: true,
+  collectionLabelSingular: "Portfolio",
+  collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening",
+  exerciseLabelPlural: "Oefeningen",
   name: "Vijfde jaar",
   slug: "5",
   shortLabel: "5WIS",

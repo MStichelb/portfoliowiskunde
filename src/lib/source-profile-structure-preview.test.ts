@@ -31,6 +31,19 @@ function flatten(node: ReturnType<typeof buildSourceStructurePreview>["root"]): 
 }
 
 describe("buildSourceStructurePreview", () => {
+  it("uses the configured portfolio marker and shows direct numeric sections", () => {
+    const preview = buildSourceStructurePreview(scanner, [workedSolution], { method: "none" }, { marker: "H" });
+
+    expect(preview.root.name).toBe("H1_Stelsels oplossen");
+    expect(flatten(preview.root)).toEqual(expect.arrayContaining([
+      "1 Inleiding",
+      "2 - Methode van Gauss-Jordan",
+      "3_Toepassingen",
+      "header.png",
+    ]));
+    expect(flatten(preview.root)).not.toContain("Uitwerkingen");
+  });
+
   it("shows a file exercise and a matching direct resource in files mode", () => {
     const preview = buildSourceStructurePreview(scanner, [workedSolution]);
     expect(flatten(preview.root)).toEqual(expect.arrayContaining(["Oef1.png", "Oef1-uitwerking.png"]));
@@ -54,5 +67,63 @@ describe("buildSourceStructurePreview", () => {
     };
     const preview = buildSourceStructurePreview(scanner, [fallback]);
     expect(flatten(preview.root)).toEqual(expect.arrayContaining(["Uitwerkingen", "Oef1.png"]));
+  });
+
+  it("shows the configured subdirectory for a combined direct-or-subdirectory location", () => {
+    const combined: ExerciseResourceConfig = {
+      ...workedSolution,
+      location: { scope: "alongside_and_subdirectory", subdirectory: "Uitwerkingen" },
+    };
+
+    const preview = buildSourceStructurePreview(scanner, [combined]);
+    expect(flatten(preview.root)).toEqual(expect.arrayContaining(["1 Inleiding", "Uitwerkingen", "Oef1-uitwerking.png"]));
+  });
+
+  it("illustrates configured level subdirectories", () => {
+    const preview = buildSourceStructurePreview(scanner, [workedSolution], {
+      method: "subdirectory",
+      source: { type: "exercise_resource", resourceId: "worked-solution" },
+      mapping: { opwarmer: "Start", basis: "Kern", uitdaging: "Plus", verdieping: "Extra" },
+    });
+
+    expect(flatten(preview.root)).toEqual(expect.arrayContaining(["Kern", "Oef1.png", "Oef1-uitwerking.png"]));
+    expect(preview.notes).toContain("De ingestelde submapnaam bepaalt in dit voorbeeld automatisch het interne oefeningniveau.");
+    expect(flatten(preview.root)).toEqual(expect.arrayContaining(["1 Inleiding", "Kern", "Oef1.png"]));
+  });
+
+  it("adds the configured suffix to the selected resource file", () => {
+    const preview = buildSourceStructurePreview(scanner, [workedSolution], {
+      method: "marker",
+      source: { type: "exercise_resource", resourceId: "worked-solution" },
+      convention: "suffix_code",
+      prefix: "",
+      mapping: { opwarmer: "O", basis: "B", uitdaging: "U", verdieping: "V" },
+    });
+
+    expect(flatten(preview.root)).toContain("Oef1-uitwerking-B.png");
+  });
+
+  it("adds the configured recognizer and code to the selected resource file", () => {
+    const preview = buildSourceStructurePreview(scanner, [workedSolution], {
+      method: "marker",
+      source: { type: "exercise_resource", resourceId: "worked-solution" },
+      convention: "prefixed_code",
+      prefix: "Niv",
+      mapping: { opwarmer: "1", basis: "2", uitdaging: "3", verdieping: "4" },
+    });
+
+    expect(flatten(preview.root)).toContain("Oef1-uitwerking-Niv2.png");
+  });
+
+  it("adds the configured marker to an exercise directory name", () => {
+    const preview = buildSourceStructurePreview({ ...scanner, exerciseMode: "directories" }, [workedSolution], {
+      method: "marker",
+      source: { type: "exercise_directory" },
+      convention: "suffix_code",
+      prefix: "",
+      mapping: { opwarmer: "O", basis: "B", uitdaging: "U", verdieping: "V" },
+    });
+
+    expect(flatten(preview.root)).toEqual(expect.arrayContaining(["Oef1-B", "uitwerking.png"]));
   });
 });

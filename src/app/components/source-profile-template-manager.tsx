@@ -129,8 +129,10 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
             />
             <SourceProfileExerciseConfigurationEditors
               key={selected.id}
+              portfolioScanner={selected.config?.scanner.portfolio ?? { marker: "Portfolio" }}
               scanner={selected.config?.scanner.exercise ?? { exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Oef" }}
               resources={selected.config?.exerciseResources ?? []}
+              levelRecognition={selected.config?.levelRecognition ?? { method: "none" }}
               ownerIdField="templateId"
               ownerId={selected.id}
               editorKey={selected.id}

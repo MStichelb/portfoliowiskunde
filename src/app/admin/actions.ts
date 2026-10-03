@@ -8,8 +8,11 @@ import { z } from "zod";
 import { endAdminSession, requireAdmin, requireAdminUser } from "@/lib/auth";
 import { bulkSelectionError } from "@/lib/admin-validation";
 import { adminExerciseNoteReturnHref } from "@/lib/admin-routes";
+import { CollectionTerminologyError } from "@/lib/collection-terminology";
 import { requireLearningSpaceConfiguration, requireLearningSpaceCreation, requireLearningSpaceManagement } from "@/lib/authorization";
 import { exerciseNoteSchema } from "@/lib/exercise-note";
+import { EXERCISE_LEVELS, validateExerciseLevelOverrideInput, type ExerciseLevel, type ExerciseLevelOverrideInput } from "@/lib/exercise-level";
+import { validateExerciseLevelPresentation } from "@/lib/exercise-level-presentation";
 import { errorReportTeacherResponseSchema } from "@/lib/error-report-teacher-response";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import { parseBrusselsDateTime, type ChildVisibilityMode, type PortfolioVisibilityMode } from "@/lib/publication";
@@ -24,12 +27,14 @@ import {
   createLearningSpaceForOwner,
   createTheme,
   deleteTheme,
+  moveTheme,
   getLearningSpace,
   updateLearningSpace,
   updateTheme,
   setExercisePublication,
   setExerciseVisibility,
   setExerciseAlternativeVisibility,
+  setExerciseLevelOverride,
   setExerciseNote,
   setPortfolioPublication,
   setPortfolioTitle,
@@ -59,6 +64,7 @@ import { compareLearningSpaceSources, switchLearningSpaceSource, type SourceSwit
 import { synchronizeSource } from "@/lib/sync";
 import { userFacingSourceError } from "@/lib/source-errors";
 import { ensureStorageConnection } from "@/lib/storage-connections";
+import { SubjectSelectionError } from "@/lib/subjects";
 
 const childModeSchema = z.enum(["hidden", "visible"]);
 const portfolioModeSchema = z.enum(["hidden", "visible"]);
@@ -183,6 +189,8 @@ export async function saveLearningSpaceAction(_previousState: AdminActionState, 
   try {
     await updateLearningSpace(id, input);
   } catch (error) {
+    if (error instanceof SubjectSelectionError) return { error: error.message };
+    if (error instanceof CollectionTerminologyError) return { error: error.message };
     if (isUniqueConstraintError(error)) return { error: "Deze URL is al in gebruik. Kies een andere URL." };
     throw error;
   }
@@ -209,14 +217,16 @@ export async function createLearningSpaceAction(formData: FormData) {
   try {
     input = learningSpaceInput(formData);
     input = await assignOwnedStorageConnections(input, admin.id);
-  } catch {
-    redirect("/admin?create=1&createError=invalid");
+  } catch (error) {
+    redirect(`/admin?create=1&createError=${error instanceof SubjectSelectionError ? "subject" : "invalid"}`);
   }
   if (await getAdminLearningSpaceBySlug(input.slug)) redirect("/admin?create=1&createError=duplicate");
   let space;
   try {
     space = await createLearningSpaceForOwner(input, admin.id);
   } catch (error) {
+    if (error instanceof SubjectSelectionError) redirect("/admin?create=1&createError=subject");
+    if (error instanceof CollectionTerminologyError) redirect("/admin?create=1&createError=invalid");
     if (isUniqueConstraintError(error)) redirect("/admin?create=1&createError=duplicate");
     throw error;
   }
@@ -229,7 +239,7 @@ export async function createThemeAction(formData: FormData) {
   await requireSpaceManagement(learningSpaceId);
   const name = stringValue(formData, "name");
   if (!name || !await getLearningSpace(learningSpaceId)) throw new Error("Ongeldig thema.");
-  await createTheme(learningSpaceId, name, Number(stringValue(formData, "sortOrder")) || 0);
+  await createTheme(learningSpaceId, name);
   revalidatePath("/admin");
 }
 
@@ -239,7 +249,17 @@ export async function saveThemeAction(formData: FormData) {
   await requireSpaceManagement(learningSpaceId);
   const name = stringValue(formData, "name");
   if (!id || !name || !await getLearningSpace(learningSpaceId)) throw new Error("Ongeldig thema.");
-  await updateTheme(id, learningSpaceId, name, Number(stringValue(formData, "sortOrder")) || 0);
+  await updateTheme(id, learningSpaceId, name);
+  revalidatePath("/admin");
+}
+
+export async function moveThemeAction(formData: FormData) {
+  const id = stringValue(formData, "id");
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  await requireSpaceManagement(learningSpaceId);
+  const direction = z.enum(["up", "down"]).safeParse(stringValue(formData, "direction"));
+  if (!id || !direction.success || !await getLearningSpace(learningSpaceId)) throw new Error("Thema niet gevonden.");
+  await moveTheme(id, learningSpaceId, direction.data);
   revalidatePath("/admin");
 }
 
@@ -400,6 +420,31 @@ export async function saveExerciseNoteAction(formData: FormData) {
   await setExerciseNote(id, note.data.customNote, note.data.noteLabel, note.data.notePosition);
   refreshExerciseNotePaths(exercise, space.slug);
   redirect(adminExerciseNoteReturnHref(space.slug, exercise.portfolioId, exercise.id, stringValue(formData, "returnContext")));
+}
+
+export async function saveExerciseLevelAction(formData: FormData) {
+  const id = stringValue(formData, "id");
+  const learningSpaceId = stringValue(formData, "learningSpaceId");
+  await requireSpaceManagement(learningSpaceId);
+  const exercise = id ? await getAdminExercise(id) : null;
+  if (!exercise || exercise.learningSpaceId !== learningSpaceId) throw new Error("Oefening niet gevonden.");
+
+  const choice = stringValue(formData, "levelChoice");
+  let input: ExerciseLevelOverrideInput;
+  if (choice === "inherit" || choice === "none") input = validateExerciseLevelOverrideInput({ mode: choice });
+  else if (choice.startsWith("level:")) input = validateExerciseLevelOverrideInput({ mode: "level", level: choice.slice("level:".length) });
+  else throw new Error("Ongeldige modus voor het oefeningniveau.");
+
+  await setExerciseLevelOverride(exercise.id, input);
+  const space = await getLearningSpace(learningSpaceId);
+  if (!space) throw new Error("Leeromgeving niet gevonden.");
+  revalidatePath("/admin");
+  revalidatePath(`/admin/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}`);
+  revalidatePath(`/admin/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(exercise.id)}`);
+  if (stringValue(formData, "returnContext") === "portfolio") {
+    redirect(`/admin/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}#exercise-${encodeURIComponent(exercise.id)}`);
+  }
+  redirect(`/admin/${encodeURIComponent(space.slug)}/oefening/${encodeURIComponent(exercise.id)}?levelSaved=1`);
 }
 
 export async function deleteExerciseNoteAction(formData: FormData) {
@@ -609,6 +654,12 @@ function isUniqueConstraintError(error: unknown): boolean {
 }
 
 function learningSpaceInput(formData: FormData): LearningSpaceInput {
+  const subjectId = stringValue(formData, "subjectId");
+  const collectionLabelSingular = formData.has("collectionLabelSingular") ? String(formData.get("collectionLabelSingular") ?? "") : undefined;
+  const collectionLabelPlural = formData.has("collectionLabelPlural") ? String(formData.get("collectionLabelPlural") ?? "") : undefined;
+  const exerciseLabelSingular = formData.has("exerciseLabelSingular") ? String(formData.get("exerciseLabelSingular") ?? "") : undefined;
+  const exerciseLabelPlural = formData.has("exerciseLabelPlural") ? String(formData.get("exerciseLabelPlural") ?? "") : undefined;
+  const exerciseLabelShort = formData.has("exerciseLabelShort") ? String(formData.get("exerciseLabelShort") ?? "") : undefined;
   const name = stringValue(formData, "name");
   const slug = stringValue(formData, "slug").toLowerCase();
   const shortLabel = stringValue(formData, "shortLabel");
@@ -623,9 +674,22 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const oneDriveFolderPath = stringValue(formData, "oneDriveFolderPath");
   const googleDriveFolderId = stringValue(formData, "googleDriveFolderId");
   const googleDriveFolderLabel = stringValue(formData, "googleDriveFolderLabel");
+  const sortOrderValue = stringValue(formData, "sortOrder");
+  const sortOrder = sortOrderValue ? Number(sortOrderValue) : undefined;
+  const levelPresentation = formData.has("levelSymbol_opwarmer")
+    ? validateExerciseLevelPresentation(Object.fromEntries(EXERCISE_LEVELS.map((level: ExerciseLevel) => [level, {
+      displayName: stringValue(formData, `levelName_${level}`),
+      symbolId: stringValue(formData, `levelSymbol_${level}`),
+      count: stringValue(formData, `levelCount_${level}`),
+      color: stringValue(formData, `levelColor_${level}`),
+      showPublicBackground: formData.has(`levelShowPublicBackground_${level}`),
+    }])))
+    : undefined;
+  if (!subjectId) throw new SubjectSelectionError("Kies een vak.");
   if (!name || !shortLabel || description.length > 240 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik geldige algemene instellingen.");
   if (cardColorInput && !isHexColor(cardColorInput)) throw new Error("Kies een geldige kaartkleur.");
-  const common = { name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder: Number(stringValue(formData, "sortOrder")) || 0, sourceType };
+  if (sortOrder !== undefined && (!Number.isFinite(sortOrder) || sortOrder < 0)) throw new Error("De interne volgorde is ongeldig.");
+  const common = { subjectId, collectionLabelSingular, collectionLabelPlural, exerciseLabelSingular, exerciseLabelPlural, exerciseLabelShort, name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder, sourceType, levelPresentation };
   if (!hasRoleSources) {
     if (sourceType === "local") return { ...common, localSourcePath: localSourcePath ? path.resolve(localSourcePath) : null };
     if (sourceType === "onedrive") {

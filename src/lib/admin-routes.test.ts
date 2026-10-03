@@ -23,6 +23,7 @@ describe("admin exercise portfolio routes", () => {
 
   it("allows only the known inbox context and never an external return URL", () => {
     expect(adminExerciseNoteReturnHref("5wis", "portfolio-1", "exercise-1", "error-inbox")).toBe("/admin/5wis/foutmeldingen");
+    expect(adminExerciseNoteReturnHref("5wis", "portfolio-1", "exercise-1", "exercise")).toBe("/admin/5wis/oefening/exercise-1");
     expect(adminExerciseNoteReturnHref("5wis", "portfolio-1", "exercise-1", "portfolio")).toBe("/admin/5wis/portfolio/portfolio-1#exercise-exercise-1");
     expect(adminExerciseNoteReturnHref("5wis", "portfolio-1", "exercise-1", "https://evil.example")).toBe("/admin/5wis/portfolio/portfolio-1#exercise-exercise-1");
   });

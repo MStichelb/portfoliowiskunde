@@ -4,14 +4,16 @@ import { FolderPlus, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { LearningSpaceCreateForm } from "@/app/components/learning-space-create-form";
+import type { Subject } from "@/lib/subjects";
 
 interface LearningSpaceCreateModalProps {
   action: (formData: FormData) => void | Promise<void>;
+  subjects: Subject[];
   initialOpen?: boolean;
   error?: string | null;
 }
 
-export function LearningSpaceCreateModal({ action, initialOpen = false, error = null }: LearningSpaceCreateModalProps) {
+export function LearningSpaceCreateModal({ action, subjects, initialOpen = false, error = null }: LearningSpaceCreateModalProps) {
   const [open, setOpen] = useState(initialOpen);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -37,7 +39,7 @@ export function LearningSpaceCreateModal({ action, initialOpen = false, error = 
           <h2 id={titleId}>Leeromgeving toevoegen</h2>
           <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
         </div>
-        <LearningSpaceCreateForm action={action} generalOnly error={error} onCancel={close} returnTo="admin" />
+        <LearningSpaceCreateForm action={action} subjects={subjects} generalOnly error={error} onCancel={close} returnTo="admin" />
       </div>
     </div> : null}
   </>;

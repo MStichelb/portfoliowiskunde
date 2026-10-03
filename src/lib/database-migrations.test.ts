@@ -154,6 +154,18 @@ describe("Google Drive LearningSpace migration", () => {
       .toEqual(expect.arrayContaining(["portfolio_id", "resource_id", "url", "updated_at"]));
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '040_generic_source_resource_assets'")).rows).toHaveLength(1);
     expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '041_source_profile_name_uniqueness'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '045_user_learning_space_preferences'")).rows).toHaveLength(1);
+    expect((await database.execute("PRAGMA table_info(user_learning_space_preferences)")).rows.map((row) => row.name))
+      .toEqual(expect.arrayContaining(["user_id", "learning_space_id", "sort_order"]));
+    expect((await database.execute("SELECT * FROM user_learning_space_preferences")).rows).toEqual([]);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '046_learning_space_exercise_terminology'")).rows).toHaveLength(1);
+    expect((await database.execute("SELECT DISTINCT exercise_label_singular, exercise_label_plural FROM learning_spaces")).rows).toEqual([
+      expect.objectContaining({ exercise_label_singular: "Oefening", exercise_label_plural: "Oefeningen" }),
+    ]);
+    expect((await database.execute("SELECT version FROM schema_migrations WHERE version = '047_learning_space_header_assets'")).rows).toHaveLength(1);
+    expect((await database.execute("PRAGMA table_info(learning_space_header_assets)")).rows.map((row) => row.name))
+      .toEqual(expect.arrayContaining(["id", "learning_space_id", "learning_space_source_id", "source_id", "relative_path", "file_name", "extension", "source_version", "indexed_at"]));
+    expect((await database.execute("SELECT * FROM learning_space_header_assets")).rows).toEqual([]);
     expect((await database.execute("PRAGMA index_list(source_profiles)")).rows.map((row) => row.name))
       .toContain("source_profiles_owner_normalized_name_unique");
     expect((await database.execute("PRAGMA index_list(source_profile_templates)")).rows.map((row) => row.name))

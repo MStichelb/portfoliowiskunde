@@ -90,6 +90,8 @@ describe("getMyErrorReports", () => {
       portfolioCode: "1",
       portfolioTitle: "Veeltermfuncties",
       learningSpaceName: "5de jaar",
+      collectionLabelSingular: "Portfolio",
+      exerciseLabelSingular: "Oefening",
       locationLabel: "Uitwerking",
     });
     expect(reports?.find((report) => report.reportId === "unmatched-report")).toMatchObject({
@@ -174,7 +176,7 @@ describe("handled report notifications", () => {
 
     const notification = await listPendingHandledReportNotificationsForCurrentUser(now);
 
-    expect(notification).toMatchObject({ count: 2, reportIds: ["handled-recent", "handled-boundary"], exerciseCode: null, singleLearningSpaceId: "space-5" });
+    expect(notification).toMatchObject({ count: 2, reportIds: ["handled-recent", "handled-boundary"], exerciseCode: null, exerciseLabelSingular: null, singleLearningSpaceId: "space-5" });
     expect(execute).toHaveBeenCalledTimes(2);
   });
 

@@ -25,8 +25,8 @@ describe("ExerciseNoteButton", () => {
   });
 
   it("opens with the existing note, selected position and delete confirmation", () => {
-    const markup = renderToStaticMarkup(<ExerciseNoteButton exerciseId="exercise-12a" exerciseCode="12a" noteLabel="Hint" customNote={"Eerste regel\nTweede regel"} notePosition="below_solution" initiallyOpen />);
-    expect(markup).toContain("Notitie bij oefening 12a");
+    const markup = renderToStaticMarkup(<ExerciseNoteButton exerciseId="exercise-12a" exerciseCode="12a" exerciseLabelSingular="OpGavE" noteLabel="Hint" customNote={"Eerste regel\nTweede regel"} notePosition="below_solution" initiallyOpen />);
+    expect(markup).toContain("Notitie bij opgave 12a");
     expect(markup).toContain("Eerste regel\nTweede regel");
     expect(markup).toContain('name="noteLabel"');
     expect(markup).toContain('value="Hint"');

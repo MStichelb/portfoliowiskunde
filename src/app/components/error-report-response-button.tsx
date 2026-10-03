@@ -7,6 +7,7 @@ import { deleteErrorReportTeacherResponseAction, saveErrorReportTeacherResponseA
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import { SubmitButton } from "@/app/components/submit-button";
 import { ERROR_REPORT_TEACHER_RESPONSE_MAX_LENGTH } from "@/lib/error-report-teacher-response";
+import { DEFAULT_EXERCISE_LABEL_SINGULAR, formatTerminologyLabel } from "@/lib/collection-terminology";
 
 const initialState: ResponseActionState = { error: null, successCount: 0 };
 
@@ -14,9 +15,10 @@ export function shouldCloseResponseDialog(handledSuccessCount: number, successCo
   return successCount > handledSuccessCount;
 }
 
-export function ErrorReportResponseButton({ reportId, exerciseCode, locationLabel, reporterLabel, teacherResponse, initiallyOpen = false, initiallyDeleteConfirmOpen = false }: {
+export function ErrorReportResponseButton({ reportId, exerciseCode, exerciseLabelSingular = DEFAULT_EXERCISE_LABEL_SINGULAR, locationLabel, reporterLabel, teacherResponse, initiallyOpen = false, initiallyDeleteConfirmOpen = false }: {
   reportId: string;
   exerciseCode: string;
+  exerciseLabelSingular?: string;
   locationLabel: string;
   reporterLabel: string;
   teacherResponse: string | null;
@@ -33,6 +35,7 @@ export function ErrorReportResponseButton({ reportId, exerciseCode, locationLabe
   const titleId = useId();
   const textareaId = useId();
   const hasResponse = Boolean(teacherResponse);
+  const exerciseLabel = formatTerminologyLabel(exerciseLabelSingular, "standalone");
   const close = useCallback(() => {
     setOpen(false);
     requestAnimationFrame(() => triggerRef.current?.focus());
@@ -69,7 +72,7 @@ export function ErrorReportResponseButton({ reportId, exerciseCode, locationLabe
           <h2 id={titleId}>Bericht aan leerling</h2>
           <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
         </div>
-        <p className="report-response-context">Oefening {exerciseCode} · {locationLabel} · {reporterLabel}</p>
+        <p className="report-response-context">{exerciseLabel} {exerciseCode} · {locationLabel} · {reporterLabel}</p>
         <form action={action} className="report-response-form">
           <input type="hidden" name="id" value={reportId} />
           <label htmlFor={textareaId}>Bericht

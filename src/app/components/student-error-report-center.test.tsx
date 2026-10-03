@@ -25,6 +25,14 @@ describe("StudentErrorReportCenter", () => {
     expect(markup).not.toContain("href=");
   });
 
+  it("normalizes the configured collection and exercise labels", () => {
+    const markup = renderToStaticMarkup(<StudentErrorReportCenter reports={[
+      report({ collectionLabelSingular: "bunDEL", exerciseLabelSingular: "OpGavE", exerciseCode: "3" }),
+    ]} />);
+    expect(markup).toContain("Bundel 1");
+    expect(markup).toContain("Opgave 3");
+  });
+
   it("derives clear report status and hides a response until the report is handled", () => {
     const markup = renderToStaticMarkup(<StudentErrorReportCenter reports={[
       report({ reportId: "open", status: "IN_PROGRESS", handledAt: null, teacherResponse: "Nog verborgen", createdAt: "2026-09-09T08:42:00.000Z" }),
@@ -66,6 +74,8 @@ function report(overrides: Partial<StudentErrorReport> = {}): StudentErrorReport
     portfolioCode: "1",
     portfolioTitle: "Veeltermfuncties",
     learningSpaceName: "6de jaar",
+    collectionLabelSingular: "Portfolio",
+    exerciseLabelSingular: "Oefening",
     locationLabel: "Uitwerking",
     ...overrides,
   };

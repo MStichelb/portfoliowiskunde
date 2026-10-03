@@ -57,6 +57,8 @@ describe("SourceProfileTemplateManager", () => {
     expect(markup).toContain("Globale documenten");
     expect(markup).toContain("Opgaven");
     expect(markup).toContain("Oefeningen herkennen");
+    expect(markup).toContain("Portfoliomarker");
+    expect(markup).toContain('name="portfolioScannerJson"');
     expect(markup).toContain('name="exerciseScannerJson"');
     expect(markup).toContain("Onderdelen per oefening");
     expect(markup).not.toContain("Globale documenten opslaan");

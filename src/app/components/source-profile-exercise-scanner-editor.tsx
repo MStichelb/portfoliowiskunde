@@ -108,7 +108,7 @@ function SourceProfileExerciseScannerEditorState({
       <p>Het portfolionummer komt uit de portfoliomap en hoeft dus niet uit de bestandsnaam te worden gehaald. Tekst vóór de ingestelde markering mag vrij voorkomen, bijvoorbeeld <code>PF1-Oef3a.png</code>.</p>
       <p>Ondersteund zijn onder andere <code>3</code>, <code>12</code>, <code>3a</code>, <code>12b</code> en <code>3a1</code>. Een naam als <code>Oef3a(1).png</code> blijft oefening <code>3a</code>; <code>(1)</code> kan als extra bestand/stap dienen.</p>
       <p>De scanner combineert het mogelijke oefeningsnummer met de regels van de onderdelen. Zo wordt <code>Oef3uitwerking.png</code> oefening 3 wanneer “uitwerking” bij een onderdeel past, terwijl <code>Oef3auitwerking.png</code> oefening 3a kan worden.</p>
-      <p>Portfolio-onderdelen worden per portfolio automatisch herkend als mappen volgens <code>nummer - titel</code>, bijvoorbeeld <code>1 - Oppervlakte</code>. Een portfolio mag ook helemaal geen onderdelen hebben.</p>
+      <p>Portfolio-onderdelen zijn directe submappen die met een nummer beginnen, bijvoorbeeld <code>1 Oppervlakte</code> of <code>2 - Integralen</code>. Een structurele map <code>Uitwerkingen</code> is niet nodig.</p>
       <p>Kies eerst of oefeningen als bestanden, als mappen of in beide vormen voorkomen. Onderdeelregels worden daarna alleen binnen die gekozen context toegepast.</p>
     </div> : null}
     {embedded ? <div className="source-profile-resource-form source-profile-resource-form-embedded">{fields}</div> : <div className="source-profile-resource-form">{fields}</div>}

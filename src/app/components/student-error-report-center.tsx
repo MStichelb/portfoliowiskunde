@@ -1,4 +1,5 @@
 import type { StudentErrorReport } from "@/lib/student-error-reports";
+import { formatTerminologyLabel } from "@/lib/collection-terminology";
 
 export function StudentErrorReportCenter({ reports }: { reports: StudentErrorReport[] }) {
   if (reports.length === 0) {
@@ -8,8 +9,8 @@ export function StudentErrorReportCenter({ reports }: { reports: StudentErrorRep
   return <div className="my-reports-list">{reports.map((report) => {
     const handled = report.status === "HANDLED";
     return <article className="my-report-card" key={report.reportId}>
-      <p className="my-report-space">{report.learningSpaceName} · Portfolio {report.portfolioCode}: {report.portfolioTitle}</p>
-      <h2>Oefening {report.exerciseCode} · {report.locationLabel}</h2>
+      <p className="my-report-space">{report.learningSpaceName} · {formatTerminologyLabel(report.collectionLabelSingular, "standalone")} {report.portfolioCode}: {report.portfolioTitle}</p>
+      <h2>{formatTerminologyLabel(report.exerciseLabelSingular, "standalone")} {report.exerciseCode} · {report.locationLabel}</h2>
       <p className="my-report-message">{report.message}</p>
       <div className="my-report-status-row">
         <strong className={`my-report-status ${handled ? "is-handled" : "is-in-progress"}`}>{handled ? "Afgewerkt" : "In behandeling"}</strong>

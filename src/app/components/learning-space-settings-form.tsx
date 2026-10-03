@@ -5,16 +5,21 @@ import { CircleHelp } from "lucide-react";
 import Link from "next/link";
 
 import { saveLearningSpaceEditorPermissionsAction, type AdminActionState } from "@/app/admin/actions";
+import { COLLECTION_LABEL_MAX_LENGTH, DEFAULT_COLLECTION_LABEL_PLURAL, DEFAULT_COLLECTION_LABEL_SINGULAR, DEFAULT_EXERCISE_LABEL_PLURAL, DEFAULT_EXERCISE_LABEL_SHORT, DEFAULT_EXERCISE_LABEL_SINGULAR, EXERCISE_LABEL_SHORT_MAX_LENGTH } from "@/lib/collection-terminology";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
+import type { Subject } from "@/lib/subjects";
 import { LearningSpaceLifecycleActions } from "./learning-space-lifecycle-actions";
 import { EditorPermissionsToggle } from "./editor-permissions-toggle";
+import { ExerciseLevelPresentationSettings } from "./exercise-level-presentation-settings";
 
 export function LearningSpaceSettingsForm({
   space,
+  subjects,
   canPermanentlyDelete,
   action,
 }: {
   space: LearningSpace;
+  subjects: Subject[];
   canPermanentlyDelete: boolean;
   action: (previousState: AdminActionState, formData: FormData) => AdminActionState | Promise<AdminActionState>;
 }) {
@@ -24,21 +29,23 @@ export function LearningSpaceSettingsForm({
   const [mirrorProvider, setMirrorProvider] = useState<StorageSourceType>(space.mirrorSource?.providerType ?? "google_drive");
   const [state, actionState] = useActionState(action, { error: null });
   const [cardColor, setCardColor] = useState(space.cardColor);
+  const currentSubjectIsListed = subjects.some((subject) => subject.id === space.subjectId);
 
   return <form action={actionState} className="learning-space-settings-form">
     <input type="hidden" name="id" value={space.id} />
+    <input type="hidden" name="sortOrder" value={space.sortOrder} />
 
     <section className="settings-card" aria-labelledby="general-settings-heading">
       <h2 id="general-settings-heading">Algemeen</h2>
-      <div className="settings-grid">
+      <div className="settings-grid general-settings-grid">
         <label>Weergavenaam<input name="name" defaultValue={space.name} required maxLength={100} /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
+        <label>Vak<select name="subjectId" defaultValue={space.subjectId} required>{!currentSubjectIsListed ? <option value={space.subjectId}>{space.subjectName}{space.subjectIsActive ? "" : " (inactief)"}</option> : null}{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
         <label>URL<input name="slug" defaultValue={space.slug} required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" /><small>Dit wordt gebruikt in het webadres van deze leeromgeving.</small></label>
         <label>Kort label<input name="shortLabel" defaultValue={space.shortLabel} required maxLength={6} /><small>Compacte naam voor de navigatie, maximaal 6 tekens.</small></label>
-        <label>Sortering<input name="sortOrder" type="number" defaultValue={space.sortOrder} required /><small>Dit bepaalt de volgorde van leeromgevingen in de navigatie.</small></label>
         <label className="field-full">Beschrijving<textarea name="description" defaultValue={space.description} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
-        <label className="color-field">Kleur<span><input name="cardColor" type="color" value={cardColor} onChange={(event) => setCardColor(event.target.value.toUpperCase())} /><code>{cardColor.toUpperCase()}</code></span><small>Accentkleur van het kaartje.</small></label>
       </div>
       <div className="settings-card-actions settings-card-lifecycle-actions">
+        <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
         <LearningSpaceLifecycleActions
           space={space}
           showManage={false}
@@ -48,8 +55,35 @@ export function LearningSpaceSettingsForm({
           deleteConfirmTitle="Leeromgeving permanent verwijderen?"
           deleteConfirmText="Deze actie kan niet ongedaan worden gemaakt. De leeromgeving en bijhorende configuratie worden permanent verwijderd."
         />
-        <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
       </div>
+    </section>
+
+    <section className="settings-card personalization-settings-card" aria-labelledby="personalization-settings-heading">
+      <div className="card-heading"><div><h2 id="personalization-settings-heading">Personalisatie</h2><p>Pas de herkenbare vormgeving en benamingen van deze leeromgeving aan.</p></div></div>
+      <div className="personalization-settings-section">
+        <label className="color-field">Kleur<span><input name="cardColor" type="color" value={cardColor} onChange={(event) => setCardColor(event.target.value.toUpperCase())} /><code>{cardColor.toUpperCase()}</code></span><small>Accentkleur van het kaartje.</small></label>
+      </div>
+      <div className="personalization-settings-section">
+        <h3>Header</h3>
+        <p>Om een eigen afbeelding bovenaan het portfolio weer te geven, plaats je de gewenste afbeelding als &apos;header.png&apos; of &apos;header.jpg&apos; in de bronmap van de leeromgeving. Zo niet wordt de standaardheader gebruikt.</p>
+      </div>
+      <div className="personalization-settings-section">
+        <h3>Benaming portfolio&apos;s</h3>
+        <div className="settings-grid">
+          <label>Enkelvoud<input name="collectionLabelSingular" defaultValue={space.collectionLabelSingular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_COLLECTION_LABEL_SINGULAR}</small></label>
+          <label>Meervoud<input name="collectionLabelPlural" defaultValue={space.collectionLabelPlural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_COLLECTION_LABEL_PLURAL}</small></label>
+        </div>
+      </div>
+      <div className="personalization-settings-section">
+        <h3>Benaming oefeningen</h3>
+        <div className="settings-grid">
+          <label>Enkelvoud<input name="exerciseLabelSingular" defaultValue={space.exerciseLabelSingular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SINGULAR}</small></label>
+          <label>Meervoud<input name="exerciseLabelPlural" defaultValue={space.exerciseLabelPlural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_PLURAL}</small></label>
+          <label>Verkorte naam<input name="exerciseLabelShort" defaultValue={space.exerciseLabelShort ?? DEFAULT_EXERCISE_LABEL_SHORT} maxLength={EXERCISE_LABEL_SHORT_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SHORT} - Laat leeg om enkel het nummer te tonen.</small></label>
+        </div>
+      </div>
+      <ExerciseLevelPresentationSettings initialPresentation={space.levelPresentation} />
+      <div className="settings-card-actions"><button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button></div>
     </section>
 
     <EditorPermissionsToggle

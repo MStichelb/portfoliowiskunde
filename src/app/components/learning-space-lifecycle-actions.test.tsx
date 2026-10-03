@@ -7,6 +7,13 @@ import { LearningSpaceLifecycleActions } from "./learning-space-lifecycle-action
 
 const activeSpace: LearningSpace = {
   id: "space-active",
+  subjectId: "subject-wiskunde",
+  subjectName: "Wiskunde",
+  subjectIsActive: true,
+  collectionLabelSingular: "Portfolio",
+  collectionLabelPlural: "Portfolio's",
+  exerciseLabelSingular: "Oefening",
+  exerciseLabelPlural: "Oefeningen",
   name: "Actieve leeromgeving",
   slug: "actief",
   shortLabel: "A",
