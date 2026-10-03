@@ -195,11 +195,16 @@ function subjectUsageMessage(count: number): string {
 async function validatedUniqueSubjectName(value: string, excludeSubjectId?: string): Promise<string> {
   const parsed = subjectNameSchema.safeParse(value);
   if (!parsed.success) throw new Error(parsed.error.issues[0]?.message ?? "Ongeldige vaknaam.");
-  const duplicate = await (await getDatabase()).execute({
-    sql: `SELECT 1 FROM subjects
-      WHERE LOWER(TRIM(name)) = LOWER(?) AND (? IS NULL OR id <> ?) LIMIT 1`,
-    args: [parsed.data, excludeSubjectId ?? null, excludeSubjectId ?? null],
-  });
+  const database = await getDatabase();
+  const duplicate = excludeSubjectId
+    ? await database.execute({
+      sql: "SELECT 1 FROM subjects WHERE LOWER(TRIM(name)) = LOWER(?) AND id <> ? LIMIT 1",
+      args: [parsed.data, excludeSubjectId],
+    })
+    : await database.execute({
+      sql: "SELECT 1 FROM subjects WHERE LOWER(TRIM(name)) = LOWER(?) LIMIT 1",
+      args: [parsed.data],
+    });
   if (duplicate.rows[0]) throw new Error(SUBJECT_NAME_CONFLICT_MESSAGE);
   return parsed.data;
 }

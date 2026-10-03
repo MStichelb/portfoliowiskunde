@@ -530,12 +530,13 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
   const googleDrive = configured.find((source) => source.providerType === "google_drive");
   const levelPresentation = validateExerciseLevelPresentation(input.levelPresentation ?? existing.levelPresentation ?? DEFAULT_EXERCISE_LEVEL_PRESENTATION);
   const now = new Date().toISOString();
-  const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET subject_id = CASE
-      WHEN ? = ? OR EXISTS (SELECT 1 FROM subjects WHERE id = ? AND is_active = 1) THEN ?
-      ELSE '__invalid-subject__' END,
+  const subjectAssignment = input.subjectId === existing.subjectId
+    ? { sql: "?", args: [input.subjectId] }
+    : { sql: "CASE WHEN EXISTS (SELECT 1 FROM subjects WHERE id = ? AND is_active = 1) THEN ? ELSE '__invalid-subject__' END", args: [input.subjectId, input.subjectId] };
+  const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET subject_id = ${subjectAssignment.sql},
     collection_label_singular = ?, collection_label_plural = ?, exercise_label_singular = ?, exercise_label_plural = ?, exercise_label_short = ?, name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
     local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, google_drive_folder_id = ?, google_drive_folder_label = ?, updated_at = ? WHERE id = ?`,
-    args: [input.subjectId, existing.subjectId, input.subjectId, input.subjectId,
+    args: [...subjectAssignment.args,
       terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder ?? existing.sortOrder,
       legacyStorageProvider(active.providerType), active.providerType,
       local?.localSourcePath ?? existing.localSourcePath,
@@ -2146,12 +2147,13 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
       ON CONFLICT DO NOTHING`,
     args: [issueId, resolvedThreadId, learningSpaceId, portfolioId, exerciseId, requestedExerciseCode, documentKind, variant, now.toISOString(), now.toISOString()],
   });
+  const variantCondition = variant === null ? { sql: "variant_kind IS NULL", args: [] } : { sql: "variant_kind = ?", args: [variant] };
   const resolvedIssue = (await database.execute({
     sql: `SELECT id FROM error_report_issues
       WHERE learning_space_id = ? AND portfolio_id = ? AND document_kind = ?
         AND COALESCE(exercise_id, 'code:' || LOWER(exercise_code)) = ?
-        AND COALESCE(variant_kind, '') = COALESCE(?, '')`,
-    args: [learningSpaceId, portfolioId, documentKind, exerciseIdentity, variant],
+        AND ${variantCondition.sql}`,
+    args: [learningSpaceId, portfolioId, documentKind, exerciseIdentity, ...variantCondition.args],
   })).rows[0];
   if (!resolvedIssue) throw new Error("De foutlocatie kon niet worden opgeslagen.");
   const resolvedIssueId = text(resolvedIssue, "id");

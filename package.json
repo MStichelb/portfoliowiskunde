@@ -9,7 +9,8 @@
     "lint": "eslint",
     "seed:dev-users": "node --experimental-strip-types --loader ./scripts/typescript-path-loader.mjs ./scripts/seed-local-dev-users.ts",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:postgres": "vitest run src/lib/postgresql-compatibility.test.ts --no-file-parallelism"
   },
   "dependencies": {
     "@libsql/client": "^0.17.4",

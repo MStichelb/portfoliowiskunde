@@ -408,11 +408,17 @@ async function validatedUniqueTemplateMetadata(
   if (!parsedName.success) throw new Error(parsedName.error.issues[0]?.message ?? "Ongeldige sjabloonnaam.");
   const parsedDescription = sourceProfileTemplateDescriptionSchema.safeParse(input.description);
   if (!parsedDescription.success) throw new Error(parsedDescription.error.issues[0]?.message ?? "Ongeldige sjabloonbeschrijving.");
-  const duplicate = await (await getDatabase()).execute({
-    sql: `SELECT 1 FROM source_profile_templates
-      WHERE LOWER(TRIM(name)) = LOWER(?) AND (? IS NULL OR id <> ?) LIMIT 1`,
-    args: [parsedName.data, excludeTemplateId ?? null, excludeTemplateId ?? null],
-  });
+  const database = await getDatabase();
+  const duplicate = excludeTemplateId
+    ? await database.execute({
+      sql: `SELECT 1 FROM source_profile_templates
+        WHERE LOWER(TRIM(name)) = LOWER(?) AND id <> ? LIMIT 1`,
+      args: [parsedName.data, excludeTemplateId],
+    })
+    : await database.execute({
+      sql: "SELECT 1 FROM source_profile_templates WHERE LOWER(TRIM(name)) = LOWER(?) LIMIT 1",
+      args: [parsedName.data],
+    });
   if (duplicate.rows[0]) throw new Error(SOURCE_PROFILE_TEMPLATE_NAME_CONFLICT_MESSAGE);
   return { name: parsedName.data, description: parsedDescription.data || null };
 }

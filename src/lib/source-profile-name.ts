@@ -10,13 +10,20 @@ export async function uniqueSourceProfileName(ownerUserId: string, value: string
   const result = sourceProfileNameSchema.safeParse(value);
   if (!result.success) throw new Error(result.error.issues[0]?.message ?? "Ongeldige profielnaam.");
   const name = result.data;
-  const duplicate = await (await getDatabase()).execute({
-    sql: `SELECT 1 FROM source_profiles
-      WHERE type = 'custom' AND owner_user_id = ? AND LOWER(TRIM(name)) = LOWER(?)
-        AND (? IS NULL OR id <> ?)
-      LIMIT 1`,
-    args: [ownerUserId, name, excludeProfileId ?? null, excludeProfileId ?? null],
-  });
+  const database = await getDatabase();
+  const duplicate = excludeProfileId
+    ? await database.execute({
+      sql: `SELECT 1 FROM source_profiles
+        WHERE type = 'custom' AND owner_user_id = ? AND LOWER(TRIM(name)) = LOWER(?) AND id <> ?
+        LIMIT 1`,
+      args: [ownerUserId, name, excludeProfileId],
+    })
+    : await database.execute({
+      sql: `SELECT 1 FROM source_profiles
+        WHERE type = 'custom' AND owner_user_id = ? AND LOWER(TRIM(name)) = LOWER(?)
+        LIMIT 1`,
+      args: [ownerUserId, name],
+    });
   if (duplicate.rows[0]) throw new Error(SOURCE_PROFILE_NAME_CONFLICT_MESSAGE);
   return name;
 }
