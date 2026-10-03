@@ -5,6 +5,7 @@ vi.mock("server-only", () => ({}));
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { migrations } from "./database-migrations";
+import type { IndexedPortfolio } from "./domain";
 import { createUser } from "./identity";
 import {
   getLearningSpace,
@@ -14,6 +15,7 @@ import {
   setSetting,
   tryAcquireSyncLease,
   updateLearningSpace,
+  persistIndex,
 } from "./repositories";
 import { uniqueSourceProfileName } from "./source-profile-name";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, INITIAL_SOURCE_PROFILE_TEMPLATE_ID } from "./source-profile-config";
@@ -101,5 +103,66 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     expect(await getSetting(settingKey)).toBe("ok");
     expect(await tryAcquireSyncLease("space-5", `postgres-compat-${suffix}`)).toBe(true);
     await releaseSyncLease("space-5", `postgres-compat-${suffix}`);
+
+    const portfolioCode = `pg-${suffix}`;
+    const firstIndex = postgresExerciseMoveFixture(portfolioCode, 1, "postgres-move-old");
+    await persistIndex([firstIndex], "local", "space-5");
+    const originalExerciseId = String((await database.execute({
+      sql: "SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ? AND portfolio_code = ?)",
+      args: ["space-5", portfolioCode],
+    })).rows[0].id);
+    await expect(persistIndex([postgresExerciseMoveFixture(portfolioCode, 2, "postgres-move-new")], "local", "space-5"))
+      .resolves.toMatchObject({ added: 0, missing: 0 });
+    expect((await database.execute({ sql: "SELECT id, is_indexed FROM exercises WHERE id = ?", args: [originalExerciseId] })).rows[0])
+      .toMatchObject({ id: originalExerciseId, is_indexed: 1 });
   }, 60_000);
 });
+
+function postgresExerciseMoveFixture(portfolioCode: string, sectionOrder: number, sourceId: string): IndexedPortfolio {
+  const portfolioPath = `Portfolio ${portfolioCode}`;
+  const sectionPath = `${portfolioPath}/${sectionOrder} Sectie`;
+  const fileName = `${portfolioCode}-Oef20a.png`;
+  return {
+    code: portfolioCode,
+    title: "PostgreSQL reconciliation",
+    relativePath: portfolioPath,
+    assignmentPdfPath: null,
+    assignmentPdfSourceId: null,
+    hintsDocumentPath: null,
+    hintsDocumentSourceId: null,
+    finalSolutionsPdfPath: null,
+    finalSolutionsPdfSourceId: null,
+    resourceAssets: [],
+    sections: [{
+      order: sectionOrder,
+      title: "Sectie",
+      relativePath: sectionPath,
+      exercises: [{
+        code: "20a",
+        number: 20,
+        suffix: "a",
+        levelSource: "basis",
+        assets: [{
+          resourceId: "worked-solution",
+          semanticRole: "worked_solution",
+          legacyVariant: "standard",
+          relativePath: `${sectionPath}/${fileName}`,
+          sourceId,
+          fileName,
+          lastModifiedAt: "2026-10-04T10:00:00.000Z",
+          sourceVersion: sourceId,
+          parsed: {
+            portfolioCode,
+            exerciseNumber: 20,
+            exerciseSuffix: "a",
+            exerciseCode: "20a",
+            variant: "standard",
+            step: 1,
+            extension: "png",
+          },
+        }],
+      }],
+    }],
+    warnings: [],
+  };
+}

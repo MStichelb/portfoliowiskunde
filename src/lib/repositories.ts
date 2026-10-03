@@ -331,6 +331,186 @@ function groupBy<T>(items: readonly T[], keyFor: (item: T) => string): Map<strin
   return groups;
 }
 
+interface ExerciseOwnedMetadata {
+  visible: number;
+  visibilityMode: string;
+  publishFrom: string | null;
+  publishUntil: string | null;
+  showAlternativeToStudents: number;
+  customNote: string | null;
+  noteLabel: string | null;
+  notePosition: string;
+  levelOverrideMode: string;
+  levelOverride: string | null;
+}
+
+interface ExistingVariantRow {
+  id: string;
+  exerciseId: string;
+  kind: string;
+  label: string;
+}
+
+interface ExistingSolutionAssetRow {
+  id: string;
+  variantId: string;
+  exerciseId: string;
+  relativePath: string;
+  sourceId: string;
+  fileName: string;
+  extension: string;
+  step: number;
+  variant: string;
+  lastModifiedAt: string | null;
+  sourceVersion: string | null;
+  isIndexed: boolean;
+}
+
+const EXERCISE_SCANNER_COLUMNS = new Set([
+  "id", "portfolio_id", "section_id", "exercise_code", "exercise_number", "exercise_suffix",
+  "level_source", "is_indexed", "last_seen_at", "archived_at",
+]);
+const EXERCISE_OWNED_COLUMNS = new Set([
+  "visible", "visibility_mode", "publish_from", "publish_until", "show_alternative_to_students",
+  "custom_note", "note_label", "note_position", "level_override_mode", "level_override",
+]);
+
+function normalizeExerciseIdentityCode(value: string): string {
+  return value.trim().toLocaleLowerCase("nl");
+}
+
+function exerciseCodeKey(portfolioId: string, code: string): string {
+  return `${portfolioId}\u0000${normalizeExerciseIdentityCode(code)}`;
+}
+
+function exerciseMoveConflictWarning(path: string, code: string) {
+  return {
+    severity: "warning" as const,
+    path,
+    message: `Oefening ${code} komt in meerdere mogelijke onderdelen voor of bevat conflicterende beheergegevens. De oefening is niet automatisch verplaatst.`,
+  };
+}
+
+function mergeExerciseOwnedMetadata(retained: DatabaseRow, duplicate: DatabaseRow): { metadata: ExerciseOwnedMetadata; conflicts: string[] } {
+  const conflicts: string[] = [];
+  const choose = <T>(field: string, retainedValue: T, duplicateValue: T, defaultValue: T): T => {
+    if (Object.is(retainedValue, duplicateValue)) return retainedValue;
+    if (Object.is(retainedValue, defaultValue)) return duplicateValue;
+    if (Object.is(duplicateValue, defaultValue)) return retainedValue;
+    conflicts.push(field);
+    return retainedValue;
+  };
+  const retainedVisibility = `${bool(retained.visible) ? 1 : 0}\u0000${text(retained, "visibility_mode")}`;
+  const duplicateVisibility = `${bool(duplicate.visible) ? 1 : 0}\u0000${text(duplicate, "visibility_mode")}`;
+  const visibility = choose("visibility", retainedVisibility, duplicateVisibility, "1\u0000visible").split("\u0000");
+  const retainedOverride = `${text(retained, "level_override_mode")}\u0000${nullableText(retained, "level_override") ?? ""}`;
+  const duplicateOverride = `${text(duplicate, "level_override_mode")}\u0000${nullableText(duplicate, "level_override") ?? ""}`;
+  const levelOverride = choose("level_override", retainedOverride, duplicateOverride, "inherit\u0000").split("\u0000");
+
+  for (const key of new Set([...Object.keys(retained), ...Object.keys(duplicate)])) {
+    if (EXERCISE_SCANNER_COLUMNS.has(key) || EXERCISE_OWNED_COLUMNS.has(key)) continue;
+    if (!Object.is(retained[key] ?? null, duplicate[key] ?? null)) conflicts.push(key);
+  }
+
+  return {
+    metadata: {
+      visible: Number(visibility[0]),
+      visibilityMode: visibility[1],
+      publishFrom: choose("publish_from", nullableText(retained, "publish_from"), nullableText(duplicate, "publish_from"), null),
+      publishUntil: choose("publish_until", nullableText(retained, "publish_until"), nullableText(duplicate, "publish_until"), null),
+      showAlternativeToStudents: choose("show_alternative_to_students", bool(retained.show_alternative_to_students) ? 1 : 0, bool(duplicate.show_alternative_to_students) ? 1 : 0, 1),
+      customNote: choose("custom_note", nullableText(retained, "custom_note"), nullableText(duplicate, "custom_note"), null),
+      noteLabel: choose("note_label", nullableText(retained, "note_label"), nullableText(duplicate, "note_label"), null),
+      notePosition: choose("note_position", text(retained, "note_position"), text(duplicate, "note_position"), "above_solution"),
+      levelOverrideMode: levelOverride[0],
+      levelOverride: levelOverride[1] || null,
+    },
+    conflicts: [...new Set(conflicts)],
+  };
+}
+
+function hasAmbiguousSolutionMerge(
+  retainedExerciseId: string,
+  duplicateExerciseId: string,
+  variants: readonly ExistingVariantRow[],
+  assets: readonly ExistingSolutionAssetRow[],
+): boolean {
+  for (const kind of ["standard", "alternative"]) {
+    const retainedVariant = variants.find((variant) => variant.exerciseId === retainedExerciseId && variant.kind === kind);
+    const duplicateVariant = variants.find((variant) => variant.exerciseId === duplicateExerciseId && variant.kind === kind);
+    if (!duplicateVariant) continue;
+    const retainedAssets = retainedVariant ? assets.filter((asset) => asset.variantId === retainedVariant.id) : [];
+    const duplicateAssets = assets.filter((asset) => asset.variantId === duplicateVariant.id);
+    const retainedByLogicalKey = groupBy(retainedAssets, (asset) => `${asset.step}\u0000${asset.extension.toLowerCase()}`);
+    const duplicateByLogicalKey = groupBy(duplicateAssets, (asset) => `${asset.step}\u0000${asset.extension.toLowerCase()}`);
+    if ([...retainedByLogicalKey.values(), ...duplicateByLogicalKey.values()].some((group) => group.length > 1)) return true;
+    for (const duplicateAsset of duplicateAssets) {
+      const logicalKey = `${duplicateAsset.step}\u0000${duplicateAsset.extension.toLowerCase()}`;
+      if (retainedAssets.some((asset) => asset.relativePath === duplicateAsset.relativePath
+        && `${asset.step}\u0000${asset.extension.toLowerCase()}` !== logicalKey)) return true;
+    }
+  }
+  return false;
+}
+
+function planSolutionAssetMerge(
+  reconciliations: ReadonlyMap<string, { retainedId: string }>,
+  variants: readonly ExistingVariantRow[],
+  sourceAssets: readonly ExistingSolutionAssetRow[],
+  archivedAt: string,
+): { rows: ExistingSolutionAssetRow[]; statements: InStatement[] } {
+  let rows = sourceAssets.map((asset) => ({ ...asset }));
+  const statements: InStatement[] = [];
+  for (const [duplicateExerciseId, { retainedId }] of reconciliations) {
+    for (const kind of ["standard", "alternative"] as const) {
+      const retainedVariantId = `${retainedId}-${kind}`;
+      const retainedVariant = variants.find((variant) => variant.exerciseId === retainedId && variant.kind === kind);
+      const duplicateVariant = variants.find((variant) => variant.exerciseId === duplicateExerciseId && variant.kind === kind);
+      if (!duplicateVariant) continue;
+      if (!retainedVariant) statements.push({
+        sql: "INSERT INTO solution_variants (id, exercise_id, kind, label, is_indexed) VALUES (?, ?, ?, ?, 0)",
+        args: [retainedVariantId, retainedId, kind, duplicateVariant.label],
+      });
+      const actualRetainedVariantId = retainedVariant?.id ?? retainedVariantId;
+      const retainedAssets = rows.filter((asset) => asset.variantId === actualRetainedVariantId);
+      const duplicateAssets = rows.filter((asset) => asset.variantId === duplicateVariant.id);
+      for (const duplicateAsset of duplicateAssets) {
+        const retainedAsset = retainedAssets.find((asset) => asset.step === duplicateAsset.step
+          && asset.extension.toLowerCase() === duplicateAsset.extension.toLowerCase());
+        if (retainedAsset) {
+          statements.push(
+            { sql: "DELETE FROM solution_assets WHERE id = ?", args: [duplicateAsset.id] },
+            {
+              sql: `UPDATE solution_assets SET relative_path = ?, source_id = ?, file_name = ?, extension = ?, step = ?,
+                last_modified_at = ?, source_version = ?, is_indexed = ?, missing_since = NULL, archived_at = NULL WHERE id = ?`,
+              args: [duplicateAsset.relativePath, duplicateAsset.sourceId, duplicateAsset.fileName, duplicateAsset.extension,
+                duplicateAsset.step, duplicateAsset.lastModifiedAt, duplicateAsset.sourceVersion,
+                duplicateAsset.isIndexed || retainedAsset.isIndexed ? 1 : 0, retainedAsset.id],
+            },
+          );
+          rows = rows.filter((asset) => asset.id !== duplicateAsset.id).map((asset) => asset.id === retainedAsset.id ? {
+            ...duplicateAsset,
+            id: retainedAsset.id,
+            variantId: actualRetainedVariantId,
+            exerciseId: retainedId,
+            isIndexed: duplicateAsset.isIndexed || retainedAsset.isIndexed,
+          } : asset);
+        } else {
+          statements.push({ sql: "UPDATE solution_assets SET variant_id = ? WHERE id = ?", args: [actualRetainedVariantId, duplicateAsset.id] });
+          rows = rows.map((asset) => asset.id === duplicateAsset.id
+            ? { ...asset, variantId: actualRetainedVariantId, exerciseId: retainedId }
+            : asset);
+        }
+      }
+      statements.push({
+        sql: "UPDATE solution_variants SET is_indexed = 0, archived_at = ? WHERE id = ?",
+        args: [archivedAt, duplicateVariant.id],
+      });
+    }
+  }
+  return { rows, statements };
+}
+
 function learningSpaceSourceFromRow(row: DatabaseRow): LearningSpaceSource {
   const validationStatus = nullableText(row, "last_validation_status");
   return {
@@ -857,32 +1037,142 @@ export async function persistIndex(
   const portfolioCodeCounts = new Map<string, number>();
   for (const portfolio of portfolios) portfolioCodeCounts.set(portfolio.code, (portfolioCodeCounts.get(portfolio.code) ?? 0) + 1);
   const indexablePortfolios = portfolios.filter((portfolio) => portfolioCodeCounts.get(portfolio.code) === 1);
-  const existingAssets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.source_id,
-      solution_assets.file_name, solution_assets.extension, solution_assets.step, solution_assets.source_version,
-      solution_assets.is_indexed, solution_assets.archived_at, solution_variants.kind
+  const [existingAssets, existingVariants, existingResourceAssets, existingPortfolios, existingExercises, existingErrorThreads, existingErrorIssues] = await Promise.all([
+    database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.source_id,
+      solution_assets.file_name, solution_assets.extension, solution_assets.step, solution_assets.last_modified_at, solution_assets.source_version,
+      solution_assets.is_indexed, solution_assets.archived_at, solution_variants.kind, solution_variants.exercise_id
     FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
     JOIN exercises ON exercises.id = solution_variants.exercise_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
-    WHERE portfolios.learning_space_id = ?`, args: [spaceId] });
-  const existingResourceAssets = await database.execute({ sql: `SELECT id, portfolio_id, exercise_id, resource_scope, resource_id,
+    WHERE portfolios.learning_space_id = ?`, args: [spaceId] }),
+    database.execute({ sql: `SELECT solution_variants.id, solution_variants.exercise_id, solution_variants.kind, solution_variants.label,
+      solution_variants.is_indexed, solution_variants.archived_at
+      FROM solution_variants JOIN exercises ON exercises.id = solution_variants.exercise_id
+      JOIN portfolios ON portfolios.id = exercises.portfolio_id WHERE portfolios.learning_space_id = ?`, args: [spaceId] }),
+    database.execute({ sql: `SELECT id, portfolio_id, exercise_id, resource_scope, resource_id,
       source_id, relative_path, file_name, extension, step, source_version, is_indexed, archived_at
-    FROM source_resource_assets WHERE learning_space_id = ?`, args: [spaceId] });
-  const existingPortfolios = await database.execute({ sql: "SELECT id, portfolio_code FROM portfolios WHERE learning_space_id = ?", args: [spaceId] });
+      FROM source_resource_assets WHERE learning_space_id = ?`, args: [spaceId] }),
+    database.execute({ sql: "SELECT id, portfolio_code FROM portfolios WHERE learning_space_id = ?", args: [spaceId] }),
+    database.execute({ sql: `SELECT exercises.* FROM exercises JOIN portfolios ON portfolios.id = exercises.portfolio_id
+      WHERE portfolios.learning_space_id = ?`, args: [spaceId] }),
+    database.execute({ sql: "SELECT id, exercise_id FROM error_report_threads WHERE learning_space_id = ?", args: [spaceId] }),
+    database.execute({ sql: `SELECT id, exercise_id, document_kind, variant_kind FROM error_report_issues
+      WHERE learning_space_id = ?`, args: [spaceId] }),
+  ]);
   const portfolioIds = new Map(existingPortfolios.rows.map((row) => [text(row, "portfolio_code"), text(row, "id")]));
   const legacyDefaultSpaceId = await getSetting("legacy_default_learning_space_id");
   const resolvedPortfolioIds = new Map(indexablePortfolios.map((portfolio) => [
     portfolio.code,
     portfolioIds.get(portfolio.code) ?? (legacyDefaultSpaceId === spaceId ? `portfolio-${portfolio.code}` : stableId("portfolio", spaceId, portfolio.code)),
   ]));
+  const existingExerciseRows = existingExercises.rows.map((row) => ({
+    row,
+    id: text(row, "id"),
+    portfolioId: text(row, "portfolio_id"),
+    sectionId: text(row, "section_id"),
+    code: text(row, "exercise_code"),
+    isIndexed: bool(row.is_indexed),
+    archivedAt: nullableText(row, "archived_at"),
+  }));
+  const existingExercisesById = new Map(existingExerciseRows.map((exercise) => [exercise.id, exercise]));
+  const incomingExerciseCodeCounts = new Map<string, number>();
+  for (const portfolio of indexablePortfolios) {
+    const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
+    for (const section of portfolio.sections) {
+      for (const exercise of section.exercises) incrementCount(incomingExerciseCodeCounts, exerciseCodeKey(portfolioId, exercise.code));
+    }
+  }
+  const exerciseResolutions = new Map<string, string>();
+  const duplicateExerciseResolutions = new Map<string, { retainedId: string; metadata: ExerciseOwnedMetadata }>();
+  const existingVariantRows = existingVariants.rows.map((row) => ({
+    id: text(row, "id"), exerciseId: text(row, "exercise_id"), kind: text(row, "kind"), label: text(row, "label"),
+  }));
+  const rawSolutionAssetRows = existingAssets.rows.map((row) => ({
+    id: text(row, "id"), variantId: text(row, "variant_id"), exerciseId: text(row, "exercise_id"),
+    relativePath: text(row, "relative_path"), sourceId: text(row, "source_id"), fileName: text(row, "file_name"),
+    extension: text(row, "extension"), step: Number(row.step), variant: text(row, "kind"),
+    lastModifiedAt: nullableText(row, "last_modified_at"), sourceVersion: nullableText(row, "source_version"), isIndexed: bool(row.is_indexed),
+  }));
+  const errorThreadExerciseIds = new Set(existingErrorThreads.rows.map((row) => nullableText(row, "exercise_id")).filter((id): id is string => id !== null));
+  const errorIssueKeysByExercise = groupBy(existingErrorIssues.rows.filter((row) => nullableText(row, "exercise_id") !== null).map((row) => ({
+    exerciseId: text(row, "exercise_id"), key: `${text(row, "document_kind")}\u0000${nullableText(row, "variant_kind") ?? ""}`,
+  })), (issue) => issue.exerciseId);
+
+  for (const portfolio of indexablePortfolios) {
+    const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
+    for (const section of portfolio.sections) {
+      const targetSectionId = `${portfolioId}-section-${section.order}`;
+      for (const exercise of section.exercises) {
+        const desiredId = `${targetSectionId}-exercise-${exercise.code}`;
+        const exact = existingExercisesById.get(desiredId);
+        const codeKey = exerciseCodeKey(portfolioId, exercise.code);
+        if ((incomingExerciseCodeCounts.get(codeKey) ?? 0) !== 1) {
+          exerciseResolutions.set(desiredId, desiredId);
+          continue;
+        }
+        const candidates = existingExerciseRows.filter((candidate) => candidate.portfolioId === portfolioId
+          && normalizeExerciseIdentityCode(candidate.code) === normalizeExerciseIdentityCode(exercise.code)
+          && candidate.archivedAt === null && candidate.id !== exact?.id);
+        if (!exact) {
+          if (candidates.length === 1) exerciseResolutions.set(desiredId, candidates[0].id);
+          else {
+            exerciseResolutions.set(desiredId, desiredId);
+            if (candidates.length > 1) warnings.push(exerciseMoveConflictWarning(section.relativePath, exercise.code));
+          }
+          continue;
+        }
+
+        const missingCandidates = candidates.filter((candidate) => !candidate.isIndexed);
+        if (!exact.isIndexed || missingCandidates.length === 0) {
+          exerciseResolutions.set(desiredId, exact.id);
+          continue;
+        }
+        if (missingCandidates.length !== 1) {
+          exerciseResolutions.set(desiredId, exact.id);
+          if (missingCandidates.length > 1) warnings.push(exerciseMoveConflictWarning(section.relativePath, exercise.code));
+          continue;
+        }
+
+        const retained = missingCandidates[0];
+        const metadataMerge = mergeExerciseOwnedMetadata(retained.row, exact.row);
+        const retainedIssueKeys = new Set((errorIssueKeysByExercise.get(retained.id) ?? []).map((issue) => issue.key));
+        const duplicateIssueKeys = (errorIssueKeysByExercise.get(exact.id) ?? []).map((issue) => issue.key);
+        const hasErrorReportConflict = (errorThreadExerciseIds.has(retained.id) && errorThreadExerciseIds.has(exact.id))
+          || duplicateIssueKeys.some((key) => retainedIssueKeys.has(key));
+        const hasSolutionConflict = hasAmbiguousSolutionMerge(retained.id, exact.id, existingVariantRows, rawSolutionAssetRows);
+        if (metadataMerge.conflicts.length > 0 || hasErrorReportConflict || hasSolutionConflict) {
+          exerciseResolutions.set(desiredId, exact.id);
+          warnings.push(exerciseMoveConflictWarning(section.relativePath, exercise.code));
+          continue;
+        }
+        exerciseResolutions.set(desiredId, retained.id);
+        duplicateExerciseResolutions.set(exact.id, { retainedId: retained.id, metadata: metadataMerge.metadata });
+      }
+    }
+  }
+
+  const resolvedExerciseId = (portfolioId: string, sectionId: string, exerciseCode: string) => {
+    const desiredId = `${sectionId}-exercise-${exerciseCode}`;
+    return exerciseResolutions.get(desiredId) ?? desiredId;
+  };
+  const movedExerciseTargetSections = new Map<string, string>();
+  for (const portfolio of indexablePortfolios) {
+    const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
+    for (const section of portfolio.sections) {
+      const targetSectionId = `${portfolioId}-section-${section.order}`;
+      for (const exercise of section.exercises) {
+        const exerciseId = resolvedExerciseId(portfolioId, targetSectionId, exercise.code);
+        const existingExercise = existingExercisesById.get(exerciseId);
+        if (existingExercise && existingExercise.sectionId !== targetSectionId) movedExerciseTargetSections.set(exerciseId, targetSectionId);
+      }
+    }
+  }
   const assetKey = (variantId: string, relativePath: string) => `${variantId}\u0000${relativePath}`;
   const solutionAssetLogicalKey = (variantId: string, step: number, extension: string) => `${variantId}\u0000${step}\u0000${extension.toLowerCase()}`;
   const resourceAssetExactKey = (scope: string, resourceId: string, sourceAssetId: string) => `${scope}\u0000${resourceId}\u0000${sourceAssetId}`;
   const resourceAssetLogicalKey = (scope: string, parentId: string, resourceId: string, step: number, extension: string) =>
     `${scope}\u0000${parentId}\u0000${resourceId}\u0000${step}\u0000${extension.toLowerCase()}`;
-  const existingSolutionAssetRows = existingAssets.rows.map((row) => ({
-    id: text(row, "id"), variantId: text(row, "variant_id"), relativePath: text(row, "relative_path"), sourceId: text(row, "source_id"),
-    fileName: text(row, "file_name"), extension: text(row, "extension"), step: Number(row.step),
-    variant: text(row, "kind"), sourceVersion: nullableText(row, "source_version"), isIndexed: bool(row.is_indexed),
-  }));
+  const solutionMergePlan = planSolutionAssetMerge(duplicateExerciseResolutions, existingVariantRows, rawSolutionAssetRows, startedAt);
+  const existingSolutionAssetRows = solutionMergePlan.rows;
   const activeSolutionAssetRows = existingSolutionAssetRows.filter((asset) => asset.isIndexed);
   const existingAssetVersions = new Map(activeSolutionAssetRows.map((asset) => [assetKey(asset.variantId, asset.relativePath), asset]));
   const existingSolutionAssetsByPathKey = new Map(existingSolutionAssetRows.map((asset) => [assetKey(asset.variantId, asset.relativePath), asset]));
@@ -892,6 +1182,9 @@ export async function persistIndex(
     scope: text(row, "resource_scope"), resourceId: text(row, "resource_id"), sourceId: text(row, "source_id"),
     relativePath: text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension"),
     step: Number(row.step), sourceVersion: nullableText(row, "source_version"), isIndexed: bool(row.is_indexed),
+  })).map((asset) => ({
+    ...asset,
+    exerciseId: asset.exerciseId ? duplicateExerciseResolutions.get(asset.exerciseId)?.retainedId ?? asset.exerciseId : null,
   }));
   const existingResourceAssetsByExactKey = new Map(existingResourceAssetRows.map((asset) => [resourceAssetExactKey(asset.scope, asset.resourceId, asset.sourceId), asset]));
   const activeResourceAssetsByExactKey = new Map(existingResourceAssetRows.filter((asset) => asset.isIndexed).map((asset) => [resourceAssetExactKey(asset.scope, asset.resourceId, asset.sourceId), asset]));
@@ -911,7 +1204,7 @@ export async function persistIndex(
     for (const section of portfolio.sections) {
       const sectionId = `${portfolioId}-section-${section.order}`;
       for (const exercise of section.exercises) {
-        const exerciseId = `${sectionId}-exercise-${exercise.code}`;
+        const exerciseId = resolvedExerciseId(portfolioId, sectionId, exercise.code);
         for (const asset of exercise.assets) {
           incrementCount(incomingResourceAssetCounts, resourceAssetLogicalKey("exercise", exerciseId, asset.resourceId, asset.parsed.step, asset.parsed.extension));
           incrementCount(incomingResourceExactCounts, resourceAssetExactKey("exercise", asset.resourceId, asset.sourceId));
@@ -995,7 +1288,30 @@ export async function persistIndex(
     { sql: "UPDATE solution_assets SET is_indexed = 0 WHERE variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [spaceId] },
     { sql: "UPDATE source_resource_assets SET is_indexed = 0 WHERE learning_space_id = ?", args: [spaceId] },
   ];
-
+  statements.push(...solutionMergePlan.statements);
+  for (const [duplicateId, reconciliation] of duplicateExerciseResolutions) {
+    statements.push(
+      { sql: "UPDATE source_resource_assets SET exercise_id = ? WHERE exercise_id = ?", args: [reconciliation.retainedId, duplicateId] },
+      { sql: "UPDATE error_report_threads SET exercise_id = ? WHERE exercise_id = ?", args: [reconciliation.retainedId, duplicateId] },
+      { sql: "UPDATE error_report_issues SET exercise_id = ? WHERE exercise_id = ?", args: [reconciliation.retainedId, duplicateId] },
+      { sql: "UPDATE error_reports SET exercise_id = ? WHERE exercise_id = ?", args: [reconciliation.retainedId, duplicateId] },
+      {
+        sql: `UPDATE exercises SET visible = ?, visibility_mode = ?, publish_from = ?, publish_until = ?,
+          show_alternative_to_students = ?, custom_note = ?, note_label = ?, note_position = ?,
+          level_override_mode = ?, level_override = ? WHERE id = ?`,
+        args: [reconciliation.metadata.visible, reconciliation.metadata.visibilityMode,
+          reconciliation.metadata.publishFrom, reconciliation.metadata.publishUntil,
+          reconciliation.metadata.showAlternativeToStudents, reconciliation.metadata.customNote,
+          reconciliation.metadata.noteLabel, reconciliation.metadata.notePosition,
+          reconciliation.metadata.levelOverrideMode, reconciliation.metadata.levelOverride,
+          reconciliation.retainedId],
+      },
+      {
+        sql: "UPDATE exercises SET exercise_code = ?, is_indexed = 0, archived_at = ? WHERE id = ?",
+        args: [`__reconciled__${duplicateId}`, startedAt, duplicateId],
+      },
+    );
+  }
   if (Object.hasOwn(options, "header")) {
     statements.push({ sql: "DELETE FROM learning_space_header_assets WHERE learning_space_id = ?", args: [spaceId] });
     if (options.header) {
@@ -1075,20 +1391,28 @@ export async function persistIndex(
             is_indexed = 1, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
         args: [sectionId, portfolioId, section.order, section.title, section.relativePath, startedAt],
       });
+      for (const [exerciseId, targetSectionId] of movedExerciseTargetSections) {
+        if (targetSectionId === sectionId) statements.push({
+          sql: "UPDATE error_reports SET section_id = ? WHERE exercise_id = ?",
+          args: [targetSectionId, exerciseId],
+        });
+      }
 
       for (const exercise of section.exercises) {
-        const exerciseId = `${sectionId}-exercise-${exercise.code}`;
+        const exerciseId = resolvedExerciseId(portfolioId, sectionId, exercise.code);
         statements.push(writesExerciseLevelSource ? {
           sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, level_source, visibility_mode, visible, is_indexed, last_seen_at)
             VALUES (?, ?, ?, ?, ?, ?, ?, 'visible', 1, 1, ?)
-            ON CONFLICT(id) DO UPDATE SET exercise_number = excluded.exercise_number,
+            ON CONFLICT(id) DO UPDATE SET portfolio_id = excluded.portfolio_id, section_id = excluded.section_id,
+              exercise_code = excluded.exercise_code, exercise_number = excluded.exercise_number,
               exercise_suffix = excluded.exercise_suffix, level_source = excluded.level_source,
               is_indexed = 1, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
           args: [exerciseId, portfolioId, sectionId, exercise.code, exercise.number, exercise.suffix, exercise.levelSource ?? null, startedAt],
         } : {
           sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, visibility_mode, visible, is_indexed, last_seen_at)
             VALUES (?, ?, ?, ?, ?, ?, 'visible', 1, 1, ?)
-            ON CONFLICT(id) DO UPDATE SET exercise_number = excluded.exercise_number,
+            ON CONFLICT(id) DO UPDATE SET portfolio_id = excluded.portfolio_id, section_id = excluded.section_id,
+              exercise_code = excluded.exercise_code, exercise_number = excluded.exercise_number,
               exercise_suffix = excluded.exercise_suffix, is_indexed = 1, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
           args: [exerciseId, portfolioId, sectionId, exercise.code, exercise.number, exercise.suffix, startedAt],
         });

@@ -29,6 +29,136 @@ afterEach(async () => {
 });
 
 describe("persistIndex", () => {
+  it("preserves exercise identity, teacher metadata and error-report links across a section move", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-exercise-move-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    await persistIndex([exerciseMoveFixture(1, "basis", "move-source-old")], "local", "space-6");
+    const database = await getDatabase();
+    const original = (await database.execute("SELECT id, portfolio_id FROM exercises WHERE exercise_code = '20a' AND archived_at IS NULL")).rows[0];
+    const exerciseId = String(original.id);
+    await database.execute({ sql: "UPDATE portfolios SET visible = 1 WHERE id = ?", args: [String(original.portfolio_id)] });
+    const report = await createErrorReport({ exerciseId, variant: "standard", message: "Historische koppeling", rateLimitKey: "exercise-move" });
+    await database.execute({
+      sql: `UPDATE exercises SET custom_note = 'Bewaren', note_label = 'Aandacht', note_position = 'below_solution',
+        visibility_mode = 'hidden', visible = 0, publish_from = '2026-10-01T08:00:00.000Z', publish_until = '2026-12-01T08:00:00.000Z',
+        show_alternative_to_students = 0, level_override_mode = 'level', level_override = 'verdieping' WHERE id = ?`,
+      args: [exerciseId],
+    });
+
+    await expect(persistIndex([exerciseMoveFixture(2, "uitdaging", "move-source-new")], "local", "space-6"))
+      .resolves.toMatchObject({ added: 0, missing: 0 });
+
+    const moved = (await database.execute({ sql: "SELECT * FROM exercises WHERE id = ?", args: [exerciseId] })).rows[0];
+    expect(moved).toMatchObject({
+      id: exerciseId,
+      exercise_code: "20a",
+      is_indexed: 1,
+      archived_at: null,
+      custom_note: "Bewaren",
+      note_label: "Aandacht",
+      note_position: "below_solution",
+      visibility_mode: "hidden",
+      visible: 0,
+      publish_from: "2026-10-01T08:00:00.000Z",
+      publish_until: "2026-12-01T08:00:00.000Z",
+      show_alternative_to_students: 0,
+      level_override_mode: "level",
+      level_override: "verdieping",
+      level_source: "uitdaging",
+    });
+    expect(String(moved.section_id)).toContain("-section-2");
+    expect((await database.execute("SELECT id FROM exercises WHERE exercise_code = '20a' AND archived_at IS NULL")).rows).toHaveLength(1);
+    expect((await database.execute({ sql: "SELECT exercise_id FROM error_report_threads WHERE id IN (SELECT thread_id FROM error_report_issues WHERE id = ?)", args: [report.issueId] })).rows[0].exercise_id).toBe(exerciseId);
+    expect((await database.execute({ sql: "SELECT exercise_id FROM error_report_issues WHERE id = ?", args: [report.issueId] })).rows[0].exercise_id).toBe(exerciseId);
+    expect((await database.execute({ sql: "SELECT exercise_id, section_id FROM error_reports WHERE issue_id = ?", args: [report.issueId] })).rows[0]).toMatchObject({
+      exercise_id: exerciseId,
+      section_id: moved.section_id,
+    });
+    expect((await getLatestWarnings("space-6")).some((warning) => /ontbreekt|onvolledig/i.test(warning.message))).toBe(false);
+  });
+
+  it("heals an existing old-missing and new-active split while retaining the original exercise and asset ids", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-exercise-split-heal-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    await persistIndex([exerciseMoveFixture(1, "basis", "split-source-old")], "local", "space-6");
+    const database = await getDatabase();
+    const original = (await database.execute("SELECT * FROM exercises WHERE exercise_code = '20a' AND archived_at IS NULL")).rows[0];
+    const originalId = String(original.id);
+    const portfolioId = String(original.portfolio_id);
+    const targetSectionId = `${portfolioId}-section-2`;
+    const duplicateId = `${targetSectionId}-exercise-20a`;
+    const originalAsset = (await database.execute({
+      sql: `SELECT solution_assets.* FROM solution_assets
+        JOIN solution_variants ON solution_variants.id = solution_assets.variant_id WHERE solution_variants.exercise_id = ?`,
+      args: [originalId],
+    })).rows[0];
+    const originalResource = (await database.execute({
+      sql: "SELECT * FROM source_resource_assets WHERE exercise_id = ? AND resource_scope = 'exercise'",
+      args: [originalId],
+    })).rows[0];
+    await database.batch([
+      { sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path, visibility_mode, is_indexed, last_seen_at)
+        VALUES (?, ?, 2, 'Nieuwe sectie', 'H1B_Stelsels/2 Nieuwe sectie', 'visible', 1, ?)`, args: [targetSectionId, portfolioId, "2026-10-04T10:00:00.000Z"] },
+      { sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, level_source,
+        visibility_mode, visible, is_indexed, last_seen_at) VALUES (?, ?, ?, '20a', 20, 'a', 'uitdaging', 'visible', 1, 1, ?)`,
+      args: [duplicateId, portfolioId, targetSectionId, "2026-10-04T10:00:00.000Z"] },
+      { sql: "INSERT INTO solution_variants (id, exercise_id, kind, label, is_indexed) VALUES (?, ?, 'standard', 'Standaard', 1)", args: [`${duplicateId}-standard`, duplicateId] },
+      { sql: `INSERT INTO solution_assets (id, variant_id, relative_path, source_id, file_name, extension, step, last_modified_at,
+        source_version, is_indexed, missing_since) VALUES (?, ?, ?, ?, 'PF1B-Oef20a.png', 'png', 1, ?, 'v2', 1, NULL)`,
+      args: ["split-new-asset", `${duplicateId}-standard`, "H1B_Stelsels/2 Nieuwe sectie/PF1B-Oef20a.png", "split-source-new", "2026-10-04T10:00:00.000Z"] },
+      { sql: "UPDATE exercises SET custom_note = 'Historische notitie', note_label = 'Bewaren', note_position = 'below_solution', level_override_mode = 'none', level_override = NULL, is_indexed = 0 WHERE id = ?", args: [originalId] },
+      { sql: "UPDATE solution_variants SET is_indexed = 0 WHERE exercise_id = ?", args: [originalId] },
+      { sql: "UPDATE solution_assets SET is_indexed = 0, missing_since = ? WHERE id = ?", args: ["2026-10-04T09:00:00.000Z", String(originalAsset.id)] },
+      { sql: `UPDATE source_resource_assets SET exercise_id = ?, source_id = 'split-source-new', relative_path = ?,
+        is_indexed = 1, missing_since = NULL WHERE id = ?`,
+      args: [duplicateId, "H1B_Stelsels/2 Nieuwe sectie/PF1B-Oef20a.png", String(originalResource.id)] },
+    ]);
+
+    await expect(persistIndex([exerciseMoveFixture(2, "uitdaging", "split-source-new")], "local", "space-6"))
+      .resolves.toMatchObject({ added: 0, missing: 0 });
+
+    const active = await database.execute("SELECT * FROM exercises WHERE exercise_code = '20a' AND archived_at IS NULL");
+    expect(active.rows).toHaveLength(1);
+    expect(active.rows[0]).toMatchObject({ id: originalId, custom_note: "Historische notitie", note_label: "Bewaren", note_position: "below_solution", level_override_mode: "none", is_indexed: 1 });
+    expect(String(active.rows[0].section_id)).toBe(targetSectionId);
+    expect((await database.execute({ sql: "SELECT archived_at, is_indexed FROM exercises WHERE id = ?", args: [duplicateId] })).rows[0]).toMatchObject({ is_indexed: 0, archived_at: expect.any(String) });
+    expect((await database.execute("SELECT solution_assets.id, solution_variants.exercise_id, solution_assets.is_indexed, solution_assets.missing_since FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id")).rows).toEqual([
+      expect.objectContaining({ id: String(originalAsset.id), exercise_id: originalId, is_indexed: 1, missing_since: null }),
+    ]);
+    expect((await database.execute("SELECT exercise_id, is_indexed, missing_since FROM source_resource_assets WHERE resource_scope = 'exercise'")).rows).toEqual([
+      expect.objectContaining({ exercise_id: originalId, is_indexed: 1, missing_since: null }),
+    ]);
+    const adminMatches = (await getAdminPortfolios("space-6")).flatMap((portfolio) => portfolio.sections)
+      .flatMap((section) => section.exercises).filter((exercise) => exercise.code === "20a");
+    expect(adminMatches).toEqual([expect.objectContaining({ id: originalId, isIndexed: true, missingAssets: 0 })]);
+    expect(Number((await database.execute({ sql: "SELECT COUNT(*) AS count FROM exercises WHERE portfolio_id = ? AND is_indexed = 0 AND archived_at IS NULL", args: [portfolioId] })).rows[0].count)).toBe(0);
+    expect((await getLatestWarnings("space-6")).some((warning) => /ontbreekt|onvolledig/i.test(warning.message))).toBe(false);
+  });
+
+  it("does not guess when the same exercise code has multiple cross-section candidates", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-exercise-move-ambiguous-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    const first = exerciseMoveFixture(1, "basis", "ambiguous-one");
+    const secondSection = exerciseMoveFixture(2, "basis", "ambiguous-two").sections[0];
+    first.sections.push(secondSection);
+    await persistIndex([first], "local", "space-6");
+    const database = await getDatabase();
+    const originalIds = (await database.execute("SELECT id FROM exercises WHERE exercise_code = '20a' ORDER BY id")).rows.map((row) => String(row.id));
+
+    await persistIndex([exerciseMoveFixture(3, "uitdaging", "ambiguous-new")], "local", "space-6");
+
+    const rows = await database.execute("SELECT id, is_indexed FROM exercises WHERE exercise_code = '20a' ORDER BY id");
+    expect(rows.rows.filter((row) => Number(row.is_indexed) === 1)).toHaveLength(1);
+    expect(originalIds).not.toContain(String(rows.rows.find((row) => Number(row.is_indexed) === 1)?.id));
+    expect((await getLatestWarnings("space-6")).some((warning) => warning.message.includes("niet automatisch verplaatst"))).toBe(true);
+  });
+
   it("reconciles equivalent portfolio and section renames by logical identity while real deletion remains missing", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-rename-reconciliation-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
@@ -1299,6 +1429,36 @@ function renameReconciliationFixture({
     }],
     warnings: [],
   };
+}
+
+function exerciseMoveFixture(
+  sectionOrder: number,
+  levelSource: "basis" | "uitdaging",
+  sourceId: string,
+): IndexedPortfolio {
+  const portfolioPath = "H1B_Stelsels";
+  const sectionPath = `${portfolioPath}/${sectionOrder} ${sectionOrder === 1 ? "Oude" : "Nieuwe"} sectie`;
+  const fixture = renameReconciliationFixture({
+    portfolioPath,
+    sectionPath,
+    fileName: "PF1B-Oef20a.png",
+    sourceId,
+    levelSource,
+  });
+  const section = fixture.sections[0];
+  section.order = sectionOrder;
+  section.title = sectionOrder === 1 ? "Oude sectie" : "Nieuwe sectie";
+  const exercise = section.exercises[0];
+  exercise.code = "20a";
+  exercise.number = 20;
+  exercise.suffix = "a";
+  exercise.assets[0].parsed = {
+    ...exercise.assets[0].parsed,
+    exerciseNumber: 20,
+    exerciseSuffix: "a",
+    exerciseCode: "20a",
+  };
+  return fixture;
 }
 
 function createTwoPortfolioProvider() {
