@@ -13,11 +13,31 @@ import type { StorageProvider } from "./storage/provider";
 
 let temporaryDirectory: string | undefined;
 
+const SQLITE_ONLY_MIGRATION_SQL = [
+  { name: "GLOB", pattern: /\bGLOB\b/i },
+  { name: "PRAGMA", pattern: /\bPRAGMA\b/i },
+  { name: "AUTOINCREMENT", pattern: /\bAUTOINCREMENT\b/i },
+  { name: "INSERT OR", pattern: /\bINSERT\s+OR\s+(?:IGNORE|REPLACE|ABORT|FAIL|ROLLBACK)\b/i },
+  { name: "WITHOUT ROWID", pattern: /\bWITHOUT\s+ROWID\b/i },
+  { name: "NOCASE", pattern: /\bCOLLATE\s+NOCASE\b/i },
+] as const;
+
 afterEach(async () => {
   resetDatabaseForTests();
   delete process.env.PORTFOLIO_DATABASE_PATH;
   if (temporaryDirectory) await removeTemporaryDirectory(temporaryDirectory);
   temporaryDirectory = undefined;
+});
+
+describe("shared migration SQL", () => {
+  it("does not contain SQLite-only syntax that PostgreSQL cannot execute", () => {
+    const violations = migrations.flatMap((migration) => migration.statements.flatMap((sql, statementIndex) =>
+      SQLITE_ONLY_MIGRATION_SQL
+        .filter(({ pattern }) => pattern.test(sql))
+        .map(({ name }) => `${migration.version}[${statementIndex}]: ${name}`)));
+
+    expect(violations).toEqual([]);
+  });
 });
 
 describe("Google Drive LearningSpace migration", () => {

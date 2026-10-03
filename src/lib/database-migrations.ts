@@ -1112,7 +1112,7 @@ export const migrations: DatabaseMigration[] = [
     statements: [
       "ALTER TABLE learning_space_level_presentations ADD COLUMN display_name TEXT NOT NULL DEFAULT 'Niveau' CHECK(length(trim(display_name)) BETWEEN 1 AND 40)",
       `ALTER TABLE learning_space_level_presentations ADD COLUMN color TEXT NOT NULL DEFAULT '#DCEFE5'
-        CHECK(length(color) = 7 AND substr(color, 1, 1) = '#' AND substr(color, 2) NOT GLOB '*[^0-9A-Fa-f]*')`,
+        CHECK(length(color) = 7 AND substr(color, 1, 1) = '#')`,
       `UPDATE learning_space_level_presentations SET display_name = CASE level
         WHEN 'opwarmer' THEN 'Opwarmer' WHEN 'basis' THEN 'Basis'
         WHEN 'uitdaging' THEN 'Uitdaging' ELSE 'Verdieping' END`,
@@ -1143,7 +1143,7 @@ export const migrations: DatabaseMigration[] = [
         symbol_count INTEGER NOT NULL CHECK(symbol_count BETWEEN 1 AND 4),
         display_name TEXT NOT NULL DEFAULT 'Niveau' CHECK(length(trim(display_name)) BETWEEN 1 AND 40),
         color TEXT NOT NULL DEFAULT ${sqlText(DEFAULT_EXERCISE_LEVEL_PRESENTATION.opwarmer.color)}
-          CHECK(length(color) = 7 AND substr(color, 1, 1) = '#' AND substr(color, 2) NOT GLOB '*[^0-9A-Fa-f]*'),
+          CHECK(length(color) = 7 AND substr(color, 1, 1) = '#'),
         PRIMARY KEY (learning_space_id, level)
       )`,
       `INSERT INTO learning_space_level_presentations_next (learning_space_id, level, symbol_id, symbol_count, display_name, color)
