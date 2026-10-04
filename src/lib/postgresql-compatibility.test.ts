@@ -8,8 +8,10 @@ import { migrations } from "./database-migrations";
 import type { IndexedPortfolio } from "./domain";
 import { createUser } from "./identity";
 import {
+  createLearningSpaceForOwner,
   getLearningSpace,
   getActiveLearningSpaceSource,
+  getLearningSpaceSource,
   getLearningSpaces,
   getSyncPublicationSnapshot,
   getSetting,
@@ -54,6 +56,7 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     const suffix = randomUUID();
     const superadmin = await createUser({ displayName: `PostgreSQL ${suffix}`, role: "superadmin" });
 
+    const initialSubject = await createSubject(superadmin, { name: `Initial compat ${suffix}` });
     const subject = await createSubject(superadmin, { name: `Compat ${suffix}` });
     await expect(renameSubject(superadmin, subject.id, ` COMPAT ${suffix.toUpperCase()} `)).resolves.toBeUndefined();
 
@@ -77,27 +80,34 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     await expect(uniqueSourceProfileName(superadmin.id, ` ${profileName.toUpperCase()} `, profileId))
       .resolves.toBe(profileName.toUpperCase());
 
-    const space = await getLearningSpace("space-5");
-    expect(space).not.toBeNull();
-    await updateLearningSpace("space-5", {
+    const spaceSlug = `postgres-compat-${suffix}`;
+    const space = await createLearningSpaceForOwner({
+      subjectId: initialSubject.id,
+      name: `PostgreSQL compatibility ${suffix}`,
+      slug: spaceSlug,
+      shortLabel: `PG ${suffix.slice(0, 8)}`,
+      sourceType: "local",
+      localSourcePath: null,
+    }, superadmin.id);
+    await updateLearningSpace(space.id, {
       subjectId: subject.id,
-      collectionLabelSingular: space!.collectionLabelSingular,
-      collectionLabelPlural: space!.collectionLabelPlural,
-      exerciseLabelSingular: space!.exerciseLabelSingular,
-      exerciseLabelPlural: space!.exerciseLabelPlural,
-      exerciseLabelShort: space!.exerciseLabelShort,
-      name: space!.name,
-      slug: space!.slug,
-      shortLabel: space!.shortLabel,
-      description: space!.description,
-      cardColor: space!.cardColor,
-      sortOrder: space!.sortOrder,
-      sourceType: space!.sourceType,
-      primarySource: space!.primarySource ?? undefined,
-      mirrorSource: space!.mirrorSource,
-      levelPresentation: space!.levelPresentation,
+      collectionLabelSingular: space.collectionLabelSingular,
+      collectionLabelPlural: space.collectionLabelPlural,
+      exerciseLabelSingular: space.exerciseLabelSingular,
+      exerciseLabelPlural: space.exerciseLabelPlural,
+      exerciseLabelShort: space.exerciseLabelShort,
+      name: space.name,
+      slug: space.slug,
+      shortLabel: space.shortLabel,
+      description: space.description,
+      cardColor: space.cardColor,
+      sortOrder: space.sortOrder,
+      sourceType: space.sourceType,
+      primarySource: space.primarySource ?? undefined,
+      mirrorSource: space.mirrorSource,
+      levelPresentation: space.levelPresentation,
     });
-    expect((await getLearningSpace("space-5"))?.subjectId).toBe(subject.id);
+    expect((await getLearningSpace(space.id))?.subjectId).toBe(subject.id);
     expect((await getLearningSpaces()).length).toBeGreaterThan(0);
 
     const settingKey = `postgres-compat-${suffix}`;
@@ -106,19 +116,45 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     const portfolioCode = `pg-${suffix}`;
     const firstIndex = postgresExerciseMoveFixture(portfolioCode, 1, "postgres-move-old");
     const leaseOwner = `postgres-compat-${suffix}`;
-    expect(await tryAcquireSyncLease("space-5", leaseOwner)).toBe(true);
-    const activeSource = (await getActiveLearningSpaceSource("space-5"))!;
-    const publicationSnapshot = (await getSyncPublicationSnapshot("space-5", activeSource.id))!;
-    await persistIndex([firstIndex], "local", "space-5", {
+    expect(await tryAcquireSyncLease(space.id, leaseOwner)).toBe(true);
+    const activeSource = await getActiveLearningSpaceSource(space.id);
+    expect(activeSource).toMatchObject({
+      learningSpaceId: space.id,
+      providerType: "local",
+      isActive: true,
+    });
+    if (!activeSource) throw new Error("De PostgreSQL-testfixture heeft geen actieve synchronisatiebron.");
+    const storedSource = await getLearningSpaceSource(activeSource.id);
+    expect(storedSource).toMatchObject({
+      id: activeSource.id,
+      learningSpaceId: space.id,
+      role: "primary",
+      providerType: activeSource.providerType,
+      isActive: true,
+      storageConnectionId: null,
+      localSourcePath: null,
+    });
+    const publicationSnapshot = await getSyncPublicationSnapshot(space.id, activeSource.id);
+    expect(publicationSnapshot).toMatchObject({
+      learningSpaceId: space.id,
+      sourceId: activeSource.id,
+      sourceProviderType: activeSource.providerType,
+      sourceStorageConnectionId: null,
+      sourceLocalPath: null,
+      activeSourceId: activeSource.id,
+      sourceProfileConfigVersion: 1,
+    });
+    if (!publicationSnapshot) throw new Error("De PostgreSQL-testfixture heeft geen geldige publicatiesnapshot.");
+    await persistIndex([firstIndex], activeSource.providerType, space.id, {
       sourceId: activeSource.id,
       publicationGuard: { ownerId: leaseOwner, leaseSeconds: 600, snapshot: publicationSnapshot },
     });
-    await releaseSyncLease("space-5", leaseOwner);
+    await releaseSyncLease(space.id, leaseOwner);
     const originalExerciseId = String((await database.execute({
       sql: "SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ? AND portfolio_code = ?)",
-      args: ["space-5", portfolioCode],
+      args: [space.id, portfolioCode],
     })).rows[0].id);
-    await expect(persistIndex([postgresExerciseMoveFixture(portfolioCode, 2, "postgres-move-new")], "local", "space-5"))
+    await expect(persistIndex([postgresExerciseMoveFixture(portfolioCode, 2, "postgres-move-new")], activeSource.providerType, space.id))
       .resolves.toMatchObject({ added: 0, missing: 0 });
     expect((await database.execute({ sql: "SELECT id, is_indexed FROM exercises WHERE id = ?", args: [originalExerciseId] })).rows[0])
       .toMatchObject({ id: originalExerciseId, is_indexed: 1 });
