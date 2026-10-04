@@ -24,14 +24,30 @@ describe("shared runtime SQL portability", () => {
 
     for (const file of files) {
       const source = await readFile(file, "utf8");
+      const portableSource = maskDialectGuardedSqliteMigrationPragmas(file, source);
       for (const { name, pattern } of PORTABILITY_GUARDS) {
-        if (pattern.test(source)) violations.push(`${path.relative(process.cwd(), file)}: ${name}`);
+        if (pattern.test(portableSource)) violations.push(`${path.relative(process.cwd(), file)}: ${name}`);
       }
     }
 
     expect(violations).toEqual([]);
   });
 });
+
+function maskDialectGuardedSqliteMigrationPragmas(file: string, source: string): string {
+  if (path.relative(process.cwd(), file) !== path.join("src", "lib", "database.ts")) return source;
+
+  const guardedStatements = [
+    /if \(dialect === "sqlite" && migration\.sqliteForeignKeysDisabled\) await database\.execute\("PRAGMA foreign_keys = OFF"\);/,
+    /if \(dialect === "sqlite" && migration\.sqliteForeignKeysDisabled\) await database\.execute\("PRAGMA foreign_keys = ON"\);/,
+    /if \(dialect === "sqlite" && migration\.sqliteForeignKeysDisabled\) \{\s*const violations = await database\.execute\("PRAGMA foreign_key_check"\);/,
+  ];
+
+  return guardedStatements.reduce((masked, guardedStatement) => masked.replace(
+    guardedStatement,
+    (match) => match.replaceAll("PRAGMA", "SQLITE_GUARDED_MIGRATION_CHECK"),
+  ), source);
+}
 
 async function productionTypeScriptFiles(directory: string): Promise<string[]> {
   const entries = await readdir(directory, { withFileTypes: true });

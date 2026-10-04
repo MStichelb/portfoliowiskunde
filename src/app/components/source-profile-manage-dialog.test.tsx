@@ -34,8 +34,9 @@ describe("SourceProfileManageDialog", () => {
     expect(markup).toContain("Portfoliomarker");
     expect(markup).toContain('name="portfolioScannerJson"');
     expect(markup).toContain('value="Bundel"');
-    expect(markup).toContain("Bundel1A - Stelsels oplossen");
-    expect(markup).toContain("1 Inleiding");
+    expect(markup).toContain("Bundel1.1 - Stelsels oplossen");
+    expect(markup).toContain("1.1 Inleiding");
+    expect(markup).toContain("Letter-startende onderdeelcodes worden niet herkend");
     expect(markup).toContain('name="exerciseScannerJson"');
     expect(markup).toContain("Onderdelen per oefening");
     expect(markup).toContain('name="exerciseResourcesJson"');

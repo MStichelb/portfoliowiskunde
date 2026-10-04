@@ -705,7 +705,7 @@ describe("portfolio indexer", () => {
   });
 
   it("sorteert geïndexeerde portfolio's met de centrale natuurlijke comparator", async () => {
-    const codes = ["12", "2B", "3", "X", "10", "2", "A", "1", "2A", "11"];
+    const codes = ["12", "2B", "3", "X", "10", "2", "A", "1", "2A", "11", "A1", "1.10", "1.2", "1.1", "A.1"];
     const sortingProvider: StorageProvider = {
       id: "portfolio-order-fixture",
       async list(relativePath = "") {
@@ -714,7 +714,9 @@ describe("portfolio indexer", () => {
       },
       async readFile() { return Buffer.from(""); },
     };
-    expect((await indexSource(sortingProvider)).map((portfolio) => portfolio.code)).toEqual(["1", "2", "2A", "2B", "3", "10", "11", "12", "A", "X"]);
+    expect((await indexSource(sortingProvider)).map((portfolio) => portfolio.code)).toEqual([
+      "1", "1.1", "1.2", "1.10", "2", "2A", "2B", "3", "10", "11", "12", "A", "A.1", "A1", "X",
+    ]);
   });
 
   it("gebruikt de bronprofielmarker voor portfoliomappen", async () => {
@@ -744,6 +746,9 @@ describe("portfolio indexer", () => {
         if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
         if (relativePath === portfolioPath) return [
           { name: "1 Inleiding", relativePath: `${portfolioPath}/1 Inleiding`, kind: "directory" },
+          { name: "1.1 Basis", relativePath: `${portfolioPath}/1.1 Basis`, kind: "directory" },
+          { name: "1.10 Verdieping", relativePath: `${portfolioPath}/1.10 Verdieping`, kind: "directory" },
+          { name: "1.2 Methode", relativePath: `${portfolioPath}/1.2 Methode`, kind: "directory" },
           { name: "2A Methode", relativePath: `${portfolioPath}/2A Methode`, kind: "directory" },
           { name: "10_Toepassingen", relativePath: `${portfolioPath}/10_Toepassingen`, kind: "directory" },
           { name: "Uitwerkingen", relativePath: `${portfolioPath}/Uitwerkingen`, kind: "directory" },
@@ -754,10 +759,13 @@ describe("portfolio indexer", () => {
     };
 
     const [portfolio] = await indexSource(sectionProvider);
-    expect(portfolio.sections.map((section) => [section.order, section.title])).toEqual([
-      [1, "Inleiding"],
-      [2, "A Methode"],
-      [10, "Toepassingen"],
+    expect(portfolio.sections.map((section) => [section.code, section.sortOrder, section.title])).toEqual([
+      ["1", 1, "Inleiding"],
+      ["1.1", 2, "Basis"],
+      ["1.2", 3, "Methode"],
+      ["1.10", 4, "Verdieping"],
+      ["2", 5, "A Methode"],
+      ["10", 6, "Toepassingen"],
     ]);
   });
 
@@ -780,15 +788,34 @@ describe("portfolio indexer", () => {
     expect(portfolios.every((portfolio) => portfolio.warnings.some((warning) => warning.message.includes("Dubbele portfoliocode 1A")))).toBe(true);
   });
 
-  it("waarschuwt en negeert alle mappen met een dubbel onderdeelnummer", async () => {
+  it("detecteert ook hoofdlettervarianten van een hiërarchische portfoliocode als duplicaat", async () => {
+    const duplicateProvider: StorageProvider = {
+      id: "duplicate-hierarchical-portfolios",
+      async list(relativePath = "") {
+        if (relativePath) throw new Error("Conflicterende portfolio's mogen niet worden geopend.");
+        return [
+          { name: "Portfolio A.1 Eerste", relativePath: "Portfolio A.1 Eerste", kind: "directory" },
+          { name: "portfolio a.1 - Tweede", relativePath: "portfolio a.1 - Tweede", kind: "directory" },
+        ];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+
+    const portfolios = await indexSource(duplicateProvider);
+    expect(portfolios).toHaveLength(2);
+    expect(portfolios.every((portfolio) => portfolio.code === "A.1" && portfolio.sections.length === 0)).toBe(true);
+    expect(portfolios.every((portfolio) => portfolio.warnings.some((warning) => warning.message.includes("Dubbele portfoliocode A.1")))).toBe(true);
+  });
+
+  it("waarschuwt en negeert alle mappen met een dubbele genormaliseerde onderdeelcode", async () => {
     const portfolioPath = "Portfolio 31 Conflicten";
     const duplicateSectionProvider: StorageProvider = {
       id: "duplicate-sections",
       async list(relativePath = "") {
         if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
         if (relativePath === portfolioPath) return [
-          { name: "2 Eerste", relativePath: `${portfolioPath}/2 Eerste`, kind: "directory" },
-          { name: "02_Tweede", relativePath: `${portfolioPath}/02_Tweede`, kind: "directory" },
+          { name: "2.1 Eerste", relativePath: `${portfolioPath}/2.1 Eerste`, kind: "directory" },
+          { name: "02.01_Tweede", relativePath: `${portfolioPath}/02.01_Tweede`, kind: "directory" },
         ];
         return [];
       },
@@ -797,7 +824,7 @@ describe("portfolio indexer", () => {
 
     const [portfolio] = await indexSource(duplicateSectionProvider);
     expect(portfolio.sections).toEqual([]);
-    expect(portfolio.warnings).toContainEqual(expect.objectContaining({ message: expect.stringContaining("Dubbel onderdeelnummer 2") }));
+    expect(portfolio.warnings).toContainEqual(expect.objectContaining({ message: expect.stringContaining("Dubbele onderdeelcode 2.1") }));
   });
 
   it("waarschuwt bij een ambigu oefeningnummer in plaats van een letter uit de onderdeeltekst op te eten", async () => {

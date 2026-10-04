@@ -201,7 +201,8 @@ function indexFixture(title: string): IndexedPortfolio {
     finalSolutionsPdfSourceId: null,
     resourceAssets: [],
     sections: [{
-      order: 1,
+      code: "1",
+      sortOrder: 1,
       title: "Onderdeel",
       relativePath: "Portfolio 88 Test/1 Onderdeel",
       exercises: [{ code: "1", number: 1, suffix: "", levelSource: null, assets: [] }],

@@ -313,7 +313,7 @@ function portfolio(id: string, learningSpaceId: string, code: string, title: str
 }
 
 function section(id: string, portfolioId: string) {
-  return { sql: "INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path) VALUES (?, ?, 1, 'Deel 1', ?)", args: [id, portfolioId, `${portfolioId}/Uitwerkingen/1 - Deel 1`] };
+  return { sql: "INSERT INTO sections (id, portfolio_id, section_code, sort_order, title, relative_path) VALUES (?, ?, '1', 1, 'Deel 1', ?)", args: [id, portfolioId, `${portfolioId}/Uitwerkingen/1 - Deel 1`] };
 }
 
 function exercise(id: string, portfolioId: string, sectionId: string, code: string, number: number) {

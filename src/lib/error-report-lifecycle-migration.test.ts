@@ -38,7 +38,7 @@ describe("error report student lifecycle migration", () => {
         { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-09T08:00:00.000Z"] },
       ], "write");
     }
-    await legacy.execute("PRAGMA foreign_keys = OFF");
+    await insertLegacyExerciseLocation(legacy);
     await legacy.execute({
       sql: `INSERT INTO error_reports
         (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, message, status,
@@ -47,6 +47,7 @@ describe("error report student lifecycle migration", () => {
           'Historische melding', 'DONE', ?, ?, ?)`,
       args: ["2026-09-01T08:00:00.000Z", "2026-09-02T08:00:00.000Z", "2026-09-02T08:00:00.000Z"],
     });
+    expect((await legacy.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
     legacy.close();
 
     process.env.PORTFOLIO_DATABASE_PATH = databasePath;
@@ -85,20 +86,34 @@ describe("distinct student error report migration", () => {
         { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-09-09T08:00:00.000Z"] },
       ], "write");
     }
-    await legacy.execute("PRAGMA foreign_keys = OFF");
-    await legacy.execute(`INSERT INTO error_reports
-      (id, portfolio_id, variant_kind, asset_snapshot, message, status, created_at, updated_at, issue_id, reporter_user_id)
-      VALUES ('existing-report', 'portfolio', 'standard', '[]', 'Eerste melding', 'TODO',
-        '2026-09-09T08:00:00.000Z', '2026-09-09T08:00:00.000Z', 'issue', 'student')`);
+    await insertLegacyExerciseLocation(legacy);
+    await legacy.batch([
+      { sql: `INSERT INTO users (id, display_name, role, status, created_at, updated_at)
+        VALUES ('student', 'Testleerling', 'student', 'active', '2026-09-09T08:00:00.000Z', '2026-09-09T08:00:00.000Z')`, args: [] },
+      { sql: `INSERT INTO error_report_threads
+        (id, learning_space_id, portfolio_id, exercise_id, exercise_code, status, created_at, updated_at)
+        VALUES ('thread', 'space-6', 'portfolio', 'exercise', '1', 'TODO',
+          '2026-09-09T08:00:00.000Z', '2026-09-09T08:00:00.000Z')`, args: [] },
+      { sql: `INSERT INTO error_report_issues
+        (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind,
+          variant_kind, status, created_at, updated_at)
+        VALUES ('issue', 'thread', 'space-6', 'portfolio', 'exercise', '1', 'exercise_solution',
+          'standard', 'TODO', '2026-09-09T08:00:00.000Z', '2026-09-09T08:00:00.000Z')`, args: [] },
+      { sql: `INSERT INTO error_reports
+        (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, message, status,
+          created_at, updated_at, issue_id, reporter_user_id)
+        VALUES ('existing-report', 'portfolio', 'section', 'exercise', 'standard', '[]', 'Eerste melding', 'TODO',
+          '2026-09-09T08:00:00.000Z', '2026-09-09T08:00:00.000Z', 'issue', 'student')`, args: [] },
+    ], "write");
+    expect((await legacy.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
     legacy.close();
 
     process.env.PORTFOLIO_DATABASE_PATH = databasePath;
     resetDatabaseForTests();
     const upgraded = await getDatabase();
-    await upgraded.execute("PRAGMA foreign_keys = OFF");
     await upgraded.execute(`INSERT INTO error_reports
-      (id, portfolio_id, variant_kind, asset_snapshot, message, status, created_at, updated_at, issue_id, reporter_user_id)
-      VALUES ('second-report', 'portfolio', 'standard', '[]', 'Tweede melding', 'TODO',
+      (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, message, status, created_at, updated_at, issue_id, reporter_user_id)
+      VALUES ('second-report', 'portfolio', 'section', 'exercise', 'standard', '[]', 'Tweede melding', 'TODO',
         '2026-09-09T09:00:00.000Z', '2026-09-09T09:00:00.000Z', 'issue', 'student')`);
 
     expect((await upgraded.execute("SELECT id, message FROM error_reports ORDER BY id")).rows).toEqual([
@@ -107,6 +122,18 @@ describe("distinct student error report migration", () => {
     ]);
   });
 });
+
+async function insertLegacyExerciseLocation(database: ReturnType<typeof createClient>): Promise<void> {
+  await database.batch([
+    { sql: `INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, is_indexed, indexed_at)
+      VALUES ('portfolio', 'space-6:1', '1', 'space-6', 'Historisch portfolio', 'Portfolio 1 Historisch', 1,
+        '2026-09-01T08:00:00.000Z')`, args: [] },
+    { sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path)
+      VALUES ('section', 'portfolio', 1, 'Historisch onderdeel', 'Portfolio 1 Historisch/1 Historisch onderdeel')`, args: [] },
+    { sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix)
+      VALUES ('exercise', 'portfolio', 'section', '1', 1, '')`, args: [] },
+  ], "write");
+}
 
 async function createFreshDatabase(prefix: string) {
   temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), prefix));

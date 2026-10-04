@@ -43,7 +43,7 @@ describe("exercise section selection", () => {
         ...DEFAULT_EXERCISE_LEVEL_PRESENTATION,
         uitdaging: { ...DEFAULT_EXERCISE_LEVEL_PRESENTATION.uitdaging, color: "#123456" },
       },
-      sections: [{ id: "section-1", title: "Deel", order: 1, exercises: [{
+      sections: [{ id: "section-1", code: "1.1", title: "Inleiding", exercises: [{
         id: "exercise-1", code: "1a", configuredVisible: true, status: { configuredVisibility: "visible", state: "visible", reason: null, effectiveFrom: null, effectiveUntil: null },
         levelSource: null, levelOverrideMode: "none", levelOverride: null, effectiveLevel: null,
         standardAssets: 1, alternativeAssets: 0, missingAssets: 0, showAlternativeToStudents: false,
@@ -58,6 +58,9 @@ describe("exercise section selection", () => {
 
     expect(markup).toContain(">Notitie<");
     expect(markup).toContain("Opgaven per onderdeel");
+    expect(markup).toContain("1.1 Inleiding");
+    expect(markup).not.toContain("1.1. Inleiding");
+    expect(markup).toContain('aria-label="Alle opgaven van 1.1 Inleiding selecteren"');
     expect(markup).toContain("<th>Opgave</th>");
     expect(markup).toContain("<th>Niveau</th>");
     expect(markup).toContain("Geen niveau");

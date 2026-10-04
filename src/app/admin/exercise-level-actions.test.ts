@@ -186,7 +186,7 @@ function indexFixture(code: string): IndexedPortfolio[] {
     code, title: `Niveautest ${code}`, relativePath: `Portfolio ${code} - Niveautest`,
     assignmentPdfPath: null, assignmentPdfSourceId: null, hintsDocumentPath: null, hintsDocumentSourceId: null,
     finalSolutionsPdfPath: null, finalSolutionsPdfSourceId: null, resourceAssets: [], warnings: [],
-    sections: [{ order: 1, title: "Basis", relativePath: `Portfolio ${code} - Niveautest/Uitwerkingen/1 - Basis`, exercises: [
+    sections: [{ code: "1", sortOrder: 1, title: "Basis", relativePath: `Portfolio ${code} - Niveautest/Uitwerkingen/1 - Basis`, exercises: [
       { code: "1", number: 1, suffix: "", assets: [] },
     ] }],
   }];

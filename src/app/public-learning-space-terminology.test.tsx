@@ -48,7 +48,7 @@ const space = {
 const studentPortfolio = {
   id: "portfolio-1", code: "1", title: "Krachten", themeName: null,
   globalResources: [], customText: null, customTextPosition: "above_documents",
-  sections: [{ id: "section-1", order: 1, title: "Basis", exercises: [
+  sections: [{ id: "section-1", code: "1", title: "Basis", exercises: [
     { id: "exercise-1", code: "1a", visible: true, effectiveLevel: null },
     { id: "exercise-2", code: "2", visible: false, effectiveLevel: null },
   ] }],
@@ -62,7 +62,7 @@ describe("public LearningSpace terminology", () => {
     mocks.getStudentPortfolio.mockResolvedValue(studentPortfolio);
     mocks.getVisibleExercise.mockResolvedValue({
       id: "exercise-1", code: "1", portfolioId: "portfolio-1", portfolioCode: "1", portfolioTitle: "Krachten",
-      sectionTitle: "Basis", effectiveLevel: null, resources: [], customNote: null, noteLabel: null, notePosition: "above_solution",
+      sectionCode: "1.1", sectionTitle: "Basis", effectiveLevel: null, resources: [], customNote: null, noteLabel: null, notePosition: "above_solution",
     });
   });
 
@@ -70,10 +70,22 @@ describe("public LearningSpace terminology", () => {
     const markup = renderToStaticMarkup(await LearningSpacePortfolioPage({ params: Promise.resolve({ spaceSlug: "fysica", id: "portfolio-1" }) }));
 
     expect(markup).toContain("Bundel 1");
+    expect(markup).toContain("1. Basis");
     expect(markup).toContain("Oef. 1a");
     expect(markup).toContain("Oef. 2");
     expect(markup).not.toContain("Overige");
     expect(mocks.errorReportProps).toHaveBeenCalledWith(expect.objectContaining({ exerciseLabelSingular: "OpGavE" }));
+  });
+
+  it("shows a hierarchical section code without treating it as a decimal or adding a trailing dot", async () => {
+    mocks.getStudentPortfolio.mockResolvedValue({
+      ...studentPortfolio,
+      sections: [{ ...studentPortfolio.sections[0], code: "1.1" }],
+    });
+
+    const markup = renderToStaticMarkup(await LearningSpacePortfolioPage({ params: Promise.resolve({ spaceSlug: "fysica", id: "portfolio-1" }) }));
+    expect(markup).toContain("1.1 Basis");
+    expect(markup).not.toContain("1.1. Basis");
   });
 
   it("keeps a real theme as the portfolio prefix", async () => {
@@ -88,18 +100,20 @@ describe("public LearningSpace terminology", () => {
   it("uses standalone and inline capitalization on exercise detail", async () => {
     mocks.getVisibleExercise.mockResolvedValue({
       id: "exercise-3", code: "3", portfolioId: "portfolio-1", portfolioCode: "1", portfolioTitle: "Krachten",
-      sectionTitle: "Basis", effectiveLevel: null, resources: [], customNote: null, noteLabel: null, notePosition: "above_solution",
+      sectionCode: "1.1", sectionTitle: "Basis", effectiveLevel: null, resources: [], customNote: null, noteLabel: null, notePosition: "above_solution",
     });
     const markup = renderToStaticMarkup(await LearningSpaceExercisePage({ params: Promise.resolve({ spaceSlug: "fysica", id: "exercise-1" }) }));
     expect(markup).toContain("Terug naar bundel");
     expect(markup).toContain("Bundel 1");
     expect(markup).toContain("Opgave 3");
+    expect(markup).toContain("1.1 Basis");
+    expect(markup).not.toContain("1.1. Basis");
   });
 
   it("renders configured public level symbols before clickable exercise labels and omits null levels", async () => {
     mocks.getStudentPortfolio.mockResolvedValue({
       ...studentPortfolio,
-      sections: [{ id: "section-1", order: 1, title: "Basis", exercises: [
+      sections: [{ id: "section-1", code: "1", title: "Basis", exercises: [
         { id: "exercise-1", code: "1a", visible: true, effectiveLevel: "opwarmer" },
         { id: "exercise-2", code: "1b", visible: true, effectiveLevel: "basis" },
         { id: "exercise-3", code: "1c", visible: true, effectiveLevel: null },
@@ -127,7 +141,7 @@ describe("public LearningSpace terminology", () => {
   it("renders the configured public level before the exercise detail title", async () => {
     mocks.getVisibleExercise.mockResolvedValue({
       id: "exercise-1", code: "1", portfolioId: "portfolio-1", portfolioCode: "1", portfolioTitle: "Krachten",
-      sectionTitle: "Basis", effectiveLevel: "basis", resources: [], customNote: null, noteLabel: null, notePosition: "above_solution",
+      sectionCode: "1.1", sectionTitle: "Basis", effectiveLevel: "basis", resources: [], customNote: null, noteLabel: null, notePosition: "above_solution",
     });
 
     const markup = renderToStaticMarkup(await LearningSpaceExercisePage({ params: Promise.resolve({ spaceSlug: "fysica", id: "exercise-1" }) }));

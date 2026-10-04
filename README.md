@@ -17,7 +17,7 @@ Nieuwe LearningSpaces kiezen standaard OneDrive als provider. Google Drive blijf
 
 Smartschool OAuth is actief als identity provider. Nieuwe Smartschoolidentiteiten worden lokaal altijd als student aangemaakt; rollen, teacher-memberships en groep-naar-LearningSpace-mappings blijven lokale applicatierechten. De afzonderlijke `/breakglass`-route blijft uitsluitend voor recovery van de compatibility-superadmin. Interne sessies zijn 30 dagen geldig en worden bij actief gebruik rolling vernieuwd; actuele rol en status worden steeds uit de database gelezen. Zie [docs/SMARTSCHOOL-MULTI-USER.md](./docs/SMARTSCHOOL-MULTI-USER.md).
 
-Portfoliofolders volgen `Portfolio <ID> - <titel>`. Ondersteunde ID's zijn numeriek (`2`, `12`), numeriek met letters (`2A`, `12B`) of uitsluitend letters (`X`); parsing is case-insensitive en normaliseert naar uppercase. Oplossingsbestanden gebruiken dezelfde ID in de `PF<ID>-Oef...`-conventie. Overzichten en bronvergelijkingen sorteren deze codes natuurlijk: `2`, `2A`, `2B`, `10`, `12`, daarna `A`, `B`, `X`.
+Portfoliomappen volgen de configureerbare bronprofielmarker, een code en een titel, bijvoorbeeld `Portfolio 1A - Stelsels` of `H1.1-Stelsels`. Een enkelvoudige portfoliocode bevat cijfers, letters of één combinatie daarvan (`1`, `A`, `1A`, `A1`); een hiërarchische code bevat minstens twee zuiver numerieke of alfabetische segmenten (`1.1`, `A.1`). Parsing is case-insensitive en normaliseert letters naar uppercase. Directe onderdeelmappen gebruiken uitsluitend numerieke codes zoals `1`, `1.1`, `1.2`, `1.10` en `2`; letter-startende onderdeelcodes worden niet herkend. Overzichten en bronvergelijkingen sorteren beide codes natuurlijk per segment.
 
 ## A. Local development
 
@@ -88,7 +88,7 @@ Productie weigert bewust te starten zonder een `postgres://` of `postgresql://` 
 3. Kopieer de TLS-verbinding als `DATABASE_URL`; gebruik `sslmode=require` wanneer de provider dat voorschrijft.
 4. Maak vóór elke latere schemamigratie een providerbackup of herstelpunt.
 
-Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001_initial` tot en met de huidige `054_learning_space_exercise_short_label` uit. PostgreSQL-starts worden met een gereserveerde verbinding en een session-level advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
+Bij de eerste databaseaanroep maakt de app `schema_migrations` aan en voert alle migraties `001_initial` tot en met de huidige `055_section_codes` uit. Migration 055 bewaart de user-facing onderdeelcode afzonderlijk als `section_code`, vult bestaande eenvoudige nummers zonder identiteitswijziging aan en houdt `sort_order` uitsluitend als afgeleide rangpositie. PostgreSQL-starts worden met een gereserveerde verbinding en een session-level advisory lock geserialiseerd; elke migratie plus versionregistratie draait transactioneel. Een lege database wordt dus automatisch geinitialiseerd wanneer de eerste pagina of login de database gebruikt.
 
 Toekomstige rollout:
 

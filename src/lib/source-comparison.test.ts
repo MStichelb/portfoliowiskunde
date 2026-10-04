@@ -94,8 +94,8 @@ describe("source comparison", () => {
       hintsDocumentPath: "Portfolio 5 - Limieten van rijen & reeksen/Hints portfolio 5.pdf", hintsDocumentSourceId: "hints-5",
       finalSolutionsPdfPath: null, finalSolutionsPdfSourceId: null, warnings: [], resourceAssets: [],
       sections: [
-        { order: 4, title: "Limieten van recursieve rijen", relativePath: emptySection, exercises: [] },
-        { order: 5, title: "Convergentie", relativePath: populatedSection, exercises: [{
+        { code: "4", sortOrder: 4, title: "Limieten van recursieve rijen", relativePath: emptySection, exercises: [] },
+        { code: "5", sortOrder: 5, title: "Convergentie", relativePath: populatedSection, exercises: [{
           code: "1", number: 1, suffix: "", assets: [{
             resourceId: "worked-solution", semanticRole: "worked_solution", legacyVariant: "standard",
             relativePath: `${populatedSection}/PF5-Oef1.png`, sourceId: "asset-1", fileName: "PF5-Oef1.png",

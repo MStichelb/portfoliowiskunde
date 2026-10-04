@@ -459,8 +459,8 @@ function portfolio(id: string, learningSpaceId: string, code: string, title: str
 
 function section(id: string, portfolioId: string, title: string) {
   return {
-    sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path)
-      VALUES (?, ?, 1, ?, ?)`,
+    sql: `INSERT INTO sections (id, portfolio_id, section_code, sort_order, title, relative_path)
+      VALUES (?, ?, '1', 1, ?, ?)`,
     args: [id, portfolioId, title, `${portfolioId}/Uitwerkingen/1 - ${title}`],
   };
 }

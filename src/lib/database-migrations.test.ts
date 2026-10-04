@@ -31,12 +31,49 @@ afterEach(async () => {
 
 describe("shared migration SQL", () => {
   it("does not contain SQLite-only syntax that PostgreSQL cannot execute", () => {
-    const violations = migrations.flatMap((migration) => migration.statements.flatMap((sql, statementIndex) =>
+    const violations = migrations.flatMap((migration) => (migration.postgresStatements ?? migration.statements).flatMap((sql, statementIndex) =>
       SQLITE_ONLY_MIGRATION_SQL
         .filter(({ pattern }) => pattern.test(sql))
         .map(({ name }) => `${migration.version}[${statementIndex}]: ${name}`)));
 
     expect(violations).toEqual([]);
+  });
+});
+
+describe("section code migration", () => {
+  it("backfills section_code without changing ids and replaces sort-order uniqueness", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-section-code-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 54)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-10-04T10:00:00.000Z"] },
+      ], "write");
+    }
+    await legacy.batch([
+      { sql: `INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, is_indexed, indexed_at)
+        VALUES ('section-code-portfolio', 'space-6:1', '1', 'space-6', 'Bestaand', 'Portfolio 1 Bestaand', 1, '2026-10-04T10:00:00.000Z')`, args: [] },
+      { sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path)
+        VALUES ('section-code-portfolio-section-1', 'section-code-portfolio', 1, 'Inleiding', 'Portfolio 1 Bestaand/1 Inleiding')`, args: [] },
+      { sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix)
+        VALUES ('section-code-exercise', 'section-code-portfolio', 'section-code-portfolio-section-1', '1', 1, '')`, args: [] },
+    ], "write");
+    legacy.close();
+
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT id, section_code, sort_order FROM sections WHERE id = 'section-code-portfolio-section-1'")).rows[0])
+      .toMatchObject({ id: "section-code-portfolio-section-1", section_code: "1", sort_order: 1 });
+    expect((await upgraded.execute("SELECT section_id FROM exercises WHERE id = 'section-code-exercise'")).rows[0]?.section_id)
+      .toBe("section-code-portfolio-section-1");
+    await expect(upgraded.execute(`INSERT INTO sections (id, portfolio_id, section_code, sort_order, title, relative_path)
+      VALUES ('section-code-hierarchical', 'section-code-portfolio', '1.1', 1, 'Verdieping', 'Portfolio 1 Bestaand/1.1 Verdieping')`)).resolves.toBeDefined();
+    await expect(upgraded.execute(`INSERT INTO sections (id, portfolio_id, section_code, sort_order, title, relative_path)
+      VALUES ('section-code-duplicate', 'section-code-portfolio', '1.1', 2, 'Duplicaat', 'Portfolio 1 Bestaand/1.1 Duplicaat')`)).rejects.toThrow();
+    expect((await upgraded.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
   });
 });
 
