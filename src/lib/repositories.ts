@@ -1266,6 +1266,7 @@ export async function persistIndex(
     scope: text(row, "resource_scope"), resourceId: text(row, "resource_id"), sourceId: text(row, "source_id"),
     relativePath: text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension"),
     step: Number(row.step), sourceVersion: nullableText(row, "source_version"), isIndexed: bool(row.is_indexed),
+    archivedAt: nullableText(row, "archived_at"),
   })).map((asset) => ({
     ...asset,
     exerciseId: asset.exerciseId ? duplicateExerciseResolutions.get(asset.exerciseId)?.retainedId ?? asset.exerciseId : null,
@@ -1302,6 +1303,8 @@ export async function persistIndex(
     }
   }
   const seenAssetKeys = new Set<string>();
+  const seenResourceAssetIds = new Set<string>();
+  const publishedGenericExercisePaths = new Set<string>();
   const seenVariantIds = new Set<string>();
   const reconciledSolutionAssetIds = new Set<string>();
   const reconciledResourceAssetIds = new Set<string>();
@@ -1439,6 +1442,8 @@ export async function persistIndex(
       }
       if (reconciliation?.kind === "reconcile") {
         reconciledResourceAssetIds.add(reconciliation.candidate.id);
+        seenResourceAssetIds.add(reconciliation.candidate.id);
+        updated += 1;
         if (reconciliation.stale) statements.push({
           sql: "DELETE FROM source_resource_assets WHERE id = ? AND is_indexed = 0",
           args: [reconciliation.stale.id],
@@ -1450,20 +1455,26 @@ export async function persistIndex(
           args: [portfolioId, resourceAsset.semanticRole, resourceAsset.sourceId, resourceAsset.relativePath, resourceAsset.fileName,
             resourceAsset.extension, resourceAsset.lastModifiedAt, resourceAsset.sourceVersion, startedAt, reconciliation.candidate.id],
         });
-      } else statements.push({
-        sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
-          semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed,
-          missing_since, archived_at, last_seen_at)
-          VALUES (?, ?, ?, NULL, 'portfolio', ?, ?, ?, ?, ?, ?, 1, ?, ?, 1, NULL, NULL, ?)
-          ON CONFLICT(learning_space_id, resource_scope, resource_id, source_id) DO UPDATE SET
-            portfolio_id = excluded.portfolio_id, exercise_id = NULL, semantic_role = excluded.semantic_role,
-            relative_path = excluded.relative_path, file_name = excluded.file_name, extension = excluded.extension,
-            step = 1, last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
-            is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
-        args: [resourceAssetId, spaceId, portfolioId, resourceAsset.resourceId, resourceAsset.semanticRole, resourceAsset.sourceId,
-          resourceAsset.relativePath, resourceAsset.fileName, resourceAsset.extension, resourceAsset.lastModifiedAt,
-          resourceAsset.sourceVersion, startedAt],
-      });
+      } else {
+        const previous = activeResourceAssetsByExactKey.get(exactKey);
+        seenResourceAssetIds.add(existingResourceAssetsByExactKey.get(exactKey)?.id ?? resourceAssetId);
+        if (!previous) added += 1;
+        else if (previous.sourceVersion !== resourceAsset.sourceVersion) updated += 1;
+        statements.push({
+          sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
+            semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed,
+            missing_since, archived_at, last_seen_at)
+            VALUES (?, ?, ?, NULL, 'portfolio', ?, ?, ?, ?, ?, ?, 1, ?, ?, 1, NULL, NULL, ?)
+            ON CONFLICT(learning_space_id, resource_scope, resource_id, source_id) DO UPDATE SET
+              portfolio_id = excluded.portfolio_id, exercise_id = NULL, semantic_role = excluded.semantic_role,
+              relative_path = excluded.relative_path, file_name = excluded.file_name, extension = excluded.extension,
+              step = 1, last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
+              is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
+          args: [resourceAssetId, spaceId, portfolioId, resourceAsset.resourceId, resourceAsset.semanticRole, resourceAsset.sourceId,
+            resourceAsset.relativePath, resourceAsset.fileName, resourceAsset.extension, resourceAsset.lastModifiedAt,
+            resourceAsset.sourceVersion, startedAt],
+        });
+      }
     }
 
     for (const section of portfolio.sections) {
@@ -1512,6 +1523,9 @@ export async function persistIndex(
           }
           if (reconciliation?.kind === "reconcile") {
             reconciledResourceAssetIds.add(reconciliation.candidate.id);
+            seenResourceAssetIds.add(reconciliation.candidate.id);
+            publishedGenericExercisePaths.add(`${exerciseId}\u0000${asset.relativePath}`);
+            updated += 1;
             if (reconciliation.stale) statements.push({
               sql: "DELETE FROM source_resource_assets WHERE id = ? AND is_indexed = 0",
               args: [reconciliation.stale.id],
@@ -1523,20 +1537,31 @@ export async function persistIndex(
               args: [portfolioId, exerciseId, asset.semanticRole, asset.sourceId, asset.relativePath, asset.fileName,
                 asset.parsed.extension, asset.parsed.step, asset.lastModifiedAt, asset.sourceVersion, startedAt, reconciliation.candidate.id],
             });
-          } else statements.push({
-            sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
-              semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed,
-              missing_since, archived_at, last_seen_at)
-              VALUES (?, ?, ?, ?, 'exercise', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, NULL, ?)
-              ON CONFLICT(learning_space_id, resource_scope, resource_id, source_id) DO UPDATE SET
-                portfolio_id = excluded.portfolio_id, exercise_id = excluded.exercise_id, semantic_role = excluded.semantic_role,
-                relative_path = excluded.relative_path, file_name = excluded.file_name, extension = excluded.extension,
-                step = excluded.step, last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
-                is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
-            args: [resourceAssetId, spaceId, portfolioId, exerciseId, asset.resourceId, asset.semanticRole, asset.sourceId,
-              asset.relativePath, asset.fileName, asset.parsed.extension, asset.parsed.step, asset.lastModifiedAt,
-              asset.sourceVersion, startedAt],
-          });
+          } else {
+            const previous = activeResourceAssetsByExactKey.get(exactKey);
+            seenResourceAssetIds.add(existingResourceAssetsByExactKey.get(exactKey)?.id ?? resourceAssetId);
+            publishedGenericExercisePaths.add(`${exerciseId}\u0000${asset.relativePath}`);
+            if (!previous) {
+              const legacyPrevious = activeSolutionAssetRows.find((candidate) => candidate.exerciseId === exerciseId
+                && candidate.relativePath === asset.relativePath);
+              if (!legacyPrevious) added += 1;
+              else if (legacyPrevious.sourceVersion !== asset.sourceVersion) updated += 1;
+            } else if (previous.sourceVersion !== asset.sourceVersion) updated += 1;
+            statements.push({
+              sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
+                semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed,
+                missing_since, archived_at, last_seen_at)
+                VALUES (?, ?, ?, ?, 'exercise', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, NULL, ?)
+                ON CONFLICT(learning_space_id, resource_scope, resource_id, source_id) DO UPDATE SET
+                  portfolio_id = excluded.portfolio_id, exercise_id = excluded.exercise_id, semantic_role = excluded.semantic_role,
+                  relative_path = excluded.relative_path, file_name = excluded.file_name, extension = excluded.extension,
+                  step = excluded.step, last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
+                  is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
+              args: [resourceAssetId, spaceId, portfolioId, exerciseId, asset.resourceId, asset.semanticRole, asset.sourceId,
+                asset.relativePath, asset.fileName, asset.parsed.extension, asset.parsed.step, asset.lastModifiedAt,
+                asset.sourceVersion, startedAt],
+            });
+          }
         }
 
         for (const variant of ["standard", "alternative"] as const) {
@@ -1561,7 +1586,7 @@ export async function persistIndex(
             if (reconciliation?.kind === "reconcile") {
               reconciledSolutionAssetIds.add(reconciliation.candidate.id);
               seenAssetKeys.add(assetKey(variantId, reconciliation.candidate.relativePath));
-              updated += 1;
+              if (!publishedGenericExercisePaths.has(`${exerciseId}\u0000${asset.relativePath}`)) updated += 1;
               if (reconciliation.stale) statements.push({
                 sql: "DELETE FROM solution_assets WHERE id = ? AND is_indexed = 0",
                 args: [reconciliation.stale.id],
@@ -1577,8 +1602,10 @@ export async function persistIndex(
 
             const assetId = stableId("asset", variantId, asset.relativePath);
             seenAssetKeys.add(pathKey);
-            if (previousAtPath === undefined) added += 1;
-            else if (previousAtPath.sourceVersion !== asset.sourceVersion) updated += 1;
+            if (!publishedGenericExercisePaths.has(`${exerciseId}\u0000${asset.relativePath}`)) {
+              if (previousAtPath === undefined) added += 1;
+              else if (previousAtPath.sourceVersion !== asset.sourceVersion) updated += 1;
+            }
             statements.push({
               sql: `INSERT INTO solution_assets (id, variant_id, relative_path, source_id, file_name, extension, step,
                 last_modified_at, source_version, is_indexed, missing_since)
@@ -1596,20 +1623,42 @@ export async function persistIndex(
     }
   }
 
-  const missing = [...existingAssetVersions.entries()].filter(([key]) => !seenAssetKeys.has(key)).map(([key, asset]) => {
+  const missingGeneric = existingResourceAssetRows.filter((asset) => asset.isIndexed && asset.archivedAt === null
+    && !seenResourceAssetIds.has(asset.id));
+  const missingGenericExercisePaths = new Set(missingGeneric.filter((asset) => asset.scope === "exercise" && asset.exerciseId)
+    .map((asset) => `${asset.exerciseId}\u0000${asset.relativePath}`));
+  const allMissingLegacy = [...existingAssetVersions.entries()].filter(([key]) => !seenAssetKeys.has(key)).map(([key, asset]) => {
     const [variantId, relativePath] = key.split("\u0000");
     return { id: asset.id, relativePath, fileName: asset.fileName, variant: asset.variant, variantStillPresent: seenVariantIds.has(variantId) };
   });
-  if (missing.length > 0) {
+  const missingLegacy = allMissingLegacy.filter((asset) => {
+    const source = activeSolutionAssetRows.find((candidate) => candidate.id === asset.id);
+    return !source || !missingGenericExercisePaths.has(`${source.exerciseId}\u0000${source.relativePath}`);
+  });
+  const missing = [...missingGeneric, ...missingLegacy];
+  if (allMissingLegacy.length > 0) {
     statements.push({
       sql: `UPDATE solution_assets SET missing_since = ? WHERE is_indexed = 0 AND missing_since IS NULL AND variant_id IN
         (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))`,
       args: [startedAt, spaceId],
     });
-    for (const asset of missing) {
+    for (const asset of allMissingLegacy) {
       const label = asset.variant === "alternative" ? "Alternatieve uitwerking" : "Uitwerking";
       warnings.push({ severity: "warning", path: asset.relativePath, message: asset.variantStillPresent ? `${label} is onvolledig: bestand ontbreekt: ${asset.fileName}.` : `Bronbestand ontbreekt: ${asset.fileName}. Deze oefening blijft voorlopig herkenbaar in het beheer.` });
     }
+  }
+  const missingLegacyExercisePaths = new Set(allMissingLegacy.map((asset) => {
+    const source = activeSolutionAssetRows.find((candidate) => candidate.id === asset.id);
+    return source ? `${source.exerciseId}\u0000${source.relativePath}` : "";
+  }));
+  for (const asset of missingGeneric) {
+    if (asset.scope === "exercise" && asset.exerciseId
+      && missingLegacyExercisePaths.has(`${asset.exerciseId}\u0000${asset.relativePath}`)) continue;
+    warnings.push({
+      severity: "warning",
+      path: asset.relativePath,
+      message: `Bronbestand ontbreekt: ${asset.fileName}. De bronresource blijft voorlopig herkenbaar in het beheer.`,
+    });
   }
   statements.push({
     sql: "UPDATE source_resource_assets SET missing_since = ? WHERE learning_space_id = ? AND is_indexed = 0 AND missing_since IS NULL",
@@ -1751,11 +1800,19 @@ export async function archiveMissingIndexItems(learningSpaceId: string): Promise
   const database = await getDatabase();
   const now = new Date().toISOString();
   const exerciseCount = await database.execute({ sql: "SELECT COUNT(*) AS count FROM exercises WHERE is_indexed = 0 AND archived_at IS NULL AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [learningSpaceId] });
-  const assetCount = await database.execute({ sql: "SELECT COUNT(*) AS count FROM solution_assets WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [learningSpaceId] });
+  const assetCount = await database.execute(missingAssetCountStatement(learningSpaceId));
   await executeBatch([
     { sql: `DELETE FROM sync_warnings WHERE sync_run_id = (SELECT id FROM sync_runs WHERE status = 'completed' AND learning_space_id = ? ORDER BY finished_at DESC LIMIT 1)
-      AND relative_path IN (SELECT relative_path FROM solution_assets WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN
-        (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?))))`, args: [learningSpaceId, learningSpaceId] },
+      AND relative_path IN (
+        SELECT relative_path FROM source_resource_assets
+          WHERE learning_space_id = ? AND is_indexed = 0 AND archived_at IS NULL
+        UNION
+        SELECT solution_assets.relative_path FROM solution_assets
+          JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+          JOIN exercises ON exercises.id = solution_variants.exercise_id
+          JOIN portfolios ON portfolios.id = exercises.portfolio_id
+          WHERE portfolios.learning_space_id = ? AND solution_assets.is_indexed = 0 AND solution_assets.archived_at IS NULL
+      )`, args: [learningSpaceId, learningSpaceId, learningSpaceId] },
     { sql: "UPDATE source_resource_assets SET archived_at = ? WHERE learning_space_id = ? AND is_indexed = 0 AND archived_at IS NULL", args: [now, learningSpaceId] },
     { sql: "UPDATE solution_assets SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [now, learningSpaceId] },
     { sql: "UPDATE solution_variants SET archived_at = ? WHERE is_indexed = 0 AND archived_at IS NULL AND exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?))", args: [now, learningSpaceId] },
@@ -1772,9 +1829,40 @@ export async function getMissingIndexCounts(learningSpaceId: string): Promise<{ 
   const database = await getDatabase();
   const [exercises, assets] = await Promise.all([
     database.execute({ sql: "SELECT COUNT(*) AS count FROM exercises WHERE is_indexed = 0 AND archived_at IS NULL AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)", args: [learningSpaceId] }),
-    database.execute({ sql: "SELECT COUNT(*) AS count FROM solution_assets WHERE is_indexed = 0 AND archived_at IS NULL AND variant_id IN (SELECT id FROM solution_variants WHERE exercise_id IN (SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)))", args: [learningSpaceId] }),
+    database.execute(missingAssetCountStatement(learningSpaceId)),
   ]);
   return { exercises: Number(exercises.rows[0]?.count ?? 0), assets: Number(assets.rows[0]?.count ?? 0) };
+}
+
+function missingAssetCountStatement(learningSpaceId: string): InStatement {
+  return {
+    sql: `SELECT (
+      (SELECT COUNT(*) FROM source_resource_assets
+        JOIN portfolios ON portfolios.id = source_resource_assets.portfolio_id
+        LEFT JOIN exercises ON exercises.id = source_resource_assets.exercise_id
+        WHERE source_resource_assets.learning_space_id = ?
+          AND source_resource_assets.is_indexed = 0 AND source_resource_assets.archived_at IS NULL
+          AND portfolios.archived_at IS NULL
+          AND (source_resource_assets.resource_scope = 'portfolio' OR exercises.archived_at IS NULL))
+      +
+      (SELECT COUNT(*) FROM solution_assets
+        JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+        JOIN exercises ON exercises.id = solution_variants.exercise_id
+        JOIN portfolios ON portfolios.id = exercises.portfolio_id
+        WHERE portfolios.learning_space_id = ?
+          AND portfolios.archived_at IS NULL AND exercises.archived_at IS NULL
+          AND solution_assets.is_indexed = 0 AND solution_assets.archived_at IS NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM source_resource_assets
+            WHERE source_resource_assets.learning_space_id = ?
+              AND source_resource_assets.resource_scope = 'exercise'
+              AND source_resource_assets.exercise_id = solution_variants.exercise_id
+              AND source_resource_assets.relative_path = solution_assets.relative_path
+              AND source_resource_assets.is_indexed = 0 AND source_resource_assets.archived_at IS NULL
+          ))
+    ) AS count`,
+    args: [learningSpaceId, learningSpaceId, learningSpaceId],
+  };
 }
 
 export async function recordFailedSync(providerType: string, error: unknown, learningSpaceId?: string): Promise<void> {
@@ -1888,6 +1976,13 @@ function exerciseResourceReadModel(
   return options.includeUnavailable ? items : items.filter((resource) => resource.available);
 }
 
+function missingExerciseAssetCount(legacyAssets: readonly DatabaseRow[], resourceAssets: readonly DatabaseRow[]): number {
+  const missingResourceAssets = resourceAssets.filter((asset) => !bool(asset.is_indexed));
+  const missingResourcePaths = new Set(missingResourceAssets.map((asset) => text(asset, "relative_path")));
+  return missingResourceAssets.length + legacyAssets.filter((asset) => !bool(asset.is_indexed)
+    && !missingResourcePaths.has(text(asset, "relative_path"))).length;
+}
+
 export async function getAdminPortfolios(learningSpaceId?: string): Promise<AdminPortfolio[]> {
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
@@ -1977,7 +2072,7 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
               showAlternativeToStudents: bool(exercise.show_alternative_to_students),
               standardAssets: exerciseAssets.filter((asset) => text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
               alternativeAssets: exerciseAssets.filter((asset) => text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
-              missingAssets: exerciseAssets.filter((asset) => !bool(asset.is_indexed)).length,
+              missingAssets: missingExerciseAssetCount(exerciseAssets, exerciseResourceAssets),
               hasNote: Boolean(nullableText(exercise, "custom_note")),
               noteLabel: nullableText(exercise, "note_label"),
               customNote: nullableText(exercise, "custom_note"),
@@ -2271,14 +2366,14 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     WHERE exercises.id = ? AND exercises.archived_at IS NULL${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`, args: learningSpaceId ? [id, learningSpaceId] : [id] });
   const exercise = result.rows[0];
   if (!exercise) return null;
-  const assets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.file_name, solution_assets.extension, solution_assets.step,
+  const assets = await database.execute({ sql: `SELECT solution_assets.id, solution_assets.relative_path, solution_assets.file_name, solution_assets.extension, solution_assets.step,
       solution_assets.last_modified_at, solution_assets.is_indexed, solution_variants.is_indexed AS variant_is_indexed,
       solution_variants.kind, solution_variants.label
     FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
     WHERE solution_variants.exercise_id = ? AND solution_assets.archived_at IS NULL
     ORDER BY CASE solution_variants.kind WHEN 'standard' THEN 0 ELSE 1 END, solution_assets.step, solution_assets.file_name`, args: [id] });
   const resourceAssets = await database.execute({
-    sql: `SELECT id, resource_id, file_name, extension, step, last_modified_at, is_indexed
+    sql: `SELECT id, resource_id, relative_path, file_name, extension, step, last_modified_at, is_indexed
       FROM source_resource_assets
       WHERE exercise_id = ? AND resource_scope = 'exercise' AND archived_at IS NULL
       ORDER BY step, file_name`,
@@ -2311,7 +2406,7 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     showAlternativeToStudents: bool(exercise.show_alternative_to_students),
     standardAssets: assets.rows.filter((asset) => text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
     alternativeAssets: assets.rows.filter((asset) => text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
-    missingAssets: assets.rows.filter((asset) => !bool(asset.is_indexed)).length,
+    missingAssets: missingExerciseAssetCount(assets.rows, resourceAssets.rows),
     sectionTitle: text(exercise, "section_title"),
     portfolioCode: text(exercise, "portfolio_code"),
     portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),

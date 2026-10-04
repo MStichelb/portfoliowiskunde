@@ -7,7 +7,7 @@ import { getDatabase, resetDatabaseForTests } from "./database";
 import type { IndexedPortfolio } from "./domain";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "./source-profile-config";
 import { adminExercisePortfolioHref } from "./admin-routes";
-import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolioDocument, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getPublicAsset, getPublicPortfolioDocument, getPublicResourceAsset, getAdminResourceAsset, getStudentPortfolios, getThemes, getVisibleExercise, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, setExerciseAlternativeVisibility, setExerciseNote, setExercisePublication, setLearningSpaceEditorsCanManageAccess, setPortfolioCardColor, setPortfolioExternalLinks, setPortfolioPublication, setPortfolioTheme, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolioDocument, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getMissingIndexCounts, getPublicAsset, getPublicPortfolioDocument, getPublicResourceAsset, getAdminResourceAsset, getStudentPortfolios, getThemes, getVisibleExercise, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, setExerciseAlternativeVisibility, setExerciseNote, setExercisePublication, setLearningSpaceEditorsCanManageAccess, setPortfolioCardColor, setPortfolioExternalLinks, setPortfolioPublication, setPortfolioTheme, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -719,6 +719,90 @@ describe("persistIndex", () => {
     expect((await database.execute("SELECT id, relative_path, is_indexed, missing_since, archived_at FROM source_resource_assets WHERE resource_id = 'exercise-hint'")).rows).toEqual([
       expect.objectContaining({ id: String(hintRow.id), relative_path: "Portfolio 8 - Test/1 - Test/PF8-Oef2-hint-restored.png", is_indexed: 1, missing_since: null, archived_at: null }),
     ]);
+  });
+
+  it("keeps generic-only resource lifecycle counts coherent across delete, restore and archive", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-generic-lifecycle-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    const present = resourceLifecycleFixture("generic", true);
+    const absent = resourceLifecycleFixture("generic", false);
+    await expect(persistIndex([present], "local", "space-6")).resolves.toMatchObject({ added: 1, missing: 0 });
+    const changed = resourceLifecycleFixture("generic", true);
+    changed.sections[0].exercises[0].assets[0].sourceVersion = "v2";
+    await expect(persistIndex([changed], "local", "space-6")).resolves.toMatchObject({ added: 0, updated: 1, missing: 0 });
+    await expect(persistIndex([absent], "local", "space-6")).resolves.toMatchObject({ missing: 1 });
+    await expect(getMissingIndexCounts("space-6")).resolves.toEqual({ exercises: 0, assets: 1 });
+    expect((await getLatestWarnings("space-6")).filter((warning) => warning.message.includes("Bronbestand ontbreekt"))).toHaveLength(1);
+    const database = await getDatabase();
+    const exerciseId = String((await database.execute("SELECT id FROM exercises WHERE exercise_code = '1'")).rows[0].id);
+    expect((await getAdminExercise(exerciseId, "space-6"))?.missingAssets).toBe(1);
+
+    await expect(persistIndex([changed], "local", "space-6")).resolves.toMatchObject({ missing: 0 });
+    await expect(getMissingIndexCounts("space-6")).resolves.toEqual({ exercises: 0, assets: 0 });
+
+    await persistIndex([absent], "local", "space-6");
+    await expect(archiveMissingIndexItems("space-6")).resolves.toEqual({ exercises: 0, assets: 1 });
+    await expect(getMissingIndexCounts("space-6")).resolves.toEqual({ exercises: 0, assets: 0 });
+    expect((await database.execute("SELECT is_indexed, archived_at FROM source_resource_assets WHERE resource_id = 'exercise-hint'")).rows[0])
+      .toMatchObject({ is_indexed: 0, archived_at: expect.any(String) });
+    expect((await getLatestWarnings("space-6")).filter((warning) => warning.message.includes("Bronbestand ontbreekt"))).toHaveLength(0);
+  });
+
+  it("keeps historical legacy-only solution lifecycle counts coherent", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-legacy-lifecycle-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    const present = resourceLifecycleFixture("solution", true);
+    const absent = resourceLifecycleFixture("solution", false);
+    await persistIndex([present], "local", "space-6");
+    const database = await getDatabase();
+    await database.execute("DELETE FROM source_resource_assets WHERE resource_id = 'worked-solution'");
+
+    await expect(persistIndex([absent], "local", "space-6")).resolves.toMatchObject({ missing: 1 });
+    await expect(getMissingIndexCounts("space-6")).resolves.toEqual({ exercises: 0, assets: 1 });
+    const exerciseId = String((await database.execute("SELECT id FROM exercises WHERE exercise_code = '1'")).rows[0].id);
+    expect((await getAdminExercise(exerciseId, "space-6"))?.missingAssets).toBe(1);
+
+    await expect(persistIndex([present], "local", "space-6")).resolves.toMatchObject({ missing: 0 });
+    await database.execute("DELETE FROM source_resource_assets WHERE resource_id = 'worked-solution'");
+    await expect(getMissingIndexCounts("space-6")).resolves.toEqual({ exercises: 0, assets: 0 });
+
+    await persistIndex([absent], "local", "space-6");
+    await expect(archiveMissingIndexItems("space-6")).resolves.toEqual({ exercises: 0, assets: 1 });
+    await expect(getMissingIndexCounts("space-6")).resolves.toEqual({ exercises: 0, assets: 0 });
+    expect((await database.execute("SELECT is_indexed, archived_at FROM solution_assets")).rows[0])
+      .toMatchObject({ is_indexed: 0, archived_at: expect.any(String) });
+  });
+
+  it("counts a mixed generic and legacy solution representation once throughout its lifecycle", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-mixed-lifecycle-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const database = await getDatabase();
+
+    const present = resourceLifecycleFixture("solution", true);
+    const absent = resourceLifecycleFixture("solution", false);
+    await expect(persistIndex([present], "local", "space-6")).resolves.toMatchObject({ added: 1, missing: 0 });
+    const changed = resourceLifecycleFixture("solution", true);
+    changed.sections[0].exercises[0].assets[0].sourceVersion = "v2";
+    await expect(persistIndex([changed], "local", "space-6")).resolves.toMatchObject({ added: 0, updated: 1, missing: 0 });
+    await expect(persistIndex([absent], "local", "space-6")).resolves.toMatchObject({ missing: 1 });
+    await expect(getMissingIndexCounts("space-6")).resolves.toEqual({ exercises: 0, assets: 1 });
+    expect((await getLatestWarnings("space-6")).filter((warning) => /ontbreekt|onvolledig/i.test(warning.message))).toHaveLength(1);
+    const exerciseId = String((await database.execute("SELECT id FROM exercises WHERE exercise_code = '1'")).rows[0].id);
+    expect((await getAdminExercise(exerciseId, "space-6"))?.missingAssets).toBe(1);
+
+    await expect(persistIndex([changed], "local", "space-6")).resolves.toMatchObject({ missing: 0 });
+    await expect(getMissingIndexCounts("space-6")).resolves.toEqual({ exercises: 0, assets: 0 });
+
+    await persistIndex([absent], "local", "space-6");
+    await expect(archiveMissingIndexItems("space-6")).resolves.toEqual({ exercises: 0, assets: 1 });
+    await expect(getMissingIndexCounts("space-6")).resolves.toEqual({ exercises: 0, assets: 0 });
+    expect(Number((await database.execute("SELECT COUNT(*) AS count FROM source_resource_assets WHERE archived_at IS NOT NULL")).rows[0].count)).toBe(1);
+    expect(Number((await database.execute("SELECT COUNT(*) AS count FROM solution_assets WHERE archived_at IS NOT NULL")).rows[0].count)).toBe(1);
   });
 
   it("uses natural portfolio-ID ordering in admin and public read models", async () => {
@@ -1444,6 +1528,38 @@ function renameReconciliationFixture({
     }],
     warnings: [],
   };
+}
+
+function resourceLifecycleFixture(kind: "generic" | "solution", present: boolean): IndexedPortfolio {
+  const portfolioPath = "Portfolio 9 - Lifecycle";
+  const sectionPath = `${portfolioPath}/1 - Lifecycle`;
+  const fixture = renameReconciliationFixture({
+    portfolioPath,
+    sectionPath,
+    fileName: present ? "PF9-Oef1.png" : null,
+    sourceId: present ? "lifecycle-source" : null,
+    levelSource: "basis",
+  });
+  fixture.code = "9";
+  fixture.title = "Lifecycle";
+  fixture.resourceAssets = [];
+  const exercise = fixture.sections[0].exercises[0];
+  exercise.code = "1";
+  exercise.number = 1;
+  if (exercise.assets[0]) {
+    exercise.assets[0].parsed = {
+      ...exercise.assets[0].parsed,
+      portfolioCode: "9",
+      exerciseNumber: 1,
+      exerciseCode: "1",
+    };
+    if (kind === "generic") {
+      exercise.assets[0].resourceId = "exercise-hint";
+      exercise.assets[0].semanticRole = "hint";
+      exercise.assets[0].legacyVariant = null;
+    }
+  }
+  return fixture;
 }
 
 function exerciseMoveFixture(
