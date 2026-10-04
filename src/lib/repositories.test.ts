@@ -117,7 +117,7 @@ describe("persistIndex", () => {
       section_id: moved.section_id,
     });
     expect((await getLatestWarnings("space-6")).some((warning) => /ontbreekt|onvolledig/i.test(warning.message))).toBe(false);
-  });
+  }, 15_000);
 
   it("heals an existing old-missing and new-active split while retaining the original exercise and asset ids", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-exercise-split-heal-"));

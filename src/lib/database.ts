@@ -210,7 +210,7 @@ async function applyMigrations(database: DatabaseClient, dialect: "sqlite" | "po
     }
     if (dialect === "sqlite" && migration.sqliteForeignKeysDisabled) {
       const violations = await database.execute("PRAGMA foreign_key_check");
-      if (violations.rows.length > 0) throw new Error(`Migratie ${migration.version} heeft ongeldige foreign keys achtergelaten.`);
+      if (violations.rows.length > 0) throw new Error(`Migratie ${migration.version} heeft ongeldige foreign keys achtergelaten: ${JSON.stringify(violations.rows)}.`);
     }
   }
 }
