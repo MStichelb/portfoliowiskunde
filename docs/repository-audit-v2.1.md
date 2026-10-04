@@ -55,7 +55,7 @@ Voor uitbreiding moeten eerst drie bestaande risico’s expliciet worden behande
 - Productie vereist PostgreSQL; lokaal en in tests wordt libSQL/SQLite gebruikt (`src/lib/database.ts:24-42`). De PostgreSQL-client heeft per instance maximaal één connectie (`src/lib/database.ts:71-74`).
 - Migraties zijn handgeschreven SQL en worden bij de eerste database-initialisatie van een instance uitgevoerd onder een PostgreSQL advisory lock (`src/lib/database.ts:112-131`).
 - De database kent onder meer `learning_spaces`, `learning_space_sources`, `users`, `external_identities`, `external_identity_groups`, `learning_space_members`, `individual_learning_space_access`, `storage_connections`, `source_profiles`, `learning_space_source_profiles`, `source_profile_templates`, portfolio/sectie/oefeningtabellen en twee assetmodellen (`src/lib/database-migrations.ts:210-250`, `308-336`, `367-433`, `821-981`).
-- De repositorylaag gebruikt expliciete SQL en `DatabaseClient.batch` voor meerstapsmutaties. `drizzle-orm` is wel dependency maar vormt niet de actieve repositorylaag.
+- De repositorylaag gebruikt expliciete SQL en `DatabaseClient.batch` voor meerstapsmutaties. De eerder ongebruikte `drizzle-orm`-dependency is tijdens de stable-baseline-hardening verwijderd; er is geen parallelle ORM-repositorylaag.
 
 ### 2.3 Bron-, scanner- en synchronisatieketen
 

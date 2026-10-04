@@ -1987,23 +1987,38 @@ function missingExerciseAssetCount(legacyAssets: readonly DatabaseRow[], resourc
 }
 
 export async function getAdminPortfolios(learningSpaceId?: string): Promise<AdminPortfolio[]> {
-  const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  return getAdminPortfolioReadModels(spaceId);
+}
+
+async function getAdminPortfolioReadModels(spaceId: string, portfolioId?: string): Promise<AdminPortfolio[]> {
+  const database = await getDatabase();
+  const scopeArgs = portfolioId ? [spaceId, portfolioId] : [spaceId];
+  const portfolioFilter = portfolioId ? " AND portfolios.id = ?" : "";
   const [portfolios, sections, exercises, assets, resourceAssets, sourceProfileContext, externalLinks] = await Promise.all([
     database.execute({ sql: `SELECT portfolios.*, themes.name AS theme_name FROM portfolios LEFT JOIN themes ON themes.id = portfolios.theme_id
-      WHERE portfolios.learning_space_id = ? AND portfolios.archived_at IS NULL`, args: [spaceId] }),
-    database.execute({ sql: "SELECT * FROM sections WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) AND archived_at IS NULL ORDER BY portfolio_id, sort_order", args: [spaceId] }),
-    database.execute({ sql: "SELECT * FROM exercises WHERE archived_at IS NULL ORDER BY section_id, exercise_number, exercise_suffix" }),
-    database.execute(`SELECT solution_assets.*, solution_variants.exercise_id, solution_variants.kind
+      WHERE portfolios.learning_space_id = ? AND portfolios.archived_at IS NULL${portfolioFilter}`, args: scopeArgs }),
+    database.execute({ sql: `SELECT sections.* FROM sections
+      JOIN portfolios ON portfolios.id = sections.portfolio_id
+      WHERE portfolios.learning_space_id = ? AND sections.archived_at IS NULL${portfolioFilter}
+      ORDER BY sections.portfolio_id, sections.sort_order`, args: scopeArgs }),
+    database.execute({ sql: `SELECT exercises.* FROM exercises
+      JOIN portfolios ON portfolios.id = exercises.portfolio_id
+      WHERE portfolios.learning_space_id = ? AND exercises.archived_at IS NULL${portfolioId ? " AND exercises.portfolio_id = ?" : ""}
+      ORDER BY exercises.section_id, exercises.exercise_number, exercises.exercise_suffix`, args: scopeArgs }),
+    database.execute({ sql: `SELECT solution_assets.*, solution_variants.exercise_id, solution_variants.kind
       FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
-      WHERE solution_assets.archived_at IS NULL
-      ORDER BY solution_assets.step, solution_assets.file_name`),
+      JOIN exercises ON exercises.id = solution_variants.exercise_id
+      JOIN portfolios ON portfolios.id = exercises.portfolio_id
+      WHERE portfolios.learning_space_id = ? AND solution_assets.archived_at IS NULL${portfolioId ? " AND exercises.portfolio_id = ?" : ""}
+      ORDER BY solution_assets.step, solution_assets.file_name`, args: scopeArgs }),
     database.execute({ sql: `SELECT * FROM source_resource_assets
-      WHERE learning_space_id = ? AND archived_at IS NULL
-      ORDER BY step, file_name`, args: [spaceId] }),
+      WHERE learning_space_id = ? AND archived_at IS NULL${portfolioId ? " AND portfolio_id = ?" : ""}
+      ORDER BY step, file_name`, args: scopeArgs }),
     getSourceProfileIndexContextForLearningSpace(spaceId),
-    database.execute({ sql: `SELECT portfolio_id, resource_id, url FROM portfolio_external_links
-      WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)`, args: [spaceId] }),
+    database.execute({ sql: `SELECT portfolio_external_links.portfolio_id, portfolio_external_links.resource_id, portfolio_external_links.url
+      FROM portfolio_external_links JOIN portfolios ON portfolios.id = portfolio_external_links.portfolio_id
+      WHERE portfolios.learning_space_id = ?${portfolioFilter}`, args: scopeArgs }),
   ]);
   const now = new Date();
   const profileIndexAligned = sourceProfileContext?.indexAligned === true;
@@ -2098,7 +2113,8 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
 }
 
 export async function getAdminPortfolio(id: string, learningSpaceId?: string): Promise<AdminPortfolio | null> {
-  return (await getAdminPortfolios(learningSpaceId)).find((portfolio) => portfolio.id === id) ?? null;
+  const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
+  return (await getAdminPortfolioReadModels(spaceId, id))[0] ?? null;
 }
 
 export async function getAdminPortfolioAny(id: string): Promise<AdminPortfolio | null> {

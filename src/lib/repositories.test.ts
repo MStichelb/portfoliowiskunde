@@ -7,7 +7,7 @@ import { getDatabase, resetDatabaseForTests } from "./database";
 import type { IndexedPortfolio } from "./domain";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "./source-profile-config";
 import { adminExercisePortfolioHref } from "./admin-routes";
-import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolioDocument, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getMissingIndexCounts, getPublicAsset, getPublicPortfolioDocument, getPublicResourceAsset, getAdminResourceAsset, getStudentPortfolios, getThemes, getVisibleExercise, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, setExerciseAlternativeVisibility, setExerciseNote, setExercisePublication, setLearningSpaceEditorsCanManageAccess, setPortfolioCardColor, setPortfolioExternalLinks, setPortfolioPublication, setPortfolioTheme, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
+import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, createLearningSpace, createTheme, getActiveLearningSpaceSource, getActiveWarningCounts, getAdminErrorReports, getAdminExercise, getAdminLearningSpaceBySlug, getAdminPortfolio, getAdminPortfolioDocument, getAdminPortfolios, getLatestWarnings, getLearningSpace, getLearningSpaceBySlug, getLearningSpaces, getMissingIndexCounts, getPublicAsset, getPublicPortfolioDocument, getPublicResourceAsset, getAdminResourceAsset, getStudentPortfolios, getThemes, getVisibleExercise, hasValidLearningSpaceIndex, permanentlyDeleteLearningSpace, persistIndex, recordFailedSync, releaseSyncLease, restoreLearningSpace, setExerciseAlternativeVisibility, setExerciseNote, setExercisePublication, setLearningSpaceEditorsCanManageAccess, setPortfolioCardColor, setPortfolioExternalLinks, setPortfolioPublication, setPortfolioTheme, tryAcquireSyncLease, updateLearningSpace } from "./repositories";
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
@@ -1199,6 +1199,28 @@ describe("persistIndex", () => {
     expect(await getPublicAsset(fifthAsset, "space-6")).toBeNull();
     await persistIndex([], "local", "space-5");
     expect((await getAdminPortfolios("space-6")).find((portfolio) => portfolio.id === sixthPortfolio.id)?.isIndexed).toBe(true);
+  });
+
+  it("scopes the admin portfolio detail to one portfolio and its learning space", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-detail-scope-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const index = await indexSource(createTwoPortfolioProvider());
+    await persistIndex(index, "local", "space-5");
+    await persistIndex(index, "local", "space-6");
+
+    const fifthPortfolios = await getAdminPortfolios("space-5");
+    const fifthTarget = fifthPortfolios.find((portfolio) => portfolio.code === "3")!;
+    const fifthOther = fifthPortfolios.find((portfolio) => portfolio.code === "4")!;
+    const sixthTarget = (await getAdminPortfolios("space-6")).find((portfolio) => portfolio.code === "3")!;
+
+    const detail = await getAdminPortfolio(fifthTarget.id, "space-5");
+    expect(detail).toMatchObject({ id: fifthTarget.id, learningSpaceId: "space-5", code: "3" });
+    expect(detail?.sections.flatMap((section) => section.exercises).map((exercise) => exercise.id))
+      .toEqual(fifthTarget.sections.flatMap((section) => section.exercises).map((exercise) => exercise.id));
+    expect(detail?.id).not.toBe(fifthOther.id);
+    await expect(getAdminPortfolio(fifthTarget.id, "space-6")).resolves.toBeNull();
+    await expect(getAdminPortfolio(sixthTarget.id, "space-5")).resolves.toBeNull();
   });
 
   it("returns the exact parent ID for a Google PF1 exercise preview and keeps the local PF1 separate", async () => {
