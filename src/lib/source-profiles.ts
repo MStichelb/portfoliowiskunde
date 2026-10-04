@@ -53,6 +53,11 @@ export interface SourceProfile {
   updatedAt: string;
 }
 
+export interface SourceProfileIndexContext {
+  profile: SourceProfile;
+  indexAligned: boolean;
+}
+
 export interface AvailableSourceProfile extends SourceProfile {
   managementLearningSpaceName: string | null;
   managementLearningSpaceShortLabel: string | null;
@@ -128,6 +133,39 @@ export async function getActiveSourceProfileForLearningSpace(learningSpaceId: st
 export async function getActiveSourceProfileConfigForLearningSpace(learningSpaceId: string): Promise<SourceProfileConfig> {
   return (await getActiveSourceProfileForLearningSpace(learningSpaceId))?.config
     ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG;
+}
+
+export async function getSourceProfileIndexContextForLearningSpace(learningSpaceId: string): Promise<SourceProfileIndexContext | null> {
+  const row = (await (await getDatabase()).execute({
+    sql: `SELECT source_profiles.*, learning_space_source_profiles.updated_at AS assignment_updated_at,
+      (SELECT finished_at FROM sync_runs
+        WHERE learning_space_id = ? AND status = 'completed' AND finished_at IS NOT NULL
+        ORDER BY finished_at DESC, started_at DESC LIMIT 1) AS index_finished_at
+      FROM learning_space_source_profiles
+      INNER JOIN source_profiles ON source_profiles.id = learning_space_source_profiles.source_profile_id
+      WHERE learning_space_source_profiles.learning_space_id = ? AND source_profiles.archived_at IS NULL`,
+    args: [learningSpaceId, learningSpaceId],
+  })).rows[0];
+  if (!row) return null;
+  const profile = sourceProfileFromRow(row);
+  return {
+    profile,
+    indexAligned: isSourceProfileIndexAligned(
+      profile.updatedAt,
+      String(row.assignment_updated_at),
+      row.index_finished_at == null ? null : String(row.index_finished_at),
+    ),
+  };
+}
+
+export function isSourceProfileIndexAligned(
+  profileUpdatedAt: string,
+  assignmentUpdatedAt: string,
+  successfulSyncFinishedAt: string | null,
+): boolean {
+  if (!successfulSyncFinishedAt) return false;
+  // Fail closed on equal millisecond timestamps: only a demonstrably later successful sync aligns the index.
+  return profileUpdatedAt < successfulSyncFinishedAt && assignmentUpdatedAt < successfulSyncFinishedAt;
 }
 
 export async function getSourceProfileOverview(user: AppUser, options: { archivedOnly?: boolean } = {}): Promise<SourceProfileOverview> {

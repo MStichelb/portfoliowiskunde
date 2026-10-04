@@ -50,7 +50,7 @@ import {
   type GlobalResourceSemanticRole,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
-import { getActiveSourceProfileForLearningSpace } from "@/lib/source-profiles";
+import { getSourceProfileIndexContextForLearningSpace } from "@/lib/source-profiles";
 import { StaleSynchronizationError } from "@/lib/source-errors";
 import { requireActiveSubject } from "@/lib/subjects";
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
@@ -1181,6 +1181,9 @@ export async function persistIndex(
     exerciseId: text(row, "exercise_id"), key: `${text(row, "document_kind")}\u0000${nullableText(row, "variant_kind") ?? ""}`,
   })), (issue) => issue.exerciseId);
 
+  // Exercise identity contract: portfolio code + section order + normalized exercise code form the deterministic ID.
+  // A unique same-code candidate may safely retain identity across a section move; ambiguous candidates never trigger
+  // content/path-based guessing and therefore fall back to the new deterministic ID with a warning.
   for (const portfolio of indexablePortfolios) {
     const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
     for (const section of portfolio.sections) {
@@ -1986,7 +1989,7 @@ function missingExerciseAssetCount(legacyAssets: readonly DatabaseRow[], resourc
 export async function getAdminPortfolios(learningSpaceId?: string): Promise<AdminPortfolio[]> {
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
-  const [portfolios, sections, exercises, assets, resourceAssets, sourceProfile, externalLinks] = await Promise.all([
+  const [portfolios, sections, exercises, assets, resourceAssets, sourceProfileContext, externalLinks] = await Promise.all([
     database.execute({ sql: `SELECT portfolios.*, themes.name AS theme_name FROM portfolios LEFT JOIN themes ON themes.id = portfolios.theme_id
       WHERE portfolios.learning_space_id = ? AND portfolios.archived_at IS NULL`, args: [spaceId] }),
     database.execute({ sql: "SELECT * FROM sections WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) AND archived_at IS NULL ORDER BY portfolio_id, sort_order", args: [spaceId] }),
@@ -1998,13 +2001,14 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
     database.execute({ sql: `SELECT * FROM source_resource_assets
       WHERE learning_space_id = ? AND archived_at IS NULL
       ORDER BY step, file_name`, args: [spaceId] }),
-    getActiveSourceProfileForLearningSpace(spaceId),
+    getSourceProfileIndexContextForLearningSpace(spaceId),
     database.execute({ sql: `SELECT portfolio_id, resource_id, url FROM portfolio_external_links
       WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)`, args: [spaceId] }),
   ]);
   const now = new Date();
-  const resources = sourceProfile?.config.globalResources ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources;
-  const exerciseResources = sourceProfile?.config.exerciseResources ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
+  const profileIndexAligned = sourceProfileContext?.indexAligned === true;
+  const resources = profileIndexAligned ? sourceProfileContext.profile.config.globalResources : BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources;
+  const exerciseResources = profileIndexAligned ? sourceProfileContext.profile.config.exerciseResources : BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
   const externalLinksByPortfolio = portfolioExternalLinksByPortfolio(externalLinks.rows);
 
   return portfolios.rows.map((portfolio) => {
@@ -2030,8 +2034,10 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
       globalResources: portfolioGlobalResources(
         portfolio,
         resources,
-        externalLinksByPortfolio.get(portfolioId),
-        resourceAssets.rows.filter((asset) => text(asset, "portfolio_id") === portfolioId && text(asset, "resource_scope") === "portfolio"),
+        profileIndexAligned ? externalLinksByPortfolio.get(portfolioId) : undefined,
+        profileIndexAligned
+          ? resourceAssets.rows.filter((asset) => text(asset, "portfolio_id") === portfolioId && text(asset, "resource_scope") === "portfolio")
+          : [],
       ),
       learningSpaceId: text(portfolio, "learning_space_id"), themeId: nullableText(portfolio, "theme_id"), themeName: nullableText(portfolio, "theme_name"),
       cardColor: text(portfolio, "card_color"),
@@ -2077,7 +2083,7 @@ export async function getAdminPortfolios(learningSpaceId?: string): Promise<Admi
               noteLabel: nullableText(exercise, "note_label"),
               customNote: nullableText(exercise, "custom_note"),
               notePosition: text(exercise, "note_position") as ExerciseNotePosition,
-              resources: exerciseResourceReadModel(exerciseResources, exerciseAssets, exerciseResourceAssets, { includeUnavailable: true, showAlternative: true }),
+              resources: exerciseResourceReadModel(exerciseResources, exerciseAssets, profileIndexAligned ? exerciseResourceAssets : [], { includeUnavailable: true, showAlternative: true }),
               assets: exerciseAssets.map((asset) => ({
                 id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"),
                 step: Number(asset.step), variant: text(asset, "kind") as AdminAsset["variant"],
@@ -2228,7 +2234,7 @@ export async function setExerciseNote(id: string, customNote: string | null, not
 export async function getStudentPortfolios(learningSpaceId?: string): Promise<StudentPortfolio[]> {
   const database = await getDatabase();
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
-  const [portfolios, sections, exercises, resourceAssets, sourceProfile, externalLinks] = await Promise.all([
+  const [portfolios, sections, exercises, resourceAssets, sourceProfileContext, externalLinks] = await Promise.all([
     database.execute({ sql: `SELECT portfolios.*, themes.name AS theme_name FROM portfolios LEFT JOIN themes ON themes.id = portfolios.theme_id
       WHERE portfolios.is_indexed = 1 AND portfolios.learning_space_id = ?`, args: [spaceId] }),
     database.execute({ sql: "SELECT * FROM sections WHERE is_indexed = 1 AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY portfolio_id, sort_order", args: [spaceId] }),
@@ -2244,12 +2250,13 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
       ORDER BY exercises.section_id, exercises.exercise_number, exercises.exercise_suffix`, args: [spaceId] }),
     database.execute({ sql: `SELECT * FROM source_resource_assets
       WHERE learning_space_id = ? AND resource_scope = 'portfolio' AND is_indexed = 1 AND archived_at IS NULL`, args: [spaceId] }),
-    getActiveSourceProfileForLearningSpace(spaceId),
+    getSourceProfileIndexContextForLearningSpace(spaceId),
     database.execute({ sql: `SELECT portfolio_id, resource_id, url FROM portfolio_external_links
       WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?)`, args: [spaceId] }),
   ]);
   const now = new Date();
-  const resources = sourceProfile?.config.globalResources ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources;
+  const profileIndexAligned = sourceProfileContext?.indexAligned === true;
+  const resources = profileIndexAligned ? sourceProfileContext.profile.config.globalResources : BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources;
   const externalLinksByPortfolio = portfolioExternalLinksByPortfolio(externalLinks.rows);
   const result: StudentPortfolio[] = [];
 
@@ -2271,8 +2278,8 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
       globalResources: portfolioGlobalResources(
         portfolio,
         resources,
-        externalLinksByPortfolio.get(portfolioId),
-        resourceAssets.rows.filter((asset) => text(asset, "portfolio_id") === portfolioId),
+        profileIndexAligned ? externalLinksByPortfolio.get(portfolioId) : undefined,
+        profileIndexAligned ? resourceAssets.rows.filter((asset) => text(asset, "portfolio_id") === portfolioId) : [],
       ).filter((resource) => resource.available),
       sections: [],
     };
@@ -2336,15 +2343,18 @@ export async function getVisibleExercise(id: string, learningSpaceId?: string) {
       ORDER BY step, file_name`,
     args: [id],
   });
-  const sourceProfile = await getActiveSourceProfileForLearningSpace(text(exercise, "learning_space_id"));
-  const exerciseResources = sourceProfile?.config.exerciseResources ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
+  const sourceProfileContext = await getSourceProfileIndexContextForLearningSpace(text(exercise, "learning_space_id"));
+  const profileIndexAligned = sourceProfileContext?.indexAligned === true;
+  const exerciseResources = profileIndexAligned
+    ? sourceProfileContext.profile.config.exerciseResources
+    : BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
   const visibleAssetRows = assets.rows.filter((asset) => text(asset, "kind") !== "alternative" || bool(exercise.show_alternative_to_students));
   return {
     id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"),
     ...exerciseLevelMetadataFromRow(exercise),
     portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
     customNote: nullableText(exercise, "custom_note"), noteLabel: nullableText(exercise, "note_label"), notePosition: text(exercise, "note_position") as ExerciseNotePosition,
-    resources: exerciseResourceReadModel(exerciseResources, visibleAssetRows, resourceAssets.rows, { includeUnavailable: false, showAlternative: bool(exercise.show_alternative_to_students) }),
+    resources: exerciseResourceReadModel(exerciseResources, visibleAssetRows, profileIndexAligned ? resourceAssets.rows : [], { includeUnavailable: false, showAlternative: bool(exercise.show_alternative_to_students) }),
     assets: visibleAssetRows.map((asset) => ({ id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"), step: Number(asset.step), kind: text(asset, "kind") as "standard" | "alternative", label: text(asset, "label"), lastModifiedAt: nullableText(asset, "last_modified_at") })),
   };
 }
@@ -2392,8 +2402,11 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
   const visibilityMode = childMode(exercise);
   const effectiveStatus = resolveChildPublication({ mode: visibilityMode, limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now);
   const indexedAssetRows = assets.rows.filter((asset) => bool(asset.is_indexed) && bool(asset.variant_is_indexed));
-  const sourceProfile = await getActiveSourceProfileForLearningSpace(text(exercise, "learning_space_id"));
-  const exerciseResources = sourceProfile?.config.exerciseResources ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
+  const sourceProfileContext = await getSourceProfileIndexContextForLearningSpace(text(exercise, "learning_space_id"));
+  const profileIndexAligned = sourceProfileContext?.indexAligned === true;
+  const exerciseResources = profileIndexAligned
+    ? sourceProfileContext.profile.config.exerciseResources
+    : BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
   return {
     id,
     portfolioId: text(exercise, "portfolio_id"),
@@ -2414,7 +2427,7 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     customNote: nullableText(exercise, "custom_note"),
     noteLabel: nullableText(exercise, "note_label"),
     notePosition: text(exercise, "note_position") as ExerciseNotePosition,
-    resources: exerciseResourceReadModel(exerciseResources, indexedAssetRows, resourceAssets.rows, { includeUnavailable: true, showAlternative: true }),
+    resources: exerciseResourceReadModel(exerciseResources, indexedAssetRows, profileIndexAligned ? resourceAssets.rows : [], { includeUnavailable: true, showAlternative: true }),
     assets: indexedAssetRows.map((asset) => ({
       id: text(asset, "id"),
       fileName: text(asset, "file_name"),

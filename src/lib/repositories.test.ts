@@ -159,6 +159,34 @@ describe("persistIndex", () => {
     expect((await getLatestWarnings("space-6")).some((warning) => warning.message.includes("niet automatisch verplaatst"))).toBe(true);
   });
 
+  it("does not transfer exercise metadata by source content when the exercise code changes", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-exercise-identity-code-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    const original = exerciseMoveFixture(1, "basis", "same-physical-source");
+    await persistIndex([original], "local", "space-6");
+    const database = await getDatabase();
+    const originalId = String((await database.execute("SELECT id FROM exercises WHERE exercise_code = '20a'")).rows[0].id);
+    await database.execute({ sql: "UPDATE exercises SET custom_note = 'Niet raden' WHERE id = ?", args: [originalId] });
+
+    const renumbered = exerciseMoveFixture(1, "basis", "same-physical-source");
+    const exercise = renumbered.sections[0].exercises[0];
+    exercise.code = "21a";
+    exercise.number = 21;
+    exercise.assets[0].parsed = {
+      ...exercise.assets[0].parsed,
+      exerciseNumber: 21,
+      exerciseCode: "21a",
+    };
+    await persistIndex([renumbered], "local", "space-6");
+
+    const current = (await database.execute("SELECT id, exercise_code, custom_note, is_indexed FROM exercises ORDER BY exercise_code")).rows;
+    expect(current.find((row) => row.exercise_code === "20a")).toMatchObject({ id: originalId, custom_note: "Niet raden", is_indexed: 0 });
+    expect(current.find((row) => row.exercise_code === "21a")).toMatchObject({ custom_note: null, is_indexed: 1 });
+    expect(String(current.find((row) => row.exercise_code === "21a")?.id)).not.toBe(originalId);
+  });
+
   it("reconciles equivalent portfolio and section renames by logical identity while real deletion remains missing", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-rename-reconciliation-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
@@ -1040,6 +1068,79 @@ describe("persistIndex", () => {
     ]);
     await setExerciseAlternativeVisibility(String(row.exercise_id), true);
     expect(await getPublicResourceAsset(genericAlternativeId, "space-6")).not.toBeNull();
+  });
+
+  it("does not reinterpret an existing index with changed profile semantics before a successful resync", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-profile-index-alignment-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const source = createTwoPortfolioProvider();
+    await persistIndex(await indexSource(source), "local", "space-6");
+    await setPortfolioPublication("portfolio-3", "visible", false, null, null);
+
+    const database = await getDatabase();
+    const exerciseId = String((await database.execute(`SELECT exercises.id FROM exercises
+      JOIN portfolios ON portfolios.id = exercises.portfolio_id
+      WHERE portfolios.id = 'portfolio-3' AND exercises.exercise_code = '2'`)).rows[0].id);
+    await setExerciseAlternativeVisibility(exerciseId, true);
+    await database.execute({
+      sql: "UPDATE sync_runs SET finished_at = '2026-01-01T00:00:00.000Z' WHERE learning_space_id = ? AND status = 'completed'",
+      args: ["space-6"],
+    });
+
+    const profileRow = (await database.execute({
+      sql: `SELECT source_profiles.id, source_profiles.config_json FROM source_profiles
+        JOIN learning_space_source_profiles ON learning_space_source_profiles.source_profile_id = source_profiles.id
+        WHERE learning_space_source_profiles.learning_space_id = ?`,
+      args: ["space-6"],
+    })).rows[0];
+    const changedConfig = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    changedConfig.exerciseResources = changedConfig.exerciseResources.map((resource) => ({
+      ...resource,
+      id: resource.semanticRole === "worked_solution"
+        ? "current-worked"
+        : resource.semanticRole === "alternative_solution" ? "current-alternative" : resource.id,
+      label: resource.semanticRole === "worked_solution"
+        ? "Actuele uitwerking"
+        : resource.semanticRole === "alternative_solution" ? "Actueel alternatief" : resource.label,
+    }));
+    await database.execute({
+      sql: "UPDATE source_profiles SET config_json = ?, updated_at = ? WHERE id = ?",
+      args: [JSON.stringify(changedConfig), "2026-02-01T00:00:00.000Z", String(profileRow.id)],
+    });
+
+    const staleAdmin = await getAdminExercise(exerciseId, "space-6");
+    expect(staleAdmin?.resources.filter((resource) => resource.available).map((resource) => [resource.id, resource.legacyVariant])).toEqual([
+      ["worked-solution", "standard"],
+      ["alternative-solution", "alternative"],
+    ]);
+    expect((await getVisibleExercise(exerciseId, "space-6"))?.resources.map((resource) => [resource.id, resource.legacyVariant])).toEqual([
+      ["worked-solution", "standard"],
+      ["alternative-solution", "alternative"],
+    ]);
+    const oldGenericIds = (await database.execute({
+      sql: "SELECT resource_id FROM source_resource_assets WHERE exercise_id = ? ORDER BY resource_id",
+      args: [exerciseId],
+    })).rows.map((row) => String(row.resource_id));
+
+    await recordFailedSync("local", new Error("Testfout"), "space-6");
+    expect((await getAdminExercise(exerciseId, "space-6"))?.resources.filter((resource) => resource.available)
+      .map((resource) => resource.id)).toEqual(["worked-solution", "alternative-solution"]);
+    expect((await database.execute({
+      sql: "SELECT resource_id FROM source_resource_assets WHERE exercise_id = ? ORDER BY resource_id",
+      args: [exerciseId],
+    })).rows.map((row) => String(row.resource_id))).toEqual(oldGenericIds);
+
+    await persistIndex(await indexSource(source, changedConfig), "local", "space-6");
+    const currentAdmin = await getAdminExercise(exerciseId, "space-6");
+    expect(currentAdmin?.resources.filter((resource) => resource.available).map((resource) => [resource.id, resource.legacyVariant])).toEqual([
+      ["current-worked", "standard"],
+      ["current-alternative", "alternative"],
+    ]);
+    expect((await getVisibleExercise(exerciseId, "space-6"))?.resources.map((resource) => [resource.id, resource.legacyVariant])).toEqual([
+      ["current-worked", "standard"],
+      ["current-alternative", "alternative"],
+    ]);
   });
 
   it("shows only warnings from the latest successful sync and keeps them after a failed run", async () => {

@@ -6,6 +6,7 @@ import { getDatabase } from "@/lib/database";
 import type { AppUser } from "@/lib/identity";
 import { relativePathBelongsToDirectory } from "@/lib/parser";
 import type { LearningSpaceSourceRole, StorageSourceType } from "@/lib/repositories";
+import { isSourceProfileIndexAligned } from "@/lib/source-profiles";
 
 export type SourceStatusAssessmentState = "no_problem_detected" | "attention_required" | "unknown";
 export type SourceValidationState = "valid" | "invalid" | "unknown";
@@ -427,7 +428,7 @@ function determineProfileIndexAlignment(
 ): LearningSpaceSourceStatus["synchronization"]["profileIndexAlignment"] {
   if (!profile) return { state: "unknown", reason: "profile_missing" };
   if (!latestSuccessful?.finishedAt) return { state: "unknown", reason: "no_successful_sync" };
-  if (profile.updatedAt <= latestSuccessful.finishedAt && profile.assignmentUpdatedAt <= latestSuccessful.finishedAt) {
+  if (isSourceProfileIndexAligned(profile.updatedAt, profile.assignmentUpdatedAt, latestSuccessful.finishedAt)) {
     return { state: "confirmed_current", reason: "profile_and_assignment_unchanged_since_sync" };
   }
   return { state: "unknown", reason: "profile_or_assignment_changed_after_sync" };
