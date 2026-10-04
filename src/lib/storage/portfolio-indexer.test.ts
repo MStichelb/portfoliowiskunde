@@ -705,7 +705,7 @@ describe("portfolio indexer", () => {
   });
 
   it("sorteert geïndexeerde portfolio's met de centrale natuurlijke comparator", async () => {
-    const codes = ["12", "2B", "3", "X", "10", "2", "A", "1", "2A", "11"];
+    const codes = ["12", "2B", "3", "X", "10", "2", "A", "1", "2A", "11", "A1", "1.10", "1.2", "1.1", "A.1"];
     const sortingProvider: StorageProvider = {
       id: "portfolio-order-fixture",
       async list(relativePath = "") {
@@ -714,7 +714,9 @@ describe("portfolio indexer", () => {
       },
       async readFile() { return Buffer.from(""); },
     };
-    expect((await indexSource(sortingProvider)).map((portfolio) => portfolio.code)).toEqual(["1", "2", "2A", "2B", "3", "10", "11", "12", "A", "X"]);
+    expect((await indexSource(sortingProvider)).map((portfolio) => portfolio.code)).toEqual([
+      "1", "1.1", "1.2", "1.10", "2", "2A", "2B", "3", "10", "11", "12", "A", "A.1", "A1", "X",
+    ]);
   });
 
   it("gebruikt de bronprofielmarker voor portfoliomappen", async () => {
@@ -778,6 +780,25 @@ describe("portfolio indexer", () => {
     expect(portfolios).toHaveLength(2);
     expect(portfolios.every((portfolio) => portfolio.code === "1A" && portfolio.sections.length === 0)).toBe(true);
     expect(portfolios.every((portfolio) => portfolio.warnings.some((warning) => warning.message.includes("Dubbele portfoliocode 1A")))).toBe(true);
+  });
+
+  it("detecteert ook hoofdlettervarianten van een hiërarchische portfoliocode als duplicaat", async () => {
+    const duplicateProvider: StorageProvider = {
+      id: "duplicate-hierarchical-portfolios",
+      async list(relativePath = "") {
+        if (relativePath) throw new Error("Conflicterende portfolio's mogen niet worden geopend.");
+        return [
+          { name: "Portfolio A.1 Eerste", relativePath: "Portfolio A.1 Eerste", kind: "directory" },
+          { name: "portfolio a.1 - Tweede", relativePath: "portfolio a.1 - Tweede", kind: "directory" },
+        ];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+
+    const portfolios = await indexSource(duplicateProvider);
+    expect(portfolios).toHaveLength(2);
+    expect(portfolios.every((portfolio) => portfolio.code === "A.1" && portfolio.sections.length === 0)).toBe(true);
+    expect(portfolios.every((portfolio) => portfolio.warnings.some((warning) => warning.message.includes("Dubbele portfoliocode A.1")))).toBe(true);
   });
 
   it("waarschuwt en negeert alle mappen met een dubbel onderdeelnummer", async () => {

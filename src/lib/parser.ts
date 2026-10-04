@@ -9,34 +9,39 @@ import type { ExerciseScannerConfig, PortfolioScannerConfig } from "@/lib/source
 
 type ExerciseNumberScannerConfig = Pick<ExerciseScannerConfig, "numberLocation" | "marker">;
 
-const PORTFOLIO_ID_SOURCE = "(?:\\d+[a-z]*|[a-z]+)";
-const PORTFOLIO_DOCUMENT_PREFIX = new RegExp(`^portfolio\\s+(${PORTFOLIO_ID_SOURCE})(?=\\s|-|\\.|$)`, "i");
-const HINTS_DOCUMENT_PREFIX = new RegExp(`^hints\\s+portfolio\\s+(${PORTFOLIO_ID_SOURCE})(?=\\s|-|\\.|$)`, "i");
+const SIMPLE_PORTFOLIO_CODE_SOURCE = "(?:\\d+[a-z]+|[a-z]+\\d+|\\d+|[a-z]+)";
+const HIERARCHICAL_PORTFOLIO_CODE_SOURCE = "(?:(?:\\d+|[a-z]+)(?:\\.(?:\\d+|[a-z]+))+)";
+const PORTFOLIO_CODE_SOURCE = `(?:${HIERARCHICAL_PORTFOLIO_CODE_SOURCE}|${SIMPLE_PORTFOLIO_CODE_SOURCE})`;
+const PORTFOLIO_CODE = new RegExp(`^${PORTFOLIO_CODE_SOURCE}$`, "i");
+const PORTFOLIO_DOCUMENT_BOUNDARY = "(?=\\s|-|$)";
+const PORTFOLIO_DOCUMENT_PREFIX = new RegExp(`^portfolio\\s+(${PORTFOLIO_CODE_SOURCE})${PORTFOLIO_DOCUMENT_BOUNDARY}`, "i");
+const HINTS_DOCUMENT_PREFIX = new RegExp(`^hints\\s+portfolio\\s+(${PORTFOLIO_CODE_SOURCE})${PORTFOLIO_DOCUMENT_BOUNDARY}`, "i");
 const SECTION_DIRECTORY = /^(\d+)(?:[\s_-]*|\.\s*)(\p{L}.*)$/u;
-const SOLUTION_PREFIX = new RegExp(`^pf(${PORTFOLIO_ID_SOURCE})\\s*-\\s*oef(\\d+)([a-z]?)(.*)\\.(pdf|png|jpe?g)$`, "i");
+const SOLUTION_PREFIX = new RegExp(`^pf(${PORTFOLIO_CODE_SOURCE})\\s*-\\s*oef(\\d+)([a-z]?)(.*)\\.(pdf|png|jpe?g)$`, "i");
 const STEP_TOKEN = /\((\d+)\)/g;
-const NUMERIC_PORTFOLIO_ID = /^(\d+)([A-Z]*)$/;
-const ALPHABETIC_PORTFOLIO_ID = /^[A-Z]+$/;
 
 export function normalizePortfolioCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
 export function isValidPortfolioId(code: string): boolean {
-  const normalized = normalizePortfolioCode(code);
-  return NUMERIC_PORTFOLIO_ID.test(normalized) || ALPHABETIC_PORTFOLIO_ID.test(normalized);
+  return PORTFOLIO_CODE.test(normalizePortfolioCode(code));
 }
 
 export function comparePortfolioIds(left: string, right: string): number {
-  const leftId = portfolioIdParts(left);
-  const rightId = portfolioIdParts(right);
-  if (!leftId || !rightId) return compareText(normalizePortfolioCode(left), normalizePortfolioCode(right));
-  if (leftId.kind !== rightId.kind) return leftId.kind === "numeric" ? -1 : 1;
-  if (leftId.kind === "numeric" && rightId.kind === "numeric") {
-    if (leftId.number !== rightId.number) return leftId.number < rightId.number ? -1 : 1;
-    return compareText(leftId.suffix, rightId.suffix);
+  const normalizedLeft = normalizePortfolioCode(left);
+  const normalizedRight = normalizePortfolioCode(right);
+  if (!isValidPortfolioId(normalizedLeft) || !isValidPortfolioId(normalizedRight)) {
+    return compareText(normalizedLeft, normalizedRight);
   }
-  return compareText(leftId.code, rightId.code);
+  const leftSegments = normalizedLeft.split(".");
+  const rightSegments = normalizedRight.split(".");
+  for (let index = 0; index < Math.min(leftSegments.length, rightSegments.length); index += 1) {
+    const comparison = comparePortfolioCodeSegment(leftSegments[index], rightSegments[index]);
+    if (comparison !== 0) return comparison;
+  }
+  if (leftSegments.length !== rightSegments.length) return leftSegments.length - rightSegments.length;
+  return compareText(normalizedLeft, normalizedRight);
 }
 
 export function comparePortfolioRelativePaths(left: string, right: string): number {
@@ -47,7 +52,7 @@ export function comparePortfolioRelativePaths(left: string, right: string): numb
 }
 
 export function looksLikeSolutionFileName(name: string): boolean {
-  return /^pf\s*[a-z0-9]+\s*-\s*oef/i.test(name.trim());
+  return new RegExp(`^pf\\s*${PORTFOLIO_CODE_SOURCE}\\s*-\\s*oef`, "i").test(name.trim());
 }
 
 export function parsePortfolioDirectory(
@@ -56,7 +61,7 @@ export function parsePortfolioDirectory(
 ): ParsedPortfolioDirectory | null {
   const marker = config.marker.trim();
   if (!marker) return null;
-  const pattern = new RegExp(`^${escapeRegExp(marker)}[\\s_-]*(${PORTFOLIO_ID_SOURCE})[\\s_-]+(.+)$`, "i");
+  const pattern = new RegExp(`^${escapeRegExp(marker)}[\\s_-]*(${PORTFOLIO_CODE_SOURCE})[\\s_-]+(.+)$`, "i");
   const match = name.trim().match(pattern);
   if (!match) return null;
 
@@ -70,12 +75,12 @@ export function parsePortfolioDirectory(
 }
 
 export function parsePortfolioDocumentCode(name: string): string | null {
-  const match = name.trim().match(PORTFOLIO_DOCUMENT_PREFIX);
+  const match = documentStem(name).match(PORTFOLIO_DOCUMENT_PREFIX);
   return match ? normalizePortfolioCode(match[1]) : null;
 }
 
 export function parseHintsDocumentCode(name: string): string | null {
-  const match = name.trim().match(HINTS_DOCUMENT_PREFIX);
+  const match = documentStem(name).match(HINTS_DOCUMENT_PREFIX);
   return match ? normalizePortfolioCode(match[1]) : null;
 }
 
@@ -205,20 +210,35 @@ export function parseSolutionFileName(name: string): ParsedSolutionFile | null {
   };
 }
 
-function portfolioIdParts(code: string):
-  | { kind: "numeric"; number: bigint; suffix: string; code: string }
-  | { kind: "alphabetic"; code: string }
-  | null {
-  const normalized = normalizePortfolioCode(code);
-  const numeric = normalized.match(NUMERIC_PORTFOLIO_ID);
-  if (numeric) return { kind: "numeric", number: BigInt(numeric[1]), suffix: numeric[2], code: normalized };
-  if (ALPHABETIC_PORTFOLIO_ID.test(normalized)) return { kind: "alphabetic", code: normalized };
-  return null;
+function comparePortfolioCodeSegment(left: string, right: string): number {
+  const leftTokens = left.match(/\d+|[A-Z]+/g) ?? [];
+  const rightTokens = right.match(/\d+|[A-Z]+/g) ?? [];
+  for (let index = 0; index < Math.min(leftTokens.length, rightTokens.length); index += 1) {
+    const leftToken = leftTokens[index];
+    const rightToken = rightTokens[index];
+    const leftNumeric = /^\d+$/.test(leftToken);
+    const rightNumeric = /^\d+$/.test(rightToken);
+    if (leftNumeric !== rightNumeric) return leftNumeric ? -1 : 1;
+    if (leftNumeric) {
+      const leftNumber = BigInt(leftToken);
+      const rightNumber = BigInt(rightToken);
+      if (leftNumber !== rightNumber) return leftNumber < rightNumber ? -1 : 1;
+      if (leftToken.length !== rightToken.length) return leftToken.length - rightToken.length;
+    } else {
+      const comparison = compareText(leftToken, rightToken);
+      if (comparison !== 0) return comparison;
+    }
+  }
+  return leftTokens.length - rightTokens.length;
 }
 
 function compareText(left: string, right: string): number {
   if (left === right) return 0;
   return left < right ? -1 : 1;
+}
+
+function documentStem(name: string): string {
+  return name.trim().replace(/\.pdf$/i, "");
 }
 
 function escapeRegExp(value: string): string {

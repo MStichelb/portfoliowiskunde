@@ -34,7 +34,7 @@ describe("buildSourceStructurePreview", () => {
   it("uses the configured portfolio marker and shows direct numeric sections", () => {
     const preview = buildSourceStructurePreview(scanner, [workedSolution], { method: "none" }, { marker: "H" });
 
-    expect(preview.root.name).toBe("H1_Stelsels oplossen");
+    expect(preview.root.name).toBe("H1.1_Stelsels oplossen");
     expect(flatten(preview.root)).toEqual(expect.arrayContaining([
       "1 Inleiding",
       "2 - Methode van Gauss-Jordan",
@@ -42,6 +42,7 @@ describe("buildSourceStructurePreview", () => {
       "header.png",
     ]));
     expect(flatten(preview.root)).not.toContain("Uitwerkingen");
+    expect(preview.notes).toContain("Geldige portfoliocodes zijn bijvoorbeeld 1, A, 1A, A1, 1.1 en A.1. Mapnamen zoals “H 1.1 Stelsels”, “H 1.1 - Stelsels” en “H1.1-Stelsels” zijn geldig.");
   });
 
   it("shows a file exercise and a matching direct resource in files mode", () => {

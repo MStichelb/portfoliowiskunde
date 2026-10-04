@@ -35,7 +35,7 @@ export function buildSourceStructurePreview(
   const compactMarker = portfolioMarker.length === 1;
   const root: SourceStructurePreviewNode = {
     kind: "folder",
-    name: `${portfolioMarker}${compactMarker ? "1_" : "1A - "}Stelsels oplossen`,
+    name: `${portfolioMarker}${compactMarker ? "1.1_" : "1.1 - "}Stelsels oplossen`,
     children: [],
   };
   const sectionOne = ensureFolder(root, "1 Inleiding");
@@ -58,7 +58,7 @@ export function buildSourceStructurePreview(
   }
 
   addPath(root, [{ kind: "file", name: "header.png" }]);
-  notes.add(`Geldige portfolionamen zijn bijvoorbeeld “${portfolioMarker} 1A Stelsels”, “${portfolioMarker} 1A - Stelsels”, “${portfolioMarker} 1A_Stelsels” en “${portfolioMarker}1A-Stelsels”.`);
+  notes.add(`Geldige portfoliocodes zijn bijvoorbeeld 1, A, 1A, A1, 1.1 en A.1. Mapnamen zoals “${portfolioMarker} 1.1 Stelsels”, “${portfolioMarker} 1.1 - Stelsels” en “${portfolioMarker}1.1-Stelsels” zijn geldig.`);
   notes.add("Onderdelen staan rechtstreeks onder het portfolio en beginnen met een nummer; een structurele map ‘Uitwerkingen’ is niet nodig.");
 
   addLevelRecognitionNote(notes, levelRecognition, resources);

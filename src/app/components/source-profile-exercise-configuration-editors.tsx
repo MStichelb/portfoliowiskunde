@@ -72,7 +72,7 @@ export function SourceProfileExerciseConfigurationEditors({
               required
               onChange={(event) => setPortfolioScannerPreview({ marker: event.target.value })}
             />
-            <small className={styles.levelRecognitionHint}>De marker bepaalt welke mappen als portfolio worden herkend, bv. Portfolio1A, H2 of Bundel3B.</small>
+            <small className={styles.levelRecognitionHint}>De marker bepaalt welke mappen als portfolio worden herkend, bv. Portfolio1A, H1.1 of BundelA.1.</small>
           </label>
           <p className={styles.levelRecognitionHint}>Onderdelen zijn directe submappen die met een nummer beginnen, zoals <code>1 Inleiding</code> of <code>2 - Toepassingen</code>. Een map <code>Uitwerkingen</code> is niet nodig.</p>
         </div>
