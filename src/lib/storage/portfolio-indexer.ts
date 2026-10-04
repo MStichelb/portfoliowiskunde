@@ -10,6 +10,7 @@ import type {
 import { detectExerciseLevelFromSource, type ExerciseLevelDetectionSource } from "@/lib/exercise-level-detection";
 import {
   comparePortfolioIds,
+  compareSectionCodes,
   findExerciseNumberCandidates,
   normalizePortfolioCode,
   parseExerciseDirectoryIdentity,
@@ -147,13 +148,14 @@ async function indexPortfolio(
         sourceVersion: entry.sourceVersion ?? null,
       } satisfies IndexedPortfolioResourceAsset];
     }),
-    sections: sections.sort((left, right) => left.order - right.order),
+    sections: sections.sort((left, right) => left.sortOrder - right.sortOrder),
     warnings,
   };
 }
 
 interface ExerciseContext {
-  order: number;
+  code: string;
+  sortOrder: number;
   title: string;
   relativePath: string;
 }
@@ -171,22 +173,22 @@ function sectionContexts(entries: readonly StorageEntry[], portfolioPath: string
     if (entry.kind !== "directory") return [];
     const section = parseSectionDirectory(entry.name);
     if (!section) return [];
-    return [{ order: section.order, title: section.title, relativePath: entry.relativePath, sourceName: entry.name }];
+    return [{ code: section.code, title: section.title, relativePath: entry.relativePath, sourceName: entry.name }];
   });
-  const namesByOrder = new Map<number, string[]>();
-  for (const section of sections) namesByOrder.set(section.order, [...(namesByOrder.get(section.order) ?? []), section.sourceName]);
-  const duplicateOrders = new Set([...namesByOrder].filter(([, names]) => names.length > 1).map(([order]) => order));
-  for (const order of [...duplicateOrders].sort((left, right) => left - right)) {
+  const namesByCode = new Map<string, string[]>();
+  for (const section of sections) namesByCode.set(section.code, [...(namesByCode.get(section.code) ?? []), section.sourceName]);
+  const duplicateCodes = new Set([...namesByCode].filter(([, names]) => names.length > 1).map(([code]) => code));
+  for (const code of [...duplicateCodes].sort(compareSectionCodes)) {
     warnings.push({
       severity: "warning",
       path: portfolioPath,
-      message: `Dubbel onderdeelnummer ${order} herkend in mappen: ${(namesByOrder.get(order) ?? []).join(", ")}. Geen van deze onderdelen wordt gescand.`,
+      message: `Dubbele onderdeelcode ${code} herkend in mappen: ${(namesByCode.get(code) ?? []).join(", ")}. Geen van deze onderdelen wordt gescand.`,
     });
   }
   return sections
-    .filter((section) => !duplicateOrders.has(section.order))
-    .map(({ sourceName: _sourceName, ...section }) => section)
-    .sort((left, right) => left.order - right.order || left.title.localeCompare(right.title, "nl"));
+    .filter((section) => !duplicateCodes.has(section.code))
+    .sort((left, right) => compareSectionCodes(left.code, right.code) || left.title.localeCompare(right.title, "nl"))
+    .map(({ sourceName: _sourceName, ...section }, index) => ({ ...section, sortOrder: index + 1 }));
 }
 
 function conflictedPortfolio(
@@ -312,7 +314,8 @@ async function indexExerciseContext(
   }
 
   return {
-    order: context.order,
+    code: context.code,
+    sortOrder: context.sortOrder,
     title: context.title,
     relativePath: context.relativePath,
     exercises: [...exercises.values()].sort((left, right) => left.number - right.number || left.suffix.localeCompare(right.suffix, "nl")),

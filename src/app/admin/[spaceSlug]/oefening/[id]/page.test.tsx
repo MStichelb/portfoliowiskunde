@@ -49,7 +49,7 @@ describe("LearningSpace admin exercise terminology", () => {
     });
     mocks.getAdminExercise.mockResolvedValue({
       id: "exercise-1c", code: "1c", portfolioId: "portfolio-1", portfolioTitle: "Krachten",
-      sectionTitle: "Basis", isIndexed: true, resources: [], levelSource: "basis",
+      sectionCode: "1.1", sectionTitle: "Basis", isIndexed: true, resources: [], levelSource: "basis",
       levelOverrideMode: "level", levelOverride: "uitdaging", effectiveLevel: "uitdaging",
       visibilityMode: "visible", effectiveStatus: { configuredVisibility: "visible", state: "visible", reason: null, effectiveFrom: null, effectiveUntil: null },
       showAlternativeToStudents: true, standardAssets: 2, alternativeAssets: 1, missingAssets: 0,
@@ -61,6 +61,8 @@ describe("LearningSpace admin exercise terminology", () => {
     const markup = renderToStaticMarkup(await LearningSpaceAdminExercisePage({ params: Promise.resolve({ spaceSlug: "fysica", id: "exercise-1c" }) }));
 
     expect(markup).toContain("Opgave 1c");
+    expect(markup).toContain("Krachten - 1.1 Basis");
+    expect(markup).not.toContain("1.1. Basis");
     expect(markup).toContain("Terug naar bundel");
     expect(markup).not.toContain("OpGavE");
     expect(markup).not.toContain("bunDEL");

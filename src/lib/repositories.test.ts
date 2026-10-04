@@ -29,6 +29,46 @@ afterEach(async () => {
 });
 
 describe("persistIndex", () => {
+  it("treats a section code change as a new section without guessing section metadata", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-section-code-identity-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+
+    const originalIndex = exerciseMoveFixture(1, "basis", "section-code-old");
+    await persistIndex([originalIndex], "local", "space-6");
+    const database = await getDatabase();
+    const originalSection = (await database.execute("SELECT id, portfolio_id FROM sections WHERE section_code = '1'")).rows[0];
+    const originalSectionId = String(originalSection.id);
+    expect(originalSectionId).toBe(`${String(originalSection.portfolio_id)}-section-1`);
+    await database.execute({
+      sql: "UPDATE sections SET visibility_mode = 'hidden', publication_limited = 1 WHERE id = ?",
+      args: [originalSectionId],
+    });
+
+    const hierarchicalIndex = exerciseMoveFixture(1, "basis", "section-code-new");
+    hierarchicalIndex.sections[0].code = "1.1";
+    hierarchicalIndex.sections[0].relativePath = "H1B_Stelsels/1.1 Nieuwe sectie";
+    await persistIndex([hierarchicalIndex], "local", "space-6");
+
+    const sections = (await database.execute("SELECT id, section_code, sort_order, visibility_mode, publication_limited, is_indexed FROM sections ORDER BY section_code")).rows;
+    expect(sections).toEqual([
+      expect.objectContaining({ id: originalSectionId, section_code: "1", sort_order: 1, visibility_mode: "hidden", publication_limited: 1, is_indexed: 0 }),
+      expect.objectContaining({ section_code: "1.1", sort_order: 1, visibility_mode: "visible", publication_limited: 0, is_indexed: 1 }),
+    ]);
+    expect(String(sections[1].id)).not.toBe(originalSectionId);
+    expect(String(sections[1].id)).toBe(`${String(originalSection.portfolio_id)}-section-1.1`);
+    expect((await database.execute("SELECT section_id, is_indexed FROM exercises WHERE exercise_code = '20a' AND archived_at IS NULL")).rows)
+      .toEqual([expect.objectContaining({ section_id: sections[1].id, is_indexed: 1 })]);
+    const adminSection = (await getAdminPortfolios("space-6"))[0].sections.find((section) => section.id === sections[1].id);
+    expect(adminSection).toMatchObject({ id: sections[1].id, code: "1.1" });
+    expect(adminSection).not.toHaveProperty("order");
+
+    await setPortfolioPublication(String(originalSection.portfolio_id), "visible", false, null, null);
+    const studentSection = (await getStudentPortfolios("space-6"))[0].sections.find((section) => section.id === sections[1].id);
+    expect(studentSection).toMatchObject({ id: sections[1].id, code: "1.1" });
+    expect(studentSection).not.toHaveProperty("order");
+  });
+
   it("preserves exercise identity, teacher metadata and error-report links across a section move", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-exercise-move-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
@@ -101,8 +141,8 @@ describe("persistIndex", () => {
       args: [originalId],
     })).rows[0];
     await database.batch([
-      { sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path, visibility_mode, is_indexed, last_seen_at)
-        VALUES (?, ?, 2, 'Nieuwe sectie', 'H1B_Stelsels/2 Nieuwe sectie', 'visible', 1, ?)`, args: [targetSectionId, portfolioId, "2026-10-04T10:00:00.000Z"] },
+      { sql: `INSERT INTO sections (id, portfolio_id, section_code, sort_order, title, relative_path, visibility_mode, is_indexed, last_seen_at)
+        VALUES (?, ?, '2', 2, 'Nieuwe sectie', 'H1B_Stelsels/2 Nieuwe sectie', 'visible', 1, ?)`, args: [targetSectionId, portfolioId, "2026-10-04T10:00:00.000Z"] },
       { sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, level_source,
         visibility_mode, visible, is_indexed, last_seen_at) VALUES (?, ?, ?, '20a', 20, 'a', 'uitdaging', 'visible', 1, 1, ?)`,
       args: [duplicateId, portfolioId, targetSectionId, "2026-10-04T10:00:00.000Z"] },
@@ -1644,7 +1684,8 @@ function renameReconciliationFixture({
       sourceVersion: "v1",
     }],
     sections: [{
-      order: 2,
+      code: "2",
+      sortOrder: 2,
       title: "Stelsels oplossen met Gauss-Jordan",
       relativePath: sectionPath,
       exercises: [{ code: "15", number: 15, suffix: "", levelSource, assets: asset ? [asset] : [] }],
@@ -1700,7 +1741,8 @@ function exerciseMoveFixture(
     levelSource,
   });
   const section = fixture.sections[0];
-  section.order = sectionOrder;
+  section.code = String(sectionOrder);
+  section.sortOrder = sectionOrder;
   section.title = sectionOrder === 1 ? "Oude sectie" : "Nieuwe sectie";
   const exercise = section.exercises[0];
   exercise.code = "20a";

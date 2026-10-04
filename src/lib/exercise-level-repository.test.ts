@@ -175,7 +175,8 @@ function indexFixture(): IndexedPortfolio[] {
     resourceAssets: [],
     warnings: [],
     sections: [{
-      order: 1,
+      code: "1",
+      sortOrder: 1,
       title: "Basis",
       relativePath: "Portfolio 91 - Niveautest/Uitwerkingen/1 - Basis",
       exercises: [

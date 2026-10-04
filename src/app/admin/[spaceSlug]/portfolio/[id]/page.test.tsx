@@ -65,7 +65,7 @@ describe("LearningSpace portfolio settings page", () => {
       visible: true, limited: false, publishFrom: null, publishUntil: null, customText: "Bericht", customTextPosition: "above_documents",
       themeId: "theme-analysis", effectiveStatus: { state: "visible" }, hintsDocumentPath: null,
       globalResources: [{ id: "video", kind: "external_link", label: "Video", icon: "monitor-play", semanticRole: "generic", documentKind: null, url: null, available: false }],
-      sections: [{ id: "section-1", order: 1, title: "Basis", exercises: [{
+      sections: [{ id: "section-1", code: "1.1", title: "Basis", exercises: [{
         id: "exercise-1", code: "1", levelOverrideMode: "inherit", levelOverride: null, effectiveLevel: "basis", visibilityMode: "visible", effectiveStatus: { state: "visible" },
         standardAssets: 1, alternativeAssets: 0, missingAssets: 0, showAlternativeToStudents: false, isIndexed: true,
         noteLabel: null, customNote: null, notePosition: "above_solution",
@@ -104,9 +104,11 @@ describe("LearningSpace portfolio settings page", () => {
     expect(markup).toContain("Bundel 1");
     expect(markup).toContain("Bundel-instellingen");
     expect(markup).toContain("Opgaven");
+    expect(markup).toContain("1.1 Basis");
+    expect(markup).not.toContain("1.1. Basis");
     expect(mocks.bulkTable).toHaveBeenCalledWith(expect.objectContaining({ learningSpaceId: "space-5", exerciseLabelSingular: "OpGavE", exerciseLabelPlural: "OPGAVEN" }));
     expect(mocks.bulkTable).toHaveBeenCalledWith(expect.objectContaining({
-      sections: [expect.objectContaining({ exercises: [expect.objectContaining({ effectiveLevel: "basis" })] })],
+      sections: [expect.objectContaining({ code: "1.1", exercises: [expect.objectContaining({ effectiveLevel: "basis" })] })],
     }));
   });
 });

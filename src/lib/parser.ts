@@ -16,7 +16,9 @@ const PORTFOLIO_CODE = new RegExp(`^${PORTFOLIO_CODE_SOURCE}$`, "i");
 const PORTFOLIO_DOCUMENT_BOUNDARY = "(?=\\s|-|$)";
 const PORTFOLIO_DOCUMENT_PREFIX = new RegExp(`^portfolio\\s+(${PORTFOLIO_CODE_SOURCE})${PORTFOLIO_DOCUMENT_BOUNDARY}`, "i");
 const HINTS_DOCUMENT_PREFIX = new RegExp(`^hints\\s+portfolio\\s+(${PORTFOLIO_CODE_SOURCE})${PORTFOLIO_DOCUMENT_BOUNDARY}`, "i");
-const SECTION_DIRECTORY = /^(\d+)(?:[\s_-]*|\.\s*)(\p{L}.*)$/u;
+const SECTION_CODE_SOURCE = "(?:\\d+(?:\\.\\d+)*)";
+const SECTION_CODE = new RegExp(`^${SECTION_CODE_SOURCE}$`);
+const SECTION_DIRECTORY = new RegExp(`^(${SECTION_CODE_SOURCE})(?:[\\s_-]*|\\.\\s*)(\\p{L}.*)$`, "u");
 const SOLUTION_PREFIX = new RegExp(`^pf(${PORTFOLIO_CODE_SOURCE})\\s*-\\s*oef(\\d+)([a-z]?)(.*)\\.(pdf|png|jpe?g)$`, "i");
 const STEP_TOKEN = /\((\d+)\)/g;
 
@@ -87,10 +89,31 @@ export function parseHintsDocumentCode(name: string): string | null {
 export function parseSectionDirectory(name: string): ParsedSectionDirectory | null {
   const match = name.trim().match(SECTION_DIRECTORY);
   if (!match) return null;
+  const code = normalizeSectionCode(match[1]);
+  return isValidSectionCode(code) ? { code, title: match[2].trim() } : null;
+}
 
-  const order = Number(match[1]);
-  if (!Number.isSafeInteger(order)) return null;
-  return { order, title: match[2].trim() };
+export function normalizeSectionCode(code: string): string {
+  return code.trim().split(".").map((segment) => {
+    if (!/^\d+$/.test(segment)) return segment;
+    return BigInt(segment).toString();
+  }).join(".");
+}
+
+export function isValidSectionCode(code: string): boolean {
+  return SECTION_CODE.test(code.trim());
+}
+
+export function compareSectionCodes(left: string, right: string): number {
+  const leftCode = normalizeSectionCode(left);
+  const rightCode = normalizeSectionCode(right);
+  if (!isValidSectionCode(leftCode) || !isValidSectionCode(rightCode)) return compareText(leftCode, rightCode);
+  const leftSegments = leftCode.split(".").map(BigInt);
+  const rightSegments = rightCode.split(".").map(BigInt);
+  for (let index = 0; index < Math.min(leftSegments.length, rightSegments.length); index += 1) {
+    if (leftSegments[index] !== rightSegments[index]) return leftSegments[index] < rightSegments[index] ? -1 : 1;
+  }
+  return leftSegments.length - rightSegments.length;
 }
 
 export function relativePathBelongsToDirectory(relativePath: string, directoryPath: string): boolean {

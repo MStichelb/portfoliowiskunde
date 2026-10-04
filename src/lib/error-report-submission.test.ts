@@ -313,8 +313,8 @@ function portfolio(id: string, learningSpaceId: string, code: string, allDocumen
 }
 
 function section(id: string, portfolioId: string) {
-  return { sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path, visibility_mode)
-    VALUES (?, ?, 1, 'Deel 1', ?, 'visible')`, args: [id, portfolioId, `${portfolioId}/Uitwerkingen/1 - Deel`] };
+  return { sql: `INSERT INTO sections (id, portfolio_id, section_code, sort_order, title, relative_path, visibility_mode)
+    VALUES (?, ?, '1', 1, 'Deel 1', ?, 'visible')`, args: [id, portfolioId, `${portfolioId}/Uitwerkingen/1 - Deel`] };
 }
 
 function exercise(id: string, portfolioId: string, sectionId: string, code: string) {

@@ -12,6 +12,7 @@ import { isNextPrefetchRequest, preparePublicIndex } from "@/lib/public-index";
 import { requirePublicLearningSpaceAccess } from "@/lib/learning-space-access";
 import { getLearningSpaceBySlug, getVisibleExercise, type ExerciseResource } from "@/lib/repositories";
 import { formatTerminologyLabel } from "@/lib/collection-terminology";
+import { formatSectionLabel } from "@/lib/section-label";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export default async function LearningSpaceExercisePage({ params }: { params: Pr
 
   return <main className="page-shell solution-page">
     <Link href={`/${encodeURIComponent(space.slug)}/portfolio/${encodeURIComponent(exercise.portfolioId)}`} className="secondary-button compact-back-button"><ArrowLeft size={17} aria-hidden />Terug naar {formatTerminologyLabel(space.collectionLabelSingular, "inline")}</Link>
-    <header className="exercise-page-heading"><p className="eyebrow">{formatTerminologyLabel(space.collectionLabelSingular, "standalone")} {exercise.portfolioCode} • {exercise.portfolioTitle}</p><div className="public-exercise-title">{exercise.effectiveLevel ? <ExerciseLevelBadge level={exercise.effectiveLevel} presentation={space.levelPresentation} context="public" /> : null}<h1>{formatTerminologyLabel(space.exerciseLabelSingular, "standalone")} {exercise.code}</h1></div><p>{exercise.sectionTitle}</p></header>
+    <header className="exercise-page-heading"><p className="eyebrow">{formatTerminologyLabel(space.collectionLabelSingular, "standalone")} {exercise.portfolioCode} • {exercise.portfolioTitle}</p><div className="public-exercise-title">{exercise.effectiveLevel ? <ExerciseLevelBadge level={exercise.effectiveLevel} presentation={space.levelPresentation} context="public" /> : null}<h1>{formatTerminologyLabel(space.exerciseLabelSingular, "standalone")} {exercise.code}</h1></div><p>{formatSectionLabel(exercise.sectionCode, exercise.sectionTitle)}</p></header>
     <ExerciseSolutionWithNote customNote={exercise.customNote} noteLabel={exercise.noteLabel} notePosition={exercise.notePosition}>
       {resources.map((resource) => <Variant resource={resource} spaceSlug={space.slug} key={resource.id} />)}
     </ExerciseSolutionWithNote>

@@ -23,7 +23,7 @@ import {
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import type { IndexedLearningSpaceHeader } from "@/lib/learning-space-header";
 import { normalizeCollectionTerminology, normalizeExerciseShortLabel, normalizeExerciseTerminology } from "@/lib/collection-terminology";
-import { comparePortfolioIds, comparePortfolioRelativePaths, relativePathBelongsToDirectory } from "@/lib/parser";
+import { comparePortfolioIds, comparePortfolioRelativePaths, normalizeSectionCode, relativePathBelongsToDirectory } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { ExerciseNotePosition } from "@/lib/exercise-note";
 import { LEGACY_SUPERADMIN_USER_ID } from "@/lib/identity";
@@ -117,7 +117,7 @@ export interface AdminExercise extends ExerciseLevelMetadata {
 
 export interface AdminSection {
   id: string;
-  order: number;
+  code: string;
   title: string;
   visibilityMode: ChildVisibilityMode;
   publishFrom: string | null;
@@ -184,8 +184,8 @@ export interface StudentPortfolio {
   globalResources: PortfolioGlobalResource[];
   sections: Array<{
     id: string;
+    code: string;
     title: string;
-    order: number;
     exercises: Array<{ id: string; code: string; visible: boolean; hasAlternativeSolution: boolean } & ExerciseLevelMetadata>;
   }>;
 }
@@ -332,6 +332,10 @@ function groupBy<T>(items: readonly T[], keyFor: (item: T) => string): Map<strin
   const groups = new Map<string, T[]>();
   for (const item of items) groups.set(keyFor(item), [...(groups.get(keyFor(item)) ?? []), item]);
   return groups;
+}
+
+function indexedSectionId(portfolioId: string, sectionCode: string): string {
+  return `${portfolioId}-section-${normalizeSectionCode(sectionCode)}`;
 }
 
 interface ExerciseOwnedMetadata {
@@ -1181,13 +1185,13 @@ export async function persistIndex(
     exerciseId: text(row, "exercise_id"), key: `${text(row, "document_kind")}\u0000${nullableText(row, "variant_kind") ?? ""}`,
   })), (issue) => issue.exerciseId);
 
-  // Exercise identity contract: portfolio code + section order + normalized exercise code form the deterministic ID.
+  // Exercise identity contract: portfolio code + normalized section code + normalized exercise code form the deterministic ID.
   // A unique same-code candidate may safely retain identity across a section move; ambiguous candidates never trigger
   // content/path-based guessing and therefore fall back to the new deterministic ID with a warning.
   for (const portfolio of indexablePortfolios) {
     const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
     for (const section of portfolio.sections) {
-      const targetSectionId = `${portfolioId}-section-${section.order}`;
+      const targetSectionId = indexedSectionId(portfolioId, section.code);
       for (const exercise of section.exercises) {
         const desiredId = `${targetSectionId}-exercise-${exercise.code}`;
         const exact = existingExercisesById.get(desiredId);
@@ -1245,7 +1249,7 @@ export async function persistIndex(
   for (const portfolio of indexablePortfolios) {
     const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
     for (const section of portfolio.sections) {
-      const targetSectionId = `${portfolioId}-section-${section.order}`;
+      const targetSectionId = indexedSectionId(portfolioId, section.code);
       for (const exercise of section.exercises) {
         const exerciseId = resolvedExerciseId(portfolioId, targetSectionId, exercise.code);
         const existingExercise = existingExercisesById.get(exerciseId);
@@ -1290,7 +1294,7 @@ export async function persistIndex(
       incrementCount(incomingResourceExactCounts, resourceAssetExactKey("portfolio", asset.resourceId, asset.sourceId));
     }
     for (const section of portfolio.sections) {
-      const sectionId = `${portfolioId}-section-${section.order}`;
+      const sectionId = indexedSectionId(portfolioId, section.code);
       for (const exercise of section.exercises) {
         const exerciseId = resolvedExerciseId(portfolioId, sectionId, exercise.code);
         for (const asset of exercise.assets) {
@@ -1481,13 +1485,14 @@ export async function persistIndex(
     }
 
     for (const section of portfolio.sections) {
-      const sectionId = `${portfolioId}-section-${section.order}`;
+      const sectionId = indexedSectionId(portfolioId, section.code);
       statements.push({
-        sql: `INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path, visibility_mode, is_indexed, last_seen_at)
-          VALUES (?, ?, ?, ?, ?, 'visible', 1, ?)
-          ON CONFLICT(id) DO UPDATE SET title = excluded.title, relative_path = excluded.relative_path,
+        sql: `INSERT INTO sections (id, portfolio_id, section_code, sort_order, title, relative_path, visibility_mode, is_indexed, last_seen_at)
+          VALUES (?, ?, ?, ?, ?, ?, 'visible', 1, ?)
+          ON CONFLICT(id) DO UPDATE SET section_code = excluded.section_code, sort_order = excluded.sort_order,
+            title = excluded.title, relative_path = excluded.relative_path,
             is_indexed = 1, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
-        args: [sectionId, portfolioId, section.order, section.title, section.relativePath, startedAt],
+        args: [sectionId, portfolioId, section.code, section.sortOrder, section.title, section.relativePath, startedAt],
       });
       for (const [exerciseId, targetSectionId] of movedExerciseTargetSections) {
         if (targetSectionId === sectionId) statements.push({
@@ -2001,7 +2006,7 @@ async function getAdminPortfolioReadModels(spaceId: string, portfolioId?: string
     database.execute({ sql: `SELECT sections.* FROM sections
       JOIN portfolios ON portfolios.id = sections.portfolio_id
       WHERE portfolios.learning_space_id = ? AND sections.archived_at IS NULL${portfolioFilter}
-      ORDER BY sections.portfolio_id, sections.sort_order`, args: scopeArgs }),
+      ORDER BY sections.portfolio_id, sections.sort_order, sections.section_code, sections.id`, args: scopeArgs }),
     database.execute({ sql: `SELECT exercises.* FROM exercises
       JOIN portfolios ON portfolios.id = exercises.portfolio_id
       WHERE portfolios.learning_space_id = ? AND exercises.archived_at IS NULL${portfolioId ? " AND exercises.portfolio_id = ?" : ""}
@@ -2064,7 +2069,7 @@ async function getAdminPortfolioReadModels(spaceId: string, portfolioId?: string
         const sectionStatus = resolveChildPublication(sectionPublication, portfolioStatus, now);
         return {
           id: sectionId,
-          order: Number(section.sort_order),
+          code: text(section, "section_code"),
           title: text(section, "title"),
           visibilityMode: sectionPublication.mode,
           publishFrom: sectionPublication.publishFrom,
@@ -2253,7 +2258,7 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
   const [portfolios, sections, exercises, resourceAssets, sourceProfileContext, externalLinks] = await Promise.all([
     database.execute({ sql: `SELECT portfolios.*, themes.name AS theme_name FROM portfolios LEFT JOIN themes ON themes.id = portfolios.theme_id
       WHERE portfolios.is_indexed = 1 AND portfolios.learning_space_id = ?`, args: [spaceId] }),
-    database.execute({ sql: "SELECT * FROM sections WHERE is_indexed = 1 AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY portfolio_id, sort_order", args: [spaceId] }),
+    database.execute({ sql: "SELECT * FROM sections WHERE is_indexed = 1 AND portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ?) ORDER BY portfolio_id, sort_order, section_code, id", args: [spaceId] }),
     database.execute({ sql: `SELECT exercises.*,
       CASE WHEN exercises.show_alternative_to_students = 1 AND EXISTS (
         SELECT 1 FROM solution_variants
@@ -2304,7 +2309,7 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
       const sectionStatus = resolveChildPublication(sectionPublication, publication, now);
       const sectionId = text(section, "id");
       studentPortfolio.sections.push({
-        id: sectionId, title: text(section, "title"), order: Number(section.sort_order),
+        id: sectionId, code: text(section, "section_code"), title: text(section, "title"),
         exercises: exercises.rows.filter((row) => text(row, "section_id") === sectionId).map((exercise) => {
           const exercisePublication = { mode: childMode(exercise), limited: false, publishFrom: null, publishUntil: null };
           return {
@@ -2328,7 +2333,7 @@ export async function getStudentPortfolio(id: string, learningSpaceId?: string):
 export async function getVisibleExercise(id: string, learningSpaceId?: string) {
   const database = await getDatabase();
   const exerciseResult = await database.execute({
-    sql: `SELECT exercises.*, sections.title AS section_title, sections.visibility_mode AS section_visibility_mode,
+    sql: `SELECT exercises.*, sections.section_code, sections.title AS section_title, sections.visibility_mode AS section_visibility_mode,
       sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
       portfolios.id AS portfolio_id, portfolios.portfolio_code, portfolios.learning_space_id, portfolios.title AS portfolio_title, portfolios.title_override,
       portfolios.visible AS portfolio_visible, portfolios.publication_limited, portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until
@@ -2366,7 +2371,7 @@ export async function getVisibleExercise(id: string, learningSpaceId?: string) {
     : BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
   const visibleAssetRows = assets.rows.filter((asset) => text(asset, "kind") !== "alternative" || bool(exercise.show_alternative_to_students));
   return {
-    id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionTitle: text(exercise, "section_title"),
+    id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionCode: text(exercise, "section_code"), sectionTitle: text(exercise, "section_title"),
     ...exerciseLevelMetadataFromRow(exercise),
     portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
     customNote: nullableText(exercise, "custom_note"), noteLabel: nullableText(exercise, "note_label"), notePosition: text(exercise, "note_position") as ExerciseNotePosition,
@@ -2381,7 +2386,7 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     exercises.level_source, exercises.level_override_mode, exercises.level_override, exercises.visibility_mode,
     exercises.show_alternative_to_students,
     exercises.is_indexed AS exercise_is_indexed, exercises.archived_at AS exercise_archived_at,
-    sections.title AS section_title, sections.visibility_mode AS section_visibility_mode,
+    sections.section_code, sections.title AS section_title, sections.visibility_mode AS section_visibility_mode,
     sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from,
     sections.publish_until AS section_publish_until, sections.is_indexed AS section_is_indexed,
     portfolios.id AS portfolio_id, portfolios.portfolio_code, portfolios.title AS portfolio_title, portfolios.title_override,
@@ -2436,6 +2441,7 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     standardAssets: assets.rows.filter((asset) => text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
     alternativeAssets: assets.rows.filter((asset) => text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
     missingAssets: missingExerciseAssetCount(assets.rows, resourceAssets.rows),
+    sectionCode: text(exercise, "section_code"),
     sectionTitle: text(exercise, "section_title"),
     portfolioCode: text(exercise, "portfolio_code"),
     portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),

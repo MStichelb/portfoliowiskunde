@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   comparePortfolioIds,
+  compareSectionCodes,
   findExerciseNumberCandidates,
   isValidPortfolioId,
+  isValidSectionCode,
+  normalizeSectionCode,
   parseExerciseDirectoryIdentity,
   parseHintsDocumentCode,
   parsePortfolioDirectory,
@@ -71,16 +74,26 @@ describe("portfolio parser", () => {
   });
 
   it("herkent onderdeelmappen", () => {
-    expect(parseSectionDirectory("1 - Methode van Gauss-Jordan")).toEqual({ order: 1, title: "Methode van Gauss-Jordan" });
-    expect(parseSectionDirectory("1 Methode van Gauss-Jordan")).toEqual({ order: 1, title: "Methode van Gauss-Jordan" });
-    expect(parseSectionDirectory("1_Methode van Gauss-Jordan")).toEqual({ order: 1, title: "Methode van Gauss-Jordan" });
-    expect(parseSectionDirectory("2. Stelsels")).toEqual({ order: 2, title: "Stelsels" });
-    expect(parseSectionDirectory("2.Stelsels")).toEqual({ order: 2, title: "Stelsels" });
-    expect(parseSectionDirectory("2.1 Stelsels")).toBeNull();
-    expect(parseSectionDirectory("10 - Toepassingen")).toEqual({ order: 10, title: "Toepassingen" });
-    expect(parseSectionDirectory("2A Methode")).toEqual({ order: 2, title: "A Methode" });
+    expect(parseSectionDirectory("1 - Methode van Gauss-Jordan")).toEqual({ code: "1", title: "Methode van Gauss-Jordan" });
+    expect(parseSectionDirectory("1 Methode van Gauss-Jordan")).toEqual({ code: "1", title: "Methode van Gauss-Jordan" });
+    expect(parseSectionDirectory("1_Methode van Gauss-Jordan")).toEqual({ code: "1", title: "Methode van Gauss-Jordan" });
+    expect(parseSectionDirectory("2. Stelsels")).toEqual({ code: "2", title: "Stelsels" });
+    expect(parseSectionDirectory("2.Stelsels")).toEqual({ code: "2", title: "Stelsels" });
+    expect(parseSectionDirectory("1.1 Stelsels")).toEqual({ code: "1.1", title: "Stelsels" });
+    expect(parseSectionDirectory("1.10 - Toepassingen")).toEqual({ code: "1.10", title: "Toepassingen" });
+    expect(parseSectionDirectory("10 - Toepassingen")).toEqual({ code: "10", title: "Toepassingen" });
+    expect(parseSectionDirectory("2A Methode")).toEqual({ code: "2", title: "A Methode" });
     expect(parseSectionDirectory("Uitwerkingen")).toBeNull();
     expect(parseSectionDirectory("1 - 2026")).toBeNull();
+    expect(parseSectionDirectory("A1 Methode")).toBeNull();
+    expect(parseSectionDirectory("A.1 Methode")).toBeNull();
+  });
+
+  it("normaliseert en sorteert numerieke sectioncodes natuurlijk", () => {
+    for (const valid of ["1", "1.1", "1.2", "1.10", "2", "2.1"]) expect(isValidSectionCode(valid)).toBe(true);
+    for (const invalid of ["A", "A1", "A.1", ".1", "1.", "1..1", ""]) expect(isValidSectionCode(invalid)).toBe(false);
+    expect(normalizeSectionCode("01.010")).toBe("1.10");
+    expect(["2", "1.10", "1.2", "1", "1.1"].sort(compareSectionCodes)).toEqual(["1", "1.1", "1.2", "1.10", "2"]);
   });
 
 

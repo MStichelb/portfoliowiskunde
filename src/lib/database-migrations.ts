@@ -15,6 +15,8 @@ import { DEFAULT_EXERCISE_LEVEL_PRESENTATION } from "@/lib/exercise-level-presen
 export interface DatabaseMigration {
   version: string;
   statements: string[];
+  postgresStatements?: string[];
+  sqliteForeignKeysDisabled?: boolean;
   conflictCheck?: {
     sql: string;
     message: string;
@@ -1170,6 +1172,44 @@ export const migrations: DatabaseMigration[] = [
     version: "054_learning_space_exercise_short_label",
     statements: [
       "ALTER TABLE learning_spaces ADD COLUMN exercise_label_short TEXT NOT NULL DEFAULT 'Oef.' CHECK(length(exercise_label_short) <= 12)",
+    ],
+  },
+  {
+    version: "055_section_codes",
+    sqliteForeignKeysDisabled: true,
+    statements: [
+      `CREATE TABLE sections_055 (
+        id TEXT PRIMARY KEY,
+        portfolio_id TEXT NOT NULL REFERENCES portfolios(id),
+        section_code TEXT NOT NULL,
+        sort_order INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        is_indexed INTEGER NOT NULL DEFAULT 1,
+        visibility_mode TEXT NOT NULL DEFAULT 'inherit' CHECK(visibility_mode IN ('inherit', 'hidden', 'visible')),
+        publish_from TEXT,
+        publish_until TEXT,
+        last_seen_at TEXT,
+        publication_limited INTEGER NOT NULL DEFAULT 0,
+        archived_at TEXT,
+        UNIQUE(portfolio_id, section_code)
+      )`,
+      `INSERT INTO sections_055 (
+          id, portfolio_id, section_code, sort_order, title, relative_path, is_indexed,
+          visibility_mode, publish_from, publish_until, last_seen_at, publication_limited, archived_at
+        )
+        SELECT id, portfolio_id, CAST(sort_order AS TEXT), sort_order, title, relative_path, is_indexed,
+          visibility_mode, publish_from, publish_until, last_seen_at, publication_limited, archived_at
+        FROM sections`,
+      "DROP TABLE sections",
+      "ALTER TABLE sections_055 RENAME TO sections",
+    ],
+    postgresStatements: [
+      "ALTER TABLE sections ADD COLUMN section_code TEXT",
+      "UPDATE sections SET section_code = CAST(sort_order AS TEXT)",
+      "ALTER TABLE sections ALTER COLUMN section_code SET NOT NULL",
+      "ALTER TABLE sections DROP CONSTRAINT sections_portfolio_id_sort_order_key",
+      "ALTER TABLE sections ADD CONSTRAINT sections_portfolio_id_section_code_key UNIQUE(portfolio_id, section_code)",
     ],
   },
 ];

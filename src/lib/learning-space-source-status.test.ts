@@ -320,7 +320,8 @@ function statusFixture(warnings: IndexWarning[]): IndexedPortfolio {
       },
     ],
     sections: [{
-      order: 1,
+      code: "1",
+      sortOrder: 1,
       title: "Status",
       relativePath: sectionPath,
       exercises: [{

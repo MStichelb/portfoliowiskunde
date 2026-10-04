@@ -9,7 +9,7 @@ export interface ParsedPortfolioDirectory {
 }
 
 export interface ParsedSectionDirectory {
-  order: number;
+  code: string;
   title: string;
 }
 
@@ -73,7 +73,8 @@ export interface IndexedExercise {
 }
 
 export interface IndexedSection {
-  order: number;
+  code: string;
+  sortOrder: number;
   title: string;
   relativePath: string;
   exercises: IndexedExercise[];

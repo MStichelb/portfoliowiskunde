@@ -181,13 +181,13 @@ async function localDatabaseUrl(): Promise<string> {
 async function runMigrations(database: DatabaseClient, isPostgres: boolean): Promise<void> {
   if (isPostgres) {
     if (!database.withMigrationLock) throw new Error("De PostgreSQL-adapter ondersteunt geen migration lock.");
-    await database.withMigrationLock(applyMigrations);
+    await database.withMigrationLock((lockedDatabase) => applyMigrations(lockedDatabase, "postgres"));
     return;
   }
-  await applyMigrations(database);
+  await applyMigrations(database, "sqlite");
 }
 
-async function applyMigrations(database: DatabaseClient): Promise<void> {
+async function applyMigrations(database: DatabaseClient, dialect: "sqlite" | "postgres"): Promise<void> {
   await database.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
   const applied = await database.execute("SELECT version FROM schema_migrations");
   const knownVersions = new Set(applied.rows.map((row) => String(row.version)));
@@ -195,14 +195,22 @@ async function applyMigrations(database: DatabaseClient): Promise<void> {
   for (const migration of migrations) {
     if (knownVersions.has(migration.version)) continue;
     await assertNoMigrationConflicts(database, migration);
+    const statements = dialect === "postgres" ? migration.postgresStatements ?? migration.statements : migration.statements;
     try {
+      if (dialect === "sqlite" && migration.sqliteForeignKeysDisabled) await database.execute("PRAGMA foreign_keys = OFF");
       await database.batch([
-        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        ...statements.map((sql) => ({ sql, args: [] })),
         { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, new Date().toISOString()] },
       ]);
     } catch (error) {
       await assertNoMigrationConflicts(database, migration);
       throw error;
+    } finally {
+      if (dialect === "sqlite" && migration.sqliteForeignKeysDisabled) await database.execute("PRAGMA foreign_keys = ON");
+    }
+    if (dialect === "sqlite" && migration.sqliteForeignKeysDisabled) {
+      const violations = await database.execute("PRAGMA foreign_key_check");
+      if (violations.rows.length > 0) throw new Error(`Migratie ${migration.version} heeft ongeldige foreign keys achtergelaten.`);
     }
   }
 }

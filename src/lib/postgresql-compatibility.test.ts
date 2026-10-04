@@ -177,7 +177,8 @@ function postgresExerciseMoveFixture(portfolioCode: string, sectionOrder: number
     finalSolutionsPdfSourceId: null,
     resourceAssets: [],
     sections: [{
-      order: sectionOrder,
+      code: String(sectionOrder),
+      sortOrder: sectionOrder,
       title: "Sectie",
       relativePath: sectionPath,
       exercises: [{
