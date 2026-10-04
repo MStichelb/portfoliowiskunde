@@ -9,7 +9,9 @@ import type { IndexedPortfolio } from "./domain";
 import { createUser } from "./identity";
 import {
   getLearningSpace,
+  getActiveLearningSpaceSource,
   getLearningSpaces,
+  getSyncPublicationSnapshot,
   getSetting,
   releaseSyncLease,
   setSetting,
@@ -101,12 +103,17 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     const settingKey = `postgres-compat-${suffix}`;
     await setSetting(settingKey, "ok");
     expect(await getSetting(settingKey)).toBe("ok");
-    expect(await tryAcquireSyncLease("space-5", `postgres-compat-${suffix}`)).toBe(true);
-    await releaseSyncLease("space-5", `postgres-compat-${suffix}`);
-
     const portfolioCode = `pg-${suffix}`;
     const firstIndex = postgresExerciseMoveFixture(portfolioCode, 1, "postgres-move-old");
-    await persistIndex([firstIndex], "local", "space-5");
+    const leaseOwner = `postgres-compat-${suffix}`;
+    expect(await tryAcquireSyncLease("space-5", leaseOwner)).toBe(true);
+    const activeSource = (await getActiveLearningSpaceSource("space-5"))!;
+    const publicationSnapshot = (await getSyncPublicationSnapshot("space-5", activeSource.id))!;
+    await persistIndex([firstIndex], "local", "space-5", {
+      sourceId: activeSource.id,
+      publicationGuard: { ownerId: leaseOwner, leaseSeconds: 600, snapshot: publicationSnapshot },
+    });
+    await releaseSyncLease("space-5", leaseOwner);
     const originalExerciseId = String((await database.execute({
       sql: "SELECT id FROM exercises WHERE portfolio_id IN (SELECT id FROM portfolios WHERE learning_space_id = ? AND portfolio_code = ?)",
       args: ["space-5", portfolioCode],

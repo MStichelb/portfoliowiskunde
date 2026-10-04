@@ -17,6 +17,7 @@ import {
   resolveStoredGroupAccess,
   setLearningSpaceMember,
   updateUserFromExternalIdentity,
+  userRoleFromValue,
   type NormalizedGroupMembership,
 } from "./identity";
 import {
@@ -38,6 +39,14 @@ afterEach(async () => {
 });
 
 describe("multi-user authorization foundation", () => {
+  it("maps persisted roles fail-closed without elevating unknown values", () => {
+    expect(userRoleFromValue("superadmin")).toBe("superadmin");
+    expect(userRoleFromValue("teacher")).toBe("teacher");
+    expect(userRoleFromValue("student")).toBe("student");
+    expect(userRoleFromValue("administrator")).toBe("student");
+    expect(userRoleFromValue(null)).toBe("student");
+  });
+
   it("geeft superadmin alle ruimtes en teachers uitsluitend expliciete memberships", async () => {
     await useTemporaryDatabase();
     const superadmin = await createUser({ displayName: "Superadmin", role: "superadmin" });

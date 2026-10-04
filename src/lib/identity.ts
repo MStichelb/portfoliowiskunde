@@ -273,15 +273,15 @@ function userFromRow(row: Record<string, unknown>): AppUser {
     firstName: normalizedNamePart(row.first_name),
     lastName: normalizedNamePart(row.last_name),
     email: typeof row.email === "string" && row.email ? row.email : null,
-    role: userRole(String(row.role)),
+    role: userRoleFromValue(row.role),
     status: row.status === "disabled" ? "disabled" : "active",
     classGroupOverrideId: normalizedNamePart(row.class_group_override_id),
   };
 }
 
-function userRole(value: string): UserRole {
-  if (value === "teacher" || value === "student") return value;
-  return "superadmin";
+export function userRoleFromValue(value: unknown): UserRole {
+  if (value === "superadmin" || value === "teacher" || value === "student") return value;
+  return "student";
 }
 
 function normalizeProvider(value: string): string {

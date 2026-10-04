@@ -1,10 +1,19 @@
 import { randomUUID } from "node:crypto";
 
-import { getLearningSpace, persistIndex, recordFailedSync, recordLearningSpaceSourceValidation, releaseSyncLease, tryAcquireSyncLease } from "@/lib/repositories";
+import {
+  getActiveLearningSpaceSource,
+  getLearningSpace,
+  getLearningSpaces,
+  getSyncPublicationSnapshot,
+  persistIndex,
+  recordFailedSync,
+  recordLearningSpaceSourceValidation,
+  releaseSyncLease,
+  tryAcquireSyncLease,
+} from "@/lib/repositories";
 import { indexSource } from "@/lib/storage/portfolio-indexer";
 import { getStorageProviderWithType } from "@/lib/storage";
-import { SourceAccessError, SourceConfigurationError } from "@/lib/source-errors";
-import { getActiveSourceProfileConfigForLearningSpace } from "@/lib/source-profiles";
+import { SourceAccessError, SourceConfigurationError, StaleSynchronizationError } from "@/lib/source-errors";
 import { detectLearningSpaceHeader } from "@/lib/learning-space-header";
 import type { StorageProvider } from "@/lib/storage/provider";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
@@ -12,52 +21,66 @@ import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/li
 interface SynchronizationDependencies {
   getConfiguredProvider?: (learningSpaceId?: string) => Promise<{ provider: StorageProvider; type: StorageSourceType; space: LearningSpace; source?: LearningSpaceSource }>;
   index?: typeof indexSource;
+  acquireLease?: typeof tryAcquireSyncLease;
+  releaseLease?: typeof releaseSyncLease;
 }
 
 type SynchronizationStage = "provider-resolution" | "source-readiness" | "indexing" | "persistence";
 
 export async function synchronizeSource(learningSpaceId?: string, dependencies: SynchronizationDependencies = {}) {
-  if (learningSpaceId) {
-    const requestedSpace = await getLearningSpace(learningSpaceId);
-    if (requestedSpace && !requestedSpace.isActive) {
-      return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true, skipReason: "archived" as const };
-    }
+  const requestedSpace = learningSpaceId
+    ? await getLearningSpace(learningSpaceId)
+    : (await getLearningSpaces(true)).at(-1) ?? null;
+  if (!requestedSpace) throw new SourceConfigurationError("Leeromgeving niet gevonden.");
+  if (!requestedSpace.isActive) {
+    return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true, skipReason: "archived" as const };
   }
   let providerType = "local";
   let lease: { learningSpaceId: string; ownerId: string } | null = null;
   let source: LearningSpaceSource | undefined;
   let stage: SynchronizationStage = "provider-resolution";
+  const acquireLease = dependencies.acquireLease ?? tryAcquireSyncLease;
+  const releaseLease = dependencies.releaseLease ?? releaseSyncLease;
   try {
-    const configured = await (dependencies.getConfiguredProvider ?? getStorageProviderWithType)(learningSpaceId);
-    providerType = configured.type;
-    source = configured.source;
     const ownerId = randomUUID();
     const leaseSeconds = synchronizationLeaseSeconds();
-    if (!await tryAcquireSyncLease(configured.space.id, ownerId, new Date(), leaseSeconds)) {
+    if (!await acquireLease(requestedSpace.id, ownerId, new Date(), leaseSeconds)) {
       return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true };
     }
-    lease = { learningSpaceId: configured.space.id, ownerId };
+    lease = { learningSpaceId: requestedSpace.id, ownerId };
+    const configured = await (dependencies.getConfiguredProvider ?? getStorageProviderWithType)(requestedSpace.id);
+    if (configured.space.id !== requestedSpace.id) throw new SourceConfigurationError("De synchronisatiebron hoort niet bij deze leeromgeving.");
+    providerType = configured.type;
+    source = configured.source ?? await getActiveLearningSpaceSource(requestedSpace.id) ?? undefined;
+    if (!source) throw new SourceConfigurationError("Deze leeromgeving heeft geen actieve bron.");
+    const snapshot = await getSyncPublicationSnapshot(requestedSpace.id, source.id);
+    if (!snapshot || snapshot.activeSourceId !== source.id || source.providerType !== configured.type) {
+      throw new StaleSynchronizationError("De actieve bron wijzigde vóór de synchronisatie kon starten.");
+    }
     stage = "source-readiness";
     await configured.provider.assertReadyForIndex?.();
     const readiness = configured.provider.getReadinessMetadata?.();
     stage = "indexing";
-    const sourceProfileConfig = await getActiveSourceProfileConfigForLearningSpace(configured.space.id);
     const [portfolios, header] = await Promise.all([
-      (dependencies.index ?? indexSource)(configured.provider, sourceProfileConfig),
-      configured.source?.role === "mirror" ? Promise.resolve(undefined) : detectLearningSpaceHeader(configured.provider),
+      (dependencies.index ?? indexSource)(configured.provider, snapshot.sourceProfileConfig),
+      source.role === "mirror" ? Promise.resolve(undefined) : detectLearningSpaceHeader(configured.provider),
     ]);
-    const currentSpace = await getLearningSpace(configured.space.id);
+    const currentSpace = await getLearningSpace(requestedSpace.id);
     if (!currentSpace?.isActive) {
       return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true, skipReason: "archived" as const };
     }
     stage = "persistence";
-    const result = await persistIndex(portfolios, configured.type, configured.space.id, {
-      sourceId: configured.source?.id,
+    const result = await persistIndex(portfolios, configured.type, requestedSpace.id, {
+      sourceId: source.id,
       mirrorCompletedAt: readiness?.mirrorCompletedAt,
       ...(header === undefined ? {} : { header }),
+      publicationGuard: { ownerId, leaseSeconds, snapshot },
     });
     return { portfolios: portfolios.length, ...result, skipped: false };
   } catch (error) {
+    if (error instanceof StaleSynchronizationError) {
+      return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true, skipReason: "stale" as const };
+    }
     if (source && isSourceValidationFailure(error)) {
       await recordLearningSpaceSourceValidation(source.id, "invalid", error instanceof Error ? error.message : "Bronvalidatie mislukt.").catch(() => undefined);
     }
@@ -70,7 +93,7 @@ export async function synchronizeSource(learningSpaceId?: string, dependencies: 
     if (providerType === "google_drive") throw new SourceAccessError("Google Drive kon niet worden gesynchroniseerd. Controleer het service account en de folder-ID.");
     throw error;
   } finally {
-    if (lease) await releaseSyncLease(lease.learningSpaceId, lease.ownerId).catch(() => {
+    if (lease) await releaseLease(lease.learningSpaceId, lease.ownerId).catch(() => {
       console.error("Synchronization lease release failed.", { learningSpaceId: lease?.learningSpaceId });
     });
   }

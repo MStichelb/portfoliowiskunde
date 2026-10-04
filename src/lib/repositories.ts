@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 import type { DatabaseRow, InStatement } from "@/lib/database";
-import { executeBatch, getDatabase } from "@/lib/database";
+import { executeBatch, executeGuardedBatch, getDatabase } from "@/lib/database";
 import type { IndexedPortfolio } from "@/lib/domain";
 import { listErrorReportExerciseIdentities, normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
 import { ErrorReportRateLimitError } from "@/lib/error-report-rate-limit";
@@ -39,6 +39,7 @@ import {
   BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
   firstExerciseResourceBySemanticRole,
   firstSourceFileGlobalResourceBySemanticRole,
+  parseStoredSourceProfileConfig,
   sortExerciseResources,
   sortGlobalResources,
   type ExerciseResourceConfig,
@@ -47,8 +48,10 @@ import {
   type GlobalResourceFileRecognition,
   type GlobalResourceIcon,
   type GlobalResourceSemanticRole,
+  type SourceProfileConfig,
 } from "@/lib/source-profile-config";
 import { getActiveSourceProfileForLearningSpace } from "@/lib/source-profiles";
+import { StaleSynchronizationError } from "@/lib/source-errors";
 import { requireActiveSubject } from "@/lib/subjects";
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
 import {
@@ -1009,11 +1012,92 @@ export async function releaseSyncLease(learningSpaceId: string, ownerId: string)
   await (await getDatabase()).execute({ sql: "DELETE FROM sync_leases WHERE learning_space_id = ? AND owner_id = ?", args: [learningSpaceId, ownerId] });
 }
 
+export interface SyncPublicationSnapshot {
+  learningSpaceId: string;
+  sourceId: string;
+  sourceUpdatedAt: string;
+  sourceProviderType: StorageSourceType;
+  sourceStorageConnectionId: string | null;
+  sourceLocalPath: string | null;
+  sourceOneDriveDriveId: string | null;
+  sourceOneDriveFolderId: string | null;
+  sourceOneDriveFolderPath: string | null;
+  sourceGoogleDriveFolderId: string | null;
+  sourceGoogleDriveFolderLabel: string | null;
+  activeSourceId: string;
+  sourceProfileId: string;
+  sourceProfileAssignmentUpdatedAt: string;
+  sourceProfileUpdatedAt: string;
+  sourceProfileConfigVersion: number;
+  sourceProfileConfigJson: string;
+  sourceProfileConfig: SourceProfileConfig;
+}
+
+export async function getSyncPublicationSnapshot(
+  learningSpaceId: string,
+  sourceId: string,
+): Promise<SyncPublicationSnapshot | null> {
+  const row = (await (await getDatabase()).execute({
+    sql: `SELECT learning_space_sources.id AS source_id, learning_space_sources.updated_at AS source_updated_at,
+      learning_space_sources.provider_type AS source_provider_type,
+      learning_space_sources.storage_connection_id AS source_storage_connection_id,
+      learning_space_sources.local_source_path AS source_local_path,
+      learning_space_sources.onedrive_drive_id AS source_onedrive_drive_id,
+      learning_space_sources.onedrive_folder_id AS source_onedrive_folder_id,
+      learning_space_sources.onedrive_folder_path AS source_onedrive_folder_path,
+      learning_space_sources.google_drive_folder_id AS source_google_drive_folder_id,
+      learning_space_sources.google_drive_folder_label AS source_google_drive_folder_label,
+      active_source.id AS active_source_id, learning_space_source_profiles.source_profile_id,
+      learning_space_source_profiles.updated_at AS source_profile_assignment_updated_at,
+      source_profiles.updated_at AS source_profile_updated_at, source_profiles.config_version, source_profiles.config_json
+      FROM learning_spaces
+      INNER JOIN learning_space_sources ON learning_space_sources.learning_space_id = learning_spaces.id
+        AND learning_space_sources.id = ?
+      INNER JOIN learning_space_sources AS active_source ON active_source.learning_space_id = learning_spaces.id
+        AND active_source.is_active = 1
+      INNER JOIN learning_space_source_profiles ON learning_space_source_profiles.learning_space_id = learning_spaces.id
+      INNER JOIN source_profiles ON source_profiles.id = learning_space_source_profiles.source_profile_id
+        AND source_profiles.archived_at IS NULL
+      WHERE learning_spaces.id = ? AND learning_spaces.is_active = 1 AND learning_spaces.archived_at IS NULL`,
+    args: [sourceId, learningSpaceId],
+  })).rows[0];
+  if (!row) return null;
+  const configVersion = Number(row.config_version);
+  const configJson = text(row, "config_json");
+  return {
+    learningSpaceId,
+    sourceId: text(row, "source_id"),
+    sourceUpdatedAt: text(row, "source_updated_at"),
+    sourceProviderType: storageSourceType(text(row, "source_provider_type")),
+    sourceStorageConnectionId: nullableText(row, "source_storage_connection_id"),
+    sourceLocalPath: nullableText(row, "source_local_path"),
+    sourceOneDriveDriveId: nullableText(row, "source_onedrive_drive_id"),
+    sourceOneDriveFolderId: nullableText(row, "source_onedrive_folder_id"),
+    sourceOneDriveFolderPath: nullableText(row, "source_onedrive_folder_path"),
+    sourceGoogleDriveFolderId: nullableText(row, "source_google_drive_folder_id"),
+    sourceGoogleDriveFolderLabel: nullableText(row, "source_google_drive_folder_label"),
+    activeSourceId: text(row, "active_source_id"),
+    sourceProfileId: text(row, "source_profile_id"),
+    sourceProfileAssignmentUpdatedAt: text(row, "source_profile_assignment_updated_at"),
+    sourceProfileUpdatedAt: text(row, "source_profile_updated_at"),
+    sourceProfileConfigVersion: configVersion,
+    sourceProfileConfigJson: configJson,
+    sourceProfileConfig: parseStoredSourceProfileConfig(configVersion, configJson),
+  };
+}
+
+export interface SyncPublicationGuard {
+  ownerId: string;
+  leaseSeconds: number;
+  snapshot: SyncPublicationSnapshot;
+}
+
 export interface PersistIndexOptions {
   sourceId?: string;
   activateSourceId?: string;
   mirrorCompletedAt?: string;
   header?: IndexedLearningSpaceHeader | null;
+  publicationGuard?: SyncPublicationGuard;
 }
 
 export async function persistIndex(
@@ -1556,7 +1640,50 @@ export async function persistIndex(
     );
   }
 
-  await executeBatch(statements);
+  if (options.publicationGuard) {
+    const guard = options.publicationGuard;
+    if (guard.snapshot.learningSpaceId !== spaceId || guard.snapshot.sourceId !== sourceId) {
+      throw new StaleSynchronizationError("De synchronisatiesnapshot hoort niet bij deze publicatie.");
+    }
+    const checkedAt = new Date();
+    const renewedUntil = new Date(checkedAt.getTime() + Math.max(60, guard.leaseSeconds) * 1000).toISOString();
+    const published = await executeGuardedBatch({
+      sql: `UPDATE sync_leases SET acquired_until = ?
+        WHERE learning_space_id = ? AND owner_id = ? AND acquired_until > ?
+          AND EXISTS (SELECT 1 FROM learning_spaces
+            WHERE id = ? AND is_active = 1 AND archived_at IS NULL)
+          AND EXISTS (SELECT 1 FROM learning_space_sources
+            WHERE id = ? AND learning_space_id = ? AND updated_at = ? AND provider_type = ?
+              AND COALESCE(storage_connection_id, '') = ? AND COALESCE(local_source_path, '') = ?
+              AND COALESCE(onedrive_drive_id, '') = ? AND COALESCE(onedrive_folder_id, '') = ?
+              AND COALESCE(onedrive_folder_path, '') = ? AND COALESCE(google_drive_folder_id, '') = ?
+              AND COALESCE(google_drive_folder_label, '') = ?)
+          AND EXISTS (SELECT 1 FROM learning_space_sources
+            WHERE id = ? AND learning_space_id = ? AND is_active = 1)
+          AND EXISTS (SELECT 1 FROM learning_space_source_profiles
+            INNER JOIN source_profiles ON source_profiles.id = learning_space_source_profiles.source_profile_id
+            WHERE learning_space_source_profiles.learning_space_id = ?
+              AND learning_space_source_profiles.source_profile_id = ?
+              AND learning_space_source_profiles.updated_at = ?
+              AND source_profiles.updated_at = ?
+              AND source_profiles.config_version = ?
+              AND source_profiles.config_json = ?
+              AND source_profiles.archived_at IS NULL)
+        RETURNING owner_id`,
+      args: [renewedUntil, spaceId, guard.ownerId, checkedAt.toISOString(), spaceId,
+        guard.snapshot.sourceId, spaceId, guard.snapshot.sourceUpdatedAt, guard.snapshot.sourceProviderType,
+        guard.snapshot.sourceStorageConnectionId ?? "", guard.snapshot.sourceLocalPath ?? "",
+        guard.snapshot.sourceOneDriveDriveId ?? "", guard.snapshot.sourceOneDriveFolderId ?? "",
+        guard.snapshot.sourceOneDriveFolderPath ?? "", guard.snapshot.sourceGoogleDriveFolderId ?? "",
+        guard.snapshot.sourceGoogleDriveFolderLabel ?? "",
+        guard.snapshot.activeSourceId, spaceId, spaceId, guard.snapshot.sourceProfileId,
+        guard.snapshot.sourceProfileAssignmentUpdatedAt, guard.snapshot.sourceProfileUpdatedAt,
+        guard.snapshot.sourceProfileConfigVersion, guard.snapshot.sourceProfileConfigJson],
+    }, statements);
+    if (!published) throw new StaleSynchronizationError("De synchronisatielease of bronsnapshot is niet meer geldig.");
+  } else {
+    await executeBatch(statements);
+  }
   return { warnings: warnings.length, added, updated, missing: missing.length };
 }
 

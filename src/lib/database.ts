@@ -19,14 +19,22 @@ export interface QueryResult {
 export interface DatabaseClient {
   execute(statement: string | InStatement): Promise<QueryResult>;
   batch(statements: InStatement[]): Promise<void>;
+  guardedBatch(guard: InStatement, statements: InStatement[]): Promise<boolean>;
+  withMigrationLock?(work: (database: DatabaseClient) => Promise<void>): Promise<void>;
 }
 
 let clientPromise: Promise<DatabaseClient> | undefined;
 let localClient: ReturnType<typeof createClient> | undefined;
 const POSTGRES_MIGRATION_LOCK_ID = "741824936501";
 
-export async function getDatabase(): Promise<DatabaseClient> {
-  if (!clientPromise) clientPromise = createDatabaseClient();
+export function getDatabase(): Promise<DatabaseClient> {
+  if (!clientPromise) {
+    const initialization = createDatabaseClient();
+    clientPromise = initialization;
+    void initialization.catch(() => {
+      if (clientPromise === initialization) clientPromise = undefined;
+    });
+  }
   return clientPromise;
 }
 
@@ -72,6 +80,26 @@ async function createLibsqlClient(databaseUrl?: string): Promise<DatabaseClient>
       if (statements.length === 0) return;
       await client.batch(statements.map((statement) => ({ sql: statement.sql, args: statement.args ?? [] })), "write");
     },
+    async guardedBatch(guard, statements) {
+      const transaction = await client.transaction("write");
+      try {
+        const result = await transaction.execute({ sql: guard.sql, args: guard.args ?? [] });
+        if (result.rows.length === 0) {
+          await transaction.rollback();
+          return false;
+        }
+        if (statements.length > 0) {
+          await transaction.batch(statements.map((statement) => ({ sql: statement.sql, args: statement.args ?? [] })));
+        }
+        await transaction.commit();
+        return true;
+      } catch (error) {
+        if (!transaction.closed) await transaction.rollback();
+        throw error;
+      } finally {
+        transaction.close();
+      }
+    },
   };
 }
 
@@ -83,6 +111,29 @@ function createPostgresClient(connectionString: string): DatabaseClient {
     prepare: false,
   });
 
+  const database = createPostgresQueryClient(client);
+  return {
+    ...database,
+    async withMigrationLock(work) {
+      const reserved = await client.reserve();
+      const reservedDatabase = createPostgresQueryClient(reserved);
+      try {
+        await reservedDatabase.execute(`SELECT pg_advisory_lock(${POSTGRES_MIGRATION_LOCK_ID})`);
+        try {
+          await work(reservedDatabase);
+        } finally {
+          await reservedDatabase.execute(`SELECT pg_advisory_unlock(${POSTGRES_MIGRATION_LOCK_ID})`);
+        }
+      } finally {
+        reserved.release();
+      }
+    },
+  };
+}
+
+type PostgresQueryClient = Pick<ReturnType<typeof postgres>, "unsafe" | "begin">;
+
+function createPostgresQueryClient(client: PostgresQueryClient): DatabaseClient {
   return {
     async execute(statement) {
       const query = normaliseStatement(statement);
@@ -95,6 +146,16 @@ function createPostgresClient(connectionString: string): DatabaseClient {
         for (const statement of statements) {
           await transaction.unsafe(toPostgresParameters(statement.sql), (statement.args ?? []) as never[]);
         }
+      });
+    },
+    async guardedBatch(guard, statements) {
+      return client.begin(async (transaction) => {
+        const rows = await transaction.unsafe(toPostgresParameters(guard.sql), (guard.args ?? []) as never[]);
+        if (rows.length === 0) return false;
+        for (const statement of statements) {
+          await transaction.unsafe(toPostgresParameters(statement.sql), (statement.args ?? []) as never[]);
+        }
+        return true;
       });
     },
   };
@@ -118,27 +179,31 @@ async function localDatabaseUrl(): Promise<string> {
 }
 
 async function runMigrations(database: DatabaseClient, isPostgres: boolean): Promise<void> {
-  if (isPostgres) await database.execute(`SELECT pg_advisory_lock(${POSTGRES_MIGRATION_LOCK_ID})`);
-  try {
-    await database.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
-    const applied = await database.execute("SELECT version FROM schema_migrations");
-    const knownVersions = new Set(applied.rows.map((row) => String(row.version)));
+  if (isPostgres) {
+    if (!database.withMigrationLock) throw new Error("De PostgreSQL-adapter ondersteunt geen migration lock.");
+    await database.withMigrationLock(applyMigrations);
+    return;
+  }
+  await applyMigrations(database);
+}
 
-    for (const migration of migrations) {
-      if (knownVersions.has(migration.version)) continue;
+async function applyMigrations(database: DatabaseClient): Promise<void> {
+  await database.execute("CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+  const applied = await database.execute("SELECT version FROM schema_migrations");
+  const knownVersions = new Set(applied.rows.map((row) => String(row.version)));
+
+  for (const migration of migrations) {
+    if (knownVersions.has(migration.version)) continue;
+    await assertNoMigrationConflicts(database, migration);
+    try {
+      await database.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, new Date().toISOString()] },
+      ]);
+    } catch (error) {
       await assertNoMigrationConflicts(database, migration);
-      try {
-        await database.batch([
-          ...migration.statements.map((sql) => ({ sql, args: [] })),
-          { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, new Date().toISOString()] },
-        ]);
-      } catch (error) {
-        await assertNoMigrationConflicts(database, migration);
-        throw error;
-      }
+      throw error;
     }
-  } finally {
-    if (isPostgres) await database.execute(`SELECT pg_advisory_unlock(${POSTGRES_MIGRATION_LOCK_ID})`);
   }
 }
 
@@ -152,6 +217,10 @@ async function assertNoMigrationConflicts(database: DatabaseClient, migration: (
 
 export async function executeBatch(statements: InStatement[]): Promise<void> {
   await (await getDatabase()).batch(statements);
+}
+
+export async function executeGuardedBatch(guard: InStatement, statements: InStatement[]): Promise<boolean> {
+  return (await getDatabase()).guardedBatch(guard, statements);
 }
 
 export function resetDatabaseForTests() {

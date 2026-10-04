@@ -1,5 +1,5 @@
 import { executeBatch, getDatabase } from "@/lib/database";
-import type { AppUser, LearningSpaceMemberRole, UserRole, UserStatus } from "@/lib/identity";
+import { type AppUser, type LearningSpaceMemberRole, type UserRole, type UserStatus, userRoleFromValue } from "@/lib/identity";
 
 export interface ManagedUser extends AppUser {
   hasSmartschoolIdentity: boolean;
@@ -156,7 +156,7 @@ export async function listManagedUsers(): Promise<ManagedUser[]> {
       firstName: textOrNull(row.first_name),
       lastName: textOrNull(row.last_name),
       email: textOrNull(row.email),
-      role: roleFromValue(row.role),
+      role: userRoleFromValue(row.role),
       status: row.status === "disabled" ? "disabled" : "active",
       classGroupOverrideId,
       hasSmartschoolIdentity: Number(row.has_smartschool) === 1,
@@ -429,7 +429,7 @@ export async function listManagedGroupUsers(): Promise<ManagedGroupUser[]> {
     ORDER BY external_identities.provider, external_identity_groups.external_group_id, users.display_name`)).rows;
   return rows.map((row) => ({
     provider: String(row.provider), externalGroupId: String(row.external_group_id), externalGroupName: textOrNull(row.external_group_name),
-    userId: String(row.user_id), displayName: String(row.display_name), role: roleFromValue(row.role), status: row.status === "disabled" ? "disabled" : "active",
+    userId: String(row.user_id), displayName: String(row.display_name), role: userRoleFromValue(row.role), status: row.status === "disabled" ? "disabled" : "active",
   }));
 }
 
@@ -458,11 +458,6 @@ export async function listManagedSourceOwners(): Promise<ManagedSourceOwner[]> {
     connectionName: typeof row.connection_name === "string" ? row.connection_name : null,
     ownerName: typeof row.owner_name === "string" ? row.owner_name : null,
   }));
-}
-
-function roleFromValue(value: unknown): UserRole {
-  if (value === "teacher" || value === "student") return value;
-  return "superadmin";
 }
 
 async function assertTeacherRoleChangeCompatible(userId: string): Promise<void> {

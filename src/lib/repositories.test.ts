@@ -1246,7 +1246,12 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await persistIndex(await indexSource(createTwoPortfolioProvider()), "local", "space-6");
+    await (await getDatabase()).execute({
+      sql: "UPDATE learning_space_sources SET provider_type = 'google_drive', google_drive_folder_id = 'root-id', updated_at = ? WHERE learning_space_id = 'space-6' AND is_active = 1",
+      args: [new Date().toISOString()],
+    });
     const space = (await getLearningSpace("space-6"))!;
+    const activeSource = (await getActiveLearningSpaceSource("space-6"))!;
     let indexStarted = false;
     const inaccessibleProvider = {
       id: "google-drive",
@@ -1255,7 +1260,7 @@ describe("persistIndex", () => {
       async readFile() { return Buffer.from(""); },
     } satisfies StorageProvider;
     await expect(synchronizeSource("space-6", {
-      getConfiguredProvider: async () => ({ provider: inaccessibleProvider, type: "google_drive", space: { ...space, sourceType: "google_drive", googleDriveFolderId: "root-id" } }),
+      getConfiguredProvider: async () => ({ provider: inaccessibleProvider, type: "google_drive", space: { ...space, sourceType: "google_drive", googleDriveFolderId: "root-id" }, source: activeSource }),
     })).rejects.toThrow("laatst geldige index blijft actief");
     expect(indexStarted).toBe(false);
     expect((await getAdminPortfolios("space-6")).filter((portfolio) => portfolio.isIndexed)).toHaveLength(2);
@@ -1266,13 +1271,18 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await getDatabase();
+    await (await getDatabase()).execute({
+      sql: "UPDATE learning_space_sources SET provider_type = 'google_drive', google_drive_folder_id = 'root-id', updated_at = ? WHERE learning_space_id = 'space-6' AND is_active = 1",
+      args: [new Date().toISOString()],
+    });
     const space = (await getLearningSpace("space-6"))!;
+    const activeSource = (await getActiveLearningSpaceSource("space-6"))!;
     const source = createTwoPortfolioProvider();
     let markerChecks = 0;
     const provider = { ...source, async assertReadyForIndex() { markerChecks += 1; } } satisfies StorageProvider;
 
     await expect(synchronizeSource("space-6", {
-      getConfiguredProvider: async () => ({ provider, type: "google_drive", space: { ...space, sourceType: "google_drive", googleDriveFolderId: "root-id" } }),
+      getConfiguredProvider: async () => ({ provider, type: "google_drive", space: { ...space, sourceType: "google_drive", googleDriveFolderId: "root-id" }, source: activeSource }),
     })).resolves.toMatchObject({ portfolios: 2, skipped: false });
     expect(markerChecks).toBe(1);
   });
@@ -1282,10 +1292,15 @@ describe("persistIndex", () => {
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
     resetDatabaseForTests();
     await getDatabase();
+    await (await getDatabase()).execute({
+      sql: "UPDATE learning_space_sources SET provider_type = ?, updated_at = ? WHERE learning_space_id = 'space-6' AND is_active = 1",
+      args: [sourceType, new Date().toISOString()],
+    });
     const space = (await getLearningSpace("space-6"))!;
+    const activeSource = (await getActiveLearningSpaceSource("space-6"))!;
 
     await expect(synchronizeSource("space-6", {
-      getConfiguredProvider: async () => ({ provider: createTwoPortfolioProvider(), type: sourceType, space: { ...space, sourceType } }),
+      getConfiguredProvider: async () => ({ provider: createTwoPortfolioProvider(), type: sourceType, space: { ...space, sourceType }, source: activeSource }),
     })).resolves.toMatchObject({ portfolios: 2, skipped: false });
   });
 

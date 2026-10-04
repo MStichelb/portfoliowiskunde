@@ -6,16 +6,17 @@ import {
   getLearningSpace,
   getLearningSpaceSource,
   getLatestWarnings,
+  getSyncPublicationSnapshot,
   persistIndex,
   recordLearningSpaceSourceValidation,
   releaseSyncLease,
   tryAcquireSyncLease,
   type LearningSpace,
   type LearningSpaceSource,
+  type SyncPublicationSnapshot,
 } from "@/lib/repositories";
 import { compareSourceManifests, sourceManifestFromIndex, type SourceComparison, type SourceManifestEntry } from "@/lib/source-comparison";
-import { SourceAccessError, SourceConfigurationError } from "@/lib/source-errors";
-import { getActiveSourceProfileConfigForLearningSpace } from "@/lib/source-profiles";
+import { SourceAccessError, SourceConfigurationError, StaleSynchronizationError } from "@/lib/source-errors";
 import { detectLearningSpaceHeader, type IndexedLearningSpaceHeader } from "@/lib/learning-space-header";
 import { getStorageProviderForSource } from "@/lib/storage";
 import { indexSource } from "@/lib/storage/portfolio-indexer";
@@ -96,9 +97,13 @@ export async function switchLearningSpaceSource(
       activateSourceId: inspected.source.id,
       mirrorCompletedAt: inspected.mirrorCompletedAt ?? undefined,
       ...(inspected.header === undefined ? {} : { header: inspected.header }),
+      publicationGuard: { ownerId, leaseSeconds: 600, snapshot: inspected.snapshot },
     });
     return { ...preview, switched: true, confirmationRequired: false };
   } catch (error) {
+    if (error instanceof StaleSynchronizationError) {
+      throw new SourceAccessError("De bron of synchronisatielease wijzigde tijdens de bronwissel. Probeer opnieuw.");
+    }
     const source = await (dependencies.getSource ?? getLearningSpaceSource)(targetSourceId).catch(() => null);
     if (source?.learningSpaceId === learningSpaceId) {
       await (dependencies.recordValidation ?? recordLearningSpaceSourceValidation)(
@@ -123,6 +128,7 @@ async function inspectSwitchTarget(
   mirrorCompletedAt: string | null;
   comparison: SourceComparison;
   header: IndexedLearningSpaceHeader | null | undefined;
+  snapshot: SyncPublicationSnapshot;
 }> {
   const [space, source] = await Promise.all([
     (dependencies.getSpace ?? getLearningSpace)(learningSpaceId),
@@ -134,10 +140,11 @@ async function inspectSwitchTarget(
   if (source.isActive) throw new SourceConfigurationError("Deze bron is al actief.");
 
   const configured = await (dependencies.getProvider ?? getStorageProviderForSource)(learningSpaceId, targetSourceId);
+  const snapshot = await getSyncPublicationSnapshot(learningSpaceId, source.id);
+  if (!snapshot) throw new SourceConfigurationError("De bron- of profielconfiguratie is intussen gewijzigd.");
   await configured.provider.assertReadyForIndex?.();
   const readiness = configured.provider.getReadinessMetadata?.();
-  const sourceProfileConfig = await getActiveSourceProfileConfigForLearningSpace(learningSpaceId);
-  const portfolios = await (dependencies.index ?? indexSource)(configured.provider, sourceProfileConfig);
+  const portfolios = await (dependencies.index ?? indexSource)(configured.provider, snapshot.sourceProfileConfig);
   const header = source.role === "primary" ? await detectLearningSpaceHeader(configured.provider) : undefined;
   const [currentManifest, currentWarnings] = await Promise.all([
     (dependencies.getCurrentManifest ?? getIndexedSourceManifest)(learningSpaceId),
@@ -152,6 +159,7 @@ async function inspectSwitchTarget(
   const targetWarnings = portfolios.flatMap((portfolio) => portfolio.warnings);
   return {
     source,
+    snapshot,
     portfolios,
     header,
     mirrorCompletedAt: readiness?.mirrorCompletedAt ?? null,
