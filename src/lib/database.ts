@@ -111,12 +111,18 @@ function createPostgresClient(connectionString: string): DatabaseClient {
     prepare: false,
   });
 
-  const database = createPostgresQueryClient(client);
+  const database = createPostgresQueryClient(client, async (work) => {
+    const wrapped = await client.begin(async (transaction) => ({ result: await work(transaction) }));
+    return wrapped.result;
+  });
   return {
     ...database,
     async withMigrationLock(work) {
       const reserved = await client.reserve();
-      const reservedDatabase = createPostgresQueryClient(reserved);
+      const reservedDatabase = createPostgresQueryClient(
+        reserved,
+        (transactionWork) => runReservedPostgresTransaction(reserved, transactionWork),
+      );
       try {
         await reservedDatabase.execute(`SELECT pg_advisory_lock(${POSTGRES_MIGRATION_LOCK_ID})`);
         try {
@@ -131,9 +137,10 @@ function createPostgresClient(connectionString: string): DatabaseClient {
   };
 }
 
-type PostgresQueryClient = Pick<ReturnType<typeof postgres>, "unsafe" | "begin">;
+type PostgresQueryExecutor = Pick<ReturnType<typeof postgres>, "unsafe">;
+type PostgresTransactionRunner = <T>(work: (transaction: PostgresQueryExecutor) => Promise<T>) => Promise<T>;
 
-function createPostgresQueryClient(client: PostgresQueryClient): DatabaseClient {
+function createPostgresQueryClient(client: PostgresQueryExecutor, runTransaction: PostgresTransactionRunner): DatabaseClient {
   return {
     async execute(statement) {
       const query = normaliseStatement(statement);
@@ -142,14 +149,14 @@ function createPostgresQueryClient(client: PostgresQueryClient): DatabaseClient 
     },
     async batch(statements) {
       if (statements.length === 0) return;
-      await client.begin(async (transaction) => {
+      await runTransaction(async (transaction) => {
         for (const statement of statements) {
           await transaction.unsafe(toPostgresParameters(statement.sql), (statement.args ?? []) as never[]);
         }
       });
     },
     async guardedBatch(guard, statements) {
-      return client.begin(async (transaction) => {
+      return runTransaction(async (transaction) => {
         const rows = await transaction.unsafe(toPostgresParameters(guard.sql), (guard.args ?? []) as never[]);
         if (rows.length === 0) return false;
         for (const statement of statements) {
@@ -159,6 +166,25 @@ function createPostgresQueryClient(client: PostgresQueryClient): DatabaseClient 
       });
     },
   };
+}
+
+async function runReservedPostgresTransaction<T>(
+  client: PostgresQueryExecutor,
+  work: (transaction: PostgresQueryExecutor) => Promise<T>,
+): Promise<T> {
+  await client.unsafe("BEGIN", []);
+  try {
+    const result = await work(client);
+    await client.unsafe("COMMIT", []);
+    return result;
+  } catch (error) {
+    try {
+      await client.unsafe("ROLLBACK", []);
+    } catch {
+      // Preserve the statement or commit error that caused the transaction to fail.
+    }
+    throw error;
+  }
 }
 
 function normaliseStatement(statement: string | InStatement): InStatement {
