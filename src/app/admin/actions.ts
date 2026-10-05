@@ -346,7 +346,7 @@ export async function bulkExercisePublicationAction(_previousState: { error: str
   const portfolio = await getAdminPortfolioAny(portfolioId);
   if (!portfolio) return { error: "Portfolio niet gevonden." };
   await requireSpaceManagement(portfolio.learningSpaceId);
-  const validIds = new Set(portfolio.sections.flatMap((section) => section.exercises.map((exercise) => exercise.id)));
+  const validIds = new Set([...(portfolio.exercises ?? []), ...portfolio.sections.flatMap((section) => section.exercises)].map((exercise) => exercise.id));
   const exerciseIds = [...new Set(requestedIds)].filter((id) => validIds.has(id));
   if (exerciseIds.length !== requestedIds.length) return { error: "Ongeldige oefeningselectie." };
   let window: { publishFrom: string | null; publishUntil: string | null };
@@ -367,7 +367,7 @@ export async function saveExercisePublicationAction(formData: FormData) {
   if (!id || !portfolioId || !mode.success) throw new Error("Ongeldige oefening-invoer.");
   const portfolio = await getAdminPortfolioAny(portfolioId);
   if (portfolio) await requireSpaceManagement(portfolio.learningSpaceId);
-  if (!portfolio?.sections.some((section) => section.exercises.some((exercise) => exercise.id === id))) throw new Error("Oefening niet gevonden.");
+  if (!portfolio || ![...(portfolio.exercises ?? []), ...portfolio.sections.flatMap((section) => section.exercises)].some((exercise) => exercise.id === id)) throw new Error("Oefening niet gevonden.");
   const window = parsePublicationWindow(formData);
   await setExercisePublication([id], mode.data, window.publishFrom, window.publishUntil);
   refreshPublicationPaths(portfolioId);
@@ -390,7 +390,7 @@ export async function toggleExerciseVisibilityAction(formData: FormData) {
   const visible = stringValue(formData, "visible") === "true";
   const portfolio = await getAdminPortfolioAny(portfolioId);
   if (portfolio) await requireSpaceManagement(portfolio.learningSpaceId);
-  if (!id || !portfolio?.sections.some((section) => section.exercises.some((exercise) => exercise.id === id))) throw new Error("Oefening niet gevonden.");
+  if (!id || !portfolio || ![...(portfolio.exercises ?? []), ...portfolio.sections.flatMap((section) => section.exercises)].some((exercise) => exercise.id === id)) throw new Error("Oefening niet gevonden.");
   await setExerciseVisibility(id, visible);
   refreshPublicationPaths(portfolioId);
   revalidatePath("/admin/meldingen");
@@ -402,7 +402,7 @@ export async function toggleExerciseAlternativeVisibilityAction(formData: FormDa
   const visible = stringValue(formData, "visible") === "true";
   const portfolio = await getAdminPortfolioAny(portfolioId);
   if (portfolio) await requireSpaceManagement(portfolio.learningSpaceId);
-  const exercise = portfolio?.sections.flatMap((section) => section.exercises).find((item) => item.id === id);
+  const exercise = portfolio ? [...(portfolio.exercises ?? []), ...portfolio.sections.flatMap((section) => section.exercises)].find((item) => item.id === id) : undefined;
   if (!exercise || !exercise.assets.some((asset) => asset.variant === "alternative" && asset.isIndexed)) throw new Error("Alternatieve uitwerking niet gevonden.");
   await setExerciseAlternativeVisibility(id, visible);
   refreshPublicationPaths(portfolioId);
@@ -561,7 +561,7 @@ export async function toggleReportedExerciseVisibilityAction(formData: FormData)
   const visible = stringValue(formData, "visible") === "true";
   if (!id || !portfolioId) return;
   const portfolio = await getAdminPortfolioAny(portfolioId);
-  if (!portfolio?.sections.some((section) => section.exercises.some((exercise) => exercise.id === id))) throw new Error("Oefening niet gevonden.");
+  if (!portfolio || ![...(portfolio.exercises ?? []), ...portfolio.sections.flatMap((section) => section.exercises)].some((exercise) => exercise.id === id)) throw new Error("Oefening niet gevonden.");
   await setExerciseVisibility(id, visible);
   refreshPublicationPaths(portfolioId);
   revalidatePath("/admin/meldingen");

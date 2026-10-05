@@ -44,6 +44,22 @@ afterEach(async () => {
 });
 
 describe("grouped error report read model", () => {
+  it("reads and handles direct exercise reports using portfolio publication", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE portfolios SET visible = 1 WHERE id = 'read-portfolio-1'");
+    await database.execute("UPDATE exercises SET section_id = NULL WHERE id = 'read-exercise-1'");
+    await database.execute("UPDATE error_reports SET section_id = NULL WHERE exercise_id = 'read-exercise-1'");
+    expect((await getGroupedErrorReportIssues("space-5")).find((issue) => issue.id === "issue-main"))
+      .toMatchObject({ sectionTitle: null, isMatchedExercise: true, solutionStatus: expect.objectContaining({ state: "visible" }) });
+    const report = (await getAdminErrorReports("space-5")).find((item) => item.exerciseId === "read-exercise-1")!;
+    expect(report).toMatchObject({ sectionTitle: null, solutionVisible: true });
+    await setErrorReportTeacherResponseAndHandled(report.id, "De uitwerking is verbeterd.");
+    expect((await getAdminErrorReports("space-5")).find((item) => item.id === report.id))
+      .toMatchObject({ teacherResponse: "De uitwerking is verbeterd.", handledAt: expect.any(String) });
+    await database.execute("UPDATE portfolios SET visible = 0 WHERE id = 'read-portfolio-1'");
+    expect((await getGroupedErrorReportThreads("space-5")).find((thread) => thread.exerciseId === "read-exercise-1")?.solutionStatus?.state).toBe("will-remain-hidden");
+  });
+
   it("returns one canonical issue with report and unique authenticated reporter counts", async () => {
     const issue = (await getGroupedErrorReportIssues("space-5")).find((item) => item.id === "issue-main");
 

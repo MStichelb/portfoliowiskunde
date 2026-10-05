@@ -1216,6 +1216,51 @@ export const migrations: DatabaseMigration[] = [
     version: "056_user_changelog_read_state",
     statements: ["ALTER TABLE users ADD COLUMN last_seen_changelog_entry_id TEXT"],
   },
+  {
+    version: "057_sectionless_exercises",
+    sqliteForeignKeysDisabled: true,
+    statements: [
+      `CREATE TABLE exercises_057 (
+        id TEXT PRIMARY KEY,
+        portfolio_id TEXT NOT NULL REFERENCES portfolios(id),
+        section_id TEXT REFERENCES sections(id),
+        exercise_code TEXT NOT NULL,
+        exercise_number INTEGER NOT NULL,
+        exercise_suffix TEXT NOT NULL,
+        visible INTEGER NOT NULL DEFAULT 0,
+        is_indexed INTEGER NOT NULL DEFAULT 1,
+        visibility_mode TEXT NOT NULL DEFAULT 'inherit' CHECK(visibility_mode IN ('inherit', 'hidden', 'visible')),
+        publish_from TEXT,
+        publish_until TEXT,
+        last_seen_at TEXT,
+        show_alternative_to_students INTEGER NOT NULL DEFAULT 1,
+        archived_at TEXT,
+        custom_note TEXT,
+        note_position TEXT NOT NULL DEFAULT 'above_solution' CHECK(note_position IN ('above_solution', 'below_solution')),
+        note_label TEXT,
+        level_source TEXT CHECK(level_source IS NULL OR level_source IN ('opwarmer', 'basis', 'uitdaging', 'verdieping')),
+        level_override_mode TEXT NOT NULL DEFAULT 'inherit' CHECK(level_override_mode IN ('inherit', 'level', 'none')),
+        level_override TEXT CHECK((level_override IS NULL OR level_override IN ('opwarmer', 'basis', 'uitdaging', 'verdieping'))
+          AND (level_override_mode <> 'level' OR level_override IS NOT NULL)),
+        UNIQUE(section_id, exercise_code)
+      )`,
+      `INSERT INTO exercises_057 (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix,
+        visible, is_indexed, visibility_mode, publish_from, publish_until, last_seen_at,
+        show_alternative_to_students, archived_at, custom_note, note_position, note_label,
+        level_source, level_override_mode, level_override)
+        SELECT id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix,
+          visible, is_indexed, visibility_mode, publish_from, publish_until, last_seen_at,
+          show_alternative_to_students, archived_at, custom_note, note_position, note_label,
+          level_source, level_override_mode, level_override FROM exercises`,
+      "DROP TABLE exercises",
+      "ALTER TABLE exercises_057 RENAME TO exercises",
+      "CREATE UNIQUE INDEX exercises_direct_code_unique ON exercises(portfolio_id, exercise_code) WHERE section_id IS NULL",
+    ],
+    postgresStatements: [
+      "ALTER TABLE exercises ALTER COLUMN section_id DROP NOT NULL",
+      "CREATE UNIQUE INDEX exercises_direct_code_unique ON exercises(portfolio_id, exercise_code) WHERE section_id IS NULL",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

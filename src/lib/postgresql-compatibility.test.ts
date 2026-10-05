@@ -163,6 +163,17 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
       .resolves.toMatchObject({ added: 0, missing: 0 });
     expect((await database.execute({ sql: "SELECT id, is_indexed FROM exercises WHERE id = ?", args: [originalExerciseId] })).rows[0])
       .toMatchObject({ id: originalExerciseId, is_indexed: 1 });
+    const directIndex = postgresExerciseMoveFixture(portfolioCode, 2, "postgres-move-new");
+    directIndex.exercises = directIndex.sections[0].exercises;
+    directIndex.sections = [];
+    await persistIndex([directIndex], activeSource.providerType, space.id);
+    expect((await database.execute({ sql: "SELECT id, section_id FROM exercises WHERE id = ?", args: [originalExerciseId] })).rows[0])
+      .toMatchObject({ id: originalExerciseId, section_id: null });
+    await persistIndex([directIndex], activeSource.providerType, space.id);
+    await expect(database.execute({
+      sql: "INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix) SELECT ?, portfolio_id, NULL, exercise_code, exercise_number, exercise_suffix FROM exercises WHERE id = ?",
+      args: [`duplicate-direct-${suffix}`, originalExerciseId],
+    })).rejects.toThrow();
   }, 60_000);
 });
 

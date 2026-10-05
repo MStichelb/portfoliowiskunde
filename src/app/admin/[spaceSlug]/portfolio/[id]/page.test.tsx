@@ -52,6 +52,33 @@ vi.mock("@/app/components/exercise-bulk-table", () => ({ ExerciseBulkTable: (pro
 import LearningSpacePortfolioAdminPage from "./page";
 
 describe("LearningSpace portfolio settings page", () => {
+  it("passes direct exercises to the existing controls without adding a section", async () => {
+    const portfolio = await mocks.getAdminPortfolio();
+    const direct = portfolio.sections[0].exercises[0];
+    mocks.getAdminPortfolio.mockResolvedValue({ ...portfolio, exercises: [direct], sections: [] });
+    const markup = renderToStaticMarkup(await LearningSpacePortfolioAdminPage({ params: Promise.resolve({ spaceSlug: "5", id: "portfolio-1" }) }));
+    expect(markup).not.toContain("Onderdelen");
+    expect(markup).not.toContain("section-card-list");
+    expect(mocks.bulkTable).toHaveBeenCalledWith(expect.objectContaining({
+      sections: [], exercises: [expect.objectContaining({ id: direct.id, configuredVisible: true, status: direct.effectiveStatus })],
+    }));
+  });
+
+  it("retains real section settings alongside direct exercises in mixed portfolios", async () => {
+    const portfolio = await mocks.getAdminPortfolio();
+    const direct = { ...portfolio.sections[0].exercises[0], id: "direct-exercise", code: "2" };
+    mocks.getAdminPortfolio.mockResolvedValue({ ...portfolio, exercises: [direct] });
+    const markup = renderToStaticMarkup(await LearningSpacePortfolioAdminPage({ params: Promise.resolve({ spaceSlug: "5", id: "portfolio-1" }) }));
+    expect(markup).toContain("<h2>Onderdelen</h2>");
+    expect(markup).toContain("1.1 Basis");
+    expect(markup.match(/class="section-settings-card"/g)).toHaveLength(1);
+    expect(mocks.bulkTable).toHaveBeenCalledWith(expect.objectContaining({
+      exercises: [expect.objectContaining({ id: "direct-exercise" })],
+      sections: [expect.objectContaining({ id: "section-1", code: "1.1" })],
+    }));
+    for (const label of ["Algemeen", "Overig", "Onderdeel 0", "Zonder onderdeel", "null"]) expect(markup).not.toContain(label);
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAdminUser.mockResolvedValue({ id: "teacher", role: "teacher", status: "active" });

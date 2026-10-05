@@ -39,6 +39,55 @@ const provider: StorageProvider = {
 };
 
 describe("portfolio indexer", () => {
+  it.each([false, true])("indexes direct files without synthetic sections, mixed=%s", async (mixed: boolean) => {
+    const portfolioPath = "Portfolio 3 - Direct";
+    const directSource: StorageProvider = {
+      id: "direct-files",
+      async list(relativePath = "") {
+        if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+        if (relativePath === portfolioPath) return [
+          { name: "PF3-Oef1.png", relativePath: `${portfolioPath}/PF3-Oef1.png`, kind: "file" },
+          ...(mixed ? [{ name: "1.2 Basis", relativePath: `${portfolioPath}/1.2 Basis`, kind: "directory" as const }] : []),
+        ];
+        if (relativePath === `${portfolioPath}/1.2 Basis`) return [{ name: "PF3-Oef2.png", relativePath: `${relativePath}/PF3-Oef2.png`, kind: "file" }];
+        return [];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+    const [portfolio] = await indexSource(directSource);
+    expect(portfolio.exercises?.map((exercise) => exercise.code)).toEqual(["1"]);
+    expect(portfolio.sections.map((section) => section.code)).toEqual(mixed ? ["1.2"] : []);
+    if (mixed) expect(portfolio.sections[0].exercises.map((exercise) => exercise.code)).toEqual(["2"]);
+  });
+
+  it("uses existing directory resource rules for direct exercise folders", async () => {
+    const portfolioPath = "Portfolio 3 - Direct";
+    const directorySource: StorageProvider = {
+      id: "direct-directories",
+      async list(relativePath = "") {
+        if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+        if (relativePath === portfolioPath) return [
+          { name: "Oef1", relativePath: `${portfolioPath}/Oef1`, kind: "directory" },
+          { name: "1.2 Basis", relativePath: `${portfolioPath}/1.2 Basis`, kind: "directory" },
+        ];
+        if (relativePath === `${portfolioPath}/1.2 Basis`) return [{ name: "Oef2", relativePath: `${relativePath}/Oef2`, kind: "directory" }];
+        if (relativePath.endsWith("Oef1") || relativePath.endsWith("Oef2")) return [{ name: "Uitwerking.png", relativePath: `${relativePath}/Uitwerking.png`, kind: "file" }];
+        return [];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+    const config = profileConfig([], [{
+      id: "worked-solution", kind: "source_file", label: "Uitwerking", icon: "file-text", order: 1, semanticRole: "worked_solution",
+      location: { scope: "alongside_exercise" },
+      recognition: { target: "file_name", operator: "exact", value: "Uitwerking", caseSensitive: false, fileExtensions: ["png"] },
+      allowMultiple: false, displayMode: "collapsible_group",
+    }], { exerciseMode: "directories", numberLocation: "after_text", marker: "Oef" });
+    const [portfolio] = await indexSource(directorySource, config);
+    expect(portfolio.exercises?.map((exercise) => exercise.code)).toEqual(["1"]);
+    expect(portfolio.sections).toHaveLength(1);
+    expect(portfolio.sections[0].exercises.map((exercise) => exercise.code)).toEqual(["2"]);
+  });
+
   it("groepeert standaard- en alternatieve bestanden per oefening en gebruikt de portfoliomap als context", async () => {
     const [portfolio] = await indexSource(provider);
     const exercise = portfolio.sections[0].exercises.find((item) => item.code === "2b");
@@ -52,6 +101,7 @@ describe("portfolio indexer", () => {
     expect(portfolio.finalSolutionsPdfPath).toContain("Eindoplossingen");
     expect(portfolio.warnings).toHaveLength(0);
     expect(portfolio.sections[0].exercises.some((item) => item.code === "7")).toBe(true);
+    expect(portfolio.exercises).toEqual([]);
   });
 
   describe("opgaven-PDF-herkenning", () => {

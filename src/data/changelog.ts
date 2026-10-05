@@ -27,6 +27,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-05-oefeningen-op-portfolioniveau",
+  date: "2026-10-05",
+  category: "improved",
+  title: "Portfolio's kunnen eenvoudiger opgebouwd worden",
+  description: "Oefeningen kunnen nu ook rechtstreeks in een portfolio staan, zonder verplicht onderdeel. Een portfolio kan directe oefeningen, onderdelen of beide bevatten. Je opent en beheert de oefeningen zoals je gewend bent.",
+  audiences: ["student", "teacher", "superadmin"],
+  notify: true,
+}, {
   id: "2026-10-05-flexibele-onderdeelnummering",
   date: "2026-10-05",
   category: "improved",

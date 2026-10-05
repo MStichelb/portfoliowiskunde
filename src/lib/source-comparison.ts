@@ -34,6 +34,9 @@ export function sourceManifestFromIndex(portfolios: IndexedPortfolio[]): SourceM
     if (portfolio.assignmentPdfPath) entries.push({ kind: "file", relativePath: portfolio.assignmentPdfPath });
     if (portfolio.hintsDocumentPath) entries.push({ kind: "file", relativePath: portfolio.hintsDocumentPath });
     if (portfolio.finalSolutionsPdfPath) entries.push({ kind: "file", relativePath: portfolio.finalSolutionsPdfPath });
+    for (const exercise of portfolio.exercises ?? []) {
+      for (const asset of exercise.assets) entries.push({ kind: "file", relativePath: asset.relativePath });
+    }
     for (const section of portfolio.sections) {
       const assets = section.exercises.flatMap((exercise) => exercise.assets);
       if (assets.length > 0) entries.push({ kind: "section", relativePath: section.relativePath });

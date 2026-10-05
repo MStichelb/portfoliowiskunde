@@ -25,6 +25,20 @@ afterEach(async () => {
 });
 
 describe("error report v2 submission", () => {
+  it("matches direct exercises from both portfolio and exercise submission without a section", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE exercises SET section_id = NULL WHERE id = 'submission-exercise'");
+    const portfolioReport = await createErrorReport(submission({ exerciseId: undefined, exerciseCode: "5b", rateLimitKey: "direct-portfolio" }));
+    const exerciseReport = await createErrorReport(submission({ portfolioId: undefined, exerciseId: "submission-exercise", exerciseCode: undefined, documentKind: "exercise_solution", variant: "standard", rateLimitKey: "direct-exercise" }));
+    expect((await database.execute("SELECT exercise_id, section_id FROM error_reports")).rows).toEqual([
+      expect.objectContaining({ exercise_id: "submission-exercise", section_id: null }),
+      expect.objectContaining({ exercise_id: "submission-exercise", section_id: null }),
+    ]);
+    const threads = await getGroupedErrorReportThreads("space-5");
+    expect(threads).toEqual([expect.objectContaining({ exerciseId: "submission-exercise", sectionTitle: null, isMatchedExercise: true, issueCount: 2, solutionStatus: expect.objectContaining({ state: "visible" }) })]);
+    expect((await listErrorReportIssuesForThreads([threads[0].id], "space-5")).map((issue) => issue.issueId).sort()).toEqual([portfolioReport.issueId, exerciseReport.issueId].sort());
+  });
+
   it("normalizes simple exercise codes without fuzzy matching", () => {
     expect(normalizeErrorReportExerciseCode(" 11A ")).toBe("11a");
     expect(normalizeErrorReportExerciseCode("5")).toBe("5");

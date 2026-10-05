@@ -1,5 +1,6 @@
 import type {
   IndexedAsset,
+  IndexedExercise,
   IndexedPortfolio,
   IndexedPortfolioResourceAsset,
   IndexWarning,
@@ -112,7 +113,9 @@ async function indexPortfolio(
   const finalSolutionsDocument = finalAnswerResource ? matchedGlobalResources.get(finalAnswerResource.id) : undefined;
 
   const contexts = discoverExerciseContexts(directory, entries, warnings);
-  const sections = await Promise.all(contexts.map((context) => indexExerciseContext(
+  const sections = await Promise.all(contexts.map(async (context) => ({
+    ...context,
+    exercises: await indexExerciseContext(
     provider,
     context,
     code,
@@ -121,7 +124,14 @@ async function indexPortfolio(
     legacyExerciseVariants,
     scanner,
     levelRecognition,
-  )));
+    ),
+  })));
+  // Real sections (including conflicted ones) never participate in the portfolio's
+  // direct exercise context. Keep the existing recognition/resource rules intact.
+  const sectionPaths = new Set(entries.filter((entry) => entry.kind === "directory" && parseSectionDirectory(entry.name))
+    .map((entry) => entry.relativePath));
+  const exercises = await indexExerciseContext(provider, { relativePath: directory.relativePath }, code, warnings,
+    exerciseResources, legacyExerciseVariants, scanner, levelRecognition, sectionPaths);
 
   return {
     code,
@@ -150,6 +160,7 @@ async function indexPortfolio(
       } satisfies IndexedPortfolioResourceAsset];
     }),
     sections: sections.sort((left, right) => left.sortOrder - right.sortOrder),
+    exercises,
     warnings,
   };
 }
@@ -236,15 +247,16 @@ interface MatchedExerciseFile {
 
 async function indexExerciseContext(
   provider: StorageProvider,
-  context: ExerciseContext,
+  context: Pick<ExerciseContext, "relativePath">,
   portfolioCode: string,
   warnings: IndexWarning[],
   exerciseResources: readonly ExerciseResourceConfig[],
   legacyExerciseVariants: ReadonlyMap<string, SolutionVariantKind>,
   scanner: ExerciseScannerConfig,
   levelRecognition: ExerciseLevelRecognitionConfig,
-): Promise<IndexedPortfolio["sections"][number]> {
-  const files = await collectExerciseFiles(provider, context.relativePath, exerciseResources, scanner, levelRecognition);
+  excludedDirectories: ReadonlySet<string> = new Set(),
+): Promise<IndexedExercise[]> {
+  const files = await collectExerciseFiles(provider, context.relativePath, exerciseResources, scanner, levelRecognition, excludedDirectories);
   const grouped = new Map<string, { resource: ExerciseResourceConfig; identity: ParsedExerciseIdentity; files: LocatedExerciseFile[] }>();
 
   for (const candidate of files) {
@@ -317,13 +329,7 @@ async function indexExerciseContext(
     });
   }
 
-  return {
-    code: context.code,
-    sortOrder: context.sortOrder,
-    title: context.title,
-    relativePath: context.relativePath,
-    exercises: [...exercises.values()].sort((left, right) => left.number - right.number || left.suffix.localeCompare(right.suffix, "nl")),
-  };
+  return [...exercises.values()].sort((left, right) => left.number - right.number || left.suffix.localeCompare(right.suffix, "nl"));
 }
 
 async function collectExerciseFiles(
@@ -332,8 +338,9 @@ async function collectExerciseFiles(
   resources: readonly ExerciseResourceConfig[],
   scanner: ExerciseScannerConfig,
   levelRecognition: ExerciseLevelRecognitionConfig,
+  excludedDirectories: ReadonlySet<string>,
 ): Promise<LocatedExerciseFile[]> {
-  const entries = [...await provider.list(contextPath)].sort(compareEntries);
+  const entries = [...await provider.list(contextPath)].filter((entry) => !excludedDirectories.has(entry.relativePath)).sort(compareEntries);
   const configuredSubdirectories = [...new Set(resources.flatMap((resource) => resource.location.scope === "alongside_exercise" ? [] : [canonicalName(resource.location.subdirectory)]))];
   const levelSubdirectories = levelRecognition.method === "subdirectory"
     ? [...new Set(Object.values(levelRecognition.mapping).map(canonicalName).filter(Boolean))]

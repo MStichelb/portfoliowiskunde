@@ -91,6 +91,8 @@ export interface IndexedPortfolio {
   finalSolutionsPdfPath: string | null;
   finalSolutionsPdfSourceId: string | null;
   resourceAssets: IndexedPortfolioResourceAsset[];
+  /** Exercises directly inside the portfolio, without a section. Omitted in legacy fixtures. */
+  exercises?: IndexedExercise[];
   sections: IndexedSection[];
   warnings: IndexWarning[];
 }

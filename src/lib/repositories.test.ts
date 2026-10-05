@@ -30,6 +30,145 @@ afterEach(async () => {
 });
 
 describe("persistIndex", () => {
+  it.each([false, true])("keeps downstream detail, assets and publication working (direct=%s)", async (direct: boolean) => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-exercise-flows-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const database = await getDatabase();
+    const indexed = exerciseMoveFixture(1, "basis", "flow-standard");
+    addLegacySolutionAsset(indexed, "alternative", 1, "PF1B-Oef20a-alt.png", "flow-alternative");
+    addDistinctExerciseResource(indexed, "exercise-hint", "hint", "flow-hint", "PF1B-Oef20a-hint.png");
+    const config = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    config.exerciseResources.unshift({
+      id: "exercise-hint", kind: "source_file", label: "Hint", icon: "lightbulb", order: 5, semanticRole: "hint",
+      location: { scope: "alongside_exercise" },
+      recognition: { file: { target: "after_exercise_number", operator: "starts_with", value: "-hint", caseSensitive: false }, directory: null, fileExtensions: ["png"] },
+      allowMultiple: true, displayMode: "collapsible_each",
+    });
+    await database.execute({
+      sql: "UPDATE source_profiles SET config_json = ? WHERE id IN (SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = 'space-6')",
+      args: [JSON.stringify(config)],
+    });
+    if (direct) {
+      indexed.exercises = indexed.sections[0].exercises;
+      indexed.sections = [];
+      for (const asset of indexed.exercises[0].assets) asset.relativePath = `${indexed.relativePath}/${asset.fileName}`;
+    }
+    await persistIndex([indexed], "local", "space-6");
+    const portfolio = (await getAdminPortfolios("space-6"))[0];
+    const exercise = direct ? portfolio.exercises![0] : portfolio.sections[0].exercises[0];
+    const id = exercise.id;
+    const assets = (await database.execute("SELECT solution_assets.id, solution_variants.kind FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id")).rows;
+    const standardId = String(assets.find((asset) => asset.kind === "standard")!.id);
+    const alternativeId = String(assets.find((asset) => asset.kind === "alternative")!.id);
+    const resources = (await database.execute("SELECT id, semantic_role FROM source_resource_assets WHERE resource_scope = 'exercise'")).rows;
+    const hintId = String(resources.find((asset) => asset.semantic_role === "hint")!.id);
+    const genericAlternativeId = String(resources.find((asset) => asset.semantic_role === "alternative_solution")!.id);
+    await setExerciseAlternativeVisibility(id, false);
+    expect(await getVisibleExercise(id, "space-6")).toBeNull();
+    expect(await getAdminExercise(id, "space-6")).toMatchObject({ id, isIndexed: true, sectionCode: direct ? null : "1" });
+    await setPortfolioPublication(portfolio.id, "visible", false, null, null);
+    expect(await getVisibleExercise(id, "space-6")).toMatchObject({ id, sectionCode: direct ? null : "1", assets: [expect.objectContaining({ kind: "standard" })] });
+    expect((await getVisibleExercise(id, "space-6"))?.resources.map((resource) => resource.id)).toEqual(["exercise-hint", "worked-solution"]);
+    expect(await getVisibleExercise(id, "space-5")).toBeNull();
+    expect(await getPublicAsset(standardId, "space-6")).toMatchObject({ sourceId: "flow-standard" });
+    expect(await getPublicResourceAsset(hintId, "space-6")).toMatchObject({ sourceId: "flow-hint" });
+    expect(await getPublicAsset(alternativeId, "space-6")).toBeNull();
+    expect(await getPublicResourceAsset(genericAlternativeId, "space-6")).toBeNull();
+    await setExerciseAlternativeVisibility(id, true);
+    expect((await getVisibleExercise(id, "space-6"))?.assets).toHaveLength(2);
+    expect(await getPublicAsset(alternativeId, "space-6")).not.toBeNull();
+    expect(await getPublicResourceAsset(genericAlternativeId, "space-6")).not.toBeNull();
+    await setExercisePublication([id], "hidden", null, null);
+    expect(await getVisibleExercise(id, "space-6")).toBeNull();
+    expect(await getPublicAsset(standardId, "space-6")).toBeNull();
+    expect(await getPublicResourceAsset(hintId, "space-6")).toBeNull();
+    await setExercisePublication([id], "visible", null, null);
+    await setPortfolioPublication(portfolio.id, "visible", true, "2099-01-01T00:00:00.000Z", null);
+    expect((await getAdminExercise(id, "space-6"))?.effectiveStatus.state).toBe("will-be-visible");
+    expect(await getVisibleExercise(id, "space-6")).toBeNull();
+    expect(await getPublicAsset(standardId, "space-6")).toBeNull();
+    expect(await getPublicResourceAsset(hintId, "space-6")).toBeNull();
+    await setPortfolioPublication(portfolio.id, "visible", false, null, null);
+    await persistIndex([indexed], "local", "space-6");
+    expect(await getAdminExercise(id, "space-6")).toMatchObject({ id, isIndexed: true, showAlternativeToStudents: true });
+    await database.execute({ sql: "UPDATE exercises SET is_indexed = 0 WHERE id = ?", args: [id] });
+    expect(await getVisibleExercise(id, "space-6")).toBeNull();
+    expect(await getPublicAsset(standardId, "space-6")).toBeNull();
+    expect(await getPublicResourceAsset(hintId, "space-6")).toBeNull();
+  });
+
+  it("keeps direct and sectioned exercises with the same code distinct in a mixed portfolio", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-mixed-exercises-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const indexed = exerciseMoveFixture(1, "basis", "mixed-sectioned");
+    const direct = exerciseMoveFixture(1, "basis", "mixed-direct").sections[0].exercises[0];
+    direct.assets[0].relativePath = `${indexed.relativePath}/PF1B-Oef20a.png`;
+    indexed.exercises = [direct];
+    await persistIndex([indexed], "local", "space-6");
+    const before = (await getAdminPortfolios("space-6"))[0];
+    expect(before.sections).toHaveLength(1);
+    expect(before.sections[0].exercises).toHaveLength(1);
+    expect(before.exercises).toHaveLength(1);
+    expect(before.exercises![0].id).not.toBe(before.sections[0].exercises[0].id);
+    await setExerciseNote(before.exercises![0].id, "Direct", null, "above_solution");
+    await setExerciseNote(before.sections[0].exercises[0].id, "Onderdeel", null, "above_solution");
+    await persistIndex([indexed], "local", "space-6");
+    const after = (await getAdminPortfolios("space-6"))[0];
+    expect(after.exercises![0]).toMatchObject({ id: before.exercises![0].id, customNote: "Direct" });
+    expect(after.sections[0].exercises[0]).toMatchObject({ id: before.sections[0].exercises[0].id, customNote: "Onderdeel" });
+    await setPortfolioPublication(after.id, "visible", false, null, null);
+    for (const exerciseId of [after.exercises![0].id, after.sections[0].exercises[0].id]) {
+      const report = await createErrorReport({ exerciseId, learningSpaceId: "space-6", variant: "standard", message: "Controleer deze oefening", rateLimitKey: exerciseId });
+      const row = (await (await getDatabase()).execute({ sql: "SELECT exercise_id, section_id FROM error_reports WHERE issue_id = ?", args: [report.issueId] })).rows[0];
+      expect(row.exercise_id).toBe(exerciseId);
+      expect(row.section_id).toBe(exerciseId === after.exercises![0].id ? null : after.sections[0].id);
+    }
+  });
+
+  it("persists direct exercises without sections and retains identity and metadata across resync and section moves", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-direct-exercises-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const indexed = exerciseMoveFixture(1, "basis", "direct-exercise-source");
+    const exercise = indexed.sections[0].exercises[0];
+    indexed.exercises = [exercise];
+    indexed.sections = [];
+    exercise.assets[0].relativePath = `${indexed.relativePath}/PF1B-Oef20a.png`;
+    await persistIndex([indexed], "local", "space-6");
+    const database = await getDatabase();
+    const original = (await database.execute("SELECT * FROM exercises")).rows[0];
+    const id = String(original.id);
+    const portfolioId = String(original.portfolio_id);
+    expect(original.section_id).toBeNull();
+    expect(id).toBe(`${portfolioId}-exercise-20a`);
+    expect((await database.execute("SELECT id FROM sections")).rows).toEqual([]);
+    await setExerciseNote(id, "Bewaar deze uitleg", "Tip", "below_solution");
+    await setExercisePublication([id], "hidden", null, null);
+    await setExerciseAlternativeVisibility(id, true);
+    await persistIndex([indexed], "local", "space-6");
+    expect((await database.execute("SELECT * FROM exercises")).rows).toEqual([expect.objectContaining({
+      id, section_id: null, custom_note: "Bewaar deze uitleg", note_label: "Tip", note_position: "below_solution",
+      visibility_mode: "hidden", show_alternative_to_students: 1, is_indexed: 1,
+    })]);
+    const admin = (await getAdminPortfolios("space-6"))[0];
+    expect(admin.sections).toEqual([]);
+    expect(admin.exercises).toEqual([expect.objectContaining({ id, code: "20a", customNote: "Bewaar deze uitleg", standardAssets: 1 })]);
+    await setPortfolioPublication(portfolioId, "visible", false, null, null);
+    expect((await getStudentPortfolios("space-6"))[0].exercises).toEqual([expect.objectContaining({ id, visible: false })]);
+
+    const sectioned = exerciseMoveFixture(1, "basis", "direct-exercise-source");
+    await persistIndex([sectioned], "local", "space-6");
+    expect((await database.execute("SELECT id, section_id, custom_note FROM exercises")).rows).toEqual([
+      expect.objectContaining({ id, section_id: `${portfolioId}-section-1`, custom_note: "Bewaar deze uitleg" }),
+    ]);
+    await persistIndex([indexed], "local", "space-6");
+    expect((await database.execute("SELECT id, section_id, custom_note FROM exercises")).rows).toEqual([
+      expect.objectContaining({ id, section_id: null, custom_note: "Bewaar deze uitleg" }),
+    ]);
+  });
+
   it("preserves source section codes, natural order and publication settings when sync positions change", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-section-source-codes-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
@@ -156,6 +295,14 @@ describe("persistIndex", () => {
       section_id: moved.section_id,
     });
     expect((await getLatestWarnings("space-6")).some((warning) => /ontbreekt|onvolledig/i.test(warning.message))).toBe(false);
+    const direct = exerciseMoveFixture(2, "uitdaging", "move-source-new");
+    direct.exercises = direct.sections[0].exercises;
+    direct.sections = [];
+    await persistIndex([direct], "local", "space-6");
+    expect((await database.execute({ sql: "SELECT id, section_id, custom_note, level_override FROM exercises WHERE id = ?", args: [exerciseId] })).rows[0])
+      .toMatchObject({ id: exerciseId, section_id: null, custom_note: "Bewaren", level_override: "verdieping" });
+    expect((await database.execute({ sql: "SELECT exercise_id, section_id FROM error_reports WHERE issue_id = ?", args: [report.issueId] })).rows[0])
+      .toMatchObject({ exercise_id: exerciseId, section_id: null });
   }, 15_000);
 
   it("heals an existing old-missing and new-active split while retaining the original exercise and asset ids", async () => {

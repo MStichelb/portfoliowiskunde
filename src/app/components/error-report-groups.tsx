@@ -130,7 +130,7 @@ function GroupedErrorReportThreadCard({ thread, issues, spaceSlug, collectionLab
       <div>
         <strong>{collectionLabel} {thread.portfolioCode}: {thread.portfolioTitle}</strong>
         <span className="report-exercise-context">
-          {thread.isMatchedExercise ? `${thread.sectionTitle} - ` : ""}{exerciseLabel} {thread.exerciseCode}
+          {thread.isMatchedExercise && thread.sectionTitle ? `${thread.sectionTitle} - ` : ""}{exerciseLabel} {thread.exerciseCode}
           {!thread.isMatchedExercise ? <span className="report-unmatched-warning" title="Niet automatisch gekoppeld" aria-label="Niet automatisch gekoppeld" role="img"><TriangleAlert size={17} aria-hidden /></span> : null}
         </span>
       </div>
