@@ -135,6 +135,7 @@ export const exerciseScannerSchema = z.object({
 
 export const portfolioScannerSchema = z.object({
   marker: z.string().trim().min(1, "De portfoliomarker is verplicht.").max(40, "De portfoliomarker mag maximaal 40 tekens bevatten."),
+  themeMode: z.enum(["none", "folder"]).default("none"),
 }).strict();
 
 const exerciseLevelRecognitionSourceSchema = z.discriminatedUnion("type", [
@@ -455,6 +456,7 @@ export const DEFAULT_EXERCISE_SCANNER_CONFIG: ExerciseScannerConfig = {
 
 export const DEFAULT_PORTFOLIO_SCANNER_CONFIG: PortfolioScannerConfig = {
   marker: "Portfolio",
+  themeMode: "none",
 };
 
 export const DEFAULT_EXERCISE_LEVEL_RECOGNITION_CONFIG: ExerciseLevelRecognitionConfig = { method: "none" };

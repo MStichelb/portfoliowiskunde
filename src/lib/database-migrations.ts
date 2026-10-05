@@ -1261,6 +1261,44 @@ export const migrations: DatabaseMigration[] = [
       "CREATE UNIQUE INDEX exercises_direct_code_unique ON exercises(portfolio_id, exercise_code) WHERE section_id IS NULL",
     ],
   },
+  {
+    version: "058_source_themes",
+    statements: [
+      `CREATE TABLE themes_058 (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id),
+        name TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        source_scope TEXT,
+        source_id TEXT,
+        source_folder_name TEXT,
+        source_relative_path TEXT,
+        CHECK((source_scope IS NULL AND source_id IS NULL AND source_folder_name IS NULL AND source_relative_path IS NULL)
+          OR (source_scope IS NOT NULL AND source_id IS NOT NULL AND source_folder_name IS NOT NULL AND source_relative_path IS NOT NULL))
+      )`,
+      `INSERT INTO themes_058 (id, learning_space_id, name, sort_order, created_at, updated_at)
+        SELECT id, learning_space_id, name, sort_order, created_at, updated_at FROM themes`,
+      "DROP TABLE themes",
+      "ALTER TABLE themes_058 RENAME TO themes",
+      "CREATE INDEX themes_learning_space_index ON themes(learning_space_id, sort_order)",
+      "CREATE UNIQUE INDEX themes_manual_name_unique ON themes(learning_space_id, name) WHERE source_scope IS NULL",
+      "CREATE UNIQUE INDEX themes_source_identity_unique ON themes(learning_space_id, source_scope, source_id) WHERE source_scope IS NOT NULL",
+    ],
+    postgresStatements: [
+      "ALTER TABLE themes ADD COLUMN source_scope TEXT",
+      "ALTER TABLE themes ADD COLUMN source_id TEXT",
+      "ALTER TABLE themes ADD COLUMN source_folder_name TEXT",
+      "ALTER TABLE themes ADD COLUMN source_relative_path TEXT",
+      "ALTER TABLE themes DROP CONSTRAINT themes_learning_space_id_name_key",
+      `ALTER TABLE themes ADD CONSTRAINT themes_source_metadata_complete CHECK(
+        (source_scope IS NULL AND source_id IS NULL AND source_folder_name IS NULL AND source_relative_path IS NULL)
+        OR (source_scope IS NOT NULL AND source_id IS NOT NULL AND source_folder_name IS NOT NULL AND source_relative_path IS NOT NULL))`,
+      "CREATE UNIQUE INDEX themes_manual_name_unique ON themes(learning_space_id, name) WHERE source_scope IS NULL",
+      "CREATE UNIQUE INDEX themes_source_identity_unique ON themes(learning_space_id, source_scope, source_id) WHERE source_scope IS NOT NULL",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

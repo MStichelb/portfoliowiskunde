@@ -27,6 +27,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-05-themas-uit-bronmappen",
+  date: "2026-10-05",
+  category: "new",
+  title: "Thema's herkennen uit mappen",
+  description: "Een bronprofiel kan nu één mapniveau gebruiken om portfolio's automatisch aan thema's te koppelen. Kies dit in je bronprofiel; het structuurvoorbeeld toont portfolio's binnen thema's én rechtstreeks in de bronmap.",
+  audiences: ["teacher", "superadmin"],
+  notify: true,
+}, {
   id: "2026-10-05-oefeningen-op-portfolioniveau",
   date: "2026-10-05",
   category: "improved",

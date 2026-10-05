@@ -351,11 +351,15 @@ describe("source profile ownership and access", () => {
     await saveManagedSourceProfile(actors.owner, profileFiveId, {
       name: "Samen opgeslagen",
       resources: [{ id: "formula", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic" }],
+      portfolioScanner: { marker: "Portfolio", themeMode: "folder" },
       mode: "all",
     });
     expect(await getActiveSourceProfileForLearningSpace("space-5")).toMatchObject({
       name: "Samen opgeslagen",
-      config: { globalResources: [expect.objectContaining({ id: "formula", label: "Formularium" })] },
+      config: {
+        scanner: { portfolio: { marker: "Portfolio", themeMode: "folder" } },
+        globalResources: [expect.objectContaining({ id: "formula", label: "Formularium" })],
+      },
     });
 
     await upsertManagedMembership("space-6", actors.owner.id, "owner");

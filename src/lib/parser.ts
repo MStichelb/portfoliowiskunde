@@ -59,7 +59,7 @@ export function looksLikeSolutionFileName(name: string): boolean {
 
 export function parsePortfolioDirectory(
   name: string,
-  config: PortfolioScannerConfig,
+  config: Pick<PortfolioScannerConfig, "marker">,
 ): ParsedPortfolioDirectory | null {
   const marker = config.marker.trim();
   if (!marker) return null;

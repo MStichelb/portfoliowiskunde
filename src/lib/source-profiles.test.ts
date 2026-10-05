@@ -37,6 +37,16 @@ afterEach(async () => {
 });
 
 describe("source profile config", () => {
+  it("defaults existing profiles to no themes and validates explicit folder mode", () => {
+    const legacy = { configVersion: 1, scanner: { portfolio: { marker: "Portfolio" } } };
+    expect(parseSourceProfileConfig(legacy).scanner.portfolio.themeMode).toBe("none");
+    expect(parseStoredSourceProfileConfig(1, JSON.stringify(legacy)).scanner.portfolio.themeMode).toBe("none");
+    expect(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.portfolio.themeMode).toBe("none");
+    expect(parseStoredSourceProfileConfig(1, JSON.stringify({ ...legacy, scanner: { portfolio: { marker: "Portfolio", themeMode: "folder" } } })).scanner.portfolio.themeMode).toBe("folder");
+    expect(() => parseSourceProfileConfig({ ...legacy, scanner: { portfolio: { marker: "Portfolio", themeMode: "recursive" } } })).toThrow();
+    expect(() => parseStoredSourceProfileConfig(1, JSON.stringify({ ...legacy, scanner: { portfolio: { marker: "Portfolio", themeMode: "recursive" } } }))).toThrow();
+  });
+
   it("accepts the built-in V1 config through the shared typed parser", () => {
     expect(parseSourceProfileConfig(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG)).toEqual(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
   });
@@ -51,7 +61,7 @@ describe("source profile config", () => {
   it("normalizes stored V1 config and supplies the current portfolio scanner", () => {
     expect(parseSourceProfileConfig({ configVersion: 1, scanner: { convention: "legacy_portfolio_v1" } })).toEqual(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
     expect(parseSourceProfileConfig({ configVersion: 1, scanner: { portfolio: { marker: " Bundel " } } }).scanner.portfolio)
-      .toEqual({ marker: "Bundel" });
+      .toEqual({ marker: "Bundel", themeMode: "none" });
     expect(() => parseSourceProfileConfig({ configVersion: 1, scanner: { portfolio: { marker: "" } } })).toThrow("portfoliomarker");
     expect(LEGACY_GLOBAL_RESOURCE_CONFIGS.map((resource) => resource.label)).toEqual(["Opgaven", "Hints", "Eindoplossingen"]);
     expect(LEGACY_EXERCISE_RESOURCE_CONFIGS.map((resource) => resource.label)).toEqual(["Uitwerking", "Alternatieve uitwerking"]);

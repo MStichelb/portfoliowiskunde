@@ -5,7 +5,7 @@ import path from "node:path";
 import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { executeBatch, executeGuardedBatch, getDatabase } from "@/lib/database";
-import type { IndexedPortfolio } from "@/lib/domain";
+import type { IndexedPortfolio, IndexedSourceTheme } from "@/lib/domain";
 import { listErrorReportExerciseIdentities, normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
 import { ErrorReportRateLimitError } from "@/lib/error-report-rate-limit";
 import {
@@ -50,7 +50,7 @@ import {
   type GlobalResourceSemanticRole,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
-import { getSourceProfileIndexContextForLearningSpace } from "@/lib/source-profiles";
+import { getActiveSourceProfileConfigForLearningSpace, getSourceProfileIndexContextForLearningSpace } from "@/lib/source-profiles";
 import { StaleSynchronizationError } from "@/lib/source-errors";
 import { requireActiveSubject } from "@/lib/subjects";
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
@@ -308,6 +308,7 @@ export interface Theme {
   learningSpaceId: string;
   name: string;
   sortOrder: number;
+  sourceTheme?: IndexedSourceTheme & { scope: string };
 }
 
 const bool = (value: unknown) => value === true || Number(value) === 1;
@@ -871,7 +872,14 @@ export async function permanentlyDeleteLearningSpace(id: string): Promise<boolea
 export async function getThemes(learningSpaceId: string): Promise<Theme[]> {
   const database = await getDatabase();
   const result = await database.execute({ sql: "SELECT * FROM themes WHERE learning_space_id = ? ORDER BY sort_order, name", args: [learningSpaceId] });
-  return result.rows.map((row) => ({ id: text(row, "id"), learningSpaceId: text(row, "learning_space_id"), name: text(row, "name"), sortOrder: Number(row.sort_order) }));
+  return result.rows.map((row) => ({
+    id: text(row, "id"), learningSpaceId: text(row, "learning_space_id"), name: text(row, "name"), sortOrder: Number(row.sort_order),
+    ...(row.source_scope != null ? { sourceTheme: { ...sourceThemeFromRow(row), scope: text(row, "source_scope") } } : {}),
+  }));
+}
+
+function sourceThemeFromRow(row: DatabaseRow): IndexedSourceTheme {
+  return { name: text(row, "source_folder_name"), relativePath: text(row, "source_relative_path"), sourceId: text(row, "source_id") };
 }
 
 export async function createTheme(learningSpaceId: string, name: string, sortOrder?: number): Promise<void> {
@@ -1141,6 +1149,41 @@ export async function persistIndex(
   const portfolioCodeCounts = new Map<string, number>();
   for (const portfolio of portfolios) portfolioCodeCounts.set(portfolio.code, (portfolioCodeCounts.get(portfolio.code) ?? 0) + 1);
   const indexablePortfolios = portfolios.filter((portfolio) => portfolioCodeCounts.get(portfolio.code) === 1);
+  const profileConfig = options.publicationGuard?.snapshot.sourceProfileConfig
+    ?? await getActiveSourceProfileConfigForLearningSpace(spaceId);
+  const synchronizesThemes = profileConfig.scanner.portfolio.themeMode === "folder";
+  const themeStatements: InStatement[] = [];
+  const sourceThemeIds = new Map<string, string>();
+  if (synchronizesThemes) {
+    const themeSource = source ?? await getActiveLearningSpaceSource(spaceId);
+    if (!themeSource) throw new Error("De synchronisatiebron voor thema's ontbreekt.");
+    const scope = themeSource.id;
+    const existingThemes = await getThemes(spaceId);
+    const themesByReference = new Map(existingThemes
+      .filter((theme) => theme.sourceTheme?.scope === scope)
+      .map((theme) => [theme.sourceTheme!.sourceId, theme]));
+    let sortOrder = Math.max(0, ...existingThemes.map((theme) => theme.sortOrder));
+    for (const portfolio of portfolios) {
+      const incoming = portfolio.sourceTheme;
+      if (!incoming || sourceThemeIds.has(incoming.sourceId)) continue;
+      const existing = themesByReference.get(incoming.sourceId);
+      const id = existing?.id ?? randomUUID();
+      sourceThemeIds.set(incoming.sourceId, id);
+      if (!existing) {
+        sortOrder += 10;
+        themeStatements.push({
+          sql: `INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at,
+            source_scope, source_id, source_folder_name, source_relative_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [id, spaceId, incoming.name, sortOrder, startedAt, startedAt, scope, incoming.sourceId, incoming.name, incoming.relativePath],
+        });
+      } else if (existing.sourceTheme!.name !== incoming.name || existing.sourceTheme!.relativePath !== incoming.relativePath) {
+        themeStatements.push({
+          sql: "UPDATE themes SET source_folder_name = ?, source_relative_path = ?, updated_at = ? WHERE id = ?",
+          args: [incoming.name, incoming.relativePath, startedAt, id],
+        });
+      }
+    }
+  }
   const [existingAssets, existingVariants, existingResourceAssets, existingPortfolios, existingExercises, existingErrorThreads, existingErrorIssues] = await Promise.all([
     database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.source_id,
       solution_assets.file_name, solution_assets.extension, solution_assets.step, solution_assets.last_modified_at, solution_assets.source_version,
@@ -1385,6 +1428,7 @@ export async function persistIndex(
   let updated = 0;
 
   const statements: InStatement[] = [
+    ...themeStatements,
     {
       sql: `INSERT INTO sync_runs (id, learning_space_id, source_id, started_at, portfolio_count, warning_count, status, provider_type)
         VALUES (?, ?, ?, ?, ?, ?, 'running', ?)`,
@@ -1452,6 +1496,17 @@ export async function persistIndex(
         portfolio.assignmentPdfSourceId, portfolio.hintsDocumentPath, portfolio.hintsDocumentSourceId,
         portfolio.finalSolutionsPdfPath, portfolio.finalSolutionsPdfSourceId, startedAt, startedAt],
     });
+
+    if (synchronizesThemes) {
+      const themeId = portfolio.sourceTheme ? sourceThemeIds.get(portfolio.sourceTheme.sourceId)! : null;
+      statements.push(themeId ? {
+        sql: "UPDATE portfolios SET theme_id = ? WHERE id = ? AND (theme_id IS NULL OR theme_id <> ?)",
+        args: [themeId, portfolioId, themeId],
+      } : {
+        sql: "UPDATE portfolios SET theme_id = NULL WHERE id = ? AND theme_id IS NOT NULL",
+        args: [portfolioId],
+      });
+    }
 
     for (const resourceAsset of portfolio.resourceAssets) {
       const resourceAssetId = stableId("source-resource-asset", spaceId, "portfolio", resourceAsset.resourceId, resourceAsset.sourceId);
@@ -1765,8 +1820,10 @@ export async function persistIndex(
 export async function getIndexedSourceManifest(learningSpaceId: string): Promise<SourceManifestEntry[]> {
   const database = await getDatabase();
   const [portfolios, sections, legacyAssets, resourceAssets] = await Promise.all([
-    database.execute({ sql: `SELECT relative_path, assignment_pdf_path, hints_document_path, final_solutions_pdf_path FROM portfolios
-      WHERE learning_space_id = ? AND is_indexed = 1`, args: [learningSpaceId] }),
+    database.execute({ sql: `SELECT portfolios.relative_path, assignment_pdf_path, hints_document_path, final_solutions_pdf_path,
+      themes.source_scope, themes.source_id, themes.source_folder_name, themes.source_relative_path FROM portfolios
+      LEFT JOIN themes ON themes.id = portfolios.theme_id AND themes.learning_space_id = portfolios.learning_space_id
+      WHERE portfolios.learning_space_id = ? AND portfolios.is_indexed = 1`, args: [learningSpaceId] }),
     database.execute({ sql: `SELECT sections.relative_path FROM sections JOIN portfolios ON portfolios.id = sections.portfolio_id
       WHERE portfolios.learning_space_id = ? AND sections.is_indexed = 1 AND (
         EXISTS (
@@ -1797,7 +1854,10 @@ export async function getIndexedSourceManifest(learningSpaceId: string): Promise
     manifest.push({ kind: "file", relativePath });
   };
   for (const row of portfolios.rows) {
-    manifest.push({ kind: "portfolio", relativePath: text(row, "relative_path") });
+    manifest.push({
+      kind: "portfolio", relativePath: text(row, "relative_path"),
+      ...(row.source_scope != null ? { sourceTheme: sourceThemeFromRow(row) } : {}),
+    });
     addFile(nullableText(row, "assignment_pdf_path"));
     addFile(nullableText(row, "hints_document_path"));
     addFile(nullableText(row, "final_solutions_pdf_path"));

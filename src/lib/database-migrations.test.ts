@@ -40,6 +40,47 @@ describe("shared migration SQL", () => {
   });
 });
 
+describe("source theme migration", () => {
+  it("preserves existing themes and memberships and enforces source identity independently of display name", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-themes-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 57)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-10-05"] },
+      ], "write");
+    }
+    await legacy.batch([
+      { sql: "INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at) VALUES ('manual', 'space-6', 'Analyse', 70, 'created', 'edited')", args: [] },
+      { sql: "INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, indexed_at, theme_id) VALUES ('p', 'space-6:1', '1', 'space-6', 'Test', 'Portfolio 1', '2026-10-05', 'manual')", args: [] },
+    ], "write");
+    const before = (await legacy.execute("SELECT * FROM themes")).rows[0];
+    legacy.close();
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT * FROM themes WHERE id = 'manual'")).rows[0]).toEqual({
+      ...before, source_scope: null, source_id: null, source_folder_name: null, source_relative_path: null,
+    });
+    expect((await upgraded.execute("SELECT theme_id FROM portfolios WHERE id = 'p'")).rows[0].theme_id).toBe("manual");
+    await expect(upgraded.execute("INSERT INTO themes (id, learning_space_id, name, created_at, updated_at) VALUES ('duplicate-name', 'space-6', 'Analyse', 'now', 'now')")).rejects.toThrow();
+    const insertSource = (id: string, space: string, scope: string, reference: string) => upgraded.execute({
+      sql: `INSERT INTO themes (id, learning_space_id, name, created_at, updated_at, source_scope, source_id, source_folder_name, source_relative_path)
+        VALUES (?, ?, 'Analyse', 'now', 'now', ?, ?, 'Analyse', 'Analyse')`,
+      args: [id, space, scope, reference],
+    });
+    await expect(insertSource("source", "space-6", "configured-source", "folder-id")).resolves.toBeDefined();
+    await expect(insertSource("duplicate-ref", "space-6", "configured-source", "folder-id")).rejects.toThrow();
+    await expect(insertSource("different-ref", "space-6", "configured-source", "folder-id-2")).resolves.toBeDefined();
+    await expect(insertSource("different-source", "space-6", "other-source", "folder-id")).resolves.toBeDefined();
+    await expect(insertSource("different-space", "space-5", "configured-source", "folder-id")).resolves.toBeDefined();
+    await expect(upgraded.execute("INSERT INTO themes (id, learning_space_id, name, created_at, updated_at, source_scope) VALUES ('incomplete', 'space-6', 'Incomplete', 'now', 'now', 'configured-source')")).rejects.toThrow();
+    expect((await upgraded.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
+  });
+});
+
 describe("sectionless exercise migration", () => {
   it("retains exercise metadata and referenced assets while making sections optional", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-sectionless-"));

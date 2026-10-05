@@ -3,6 +3,7 @@ import type {
   IndexedExercise,
   IndexedPortfolio,
   IndexedPortfolioResourceAsset,
+  IndexedSourceTheme,
   IndexWarning,
   ParsedExerciseIdentity,
   ParsedSolutionFile,
@@ -55,27 +56,49 @@ export async function indexSource(
     .filter((resource): resource is SourceFileGlobalResource => resource.kind === "source_file");
   const exerciseResources = sortExerciseResources(sourceProfileConfig.exerciseResources);
   const legacyExerciseVariants = legacyExerciseResourceVariants(exerciseResources);
-  const candidates = [...rootEntries].sort(compareEntries).flatMap((entry) => {
-    if (entry.kind !== "directory") return [];
+  const candidates: Array<{
+    entry: StorageEntry;
+    parsed: NonNullable<ReturnType<typeof parsePortfolioDirectory>>;
+    sourceTheme?: IndexedSourceTheme;
+  }> = [];
+  for (const entry of [...rootEntries].sort(compareEntries)) {
+    if (entry.kind !== "directory") continue;
     const parsed = parsePortfolioDirectory(entry.name, sourceProfileConfig.scanner.portfolio);
-    return parsed ? [{ entry, parsed }] : [];
-  });
+    if (parsed) {
+      candidates.push({ entry, parsed });
+      continue;
+    }
+    if (sourceProfileConfig.scanner.portfolio.themeMode !== "folder") continue;
+    const sourceTheme: IndexedSourceTheme = {
+      name: entry.name,
+      relativePath: entry.relativePath,
+      sourceId: entry.sourceId ?? entry.relativePath,
+    };
+    // Only root children can be themes. Inside them, apply the existing
+    // portfolio rules once; never discover another theme or recurse further.
+    for (const child of [...await provider.list(entry.relativePath)].sort(compareEntries)) {
+      if (child.kind !== "directory") continue;
+      const childPortfolio = parsePortfolioDirectory(child.name, sourceProfileConfig.scanner.portfolio);
+      if (childPortfolio) candidates.push({ entry: child, parsed: childPortfolio, sourceTheme });
+    }
+  }
   const portfolioNamesByCode = new Map<string, string[]>();
   for (const candidate of candidates) {
-    portfolioNamesByCode.set(candidate.parsed.code, [...(portfolioNamesByCode.get(candidate.parsed.code) ?? []), candidate.entry.name]);
+    portfolioNamesByCode.set(candidate.parsed.code, [...(portfolioNamesByCode.get(candidate.parsed.code) ?? []),
+      sourceProfileConfig.scanner.portfolio.themeMode === "folder" ? candidate.entry.relativePath : candidate.entry.name]);
   }
 
-  for (const { entry, parsed: parsedPortfolio } of candidates) {
+  for (const { entry, parsed: parsedPortfolio, sourceTheme } of candidates) {
     const duplicateNames = portfolioNamesByCode.get(parsedPortfolio.code) ?? [];
     if (duplicateNames.length > 1) {
-      portfolios.push(conflictedPortfolio(entry, parsedPortfolio.code, parsedPortfolio.title, {
+      portfolios.push({ ...conflictedPortfolio(entry, parsedPortfolio.code, parsedPortfolio.title, {
         severity: "warning",
         path: entry.relativePath,
         message: `Dubbele portfoliocode ${parsedPortfolio.code} herkend in mappen: ${duplicateNames.join(", ")}. Geen van deze portfolio's wordt gesynchroniseerd.`,
-      }));
+      }), ...(sourceTheme ? { sourceTheme } : {}) });
       continue;
     }
-    portfolios.push(await indexPortfolio(
+    portfolios.push({ ...await indexPortfolio(
       provider,
       entry,
       parsedPortfolio.code,
@@ -85,7 +108,7 @@ export async function indexSource(
       legacyExerciseVariants,
       sourceProfileConfig.scanner.exercise,
       sourceProfileConfig.levelRecognition,
-    ));
+    ), ...(sourceTheme ? { sourceTheme } : {}) });
   }
 
   return portfolios.sort((a, b) => comparePortfolioIds(a.code, b.code));

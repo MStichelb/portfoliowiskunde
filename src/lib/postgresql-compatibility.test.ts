@@ -22,6 +22,11 @@ import {
   tryAcquireSyncLease,
   updateLearningSpace,
   persistIndex,
+  createTheme,
+  getThemes,
+  getAdminPortfolios,
+  getIndexedSourceManifest,
+  updateTheme,
 } from "./repositories";
 import { uniqueSourceProfileName } from "./source-profile-name";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, INITIAL_SOURCE_PROFILE_TEMPLATE_ID } from "./source-profile-config";
@@ -174,6 +179,36 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
       sql: "INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix) SELECT ?, portfolio_id, NULL, exercise_code, exercise_number, exercise_suffix FROM exercises WHERE id = ?",
       args: [`duplicate-direct-${suffix}`, originalExerciseId],
     })).rejects.toThrow();
+
+    const themeConfig = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    themeConfig.scanner.portfolio.themeMode = "folder";
+    await database.execute({
+      sql: "UPDATE source_profiles SET config_json = ? WHERE id IN (SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = ?)",
+      args: [JSON.stringify(themeConfig), space.id],
+    });
+    await createTheme(space.id, "Analyse", 60);
+    await expect(createTheme(space.id, "Analyse")).rejects.toThrow();
+    directIndex.sourceTheme = { name: "Analyse", relativePath: "Analyse", sourceId: `folder-${suffix}` };
+    await persistIndex([directIndex], activeSource.providerType, space.id, { sourceId: activeSource.id });
+    const theme = (await getThemes(space.id)).find((item) => item.sourceTheme)!;
+    expect(theme).toMatchObject({ name: "Analyse", sortOrder: 70, sourceTheme: { ...directIndex.sourceTheme, scope: activeSource.id } });
+    await updateTheme(theme.id, space.id, "Eigen analyse");
+    const themeBefore = (await database.execute({ sql: "SELECT * FROM themes WHERE id = ?", args: [theme.id] })).rows[0];
+    const portfolioId = (await getAdminPortfolios(space.id))[0].id;
+    await persistIndex([directIndex], activeSource.providerType, space.id, { sourceId: activeSource.id });
+    expect((await database.execute({ sql: "SELECT * FROM themes WHERE id = ?", args: [theme.id] })).rows[0]).toEqual(themeBefore);
+    expect(await getThemes(space.id)).toHaveLength(2);
+    expect((await getAdminPortfolios(space.id))[0]).toMatchObject({ id: portfolioId, themeId: theme.id });
+    expect((await getIndexedSourceManifest(space.id)).find((entry) => entry.kind === "portfolio")?.sourceTheme).toEqual(directIndex.sourceTheme);
+    await expect(database.execute({
+      sql: `INSERT INTO themes (id, learning_space_id, name, created_at, updated_at, source_scope, source_id, source_folder_name, source_relative_path)
+        SELECT ?, learning_space_id, name, created_at, updated_at, source_scope, source_id, source_folder_name, source_relative_path FROM themes WHERE id = ?`,
+      args: [`duplicate-theme-${suffix}`, theme.id],
+    })).rejects.toThrow();
+    delete directIndex.sourceTheme;
+    await persistIndex([directIndex], activeSource.providerType, space.id, { sourceId: activeSource.id });
+    expect((await getAdminPortfolios(space.id))[0].themeId).toBeNull();
+    expect((await database.execute({ sql: "SELECT * FROM themes WHERE id = ?", args: [theme.id] })).rows[0]).toEqual(themeBefore);
   }, 60_000);
 });
 

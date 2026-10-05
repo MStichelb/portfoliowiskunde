@@ -56,7 +56,7 @@ export function SourceProfileExerciseConfigurationEditors({
     <section className="source-profile-resource-editor" aria-labelledby="portfolio-scanner-heading">
       <div className="source-profile-resource-editor-heading">
         <div>
-          <h3 id="portfolio-scanner-heading">Portfolio's en onderdelen herkennen</h3>
+          <h3 id="portfolio-scanner-heading">Portfolio&apos;s en onderdelen herkennen</h3>
           <p>Stel de vaste tekst in waarmee een portfoliomap begint.</p>
         </div>
       </div>
@@ -70,9 +70,23 @@ export function SourceProfileExerciseConfigurationEditors({
               value={portfolioScannerPreview.marker}
               maxLength={40}
               required
-              onChange={(event) => setPortfolioScannerPreview({ marker: event.target.value })}
+              onChange={(event) => setPortfolioScannerPreview({ ...portfolioScannerPreview, marker: event.target.value })}
             />
             <small className={styles.levelRecognitionHint}>De marker bepaalt welke mappen als portfolio worden herkend, bv. Portfolio1A, H1.1 of BundelA.1.</small>
+          </label>
+          <label className={styles.stackedField}>Thema&apos;s uit mappenstructuur
+            <select
+              className={styles.control}
+              aria-label="Thema's uit mappenstructuur"
+              value={portfolioScannerPreview.themeMode}
+              onChange={(event) => setPortfolioScannerPreview({
+                ...portfolioScannerPreview,
+                themeMode: event.target.value === "folder" ? "folder" : "none",
+              })}
+            >
+              <option value="none">Geen thema&apos;s uit mappen</option>
+              <option value="folder">Eén mapniveau als thema gebruiken</option>
+            </select>
           </label>
           <p className={styles.levelRecognitionHint}>Onderdelen zijn directe submappen met een numerieke code, zoals <code>1 Inleiding</code>, <code>1.2 Methode</code> of <code>2 - Toepassingen</code>. Letter-startende onderdeelcodes worden niet herkend. Een map <code>Uitwerkingen</code> is niet nodig.</p>
         </div>

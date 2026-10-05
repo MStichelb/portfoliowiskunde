@@ -15,10 +15,26 @@ vi.mock("next/navigation", () => ({
 const action = async () => undefined;
 
 describe("SourceProfileManageDialog", () => {
+  it.each(["none", "folder"] as const)("shows the saved theme-folder setting and matching preview (%s)", (themeMode: "none" | "folder") => {
+    const config = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    config.scanner.portfolio.themeMode = themeMode;
+    const markup = renderToStaticMarkup(<SourceProfileManageDialog profile={profile({ config })} saveAction={action} archiveAction={action} />);
+    expect(markup).toContain("Thema&#x27;s uit mappenstructuur");
+    expect(markup).toContain(`<option value="${themeMode}" selected="">`);
+    expect(markup).toContain(`&quot;themeMode&quot;:&quot;${themeMode}&quot;`);
+    expect(markup.includes("Thema uit bronmap")).toBe(themeMode === "folder");
+    expect(markup.includes("Bronmap")).toBe(themeMode === "folder");
+    if (themeMode === "folder") {
+      expect(markup).toContain(">Analyse<");
+      expect(markup).toContain(">Algebra<");
+      expect(markup).toContain("Portfolio 4 - Herhaling");
+    }
+  });
+
   it("uses one sticky save flow for the profile name, global resources and exercise resources", () => {
     const config = {
       ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
-      scanner: { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner, portfolio: { marker: "Bundel" } },
+      scanner: { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner, portfolio: { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.portfolio, marker: "Bundel" } },
     };
     const markup = renderToStaticMarkup(<SourceProfileManageDialog
       profile={profile({ config, usageCount: 1, usages: [usage("space-5", "5WIS")] })}

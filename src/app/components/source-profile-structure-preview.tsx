@@ -60,6 +60,7 @@ function PreviewTreeNode({ node, depth }: { node: SourceStructurePreviewNode; de
     <div className={styles.structureTreeRow} style={{ paddingInlineStart: `${depth * 1.25}rem` }}>
       <Icon size={16} aria-hidden />
       <span>{node.name}</span>
+      {node.annotation ? <small className={styles.structurePreviewMuted}>{node.annotation}</small> : null}
     </div>
     {node.children?.map((child, index) => <PreviewTreeNode key={`${child.kind}:${child.name}:${index}`} node={child} depth={depth + 1} />)}
   </div>;

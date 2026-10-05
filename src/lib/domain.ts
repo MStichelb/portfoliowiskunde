@@ -80,10 +80,17 @@ export interface IndexedSection {
   exercises: IndexedExercise[];
 }
 
+export interface IndexedSourceTheme {
+  name: string;
+  relativePath: string;
+  sourceId: string;
+}
+
 export interface IndexedPortfolio {
   code: string;
   title: string;
   relativePath: string;
+  sourceTheme?: IndexedSourceTheme;
   assignmentPdfPath: string | null;
   assignmentPdfSourceId: string | null;
   hintsDocumentPath: string | null;

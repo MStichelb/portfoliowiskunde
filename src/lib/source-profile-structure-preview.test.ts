@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { buildSourceStructurePreview } from "@/lib/source-profile-structure-preview";
+import { buildSourceStructurePreview, groupSourceStructurePreview } from "@/lib/source-profile-structure-preview";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "@/lib/source-profile-config";
+import { LocalFilesystemProvider } from "@/lib/storage/local-filesystem-provider";
+import { indexSource } from "@/lib/storage/portfolio-indexer";
 import type { ExerciseResourceConfig, ExerciseScannerConfig } from "@/lib/source-profile-config";
 
 const scanner: ExerciseScannerConfig = {
@@ -31,6 +37,48 @@ function flatten(node: ReturnType<typeof buildSourceStructurePreview>["root"]): 
 }
 
 describe("buildSourceStructurePreview", () => {
+  it("keeps the existing example unchanged for explicit none and legacy configs", () => {
+    const legacy = buildSourceStructurePreview(scanner, [workedSolution], { method: "none" }, { marker: "H" });
+    expect(buildSourceStructurePreview(scanner, [workedSolution], { method: "none" }, { marker: "H", themeMode: "none" })).toEqual(legacy);
+    expect(flatten(legacy.root)).not.toContain("Bronmap");
+    expect(flatten(legacy.root)).not.toContain("Analyse");
+    expect(legacy.notes.some((note) => note.includes("thema"))).toBe(false);
+  });
+
+  it("shows theme folders and a direct portfolio in the configured example", () => {
+    const preview = buildSourceStructurePreview(scanner, [workedSolution], { method: "none" }, { marker: "H", themeMode: "folder" });
+    expect(preview.root.name).toBe("Bronmap");
+    expect(preview.root.children?.map((node) => node.name)).toEqual(["Analyse", "Algebra", "H4 - Herhaling"]);
+    expect(preview.root.children?.[0]).toMatchObject({
+      annotation: "Thema uit bronmap",
+      children: [{ name: "H1.1_Stelsels oplossen" }, { name: "H2 - Limieten" }],
+    });
+    expect(flatten(preview.root)).toContain("Oef1-uitwerking.png");
+    expect(preview.notes.some((note) => note.includes("rechtstreeks in de bronmap hebben geen thema"))).toBe(true);
+  });
+
+  it("groups real scanner membership by source reference and preserves source folder names", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "portfolio-theme-preview-"));
+    try {
+      for (const folder of ["02 Analyse/Portfolio 1 Limieten", "02 Analyse/Portfolio 2 Afgeleiden", "Algebra/Portfolio 3 Matrices", "Portfolio 4 Herhaling"]) {
+        await mkdir(path.join(root, folder), { recursive: true });
+      }
+      const config = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+      config.scanner.portfolio.themeMode = "folder";
+      const indexed = await indexSource(new LocalFilesystemProvider(root), config);
+      const preview = groupSourceStructurePreview(indexed.map((portfolio) => ({
+        sourceTheme: portfolio.sourceTheme,
+        node: { kind: "folder" as const, name: portfolio.title, children: [] },
+      })));
+      expect(preview.children?.map((node) => node.name)).toEqual(["02 Analyse", "Algebra", "Herhaling"]);
+      expect(preview.children?.[0].children?.map((node) => node.name)).toEqual(["Limieten", "Afgeleiden"]);
+      expect(preview.children?.[1].children?.map((node) => node.name)).toEqual(["Matrices"]);
+      expect(preview.children?.[2].annotation).toBeUndefined();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("uses the configured portfolio marker and shows direct numeric sections", () => {
     const preview = buildSourceStructurePreview(scanner, [workedSolution], { method: "none" }, { marker: "H" });
 

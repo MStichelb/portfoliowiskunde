@@ -8,11 +8,13 @@ import type {
   PortfolioScannerConfig,
 } from "@/lib/source-profile-config";
 import { DEFAULT_PORTFOLIO_SCANNER_CONFIG } from "@/lib/source-profile-config";
+import type { IndexedSourceTheme } from "@/lib/domain";
 
 export type SourceStructurePreviewNode = {
   kind: "folder" | "file";
   name: string;
   children?: SourceStructurePreviewNode[];
+  annotation?: string;
 };
 
 export type SourceStructurePreview = {
@@ -29,7 +31,7 @@ export function buildSourceStructurePreview(
   scanner: ExerciseScannerConfig,
   resources: readonly ExerciseResourceConfig[],
   levelRecognition: ExerciseLevelRecognitionConfig = { method: "none" },
-  portfolioScanner: PortfolioScannerConfig = DEFAULT_PORTFOLIO_SCANNER_CONFIG,
+  portfolioScanner: Pick<PortfolioScannerConfig, "marker"> & Partial<Pick<PortfolioScannerConfig, "themeMode">> = DEFAULT_PORTFOLIO_SCANNER_CONFIG,
 ): SourceStructurePreview {
   const portfolioMarker = safeStem(portfolioScanner.marker, "Portfolio");
   const compactMarker = portfolioMarker.length === 1;
@@ -68,12 +70,48 @@ export function buildSourceStructurePreview(
     notes.add("Bij ‘direct … of in een submap’ toont dit voorbeeld één geldige plaats. De andere ingestelde plaats is ook toegestaan.");
   }
 
+  let previewRoot = root;
+  if (portfolioScanner.themeMode === "folder") {
+    const analysis: IndexedSourceTheme = { name: "Analyse", relativePath: "Analyse", sourceId: "example-analysis" };
+    const algebra: IndexedSourceTheme = { name: "Algebra", relativePath: "Algebra", sourceId: "example-algebra" };
+    const portfolioName = (code: string, title: string) => `${portfolioMarker}${compactMarker ? "" : " "}${code} - ${title}`;
+    previewRoot = groupSourceStructurePreview([
+      { sourceTheme: analysis, node: root },
+      { sourceTheme: analysis, node: { kind: "folder", name: portfolioName("2", "Limieten"), children: [] } },
+      { sourceTheme: algebra, node: { kind: "folder", name: portfolioName("3", "Matrices"), children: [] } },
+      { node: { kind: "folder", name: portfolioName("4", "Herhaling"), children: [] } },
+    ]);
+    notes.add("Eén mapniveau onder de bronmap wordt als thema gebruikt. De naam van die map is de bron-themanaam. Portfolio's rechtstreeks in de bronmap hebben geen thema; diepere themaniveaus worden niet herkend.");
+  }
+
   return {
     modeLabel: modeLabel(scanner.exerciseMode),
     explanation: modeExplanation(scanner.exerciseMode),
-    root,
+    root: previewRoot,
     notes: [...notes],
   };
+}
+
+// Membership comes from scanner/manifest metadata, never from interpreting folder paths.
+export function groupSourceStructurePreview(
+  portfolios: readonly { node: SourceStructurePreviewNode; sourceTheme?: IndexedSourceTheme }[],
+): SourceStructurePreviewNode {
+  const root: SourceStructurePreviewNode = { kind: "folder", name: "Bronmap", children: [] };
+  const themes = new Map<string, SourceStructurePreviewNode>();
+  for (const { node, sourceTheme } of portfolios) {
+    if (!sourceTheme) {
+      root.children!.push(node);
+      continue;
+    }
+    let theme = themes.get(sourceTheme.sourceId);
+    if (!theme) {
+      theme = { kind: "folder", name: sourceTheme.name, annotation: "Thema uit bronmap", children: [] };
+      themes.set(sourceTheme.sourceId, theme);
+      root.children!.push(theme);
+    }
+    theme.children!.push(node);
+  }
+  return root;
 }
 
 function addFileExercise(
