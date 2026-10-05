@@ -27,6 +27,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-05-flexibele-onderdeelnummering",
+  date: "2026-10-05",
+  category: "improved",
+  title: "Flexibelere onderdeelnummering",
+  description: "Portfolio's kunnen nu ook onderdelen zoals 1.1, 1.2 en 2.1 gebruiken. Je ziet de code uit de bronmap, in een logische volgorde: 1.2 komt vóór 1.10.",
+  audiences: ["student", "teacher", "superadmin"],
+  notify: true,
+}, {
   id: "2026-10-05-changelog",
   date: "2026-10-05",
   category: "new",

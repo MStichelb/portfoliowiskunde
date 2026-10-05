@@ -748,7 +748,7 @@ describe("portfolio indexer", () => {
           { name: "1 Inleiding", relativePath: `${portfolioPath}/1 Inleiding`, kind: "directory" },
           { name: "1.1 Basis", relativePath: `${portfolioPath}/1.1 Basis`, kind: "directory" },
           { name: "1.10 Verdieping", relativePath: `${portfolioPath}/1.10 Verdieping`, kind: "directory" },
-          { name: "1.2 Methode", relativePath: `${portfolioPath}/1.2 Methode`, kind: "directory" },
+          { name: "01.02 Methode", relativePath: `${portfolioPath}/01.02 Methode`, kind: "directory" },
           { name: "2A Methode", relativePath: `${portfolioPath}/2A Methode`, kind: "directory" },
           { name: "10_Toepassingen", relativePath: `${portfolioPath}/10_Toepassingen`, kind: "directory" },
           { name: "Uitwerkingen", relativePath: `${portfolioPath}/Uitwerkingen`, kind: "directory" },
@@ -762,7 +762,7 @@ describe("portfolio indexer", () => {
     expect(portfolio.sections.map((section) => [section.code, section.sortOrder, section.title])).toEqual([
       ["1", 1, "Inleiding"],
       ["1.1", 2, "Basis"],
-      ["1.2", 3, "Methode"],
+      ["01.02", 3, "Methode"],
       ["1.10", 4, "Verdieping"],
       ["2", 5, "A Methode"],
       ["10", 6, "Toepassingen"],

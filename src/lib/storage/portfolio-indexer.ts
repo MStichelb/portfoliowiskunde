@@ -13,6 +13,7 @@ import {
   compareSectionCodes,
   findExerciseNumberCandidates,
   normalizePortfolioCode,
+  normalizeSectionCode,
   parseExerciseDirectoryIdentity,
   parsePortfolioDirectory,
   parseSectionDirectory,
@@ -176,7 +177,10 @@ function sectionContexts(entries: readonly StorageEntry[], portfolioPath: string
     return [{ code: section.code, title: section.title, relativePath: entry.relativePath, sourceName: entry.name }];
   });
   const namesByCode = new Map<string, string[]>();
-  for (const section of sections) namesByCode.set(section.code, [...(namesByCode.get(section.code) ?? []), section.sourceName]);
+  for (const section of sections) {
+    const identityCode = normalizeSectionCode(section.code);
+    namesByCode.set(identityCode, [...(namesByCode.get(identityCode) ?? []), section.sourceName]);
+  }
   const duplicateCodes = new Set([...namesByCode].filter(([, names]) => names.length > 1).map(([code]) => code));
   for (const code of [...duplicateCodes].sort(compareSectionCodes)) {
     warnings.push({
@@ -186,7 +190,7 @@ function sectionContexts(entries: readonly StorageEntry[], portfolioPath: string
     });
   }
   return sections
-    .filter((section) => !duplicateCodes.has(section.code))
+    .filter((section) => !duplicateCodes.has(normalizeSectionCode(section.code)))
     .sort((left, right) => compareSectionCodes(left.code, right.code) || left.title.localeCompare(right.title, "nl"))
     .map(({ sourceName: _sourceName, ...section }, index) => ({ ...section, sortOrder: index + 1 }));
 }

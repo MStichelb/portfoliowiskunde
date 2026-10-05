@@ -9,10 +9,14 @@ import type { ChangelogEntry, ChangelogAudience } from "@/data/changelog";
 describe("changelog navigation", () => {
   it.each(["student", "teacher", "superadmin"] as const)("places the button between divider and identity for %s", (role: ChangelogAudience) => {
     const markup = renderToStaticMarkup(<SiteNavigation spaces={[]} user={{ firstName: "Test", role }} />);
-    const divider = markup.indexOf('class="site-nav-divider"');
     const trigger = markup.indexOf('class="site-nav-icon changelog-trigger"');
-    expect(trigger).toBeGreaterThan(divider);
-    expect(markup.indexOf('class="site-nav-identity"')).toBeGreaterThan(trigger);
+    const divider = markup.indexOf('class="site-nav-divider"');
+    const identity = markup.indexOf('class="site-nav-identity"');
+    const logout = markup.indexOf('class="site-nav-icon site-nav-logout"');
+    expect(trigger).toBeGreaterThan(-1);
+    expect(trigger).toBeLessThan(divider);
+    expect(divider).toBeLessThan(identity);
+    expect(identity).toBeLessThan(logout);
     expect(markup).not.toContain('class="changelog-dot"');
   });
   it("shows the dot only when unread and hides navigation for guests", () => {

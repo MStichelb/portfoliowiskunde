@@ -77,15 +77,15 @@ describe("public LearningSpace terminology", () => {
     expect(mocks.errorReportProps).toHaveBeenCalledWith(expect.objectContaining({ exerciseLabelSingular: "OpGavE" }));
   });
 
-  it("shows a hierarchical section code without treating it as a decimal or adding a trailing dot", async () => {
+  it.each(["1.1", "1.2", "1.10", "01.02"])("shows source section code %s exactly", async (code: string) => {
     mocks.getStudentPortfolio.mockResolvedValue({
       ...studentPortfolio,
-      sections: [{ ...studentPortfolio.sections[0], code: "1.1" }],
+      sections: [{ ...studentPortfolio.sections[0], code }],
     });
 
     const markup = renderToStaticMarkup(await LearningSpacePortfolioPage({ params: Promise.resolve({ spaceSlug: "fysica", id: "portfolio-1" }) }));
-    expect(markup).toContain("1.1 Basis");
-    expect(markup).not.toContain("1.1. Basis");
+    expect(markup).toContain(`${code} Basis`);
+    expect(markup).not.toContain(`${code}. Basis`);
   });
 
   it("keeps a real theme as the portfolio prefix", async () => {

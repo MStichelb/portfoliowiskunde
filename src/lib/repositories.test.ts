@@ -11,6 +11,7 @@ import { archiveLearningSpace, archiveMissingIndexItems, createErrorReport, crea
 import { synchronizeSource } from "./sync";
 import { SourceAccessError, SourceConfigurationError } from "./source-errors";
 import { indexSource } from "./storage/portfolio-indexer";
+import { setSectionPublication } from "./repositories";
 import type { StorageEntry, StorageProvider } from "./storage/provider";
 
 let temporaryDirectory: string | undefined;
@@ -29,6 +30,44 @@ afterEach(async () => {
 });
 
 describe("persistIndex", () => {
+  it("preserves source section codes, natural order and publication settings when sync positions change", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-section-source-codes-"));
+    process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");
+    resetDatabaseForTests();
+    const portfolioPath = "Portfolio 31 Onderdelen";
+    const codes = ["3", "2.1", "1.10", "2", "01.02", "1.1", "1"];
+    const source: StorageProvider = {
+      id: "section-source-codes",
+      async list(relativePath = "") {
+        if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+        if (relativePath === portfolioPath) return codes.map((code) => ({
+          name: `${code} Onderdeel`, relativePath: `${portfolioPath}/${code} Onderdeel`, kind: "directory" as const,
+        }));
+        return [];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+    await persistIndex(await indexSource(source), "local", "space-6");
+    const before = (await getAdminPortfolios("space-6")).find((portfolio) => portfolio.code === "31")!;
+    const expected = ["1", "1.1", "01.02", "1.10", "2", "2.1", "3"];
+    expect(before.sections.map((section) => section.code)).toEqual(expected);
+    const section = before.sections.find((item) => item.code === "01.02")!;
+    expect(section.id).toBe(`${before.id}-section-1.2`);
+    await setSectionPublication(section.id, "hidden", true, "2026-10-06T08:00:00.000Z", "2026-10-07T08:00:00.000Z");
+    await setPortfolioPublication(before.id, "visible", false, null, null);
+
+    codes.push("0"); // Changes positions without changing the existing section identities.
+    await persistIndex(await indexSource(source), "local", "space-6");
+    const after = (await getAdminPortfolios("space-6")).find((portfolio) => portfolio.id === before.id)!;
+    expect(after.sections.map((item) => item.code)).toEqual(["0", ...expected]);
+    expect(after.sections.find((item) => item.code === "01.02")).toMatchObject({
+      id: section.id, visibilityMode: "hidden", limited: true,
+      publishFrom: "2026-10-06T08:00:00.000Z", publishUntil: "2026-10-07T08:00:00.000Z",
+    });
+    const student = (await getStudentPortfolios("space-6")).find((portfolio) => portfolio.id === before.id)!;
+    expect(student.sections.map((item) => item.code)).toEqual(["0", ...expected]);
+  });
+
   it("treats a section code change as a new section without guessing section metadata", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-section-code-identity-"));
     process.env.PORTFOLIO_DATABASE_PATH = path.join(temporaryDirectory, "metadata.db");

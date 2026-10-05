@@ -75,6 +75,14 @@ describe("LearningSpace portfolio settings page", () => {
     mocks.getThemes.mockResolvedValue([{ id: "theme-analysis", learningSpaceId: "space-5", name: "Analyse", sortOrder: 1 }]);
   });
 
+  it.each(["1", "2", "3", "1.2", "1.10", "01.02"])("shows source section code %s in settings and the bulk table", async (code: string) => {
+    const portfolio = await mocks.getAdminPortfolio();
+    mocks.getAdminPortfolio.mockResolvedValue({ ...portfolio, sections: [{ ...portfolio.sections[0], code }] });
+    const markup = renderToStaticMarkup(await LearningSpacePortfolioAdminPage({ params: Promise.resolve({ spaceSlug: "5", id: "portfolio-1" }) }));
+    expect(markup).toContain(`${code}${code.includes(".") ? "" : "."} Basis`);
+    expect(mocks.bulkTable).toHaveBeenCalledWith(expect.objectContaining({ sections: [expect.objectContaining({ code })] }));
+  });
+
   it("geeft opgeslagen thema en beschikbare opties door aan het ene settingsformulier", async () => {
     const markup = renderToStaticMarkup(await LearningSpacePortfolioAdminPage({ params: Promise.resolve({ spaceSlug: "5", id: "portfolio-1" }) }));
 

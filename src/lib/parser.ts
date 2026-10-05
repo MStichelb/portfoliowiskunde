@@ -89,7 +89,8 @@ export function parseHintsDocumentCode(name: string): string | null {
 export function parseSectionDirectory(name: string): ParsedSectionDirectory | null {
   const match = name.trim().match(SECTION_DIRECTORY);
   if (!match) return null;
-  const code = normalizeSectionCode(match[1]);
+  // Preserve the source spelling for display; normalize only for identity/comparison.
+  const code = match[1];
   return isValidSectionCode(code) ? { code, title: match[2].trim() } : null;
 }
 
