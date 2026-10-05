@@ -44,4 +44,17 @@ describe("role-aware changelog", () => {
       expect(item.audiences.length).toBeGreaterThan(0);
     }
   });
+
+  it("keeps portfolio structure changes for management and out of student notifications", () => {
+    const ids = ["2026-10-05-oefeningen-op-portfolioniveau", "2026-10-05-flexibele-onderdeelnummering"];
+    const structureEntries = changelog.filter((item) => ids.includes(item.id));
+    expect(structureEntries).toHaveLength(2);
+    expect(getChangelogForRole("student").map((item) => item.id)).not.toEqual(expect.arrayContaining(ids));
+    expect(getChangelogForRole("teacher").map((item) => item.id)).toEqual(expect.arrayContaining(ids));
+    expect(getChangelogForRole("superadmin").map((item) => item.id)).toEqual(expect.arrayContaining(ids));
+    expect(hasUnreadChangelog("student", null, structureEntries)).toBe(false);
+    expect(hasUnreadChangelog("teacher", null, structureEntries)).toBe(true);
+    expect(hasUnreadChangelog("superadmin", null, structureEntries)).toBe(true);
+    expect(getChangelogForRole("student").map((item) => item.id)).toContain("2026-10-05-changelog");
+  });
 });

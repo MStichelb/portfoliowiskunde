@@ -20,9 +20,13 @@ Update the changelog for meaningful user-visible features, improvements, behavio
 Do not add entries for refactors, tests, dependency updates, migrations without visible effect, internal implementation details, or invisible backoffice work.
 
 Audience rules:
-- `student` only when the change is actually visible or relevant to students.
+- Audience follows user value, not technical visibility on a public page.
+- `student` only when a change is noticeable or relevant to students in normal use.
+- Source, structure, sync, and configuration changes are for `teacher`/`superadmin` by default.
 - Teacher/admin-only changes must never include `student`.
 - `notify: true` only for changes worth actively surfacing.
+
+Write each entry from the relevant user's perspective: what can they now do or notice that they could not before?
 
 Write entries in clear Dutch user language and describe impact, not implementation.
 

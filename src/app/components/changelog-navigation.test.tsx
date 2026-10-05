@@ -31,6 +31,8 @@ describe("changelog navigation", () => {
     const markup = renderToStaticMarkup(<ChangelogHistory entries={getChangelogForRole("teacher", entries)} canFilter />);
     expect(markup).toContain("Publiek nieuws");
     expect(markup).not.toContain("Geheim nieuws");
+    expect(markup).toContain(">Leerlingen</button>");
+    expect(markup).not.toContain(">Publiek</button>");
     expect(markup).toContain("Beheer");
     expect(renderToStaticMarkup(<ChangelogHistory entries={[]} canFilter={false} />)).not.toContain("Wijzigingen filteren");
   });

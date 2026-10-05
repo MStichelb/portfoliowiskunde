@@ -11,7 +11,7 @@ export function ChangelogHistory({ entries, canFilter }: { entries: ChangelogEnt
     ? entry.audiences.includes("student")
     : entry.audiences.some((audience) => audience === "teacher" || audience === "superadmin")));
   return <>
-    {canFilter ? <div className="changelog-filters" role="group" aria-label="Wijzigingen filteren">{([ ["all", "Alles"], ["public", "Publiek"], ["admin", "Beheer"] ] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}</div> : null}
+    {canFilter ? <div className="changelog-filters" role="group" aria-label="Wijzigingen filteren">{([ ["all", "Alles"], ["public", "Leerlingen"], ["admin", "Beheer"] ] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}</div> : null}
     <ChangelogEntries entries={visible} />
   </>;
 }

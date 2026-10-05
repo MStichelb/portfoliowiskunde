@@ -4,8 +4,9 @@
  * - Neem alleen betekenisvolle functies, verbeteringen, gedragswijzigingen en
  *   relevante bugfixes op. Geen refactors, migraties, dependency-updates, tests,
  *   database-indexen of andere voor de doelgroep onzichtbare technische wijzigingen.
- * - Kies audiences zorgvuldig. Student alleen bij werkelijk relevante of zichtbare
- *   wijzigingen voor leerlingen; admin-only wijzigingen krijgen nooit student.
+ * - Bepaal de doelgroep op basis van gebruikerswaarde, niet van technische
+ *   zichtbaarheid. Student alleen bij merkbare, relevante veranderingen voor leerlingen;
+ *   bron-, structuur-, sync- en configuratiewijzigingen zijn standaard voor beheer.
  * - notify=true alleen voor wijzigingen die actieve aandacht verdienen.
  *   Niet elke entry hoeft notify=true te hebben.
  * - Eén feature met vele commits hoort doorgaans bij één entry.
@@ -39,16 +40,16 @@ export const changelog: ChangelogEntry[] = [{
   date: "2026-10-05",
   category: "improved",
   title: "Portfolio's kunnen eenvoudiger opgebouwd worden",
-  description: "Oefeningen kunnen nu ook rechtstreeks in een portfolio staan, zonder verplicht onderdeel. Een portfolio kan directe oefeningen, onderdelen of beide bevatten. Je opent en beheert de oefeningen zoals je gewend bent.",
-  audiences: ["student", "teacher", "superadmin"],
+  description: "Je kunt oefeningen nu ook rechtstreeks in een portfolio plaatsen, zonder verplicht onderdeel. Een portfolio kan directe oefeningen, onderdelen of beide bevatten. Je beheert de oefeningen zoals je gewend bent.",
+  audiences: ["teacher", "superadmin"],
   notify: true,
 }, {
   id: "2026-10-05-flexibele-onderdeelnummering",
   date: "2026-10-05",
   category: "improved",
   title: "Flexibelere onderdeelnummering",
-  description: "Portfolio's kunnen nu ook onderdelen zoals 1.1, 1.2 en 2.1 gebruiken. Je ziet de code uit de bronmap, in een logische volgorde: 1.2 komt vóór 1.10.",
-  audiences: ["student", "teacher", "superadmin"],
+  description: "Je kunt portfolio's flexibeler structureren met onderdeelcodes zoals 1.1, 1.2 en 2.1. De codes uit de bronmap verschijnen in een logische volgorde: 1.2 komt vóór 1.10.",
+  audiences: ["teacher", "superadmin"],
   notify: true,
 }, {
   id: "2026-10-05-changelog",
