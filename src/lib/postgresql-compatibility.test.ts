@@ -102,8 +102,11 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
       localSourcePath: null,
     }, superadmin.id);
     expect(space.description).toBe("Overzicht van de portfolio's met oefeningen.");
+    expect(space).toMatchObject({ themeLabelSingular: "Thema", themeLabelPlural: "Thema's", sectionLabelSingular: "Onderdeel", sectionLabelPlural: "Onderdelen", exerciseLabelShort: "Oef." });
     await updateLearningSpace(space.id, {
       subjectId: subject.id,
+      themeLabelSingular: "Deel", themeLabelPlural: "Delen",
+      sectionLabelSingular: "Sectie", sectionLabelPlural: "Secties",
       collectionLabelSingular: space.collectionLabelSingular,
       collectionLabelPlural: space.collectionLabelPlural,
       exerciseLabelSingular: space.exerciseLabelSingular,
@@ -121,6 +124,10 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
       levelPresentation: space.levelPresentation,
     });
     expect((await getLearningSpace(space.id))?.subjectId).toBe(subject.id);
+    await expect(getLearningSpace(space.id)).resolves.toMatchObject({
+      themeLabelSingular: "Deel", themeLabelPlural: "Delen", sectionLabelSingular: "Sectie", sectionLabelPlural: "Secties",
+      collectionLabelSingular: space.collectionLabelSingular, exerciseLabelPlural: space.exerciseLabelPlural, exerciseLabelShort: "Oef.", description: space.description,
+    });
     expect((await getLearningSpaces()).length).toBeGreaterThan(0);
 
     const settingKey = `postgres-compat-${suffix}`;

@@ -8,11 +8,12 @@ describe("PortfolioPublicationForm", () => {
     const markup = renderToStaticMarkup(<PortfolioPublicationForm
       id="portfolio-1" title="Limieten" cardColor="#E7EEF2" visible limited={false} publishFrom="" publishUntil=""
       customText="Uitleg" customTextPosition="above_documents" themeId="analysis" themeMode={themeMode}
-      collectionLabel="bundel" themes={[{ id: "analysis", name: "Analyse" }]} miscellaneousLabel="Overige bundels" action={() => undefined}
+      collectionLabel="bundel" themeLabelSingular="dEEL" themes={[{ id: "analysis", name: "Analyse" }]} miscellaneousLabel="Overige bundels" action={() => undefined}
     />);
     expect(markup).toContain('<option value="analysis" selected="">Analyse</option>');
+    expect(markup).toContain('>Deel<select name="themeId"');
     expect(markup.includes('<select name="themeId" disabled=""')).toBe(themeMode === "folder");
-    expect(markup.includes("Bepaald door de bronmap. Verplaats de bundel in de bron om het thema te wijzigen.")).toBe(themeMode === "folder");
+    expect(markup.includes("Bepaald door de bronmap. Verplaats de bundel in de bron om de groepering te wijzigen.")).toBe(themeMode === "folder");
     expect(markup).toContain('name="title"');
     expect(markup).toContain('name="cardColor"');
     expect(markup).toContain("Instellingen opslaan");

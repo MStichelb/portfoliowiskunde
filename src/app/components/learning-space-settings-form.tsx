@@ -5,7 +5,7 @@ import { CircleHelp } from "lucide-react";
 import Link from "next/link";
 
 import { saveLearningSpaceEditorPermissionsAction, type AdminActionState } from "@/app/admin/actions";
-import { COLLECTION_LABEL_MAX_LENGTH, DEFAULT_COLLECTION_LABEL_PLURAL, DEFAULT_COLLECTION_LABEL_SINGULAR, DEFAULT_EXERCISE_LABEL_PLURAL, DEFAULT_EXERCISE_LABEL_SHORT, DEFAULT_EXERCISE_LABEL_SINGULAR, EXERCISE_LABEL_SHORT_MAX_LENGTH } from "@/lib/collection-terminology";
+import { COLLECTION_LABEL_MAX_LENGTH, DEFAULT_COLLECTION_LABEL_PLURAL, DEFAULT_COLLECTION_LABEL_SINGULAR, DEFAULT_EXERCISE_LABEL_PLURAL, DEFAULT_EXERCISE_LABEL_SHORT, DEFAULT_EXERCISE_LABEL_SINGULAR, DEFAULT_SECTION_LABEL_PLURAL, DEFAULT_SECTION_LABEL_SINGULAR, DEFAULT_THEME_LABEL_PLURAL, DEFAULT_THEME_LABEL_SINGULAR, EXERCISE_LABEL_SHORT_MAX_LENGTH, getLearningSpaceTerminology } from "@/lib/collection-terminology";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
 import type { Subject } from "@/lib/subjects";
 import { LearningSpaceLifecycleActions } from "./learning-space-lifecycle-actions";
@@ -24,6 +24,7 @@ export function LearningSpaceSettingsForm({
   action: (previousState: AdminActionState, formData: FormData) => AdminActionState | Promise<AdminActionState>;
 }) {
   const primary = space.primarySource ?? legacyPrimarySource(space);
+  const terminology = getLearningSpaceTerminology(space);
   const [primaryProvider, setPrimaryProvider] = useState<StorageSourceType>(primary.providerType);
   const [mirrorEnabled, setMirrorEnabled] = useState(Boolean(space.mirrorSource));
   const [mirrorProvider, setMirrorProvider] = useState<StorageSourceType>(space.mirrorSource?.providerType ?? "google_drive");
@@ -68,18 +69,36 @@ export function LearningSpaceSettingsForm({
         <p>Om een eigen afbeelding bovenaan het portfolio weer te geven, plaats je de gewenste afbeelding als &apos;header.png&apos; of &apos;header.jpg&apos; in de bronmap van de leeromgeving. Zo niet wordt de standaardheader gebruikt.</p>
       </div>
       <div className="personalization-settings-section">
-        <h3>Benaming portfolio&apos;s</h3>
+        <h3>Groepering</h3>
+        <p>Groepeert meerdere hoofdgehelen, bijvoorbeeld in thema&apos;s of delen.</p>
         <div className="settings-grid">
-          <label>Enkelvoud<input name="collectionLabelSingular" defaultValue={space.collectionLabelSingular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_COLLECTION_LABEL_SINGULAR}</small></label>
-          <label>Meervoud<input name="collectionLabelPlural" defaultValue={space.collectionLabelPlural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_COLLECTION_LABEL_PLURAL}</small></label>
+          <label>Enkelvoud<input name="themeLabelSingular" defaultValue={terminology.theme.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_THEME_LABEL_SINGULAR}</small></label>
+          <label>Meervoud<input name="themeLabelPlural" defaultValue={terminology.theme.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_THEME_LABEL_PLURAL}</small></label>
         </div>
       </div>
       <div className="personalization-settings-section">
-        <h3>Benaming oefeningen</h3>
+        <h3>Hoofdgeheel</h3>
+        <p>Het geheel waarin leerlingen werken, bijvoorbeeld een portfolio, bundel of hoofdstuk.</p>
         <div className="settings-grid">
-          <label>Enkelvoud<input name="exerciseLabelSingular" defaultValue={space.exerciseLabelSingular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SINGULAR}</small></label>
-          <label>Meervoud<input name="exerciseLabelPlural" defaultValue={space.exerciseLabelPlural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_PLURAL}</small></label>
-          <label>Verkorte naam<input name="exerciseLabelShort" defaultValue={space.exerciseLabelShort ?? DEFAULT_EXERCISE_LABEL_SHORT} maxLength={EXERCISE_LABEL_SHORT_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SHORT} - Laat leeg om enkel het nummer te tonen.</small></label>
+          <label>Enkelvoud<input name="collectionLabelSingular" defaultValue={terminology.collection.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_COLLECTION_LABEL_SINGULAR}</small></label>
+          <label>Meervoud<input name="collectionLabelPlural" defaultValue={terminology.collection.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_COLLECTION_LABEL_PLURAL}</small></label>
+        </div>
+      </div>
+      <div className="personalization-settings-section">
+        <h3>Onderverdeling</h3>
+        <p>Een optionele opdeling binnen het hoofdgeheel, bijvoorbeeld onderdelen of secties.</p>
+        <div className="settings-grid">
+          <label>Enkelvoud<input name="sectionLabelSingular" defaultValue={terminology.section.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_SECTION_LABEL_SINGULAR}</small></label>
+          <label>Meervoud<input name="sectionLabelPlural" defaultValue={terminology.section.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_SECTION_LABEL_PLURAL}</small></label>
+        </div>
+      </div>
+      <div className="personalization-settings-section">
+        <h3>Oefeneenheid</h3>
+        <p>Waar een leerling aan werkt, bijvoorbeeld een oefening, opdracht of vraag.</p>
+        <div className="settings-grid">
+          <label>Enkelvoud<input name="exerciseLabelSingular" defaultValue={terminology.exercise.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SINGULAR}</small></label>
+          <label>Meervoud<input name="exerciseLabelPlural" defaultValue={terminology.exercise.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_PLURAL}</small></label>
+          <label>Afkorting<input name="exerciseLabelShort" defaultValue={terminology.exercise.short} maxLength={EXERCISE_LABEL_SHORT_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SHORT} - Laat leeg om enkel het nummer te tonen.</small></label>
         </div>
       </div>
       <ExerciseLevelPresentationSettings initialPresentation={space.levelPresentation} />

@@ -23,7 +23,7 @@ describe("portfolio source recognition info", () => {
     expect(markup).toContain("Alternatieve uitwerking");
     expect(markup).toContain("PDF · PNG · JPG · JPEG");
     expect(markup).toContain("Een opgave kan rechtstreeks in een bundel staan of in een onderdeel.");
-    expect(markup).toContain("Alle bestanden van één opgave moeten samen in dezelfde bundelmap of hetzelfde onderdeel staan.");
+    expect(markup).toContain("Alle bestanden van één opgave moeten samen binnen één bundel of één onderdeel staan.");
     expect(markup).not.toMatch(/\bscanner\b|\breconciliation\b|\bsection_id\b/);
   });
 
@@ -76,7 +76,9 @@ describe("portfolio source recognition info", () => {
       expect((equalMarkup.match(/>Hoofdletters<\/dt>/g) ?? [])).toHaveLength(1);
       expect(duplicateKeyWarning).not.toHaveBeenCalled();
 
-      profile.exerciseResources[1].recognition.directory!.caseSensitive = true;
+      const directoryRule = profile.exerciseResources[1].recognition.directory;
+      if (!directoryRule || directoryRule.target === "fallback") throw new Error("Expected an explicit directory rule in the fixture.");
+      directoryRule.caseSensitive = true;
       const differentMarkup = renderInfo(profile);
       expect(differentMarkup).toContain("Hoofdletters (bestand)");
       expect(differentMarkup).toContain("Hoofdletters (map)");
@@ -89,7 +91,10 @@ describe("portfolio source recognition info", () => {
 
 describe("portfolio sections info", () => {
   it("shows the supported folder code shape and the existing removal lifecycle", () => {
-    const markup = renderToStaticMarkup(<PortfolioStructureInfo portfolioId="portfolio-1" kind="sections" collectionLabel="bundel" exerciseLabelSingular="opgave" exerciseLabelPlural="opgaven" sourceProfile={BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG} />);
+    const markup = renderToStaticMarkup(<PortfolioStructureInfo portfolioId="portfolio-1" kind="sections" collectionLabel="bundel" exerciseLabelSingular="opgave" exerciseLabelPlural="opgaven" sectionLabelSingular="sECTIE" sectionLabelPlural="sECTIES" sourceProfile={BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG} />);
+    expect(markup).toContain("Herkenning van secties");
+    expect(markup).toContain("Sectie</h4>");
+    expect(markup).not.toContain("Onderdeel");
     expect(markup).toContain(`class="${styles.ruleItem}"`);
     expect(markup).toContain("Mapnaam begint met een cijfercode");
     expect(markup).toContain("1.2");

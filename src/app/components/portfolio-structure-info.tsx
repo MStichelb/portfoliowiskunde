@@ -2,27 +2,30 @@ import { Folder } from "lucide-react";
 
 import { PortfolioInfoButton, PortfolioInfoDialog, RecognitionRuleCard } from "./portfolio-info-dialog";
 import { portfolioStructureRulesDialogId } from "./portfolio-resource-dialog-ids";
-import { formatTerminologyLabel } from "@/lib/collection-terminology";
+import { DEFAULT_SECTION_LABEL_PLURAL, DEFAULT_SECTION_LABEL_SINGULAR, formatTerminologyLabel } from "@/lib/collection-terminology";
 import { exerciseModeContextLabel, exerciseNumberRuleLabel, exerciseResourceLocationLabel, exerciseResourceRuleLabel } from "@/lib/source-profile-recognition-labels";
 import type { SourceProfileConfig } from "@/lib/source-profile-config";
 import styles from "./portfolio-resource-admin.module.css";
 
-export function PortfolioStructureInfo({ portfolioId, kind, collectionLabel, exerciseLabelSingular, exerciseLabelPlural, sourceProfile }: {
+export function PortfolioStructureInfo({ portfolioId, kind, collectionLabel, exerciseLabelSingular, exerciseLabelPlural, sectionLabelSingular = DEFAULT_SECTION_LABEL_SINGULAR, sectionLabelPlural = DEFAULT_SECTION_LABEL_PLURAL, sourceProfile }: {
   portfolioId: string;
   kind: "sections" | "exercises";
   collectionLabel: string;
   exerciseLabelSingular: string;
   exerciseLabelPlural: string;
+  sectionLabelSingular?: string;
+  sectionLabelPlural?: string;
   sourceProfile: SourceProfileConfig;
 }) {
   const dialogId = portfolioStructureRulesDialogId(portfolioId, kind);
-  const label = kind === "sections" ? "onderdelen" : exerciseLabelPlural;
+  const sectionLabel = formatTerminologyLabel(sectionLabelSingular, "inline");
+  const label = kind === "sections" ? formatTerminologyLabel(sectionLabelPlural, "inline") : exerciseLabelPlural;
   return <>
     <PortfolioInfoButton dialogId={dialogId} label={`Herkenningsregels voor ${label} bekijken`} />
     <PortfolioInfoDialog dialogId={dialogId} title={`Herkenning van ${label}`}>
       {kind === "sections" ? <>
         <div className={styles.rulesList}>
-          <RecognitionRuleCard title="Onderdeel" iconNode={<Folder size={17} aria-hidden />} rows={[
+          <RecognitionRuleCard title={formatTerminologyLabel(sectionLabelSingular, "standalone")} iconNode={<Folder size={17} aria-hidden />} rows={[
             { id: "code", label: "Code", value: "Mapnaam begint met een cijfercode (bijvoorbeeld 1, 1.2 of 1.10)" },
             { id: "name", label: "Naam", value: "De tekst na de code vormt de naam." },
             { id: "context", label: "Herkenning in", value: "Map" },
@@ -31,8 +34,8 @@ export function PortfolioStructureInfo({ portfolioId, kind, collectionLabel, exe
         <p>Mappen die niet meer in de bron staan, verdwijnen na synchronisatie uit de actuele structuur.</p>
       </> : <>
         <ExerciseRecognitionCards profile={sourceProfile} exerciseLabel={exerciseLabelSingular} />
-        <p>Een {exerciseLabelSingular} kan rechtstreeks in een {collectionLabel} staan of in een onderdeel.</p>
-        <p>Alle bestanden van één {exerciseLabelSingular} moeten samen in dezelfde {collectionLabel}map of hetzelfde onderdeel staan.</p>
+        <p>Een {exerciseLabelSingular} kan rechtstreeks in een {collectionLabel} staan of in een {sectionLabel}.</p>
+        <p>Alle bestanden van één {exerciseLabelSingular} moeten samen binnen één {collectionLabel} of één {sectionLabel} staan.</p>
       </>}
     </PortfolioInfoDialog>
   </>;

@@ -1,3 +1,7 @@
+export const DEFAULT_THEME_LABEL_SINGULAR = "Thema";
+export const DEFAULT_THEME_LABEL_PLURAL = "Thema's";
+export const DEFAULT_SECTION_LABEL_SINGULAR = "Onderdeel";
+export const DEFAULT_SECTION_LABEL_PLURAL = "Onderdelen";
 export const DEFAULT_COLLECTION_LABEL_SINGULAR = "Portfolio";
 export const DEFAULT_COLLECTION_LABEL_PLURAL = "Portfolio's";
 export const DEFAULT_EXERCISE_LABEL_SINGULAR = "Oefening";
@@ -7,6 +11,56 @@ export const EXERCISE_LABEL_SHORT_MAX_LENGTH = 12;
 export const COLLECTION_LABEL_MAX_LENGTH = 40;
 
 export class CollectionTerminologyError extends Error {}
+
+export function normalizeThemeTerminology(
+  input: { singular?: string; plural?: string },
+  fallback = { singular: DEFAULT_THEME_LABEL_SINGULAR, plural: DEFAULT_THEME_LABEL_PLURAL },
+): { singular: string; plural: string } {
+  return normalizeCollectionTerminology(input, fallback);
+}
+
+export function normalizeSectionTerminology(
+  input: { singular?: string; plural?: string },
+  fallback = { singular: DEFAULT_SECTION_LABEL_SINGULAR, plural: DEFAULT_SECTION_LABEL_PLURAL },
+): { singular: string; plural: string } {
+  return normalizeCollectionTerminology(input, fallback);
+}
+
+export interface LearningSpaceTerminologyInput {
+  themeLabelSingular?: string;
+  themeLabelPlural?: string;
+  collectionLabelSingular?: string;
+  collectionLabelPlural?: string;
+  sectionLabelSingular?: string;
+  sectionLabelPlural?: string;
+  exerciseLabelSingular?: string;
+  exerciseLabelPlural?: string;
+  exerciseLabelShort?: string;
+}
+
+/** Presentation defaults also support older callers that do not supply every label. */
+export function getLearningSpaceTerminology(input: LearningSpaceTerminologyInput = {}) {
+  const label = (value: string | undefined, fallback: string) => value?.trim() || fallback;
+  return {
+    theme: { singular: label(input.themeLabelSingular, DEFAULT_THEME_LABEL_SINGULAR), plural: label(input.themeLabelPlural, DEFAULT_THEME_LABEL_PLURAL) },
+    collection: { singular: label(input.collectionLabelSingular, DEFAULT_COLLECTION_LABEL_SINGULAR), plural: label(input.collectionLabelPlural, DEFAULT_COLLECTION_LABEL_PLURAL) },
+    section: { singular: label(input.sectionLabelSingular, DEFAULT_SECTION_LABEL_SINGULAR), plural: label(input.sectionLabelPlural, DEFAULT_SECTION_LABEL_PLURAL) },
+    exercise: {
+      singular: label(input.exerciseLabelSingular, DEFAULT_EXERCISE_LABEL_SINGULAR),
+      plural: label(input.exerciseLabelPlural, DEFAULT_EXERCISE_LABEL_PLURAL),
+      short: input.exerciseLabelShort?.trim() ?? DEFAULT_EXERCISE_LABEL_SHORT,
+    },
+  };
+}
+
+export function learningSpaceTerminologyLabel(
+  input: LearningSpaceTerminologyInput,
+  entity: "theme" | "collection" | "section" | "exercise",
+  form: "singular" | "plural",
+  context: "standalone" | "inline" = "standalone",
+): string {
+  return formatTerminologyLabel(getLearningSpaceTerminology(input)[entity][form], context);
+}
 
 export function normalizeCollectionTerminology(
   input: { singular?: string; plural?: string },

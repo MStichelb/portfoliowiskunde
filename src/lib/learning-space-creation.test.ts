@@ -25,6 +25,39 @@ afterEach(async () => {
 });
 
 describe("transactional LearningSpace owner creation", () => {
+  it("persists custom hierarchy terms on creation and update without changing descriptions or omitted labels", async () => {
+    await useTemporaryDatabase();
+    const teacher = await createUser({ displayName: "Leraar", role: "teacher" });
+    const input = {
+      ...localInput("hierarchy-terminology"),
+      themeLabelSingular: " Deel ", themeLabelPlural: " Delen ",
+      sectionLabelSingular: " Sectie ", sectionLabelPlural: " Secties ",
+      collectionLabelSingular: "Bundel", collectionLabelPlural: "Bundels",
+      exerciseLabelSingular: "Opdracht", exerciseLabelPlural: "Opdrachten", exerciseLabelShort: "Opdr.",
+    };
+    const space = await createLearningSpaceForOwner(input, teacher.id);
+    expect(space).toMatchObject({
+      themeLabelSingular: "Deel", themeLabelPlural: "Delen", sectionLabelSingular: "Sectie", sectionLabelPlural: "Secties",
+      collectionLabelSingular: "Bundel", collectionLabelPlural: "Bundels", exerciseLabelShort: "Opdr.",
+      description: "Overzicht van de bundels met opdrachten.",
+    });
+    await updateLearningSpace(space.id, {
+      ...localInput(input.slug), themeLabelSingular: "Domein", themeLabelPlural: "Domeinen",
+      sectionLabelSingular: "Tussentitel", sectionLabelPlural: "Tussentitels", exerciseLabelShort: "",
+    });
+    await expect(getAdminLearningSpaceBySlug(input.slug)).resolves.toMatchObject({
+      themeLabelSingular: "Domein", themeLabelPlural: "Domeinen", sectionLabelSingular: "Tussentitel", sectionLabelPlural: "Tussentitels",
+      collectionLabelSingular: "Bundel", collectionLabelPlural: "Bundels", exerciseLabelSingular: "Opdracht", exerciseLabelPlural: "Opdrachten", exerciseLabelShort: "",
+      description: space.description,
+    });
+    await updateLearningSpace(space.id, localInput(input.slug));
+    await expect(getAdminLearningSpaceBySlug(input.slug)).resolves.toMatchObject({
+      themeLabelSingular: "Domein", themeLabelPlural: "Domeinen", sectionLabelSingular: "Tussentitel", sectionLabelPlural: "Tussentitels", exerciseLabelShort: "", description: space.description,
+    });
+    await expect(updateLearningSpace(space.id, { ...localInput(input.slug), themeLabelSingular: " " })).rejects.toThrow("enkelvoud");
+    await expect(updateLearningSpace(space.id, { ...localInput(input.slug), sectionLabelPlural: "x".repeat(41) })).rejects.toThrow("40");
+    await expect(getAdminLearningSpaceBySlug(input.slug)).resolves.toMatchObject({ themeLabelSingular: "Domein", sectionLabelPlural: "Tussentitels" });
+  });
   it.each([
     ["Portfolio", "Portfolio's", "Oefening", "Oefeningen", "Overzicht van de portfolio's met oefeningen."],
     ["Bundel", "Bundels", "Oefening", "Oefeningen", "Overzicht van de bundels met oefeningen."],
@@ -56,8 +89,10 @@ describe("transactional LearningSpace owner creation", () => {
     const space = await createLearningSpaceForOwner(oneDriveInput("teacher-created", connection.id), teacher.id);
 
     expect(space).toMatchObject({
+      themeLabelSingular: "Thema", themeLabelPlural: "Thema's",
+      sectionLabelSingular: "Onderdeel", sectionLabelPlural: "Onderdelen",
       collectionLabelSingular: "Portfolio", collectionLabelPlural: "Portfolio's",
-      exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen",
+      exerciseLabelSingular: "Oefening", exerciseLabelPlural: "Oefeningen", exerciseLabelShort: "Oef.",
     });
     await expect(memberRole(space.id, teacher.id)).resolves.toBe("owner");
     await expect(getActiveLearningSpaceSource(space.id)).resolves.toMatchObject({ storageConnectionId: connection.id, providerType: "onedrive" });

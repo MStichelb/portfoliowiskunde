@@ -6,6 +6,7 @@ import { useState } from "react";
 import { SubmitButton } from "@/app/components/submit-button";
 import { PORTFOLIO_CUSTOM_TEXT_MAX_LENGTH, type PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { Theme } from "@/lib/repositories";
+import { DEFAULT_THEME_LABEL_SINGULAR, formatTerminologyLabel } from "@/lib/collection-terminology";
 import type { PortfolioSettingsResult } from "@/app/admin/actions";
 
 interface PortfolioPublicationFormProps {
@@ -21,12 +22,13 @@ interface PortfolioPublicationFormProps {
   themeId: string | null;
   themeMode?: "none" | "folder";
   collectionLabel?: string;
+  themeLabelSingular?: string;
   themes: Pick<Theme, "id" | "name">[];
   miscellaneousLabel: string;
   action: (formData: FormData) => void | PortfolioSettingsResult | Promise<void | PortfolioSettingsResult>;
 }
 
-export function PortfolioPublicationForm({ id, title, cardColor, visible, limited, publishFrom, publishUntil, customText, customTextPosition, themeId, themeMode = "none", collectionLabel = "portfolio", themes, miscellaneousLabel, action }: PortfolioPublicationFormProps) {
+export function PortfolioPublicationForm({ id, title, cardColor, visible, limited, publishFrom, publishUntil, customText, customTextPosition, themeId, themeMode = "none", collectionLabel = "portfolio", themeLabelSingular = DEFAULT_THEME_LABEL_SINGULAR, themes, miscellaneousLabel, action }: PortfolioPublicationFormProps) {
   const [mode, setMode] = useState<"visible" | "limited" | "hidden">(!visible ? "hidden" : limited ? "limited" : "visible");
   const [color, setColor] = useState(cardColor);
   const [messagePosition, setMessagePosition] = useState(customTextPosition);
@@ -43,7 +45,7 @@ export function PortfolioPublicationForm({ id, title, cardColor, visible, limite
     <label className="field-wide">Titel<input name="title" defaultValue={title} maxLength={180} /></label>
     <div className="portfolio-metadata-row field-wide">
       <label className="color-field">Kleur<span><input name="cardColor" type="color" value={color} onChange={(event) => setColor(event.target.value.toUpperCase())} /><code>{color.toUpperCase()}</code></span><small>Accentkleur van het kaartje op de publieke pagina.</small></label>
-      <label className="portfolio-theme-field">Thema<select name="themeId" value={themeMode === "folder" ? themeId ?? "" : selectedThemeId} onChange={(event) => setSelectedThemeId(event.target.value)} disabled={themeMode === "folder"}><option value="">{miscellaneousLabel}</option>{themes.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select>{themeMode === "folder" ? <small>Bepaald door de bronmap. Verplaats de {collectionLabel} in de bron om het thema te wijzigen.</small> : null}</label>
+      <label className="portfolio-theme-field">{formatTerminologyLabel(themeLabelSingular, "standalone")}<select name="themeId" value={themeMode === "folder" ? themeId ?? "" : selectedThemeId} onChange={(event) => setSelectedThemeId(event.target.value)} disabled={themeMode === "folder"}><option value="">{miscellaneousLabel}</option>{themes.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select>{themeMode === "folder" ? <small>Bepaald door de bronmap. Verplaats de {collectionLabel} in de bron om de groepering te wijzigen.</small> : null}</label>
     </div>
     <div className="publication-row field-wide">
       <fieldset className="segmented-control"><legend>Publicatie</legend><div>

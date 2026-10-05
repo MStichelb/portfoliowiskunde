@@ -22,7 +22,7 @@ import {
 } from "@/lib/exercise-level-presentation";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import type { IndexedLearningSpaceHeader } from "@/lib/learning-space-header";
-import { initialLearningSpaceDescription, normalizeCollectionTerminology, normalizeExerciseShortLabel, normalizeExerciseTerminology } from "@/lib/collection-terminology";
+import { getLearningSpaceTerminology, initialLearningSpaceDescription, normalizeCollectionTerminology, normalizeExerciseShortLabel, normalizeExerciseTerminology, normalizeSectionTerminology, normalizeThemeTerminology } from "@/lib/collection-terminology";
 import { comparePortfolioIds, comparePortfolioRelativePaths, normalizeSectionCode, relativePathBelongsToDirectory } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { ExerciseNotePosition } from "@/lib/exercise-note";
@@ -216,6 +216,10 @@ export interface LearningSpace {
   subjectId: string;
   subjectName: string;
   subjectIsActive: boolean;
+  themeLabelSingular?: string;
+  themeLabelPlural?: string;
+  sectionLabelSingular?: string;
+  sectionLabelPlural?: string;
   collectionLabelSingular: string;
   collectionLabelPlural: string;
   exerciseLabelSingular: string;
@@ -279,6 +283,10 @@ export interface LearningSpaceSourceInput {
 
 export interface LearningSpaceInput {
   subjectId: string;
+  themeLabelSingular?: string;
+  themeLabelPlural?: string;
+  sectionLabelSingular?: string;
+  sectionLabelPlural?: string;
   collectionLabelSingular?: string;
   collectionLabelPlural?: string;
   exerciseLabelSingular?: string;
@@ -562,6 +570,8 @@ function learningSpaceFromRow(row: DatabaseRow, sources: LearningSpaceSource[], 
   const archivedAt = nullableText(row, "archived_at");
   return {
     id: text(row, "id"), subjectId: text(row, "subject_id"), subjectName: text(row, "subject_name"), subjectIsActive: bool(row.subject_is_active),
+    themeLabelSingular: text(row, "theme_label_singular"), themeLabelPlural: text(row, "theme_label_plural"),
+    sectionLabelSingular: text(row, "section_label_singular"), sectionLabelPlural: text(row, "section_label_plural"),
     collectionLabelSingular: text(row, "collection_label_singular"), collectionLabelPlural: text(row, "collection_label_plural"),
     exerciseLabelSingular: text(row, "exercise_label_singular"), exerciseLabelPlural: text(row, "exercise_label_plural"),
     exerciseLabelShort: text(row, "exercise_label_short"),
@@ -675,6 +685,8 @@ export async function createLearningSpaceForOwner(input: LearningSpaceInput, own
 
 async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUserId: string | null): Promise<LearningSpace> {
   await requireActiveSubject(input.subjectId);
+  const themeTerminology = normalizeThemeTerminology({ singular: input.themeLabelSingular, plural: input.themeLabelPlural });
+  const sectionTerminology = normalizeSectionTerminology({ singular: input.sectionLabelSingular, plural: input.sectionLabelPlural });
   const terminology = normalizeCollectionTerminology({ singular: input.collectionLabelSingular, plural: input.collectionLabelPlural });
   const exerciseTerminology = normalizeExerciseTerminology({ singular: input.exerciseLabelSingular, plural: input.exerciseLabelPlural });
   const exerciseLabelShort = normalizeExerciseShortLabel(input.exerciseLabelShort);
@@ -688,9 +700,9 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
   const mirror = input.mirrorSource ?? null;
   const levelPresentation = validateExerciseLevelPresentation(input.levelPresentation ?? DEFAULT_EXERCISE_LEVEL_PRESENTATION);
-  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, subject_id, collection_label_singular, collection_label_plural, exercise_label_singular, exercise_label_plural, exercise_label_short, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
+  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, subject_id, theme_label_singular, theme_label_plural, section_label_singular, section_label_plural, collection_label_singular, collection_label_plural, exercise_label_singular, exercise_label_plural, exercise_label_short, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
     local_source_path, onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, google_drive_folder_id, google_drive_folder_label, created_at, updated_at)
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM learning_spaces)), 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM subjects WHERE id = ? AND is_active = 1`, args: [id, input.subjectId, terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, description, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder ?? null,
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM learning_spaces)), 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM subjects WHERE id = ? AND is_active = 1`, args: [id, input.subjectId, themeTerminology.singular, themeTerminology.plural, sectionTerminology.singular, sectionTerminology.plural, terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, description, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder ?? null,
       legacyStorageProvider(primary.providerType), primary.providerType, primary.localSourcePath ?? null, primary.oneDriveDriveId ?? null,
       primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now, input.subjectId] }];
   statements.push(...levelPresentationStatements(id, levelPresentation));
@@ -716,6 +728,13 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
   const existing = await getLearningSpace(id);
   if (!existing) throw new Error("Leeromgeving niet gevonden.");
   if (input.subjectId !== existing.subjectId) await requireActiveSubject(input.subjectId);
+  const existingTerminology = getLearningSpaceTerminology(existing);
+  const themeTerminology = normalizeThemeTerminology(
+    { singular: input.themeLabelSingular, plural: input.themeLabelPlural }, existingTerminology.theme,
+  );
+  const sectionTerminology = normalizeSectionTerminology(
+    { singular: input.sectionLabelSingular, plural: input.sectionLabelPlural }, existingTerminology.section,
+  );
   const terminology = normalizeCollectionTerminology(
     { singular: input.collectionLabelSingular, plural: input.collectionLabelPlural },
     { singular: existing.collectionLabelSingular, plural: existing.collectionLabelPlural },
@@ -739,10 +758,10 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
     ? { sql: "?", args: [input.subjectId] }
     : { sql: "CASE WHEN EXISTS (SELECT 1 FROM subjects WHERE id = ? AND is_active = 1) THEN ? ELSE '__invalid-subject__' END", args: [input.subjectId, input.subjectId] };
   const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET subject_id = ${subjectAssignment.sql},
-    collection_label_singular = ?, collection_label_plural = ?, exercise_label_singular = ?, exercise_label_plural = ?, exercise_label_short = ?, name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
+    theme_label_singular = ?, theme_label_plural = ?, section_label_singular = ?, section_label_plural = ?, collection_label_singular = ?, collection_label_plural = ?, exercise_label_singular = ?, exercise_label_plural = ?, exercise_label_short = ?, name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
     local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, google_drive_folder_id = ?, google_drive_folder_label = ?, updated_at = ? WHERE id = ?`,
     args: [...subjectAssignment.args,
-      terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder ?? existing.sortOrder,
+      themeTerminology.singular, themeTerminology.plural, sectionTerminology.singular, sectionTerminology.plural, terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder ?? existing.sortOrder,
       legacyStorageProvider(active.providerType), active.providerType,
       local?.localSourcePath ?? existing.localSourcePath,
       oneDrive?.oneDriveDriveId ?? existing.oneDriveDriveId, oneDrive?.oneDriveFolderId ?? existing.oneDriveFolderId,

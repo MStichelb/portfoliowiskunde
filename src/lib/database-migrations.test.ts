@@ -40,6 +40,35 @@ describe("shared migration SQL", () => {
   });
 });
 
+describe("LearningSpace hierarchy terminology migration", () => {
+  it("backfills non-null defaults without changing existing terminology or descriptions", async () => {
+    temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-terminology-"));
+    const databasePath = path.join(temporaryDirectory, "metadata.db");
+    const legacy = createClient({ url: `file:${databasePath.replaceAll("\\", "/")}` });
+    await legacy.execute("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+    for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) <= 58)) {
+      await legacy.batch([
+        ...migration.statements.map((sql) => ({ sql, args: [] })),
+        { sql: "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)", args: [migration.version, "2026-10-05"] },
+      ], "write");
+    }
+    await legacy.execute(`UPDATE learning_spaces SET collection_label_singular = 'Bundel', collection_label_plural = 'Bundels',
+      exercise_label_singular = 'Vraag', exercise_label_plural = 'Vragen', exercise_label_short = 'Vr.', description = 'Eigen tekst' WHERE id = 'space-6'`);
+    const before = (await legacy.execute("SELECT * FROM learning_spaces ORDER BY id")).rows;
+    legacy.close();
+    process.env.PORTFOLIO_DATABASE_PATH = databasePath;
+    resetDatabaseForTests();
+    const upgraded = await getDatabase();
+    expect((await upgraded.execute("SELECT * FROM learning_spaces ORDER BY id")).rows).toEqual(before.map((row) => ({
+      ...row, theme_label_singular: "Thema", theme_label_plural: "Thema's", section_label_singular: "Onderdeel", section_label_plural: "Onderdelen",
+    })));
+    for (const column of ["theme_label_singular", "theme_label_plural", "section_label_singular", "section_label_plural"]) {
+      await expect(upgraded.execute(`UPDATE learning_spaces SET ${column} = NULL WHERE id = 'space-6'`)).rejects.toThrow();
+    }
+    expect((await upgraded.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
+  });
+});
+
 describe("source theme migration", () => {
   it("preserves existing themes and memberships and enforces source identity independently of display name", async () => {
     temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-migration-themes-"));

@@ -1299,6 +1299,15 @@ export const migrations: DatabaseMigration[] = [
       "CREATE UNIQUE INDEX themes_source_identity_unique ON themes(learning_space_id, source_scope, source_id) WHERE source_scope IS NOT NULL",
     ],
   },
+  {
+    version: "059_learning_space_hierarchy_terminology",
+    statements: [
+      "ALTER TABLE learning_spaces ADD COLUMN theme_label_singular TEXT NOT NULL DEFAULT 'Thema'",
+      "ALTER TABLE learning_spaces ADD COLUMN theme_label_plural TEXT NOT NULL DEFAULT 'Thema''s'",
+      "ALTER TABLE learning_spaces ADD COLUMN section_label_singular TEXT NOT NULL DEFAULT 'Onderdeel'",
+      "ALTER TABLE learning_spaces ADD COLUMN section_label_plural TEXT NOT NULL DEFAULT 'Onderdelen'",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

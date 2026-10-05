@@ -64,6 +64,7 @@ describe("exercise section selection", () => {
       spaceSlug: "5wis",
       exerciseLabelSingular: "OpGavE",
       exerciseLabelPlural: "OPGAVEN",
+      sectionLabelSingular: "sECTIE",
       levelPresentation: {
         ...DEFAULT_EXERCISE_LEVEL_PRESENTATION,
         uitdaging: { ...DEFAULT_EXERCISE_LEVEL_PRESENTATION.uitdaging, color: "#123456" },
@@ -82,7 +83,7 @@ describe("exercise section selection", () => {
     }));
 
     expect(markup).toContain(">Notitie<");
-    expect(markup).toContain("Opgaven per onderdeel");
+    expect(markup).toContain("Opgaven per sectie");
     expect(markup).toContain("1.1 Inleiding");
     expect(markup).not.toContain("1.1. Inleiding");
     expect(markup).toContain('aria-label="Alle opgaven van 1.1 Inleiding selecteren"');

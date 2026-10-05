@@ -67,7 +67,7 @@ describe("LearningSpace portfolio settings page", () => {
     expect(markup).toContain("De tekst na de code vormt de naam.");
     expect(markup).toContain("verdwijnen na synchronisatie uit de actuele structuur.");
     expect(markup).toContain("Een oefening kan rechtstreeks in een portfolio staan of in een onderdeel.");
-    expect(markup).toContain("Alle bestanden van één oefening moeten samen in dezelfde portfoliomap of hetzelfde onderdeel staan.");
+    expect(markup).toContain("Alle bestanden van één oefening moeten samen binnen één portfolio of één onderdeel staan.");
     expect(markup).not.toMatch(/\bscanner\b|\breconciliation\b|\bsection_id\b/);
   });
 
@@ -150,7 +150,7 @@ describe("LearningSpace portfolio settings page", () => {
       action: mocks.savePortfolioExternalLinksAction,
     }));
     expect(markup).toContain("Externe links instellen");
-    expect(markup).toContain("Portfolio-instellingen");
+    expect(markup).toContain("Instellingen portfolio");
     expect(markup).not.toContain("Thema opslaan");
   });
 
@@ -168,13 +168,17 @@ describe("LearningSpace portfolio settings page", () => {
   it("renders custom terminology while keeping the internal portfolio route untouched", async () => {
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue({
       id: "space-5", slug: "5", subjectName: "Fysica", collectionLabelSingular: "bunDEL", collectionLabelPlural: "bUNDELS", exerciseLabelSingular: "OpGavE", exerciseLabelPlural: "OPGAVEN",
+      themeLabelSingular: "Deel", themeLabelPlural: "Delen", sectionLabelSingular: "Sectie", sectionLabelPlural: "Secties",
     });
 
     const markup = renderToStaticMarkup(await LearningSpacePortfolioAdminPage({ params: Promise.resolve({ spaceSlug: "5", id: "portfolio-1" }) }));
 
     expect(markup).toContain("Bundel 1");
-    expect(markup).toContain("Bundel-instellingen");
+    expect(markup).toContain("Instellingen bundel");
     expect(markup).toContain("Opgaven");
+    expect(markup).toContain(">Secties</h2>");
+    expect(mocks.portfolioForm).toHaveBeenCalledWith(expect.objectContaining({ themeLabelSingular: "Deel" }));
+    expect(mocks.bulkTable).toHaveBeenCalledWith(expect.objectContaining({ sectionLabelSingular: "Sectie" }));
     expect(markup).toContain("1.1 Basis");
     expect(markup).not.toContain("1.1. Basis");
     expect(mocks.bulkTable).toHaveBeenCalledWith(expect.objectContaining({ learningSpaceId: "space-5", exerciseLabelSingular: "OpGavE", exerciseLabelPlural: "OPGAVEN" }));

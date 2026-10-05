@@ -28,6 +28,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-06-benamingen-leeromgeving",
+  date: "2026-10-06",
+  category: "improved",
+  title: "Meer eigen benamingen in je leeromgeving",
+  description: "Je kunt nu ook eigen benamingen voor thema's en onderdelen instellen bij Personalisatie. Zo sluit je leeromgeving beter aan bij de woorden die je in je lessen gebruikt, zoals delen en secties.",
+  audiences: ["teacher", "superadmin"],
+  notify: false,
+}, {
   id: "2026-10-05-themas-uit-bronmappen",
   date: "2026-10-05",
   category: "new",

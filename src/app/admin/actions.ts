@@ -659,6 +659,10 @@ function isUniqueConstraintError(error: unknown): boolean {
 
 function learningSpaceInput(formData: FormData, initialCreation = false): LearningSpaceInput {
   const subjectId = stringValue(formData, "subjectId");
+  const themeLabelSingular = formData.has("themeLabelSingular") ? String(formData.get("themeLabelSingular") ?? "") : undefined;
+  const themeLabelPlural = formData.has("themeLabelPlural") ? String(formData.get("themeLabelPlural") ?? "") : undefined;
+  const sectionLabelSingular = formData.has("sectionLabelSingular") ? String(formData.get("sectionLabelSingular") ?? "") : undefined;
+  const sectionLabelPlural = formData.has("sectionLabelPlural") ? String(formData.get("sectionLabelPlural") ?? "") : undefined;
   const collectionLabelSingular = formData.has("collectionLabelSingular") ? String(formData.get("collectionLabelSingular") ?? "") : undefined;
   const collectionLabelPlural = formData.has("collectionLabelPlural") ? String(formData.get("collectionLabelPlural") ?? "") : undefined;
   const exerciseLabelSingular = formData.has("exerciseLabelSingular") ? String(formData.get("exerciseLabelSingular") ?? "") : undefined;
@@ -693,7 +697,7 @@ function learningSpaceInput(formData: FormData, initialCreation = false): Learni
   if (!name || !shortLabel || description.length > 240 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Gebruik geldige algemene instellingen.");
   if (cardColorInput && !isHexColor(cardColorInput)) throw new Error("Kies een geldige kaartkleur.");
   if (sortOrder !== undefined && (!Number.isFinite(sortOrder) || sortOrder < 0)) throw new Error("De interne volgorde is ongeldig.");
-  const common = { subjectId, collectionLabelSingular, collectionLabelPlural, exerciseLabelSingular, exerciseLabelPlural, exerciseLabelShort, name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder, sourceType, levelPresentation };
+  const common = { subjectId, themeLabelSingular, themeLabelPlural, sectionLabelSingular, sectionLabelPlural, collectionLabelSingular, collectionLabelPlural, exerciseLabelSingular, exerciseLabelPlural, exerciseLabelShort, name, slug, shortLabel, description, cardColor: normalizeHexColor(cardColorInput, DEFAULT_LEARNING_SPACE_COLOR), sortOrder, sourceType, levelPresentation };
   if (!hasRoleSources) {
     if (sourceType === "local") return { ...common, localSourcePath: localSourcePath ? path.resolve(localSourcePath) : null };
     if (sourceType === "onedrive") {

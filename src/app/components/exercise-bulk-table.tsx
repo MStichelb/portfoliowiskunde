@@ -5,7 +5,7 @@ import { bulkExercisePublicationAction } from "@/app/admin/actions";
 import { ExerciseAdminControls, type ExerciseAdminControlData } from "@/app/components/exercise-admin-controls";
 import { SubmitButton } from "@/app/components/submit-button";
 import { bulkSelectionError } from "@/lib/admin-validation";
-import { DEFAULT_EXERCISE_LABEL_PLURAL, DEFAULT_EXERCISE_LABEL_SINGULAR, formatTerminologyLabel } from "@/lib/collection-terminology";
+import { DEFAULT_EXERCISE_LABEL_PLURAL, DEFAULT_EXERCISE_LABEL_SINGULAR, DEFAULT_SECTION_LABEL_SINGULAR, formatTerminologyLabel } from "@/lib/collection-terminology";
 import type { ExerciseLevelPresentation } from "@/lib/exercise-level-presentation";
 import { formatSectionLabel } from "@/lib/section-label";
 
@@ -27,7 +27,7 @@ export function toggleSectionSelection(selected: Set<string>, ids: string[]): Se
   return next;
 }
 
-export function ExerciseBulkTable({ portfolioId, learningSpaceId, levelPresentation, spaceSlug, sections, exercises = [], exerciseLabelSingular = DEFAULT_EXERCISE_LABEL_SINGULAR, exerciseLabelPlural = DEFAULT_EXERCISE_LABEL_PLURAL }: { portfolioId: string; learningSpaceId: string; levelPresentation?: ExerciseLevelPresentation; spaceSlug?: string; sections: BulkSection[]; exercises?: BulkExercise[]; exerciseLabelSingular?: string; exerciseLabelPlural?: string }) {
+export function ExerciseBulkTable({ portfolioId, learningSpaceId, levelPresentation, spaceSlug, sections, exercises = [], exerciseLabelSingular = DEFAULT_EXERCISE_LABEL_SINGULAR, exerciseLabelPlural = DEFAULT_EXERCISE_LABEL_PLURAL, sectionLabelSingular = DEFAULT_SECTION_LABEL_SINGULAR }: { portfolioId: string; learningSpaceId: string; levelPresentation?: ExerciseLevelPresentation; spaceSlug?: string; sections: BulkSection[]; exercises?: BulkExercise[]; exerciseLabelSingular?: string; exerciseLabelPlural?: string; sectionLabelSingular?: string }) {
   const ids = useMemo(() => [...exercises, ...sections.flatMap((section) => section.exercises)].map((exercise) => exercise.id), [sections, exercises]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [state, action] = useActionState(bulkExercisePublicationAction, { error: null });
@@ -59,7 +59,7 @@ export function ExerciseBulkTable({ portfolioId, learningSpaceId, levelPresentat
       </div>
       {state.error && <p className="form-message" role="alert">{state.error}</p>}
     </form>
-    <div className="admin-summary-table" role="region" aria-label={exercises.length ? plural : `${plural} per onderdeel`} tabIndex={0}>
+    <div className="admin-summary-table" role="region" aria-label={exercises.length ? plural : `${plural} per ${formatTerminologyLabel(sectionLabelSingular, "inline")}`} tabIndex={0}>
       <table>
         <thead><tr><th><span className="sr-only">Selecteren</span></th><th>{singular}</th><th>Niveau</th><th>Notitie</th><th>Eigen status</th><th>Effectieve status</th><th>Alternatieve uitwerking tonen</th><th title="Uitwerking, alternatieve uitwerking">Aantal bestanden</th></tr></thead>
         <tbody>{exercises.map(exerciseRow)}{sections.flatMap((section) => [

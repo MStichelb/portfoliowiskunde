@@ -20,6 +20,19 @@ const space: LearningSpace = {
 const subjects = [{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, usageCount: 0, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" }];
 
 describe("LearningSpaceSettingsForm", () => {
+  it("renders saved terms in hierarchy order and keeps an empty abbreviation", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={{ ...space,
+      themeLabelSingular: "Deel", themeLabelPlural: "Delen", sectionLabelSingular: "Sectie", sectionLabelPlural: "Secties",
+      collectionLabelSingular: "Bundel", collectionLabelPlural: "Bundels", exerciseLabelSingular: "Vraag", exerciseLabelPlural: "Vragen", exerciseLabelShort: "",
+    }} subjects={subjects} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+    for (const [field, value] of Object.entries({ themeLabelSingular: "Deel", themeLabelPlural: "Delen", collectionLabelSingular: "Bundel", collectionLabelPlural: "Bundels", sectionLabelSingular: "Sectie", sectionLabelPlural: "Secties", exerciseLabelSingular: "Vraag", exerciseLabelPlural: "Vragen", exerciseLabelShort: "" })) {
+      expect(markup).toContain(`name="${field}" value="${value}"`);
+    }
+    expect(markup.indexOf("Groepering")).toBeLessThan(markup.indexOf("Hoofdgeheel"));
+    expect(markup.indexOf("Hoofdgeheel")).toBeLessThan(markup.indexOf("Onderverdeling"));
+    expect(markup.indexOf("Onderverdeling")).toBeLessThan(markup.indexOf("Oefeneenheid"));
+    expect(markup).not.toMatch(/niveau [0-3]|entity|theme model|section model/i);
+  });
   it("keeps general settings separate from the existing-space personalization card", () => {
     const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} subjects={subjects} canPermanentlyDelete action={() => ({ error: null })} />);
     const generalStart = markup.indexOf('id="general-settings-heading"');
@@ -41,8 +54,16 @@ describe("LearningSpaceSettingsForm", () => {
     expect(markup).toContain("Personalisatie");
     expect(markup).toContain("Header");
     expect(markup).toContain("Om een eigen afbeelding bovenaan het portfolio weer te geven, plaats je de gewenste afbeelding als &#x27;header.png&#x27; of &#x27;header.jpg&#x27; in de bronmap van de leeromgeving. Zo niet wordt de standaardheader gebruikt.");
-    expect(markup).toContain("Benaming portfolio&#x27;s");
-    expect(markup).toContain("Benaming oefeningen");
+    expect(markup).toContain("Groepering");
+    expect(markup).toContain("Hoofdgeheel");
+    expect(markup).toContain("Onderverdeling");
+    expect(markup).toContain("Oefeneenheid");
+    expect(markup).toContain('name="themeLabelSingular" value="Thema"');
+    expect(markup).toContain('name="themeLabelPlural" value="Thema&#x27;s"');
+    expect(markup).toContain('name="sectionLabelSingular" value="Onderdeel"');
+    expect(markup).toContain('name="sectionLabelPlural" value="Onderdelen"');
+    expect(markup).toContain('name="exerciseLabelShort" value="Oef."');
+    expect(markup).toContain("Afkorting");
     expect(markup).toContain("Niveaus");
     expect(markup).toContain('name="levelSymbol_opwarmer"');
     expect(markup).toContain('name="levelCount_verdieping"');

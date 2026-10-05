@@ -103,24 +103,32 @@ describe("createLearningSpaceAction authorization and ownership", () => {
     expect(mocks.requireLearningSpaceConfiguration).toHaveBeenCalledWith(expect.objectContaining({ id: "editor-1" }), "space-5");
   });
 
-  it("lets the existing configuration actor submit collection and exercise terminology", async () => {
+  it("lets the existing configuration actor submit all hierarchy terminology", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher", "owner-1"));
     mocks.requireLearningSpaceConfiguration.mockResolvedValue(undefined);
     const form = validForm("owner-space");
     form.set("id", "space-5");
     form.set("collectionLabelSingular", "  Practicum  ");
+    form.set("themeLabelSingular", "  Deel  ");
+    form.set("themeLabelPlural", "  Delen  ");
+    form.set("sectionLabelSingular", "  Sectie  ");
+    form.set("sectionLabelPlural", "  Secties  ");
     form.set("collectionLabelPlural", "  Practicums  ");
     form.set("exerciseLabelSingular", "  Vraag  ");
     form.set("exerciseLabelPlural", "  Vragen  ");
+    form.set("exerciseLabelShort", "Vr.");
 
     await expect(saveLearningSpaceAction({ error: null }, form)).rejects.toThrow("REDIRECT:/admin/owner-space/instellingen?saved=1");
 
     expect(mocks.requireLearningSpaceConfiguration).toHaveBeenCalledWith(expect.objectContaining({ id: "owner-1" }), "space-5");
     expect(mocks.updateLearningSpace).toHaveBeenCalledWith("space-5", expect.objectContaining({
       collectionLabelSingular: "  Practicum  ",
+      themeLabelSingular: "  Deel  ", themeLabelPlural: "  Delen  ",
+      sectionLabelSingular: "  Sectie  ", sectionLabelPlural: "  Secties  ",
       collectionLabelPlural: "  Practicums  ",
       exerciseLabelSingular: "  Vraag  ",
       exerciseLabelPlural: "  Vragen  ",
+      exerciseLabelShort: "Vr.",
     }));
   });
 });
