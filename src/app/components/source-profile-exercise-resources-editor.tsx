@@ -26,6 +26,7 @@ import {
   type ExerciseResourceLocation,
   type ExerciseResourceSemanticRole,
 } from "@/lib/source-profile-config";
+import { exerciseResourceLocationLabel, exerciseResourceLocationLabels, exerciseResourceRuleLabel } from "@/lib/source-profile-recognition-labels";
 
 const roleLabels: Record<ExerciseResourceSemanticRole, string> = {
   assignment: "Opgave",
@@ -382,16 +383,15 @@ function recognitionOperators(recognition: ContextRecognition): ExerciseResource
 }
 
 function recognitionLabel(recognition: ContextRecognition): string {
-  if (recognition.target === "fallback") return "Standaard / overige bestanden";
-  const source = recognition.target === "after_exercise_number" ? "Tekst na oefeningnummer" : "Bestandsnaam";
-  return `${source}: ${operatorLabels[recognition.operator]} “${recognition.value}”`;
+  return exerciseResourceRuleLabel(recognition);
 }
 
 function locationLabel(location: ExerciseResourceLocation, exerciseMode: ExerciseMode): string {
-  const labels = locationLabels(exerciseMode);
-  if (location.scope === "alongside_exercise") return labels.alongside;
-  if (location.scope === "subdirectory") return `${labels.subdirectory} “${location.subdirectory}”`;
-  return `${labels.both} “${location.subdirectory}”`;
+  return exerciseResourceLocationLabel(location, exerciseMode);
+}
+
+function locationLabels(exerciseMode: ExerciseMode) {
+  return exerciseResourceLocationLabels(exerciseMode);
 }
 
 function locationHelp(location: ExerciseResourceLocation, exerciseMode: ExerciseMode): string {
@@ -403,24 +403,6 @@ function locationHelp(location: ExerciseResourceLocation, exerciseMode: Exercise
   if (location.scope === "alongside_exercise") return context;
   if (location.scope === "subdirectory") return `${context} Zoekt alleen in de ingestelde submap “${location.subdirectory}”.`;
   return `${context} Zoekt direct en in de ingestelde submap “${location.subdirectory}”.`;
-}
-
-function locationLabels(exerciseMode: ExerciseMode): { alongside: string; subdirectory: string; both: string } {
-  if (exerciseMode === "files") return {
-    alongside: "Bij de oefening",
-    subdirectory: "In een submap",
-    both: "Bij de oefening of in een submap",
-  };
-  if (exerciseMode === "directories") return {
-    alongside: "In de map van de oefening",
-    subdirectory: "In een submap van de oefening",
-    both: "In de map of een submap van de oefening",
-  };
-  return {
-    alongside: "Direct bij de oefening",
-    subdirectory: "In een submap",
-    both: "Direct bij de oefening of in een submap",
-  };
 }
 
 function changeLocation(current: ExerciseResourceLocation, scope: string): ExerciseResourceLocation {

@@ -1,7 +1,15 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/auth", async (importOriginal: () => Promise<typeof import("./auth")>) => ({
+  ...await importOriginal(), requireAdminUser: vi.fn(async () => ({ id: "teacher", role: "teacher", status: "active" })),
+}));
+vi.mock("@/lib/authorization", async (importOriginal: () => Promise<typeof import("./authorization")>) => ({
+  ...await importOriginal(), requireLearningSpaceManagement: vi.fn(),
+}));
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import type { IndexedPortfolio, IndexedSourceTheme } from "./domain";
@@ -14,6 +22,7 @@ import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "./source-profile-config"
 import { sourceManifestFromIndex } from "./source-comparison";
 import { LocalFilesystemProvider } from "./storage/local-filesystem-provider";
 import { indexSource } from "./storage/portfolio-indexer";
+import { deleteThemeAction, savePortfolioAction, setPortfolioThemeAction } from "@/app/admin/actions";
 
 let temporaryDirectory: string | undefined;
 
@@ -57,6 +66,52 @@ function fixture(code: string, sourceTheme?: IndexedSourceTheme): IndexedPortfol
 const analysisTheme: IndexedSourceTheme = { name: "02 Analyse & functies", relativePath: "02 Analyse & functies", sourceId: "opaque-folder-42" };
 
 describe("source theme synchronization", () => {
+  it.each(["none", "folder"] as const)("protects theme membership through both server actions while saving other settings (%s)", async (themeMode: "none" | "folder") => {
+    await setupDatabase(themeMode);
+    const indexed = [fixture("1", analysisTheme), fixture("2")];
+    await persistIndex(indexed, "local", "space-6");
+    await createTheme("space-6", "Handmatig");
+    const manual = (await getThemes("space-6")).find((theme) => theme.name === "Handmatig")!;
+    const original = (await getAdminPortfolios("space-6"))[0];
+    const sourceThemeId = original.themeId;
+    const themeRequest = (id: string, themeId: string | null) => {
+      const form = new FormData();
+      form.set("id", id);
+      form.set("learningSpaceId", "space-6");
+      form.set("themeId", themeId ?? "");
+      return form;
+    };
+    await setPortfolioThemeAction(themeRequest(original.id, manual.id));
+    expect((await getAdminPortfolios("space-6"))[0].themeId).toBe(themeMode === "folder" ? sourceThemeId : manual.id);
+    const settings = themeRequest(original.id, manual.id);
+    settings.set("title", "Eigen titel");
+    settings.set("cardColor", "#ABCDEF");
+    settings.set("mode", "hidden");
+    settings.set("publicationMode", "hidden");
+    settings.set("customText", "Eigen uitleg");
+    settings.set("customTextPosition", "below_documents");
+    if (themeMode === "folder") settings.delete("themeId"); // Disabled controls are absent in a normal request.
+    await expect(savePortfolioAction(settings)).resolves.toEqual({ themeId: themeMode === "folder" ? sourceThemeId : manual.id });
+    expect((await getAdminPortfolios("space-6"))[0]).toMatchObject({
+      id: original.id, themeId: themeMode === "folder" ? sourceThemeId : manual.id,
+      title: "Eigen titel", cardColor: "#ABCDEF", visible: false, customText: "Eigen uitleg", customTextPosition: "below_documents",
+    });
+    settings.set("themeId", manual.id); // A forged combined settings request must also retain source membership.
+    await savePortfolioAction(settings);
+    await setPortfolioThemeAction(themeRequest(original.id, null));
+    const root = (await getAdminPortfolios("space-6"))[1];
+    await setPortfolioTheme(root.id, "space-6", manual.id);
+    if (themeMode === "folder") {
+      expect((await getAdminPortfolios("space-6"))[1].themeId).toBeNull();
+      await expect(deleteThemeAction(themeRequest(sourceThemeId!, null))).rejects.toThrow("bepaald door de bronmappen");
+      expect((await getThemes("space-6")).some((theme) => theme.id === sourceThemeId)).toBe(true);
+    }
+    await persistIndex(indexed, "local", "space-6");
+    expect((await getAdminPortfolios("space-6"))[0]).toMatchObject({
+      id: original.id, themeId: themeMode === "folder" ? sourceThemeId : null, title: "Eigen titel", customText: "Eigen uitleg",
+    });
+  });
+
   it("persists scanner themes, shared membership and a mixed root without inventing a root theme", async () => {
     const { database, config } = await setupDatabase();
     const root = path.join(temporaryDirectory!, "source");

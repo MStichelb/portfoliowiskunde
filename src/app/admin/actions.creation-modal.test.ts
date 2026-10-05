@@ -31,8 +31,18 @@ describe("LearningSpace creation modal action routing", () => {
   it("uses the existing create action and returns to the refreshed admin overview", async () => {
     await expect(createLearningSpaceAction(modalForm())).rejects.toThrow("REDIRECT:/admin?created=1");
 
-    expect(mocks.createLearningSpaceForOwner).toHaveBeenCalledWith(expect.objectContaining({ subjectId: "subject-wiskunde", slug: "nieuwe-ruimte", sortOrder: undefined, sourceType: "local" }), "teacher-1");
+    expect(mocks.createLearningSpaceForOwner).toHaveBeenCalledWith(expect.objectContaining({ subjectId: "subject-wiskunde", slug: "nieuwe-ruimte", sortOrder: undefined, sourceType: "local", description: "Overzicht van de portfolio's met oefeningen." }), "teacher-1");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin");
+  });
+
+  it("uses supplied creation terminology when no description is provided", async () => {
+    const form = modalForm();
+    form.set("collectionLabelSingular", "Bundel");
+    form.set("collectionLabelPlural", "Bundels");
+    form.set("exerciseLabelSingular", "Opdracht");
+    form.set("exerciseLabelPlural", "Opdrachten");
+    await expect(createLearningSpaceAction(form)).rejects.toThrow("REDIRECT:/admin?created=1");
+    expect(mocks.createLearningSpaceForOwner).toHaveBeenCalledWith(expect.objectContaining({ description: "Overzicht van de bundels met opdrachten." }), "teacher-1");
   });
 
   it("returns a missing-subject error to an open modal", async () => {

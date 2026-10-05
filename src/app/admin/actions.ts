@@ -8,7 +8,7 @@ import { z } from "zod";
 import { endAdminSession, requireAdmin, requireAdminUser } from "@/lib/auth";
 import { bulkSelectionError } from "@/lib/admin-validation";
 import { adminExerciseNoteReturnHref } from "@/lib/admin-routes";
-import { CollectionTerminologyError } from "@/lib/collection-terminology";
+import { CollectionTerminologyError, initialLearningSpaceDescription } from "@/lib/collection-terminology";
 import { requireLearningSpaceConfiguration, requireLearningSpaceCreation, requireLearningSpaceManagement } from "@/lib/authorization";
 import { exerciseNoteSchema } from "@/lib/exercise-note";
 import { EXERCISE_LEVELS, validateExerciseLevelOverrideInput, type ExerciseLevel, type ExerciseLevelOverrideInput } from "@/lib/exercise-level";
@@ -69,6 +69,7 @@ import { SubjectSelectionError } from "@/lib/subjects";
 const childModeSchema = z.enum(["hidden", "visible"]);
 const portfolioModeSchema = z.enum(["hidden", "visible"]);
 export interface AdminActionState { error: string | null; }
+export interface PortfolioSettingsResult { themeId: string | null; }
 export interface SourceSwitchActionState extends AdminActionState { preview?: SourceSwitchPreview; switched?: boolean; }
 export interface EditorPermissionsActionState { saved: boolean; error: string | null; }
 
@@ -215,7 +216,7 @@ export async function createLearningSpaceAction(formData: FormData) {
   const returnToAdmin = stringValue(formData, "returnTo") === "admin";
   let input: ReturnType<typeof learningSpaceInput>;
   try {
-    input = learningSpaceInput(formData);
+    input = learningSpaceInput(formData, true);
     input = await assignOwnedStorageConnections(input, admin.id);
   } catch (error) {
     redirect(`/admin?create=1&createError=${error instanceof SubjectSelectionError ? "subject" : "invalid"}`);
@@ -282,7 +283,7 @@ export async function setPortfolioThemeAction(formData: FormData) {
   revalidatePath("/admin");
 }
 
-export async function savePortfolioAction(formData: FormData) {
+export async function savePortfolioAction(formData: FormData): Promise<PortfolioSettingsResult> {
   const id = stringValue(formData, "id");
   const title = stringValue(formData, "title");
   const mode = portfolioModeSchema.safeParse(stringValue(formData, "mode"));
@@ -306,6 +307,9 @@ export async function savePortfolioAction(formData: FormData) {
     setPortfolioCustomMessage(id, customMessage.data.customText, customMessage.data.customTextPosition),
   ]);
   refreshPublicationPaths(id);
+  const saved = await getAdminPortfolioAny(id);
+  if (!saved) throw new Error("Portfolio niet gevonden.");
+  return { themeId: saved.themeId };
 }
 
 export async function savePortfolioExternalLinksAction(formData: FormData) {
@@ -653,7 +657,7 @@ function isUniqueConstraintError(error: unknown): boolean {
   return error instanceof Error && /unique|constraint/i.test(error.message);
 }
 
-function learningSpaceInput(formData: FormData): LearningSpaceInput {
+function learningSpaceInput(formData: FormData, initialCreation = false): LearningSpaceInput {
   const subjectId = stringValue(formData, "subjectId");
   const collectionLabelSingular = formData.has("collectionLabelSingular") ? String(formData.get("collectionLabelSingular") ?? "") : undefined;
   const collectionLabelPlural = formData.has("collectionLabelPlural") ? String(formData.get("collectionLabelPlural") ?? "") : undefined;
@@ -663,7 +667,7 @@ function learningSpaceInput(formData: FormData): LearningSpaceInput {
   const name = stringValue(formData, "name");
   const slug = stringValue(formData, "slug").toLowerCase();
   const shortLabel = stringValue(formData, "shortLabel");
-  const description = stringValue(formData, "description") || DEFAULT_LEARNING_SPACE_DESCRIPTION;
+  const description = stringValue(formData, "description") || (initialCreation ? initialLearningSpaceDescription(collectionLabelPlural, exerciseLabelPlural) : DEFAULT_LEARNING_SPACE_DESCRIPTION);
   const cardColorInput = stringValue(formData, "cardColor");
   const hasRoleSources = Boolean(formData.get("primaryProviderType"));
   const requestedSourceType = stringValue(formData, hasRoleSources ? "primaryProviderType" : "sourceType");

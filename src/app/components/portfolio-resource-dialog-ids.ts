@@ -9,3 +9,7 @@ export function portfolioExternalLinkDialogId(portfolioId: string, resourceId: s
 export function portfolioResourceRulesDialogId(portfolioId: string): string {
   return `portfolio-resource-rules-${safeFragmentPart(portfolioId)}`;
 }
+
+export function portfolioStructureRulesDialogId(portfolioId: string, kind: "sections" | "exercises"): string {
+  return `portfolio-${kind}-rules-${safeFragmentPart(portfolioId)}`;
+}

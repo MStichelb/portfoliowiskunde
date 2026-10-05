@@ -8,6 +8,8 @@ describe("LearningSpaceCreateForm", () => {
     const markup = renderToStaticMarkup(<LearningSpaceCreateForm action={() => undefined} subjects={subjects} />);
 
     expect(markup).toContain("Weergavenaam");
+    expect(markup).toContain("Overzicht van de portfolio&#x27;s met oefeningen.");
+    expect(markup).not.toContain('name="collectionLabelPlural"');
     expect(markup).toContain('name="subjectId"');
     expect(markup).toContain("Kies een vak");
     expect(markup).not.toContain('<option value="subject-wiskunde" selected="">');

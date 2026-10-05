@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getAdminPortfolio: vi.fn(),
   getPortfolioWarnings: vi.fn(),
   getThemes: vi.fn(),
+  getSourceProfile: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NEXT_NOT_FOUND"); }),
   portfolioForm: vi.fn(),
   externalLinksForm: vi.fn(),
@@ -50,8 +51,26 @@ vi.mock("@/app/components/section-publication-form", () => ({ SectionPublication
 vi.mock("@/app/components/exercise-bulk-table", () => ({ ExerciseBulkTable: (props: unknown) => { mocks.bulkTable(props); return <div>Oefeningenlijst</div>; } }));
 
 import LearningSpacePortfolioAdminPage from "./page";
+import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "@/lib/source-profile-config";
+
+vi.mock("@/lib/source-profiles", () => ({ getActiveSourceProfileConfigForLearningSpace: mocks.getSourceProfile }));
 
 describe("LearningSpace portfolio settings page", () => {
+  it("reuses the document info pattern for section and exercise recognition with teacher-facing explanations", async () => {
+    const markup = renderToStaticMarkup(await LearningSpacePortfolioAdminPage({ params: Promise.resolve({ spaceSlug: "5", id: "portfolio-1" }) }));
+    expect(markup).toContain('href="#portfolio-sections-rules-portfolio-1"');
+    expect(markup).toContain('href="#portfolio-exercises-rules-portfolio-1"');
+    expect(markup).toContain('id="portfolio-sections-rules-portfolio-1"');
+    expect(markup).toContain('id="portfolio-exercises-rules-portfolio-1"');
+    expect(markup.match(/role="dialog" aria-modal="true"/g)).toHaveLength(2);
+    expect(markup).toContain("Mapnaam begint met een cijfercode");
+    expect(markup).toContain("De tekst na de code vormt de naam.");
+    expect(markup).toContain("verdwijnen na synchronisatie uit de actuele structuur.");
+    expect(markup).toContain("Een oefening kan rechtstreeks in een portfolio staan of in een onderdeel.");
+    expect(markup).toContain("Alle bestanden van één oefening moeten samen in dezelfde portfoliomap of hetzelfde onderdeel staan.");
+    expect(markup).not.toMatch(/\bscanner\b|\breconciliation\b|\bsection_id\b/);
+  });
+
   it("passes direct exercises to the existing controls without adding a section", async () => {
     const portfolio = await mocks.getAdminPortfolio();
     const direct = portfolio.sections[0].exercises[0];
@@ -59,6 +78,8 @@ describe("LearningSpace portfolio settings page", () => {
     const markup = renderToStaticMarkup(await LearningSpacePortfolioAdminPage({ params: Promise.resolve({ spaceSlug: "5", id: "portfolio-1" }) }));
     expect(markup).not.toContain("Onderdelen");
     expect(markup).not.toContain("section-card-list");
+    expect(markup).not.toContain('href="#portfolio-sections-rules-portfolio-1"');
+    expect(markup).toContain('href="#portfolio-exercises-rules-portfolio-1"');
     expect(mocks.bulkTable).toHaveBeenCalledWith(expect.objectContaining({
       sections: [], exercises: [expect.objectContaining({ id: direct.id, configuredVisible: true, status: direct.effectiveStatus })],
     }));
@@ -71,6 +92,8 @@ describe("LearningSpace portfolio settings page", () => {
     const markup = renderToStaticMarkup(await LearningSpacePortfolioAdminPage({ params: Promise.resolve({ spaceSlug: "5", id: "portfolio-1" }) }));
     expect(markup).toContain("<h2>Onderdelen</h2>");
     expect(markup).toContain("1.1 Basis");
+    expect(markup).toContain("<small>1 oefeningen</small>");
+    expect(markup).not.toContain("<small>2 oefeningen</small>");
     expect(markup.match(/class="section-settings-card"/g)).toHaveLength(1);
     expect(mocks.bulkTable).toHaveBeenCalledWith(expect.objectContaining({
       exercises: [expect.objectContaining({ id: "direct-exercise" })],
@@ -81,6 +104,7 @@ describe("LearningSpace portfolio settings page", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.getSourceProfile.mockResolvedValue(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
     mocks.requireAdminUser.mockResolvedValue({ id: "teacher", role: "teacher", status: "active" });
     mocks.canManageLearningSpace.mockResolvedValue(true);
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue({
@@ -115,6 +139,7 @@ describe("LearningSpace portfolio settings page", () => {
 
     expect(mocks.portfolioForm).toHaveBeenCalledWith(expect.objectContaining({
       themeId: "theme-analysis",
+      themeMode: "none",
       themes: [expect.objectContaining({ id: "theme-analysis", name: "Analyse" })],
       action: mocks.savePortfolioAction,
     }));
@@ -127,6 +152,17 @@ describe("LearningSpace portfolio settings page", () => {
     expect(markup).toContain("Externe links instellen");
     expect(markup).toContain("Portfolio-instellingen");
     expect(markup).not.toContain("Thema opslaan");
+  });
+
+  it("uses the active profile to lock source theme membership in the settings form", async () => {
+    const profile = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    profile.scanner.portfolio.themeMode = "folder";
+    mocks.getSourceProfile.mockResolvedValue(profile);
+    renderToStaticMarkup(await LearningSpacePortfolioAdminPage({ params: Promise.resolve({ spaceSlug: "5", id: "portfolio-1" }) }));
+    expect(mocks.getSourceProfile).toHaveBeenCalledWith("space-5");
+    expect(mocks.portfolioForm).toHaveBeenCalledWith(expect.objectContaining({
+      themeId: "theme-analysis", themeMode: "folder", collectionLabel: "portfolio",
+    }));
   });
 
   it("renders custom terminology while keeping the internal portfolio route untouched", async () => {

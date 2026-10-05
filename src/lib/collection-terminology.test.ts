@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { formatTerminologyLabel, miscellaneousCollectionLabel, normalizeCollectionTerminology, normalizeExerciseTerminology } from "./collection-terminology";
+import { formatTerminologyLabel, initialLearningSpaceDescription, miscellaneousCollectionLabel, normalizeCollectionTerminology, normalizeExerciseTerminology } from "./collection-terminology";
 
 describe("LearningSpace terminology", () => {
+  it("builds the initial description from the creation terminology", () => {
+    expect(initialLearningSpaceDescription()).toBe("Overzicht van de portfolio's met oefeningen.");
+    expect(initialLearningSpaceDescription("Bundels", "Oefeningen")).toBe("Overzicht van de bundels met oefeningen.");
+    expect(initialLearningSpaceDescription("Portfolio's", "Opdrachten")).toBe("Overzicht van de portfolio's met opdrachten.");
+  });
   it.each([
     ["bunDEL", "standalone", "Bundel"],
     ["bunDEL", "inline", "bundel"],

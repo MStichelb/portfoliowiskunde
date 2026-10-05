@@ -63,6 +63,24 @@ describe("LearningSpace portfolio management source status", () => {
     expect(mocks.header).toHaveBeenCalledWith(expect.objectContaining({ sourceStatus: { learningSpaceId: "space-5" } }));
   });
 
+  it.each([
+    [0, [2, 1], 3],
+    [2, [], 2],
+    [2, [2, 1], 5],
+    [1, [0], 1],
+    [0, [], 0],
+  ] as const)("counts direct=%s and sections=%j once in the portfolio total", async (direct: number, sectionCounts: readonly number[], expected: number) => {
+    mocks.getAdminPortfolios.mockResolvedValue([{
+      id: "portfolio-count", code: "1", title: "Tellingen", themeId: null, effectiveStatus: "visible",
+      exercises: Array.from({ length: direct }, (_, index) => ({ id: `direct-${index}` })),
+      sections: sectionCounts.map((count, index) => ({
+        id: `section-${index}`, exercises: Array.from({ length: count }, (_, exercise) => ({ id: `section-${index}-exercise-${exercise}` })),
+      })),
+    }]);
+    const markup = renderToStaticMarkup(await LearningSpaceAdminPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+    expect(markup).toContain(`<td>${sectionCounts.length}</td><td>${expected}</td>`);
+  });
+
   it("uses the same header status flow for an owner without rendering a modal", async () => {
     mocks.canConfigureLearningSpace.mockResolvedValue(true);
 

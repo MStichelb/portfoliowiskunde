@@ -1,18 +1,11 @@
-import { Info, X } from "lucide-react";
-
-import type { GlobalResourceFileRecognition } from "@/lib/source-profile-config";
 import type { PortfolioGlobalResource } from "@/lib/repositories";
 
 import { ConfiguredResourceIcon } from "./configured-resource-icon";
+import { PortfolioInfoButton, PortfolioInfoDialog, RecognitionRuleCard } from "./portfolio-info-dialog";
 import styles from "./portfolio-resource-admin.module.css";
 import scannerStyles from "./portfolio-resource-scanner-v2.module.css";
 import { portfolioExternalLinkDialogId, portfolioResourceRulesDialogId } from "./portfolio-resource-dialog-ids";
-
-const operatorLabels: Record<GlobalResourceFileRecognition["operator"], string> = {
-  starts_with: "Bestandsnaam begint met",
-  contains: "Bestandsnaam bevat",
-  ends_with: "Bestandsnaam eindigt op",
-};
+import { globalResourceCaseLabel, globalResourceRuleLabel } from "@/lib/source-profile-recognition-labels";
 
 export function PortfolioDocumentLinks({
   portfolioId,
@@ -37,14 +30,10 @@ export function PortfolioDocumentLinks({
 
   if (admin) {
     const rulesDialogId = portfolioResourceRulesDialogId(portfolioId);
-    const sourceResources = resources.filter((resource) => resource.kind === "source_file");
+    const sourceResources = resources.filter((resource) => resource.kind === "source_file" && resource.recognition);
 
     return <>
-      <div className={styles.adminHeaderActions}>
-        <a className={styles.infoButton} href={`#${rulesDialogId}`} aria-label="Herkenningsregels voor documenten bekijken" title="Herkenningsregels">
-          <Info size={17} aria-hidden />
-        </a>
-      </div>
+      <PortfolioInfoButton dialogId={rulesDialogId} label="Herkenningsregels voor documenten bekijken" />
 
       <div className="document-actions">
         {resources.map((resource) => {
@@ -96,27 +85,21 @@ export function PortfolioDocumentLinks({
         })}
       </div>
 
-      <div id={rulesDialogId} className={styles.modalTarget} role="dialog" aria-modal="true" aria-labelledby={`${rulesDialogId}-title`}>
-        <a href="#" className={styles.modalBackdrop} aria-label="Herkenningsregels sluiten" />
-        <section className={styles.modalPanel}>
-          <div className={styles.modalHeading}>
-            <div>
-              <h3 id={`${rulesDialogId}-title`} className={styles.modalTitle}><Info size={18} aria-hidden />Herkenningsregels</h3>
-              <p className={styles.modalSubtitle}>Deze regels komen uit het actieve bronprofiel van de leeromgeving.</p>
-            </div>
-            <a href="#" className="icon-button" aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></a>
-          </div>
-
+      <PortfolioInfoDialog dialogId={rulesDialogId}>
           {sourceResources.length === 0
             ? <p>In het actieve bronprofiel zijn geen globale bronbestanden ingesteld.</p>
-            : <dl className={styles.rulesList}>
-              {sourceResources.map((resource) => <div className={styles.ruleItem} key={resource.id}>
-                <dt><ConfiguredResourceIcon icon={resource.icon} />{resource.label}</dt>
-                <dd>{recognitionSummary(resource.recognition)}</dd>
-              </div>)}
-            </dl>}
-        </section>
-      </div>
+            : <div className={styles.rulesList}>
+              {sourceResources.map((resource) => {
+                const recognition = resource.recognition;
+                if (!recognition) return null;
+                return <RecognitionRuleCard key={resource.id} title={resource.label} icon={resource.icon} rows={[
+                  { id: "recognition", label: "Herkenning", value: globalResourceRuleLabel(recognition) },
+                  ...(recognition.fileExtensions.length ? [{ id: "file-types", label: "Bestandstypes", value: recognition.fileExtensions.map((extension) => extension.toUpperCase()).join(" · ") }] : []),
+                  { id: "case-sensitivity", label: "Hoofdletters", value: globalResourceCaseLabel(recognition.caseSensitive) },
+                ]} />;
+              })}
+            </div>}
+      </PortfolioInfoDialog>
     </>;
   }
 
@@ -141,11 +124,4 @@ export function PortfolioDocumentLinks({
       {resource.label}
     </a>)}
   </div>;
-}
-
-function recognitionSummary(recognition: GlobalResourceFileRecognition | null | undefined): string {
-  if (!recognition) return "Herkenningsregel nog niet beschikbaar.";
-  const extensions = recognition.fileExtensions.map((extension) => extension.toUpperCase()).join(", ");
-  const caseMode = recognition.caseSensitive ? "hoofdlettergevoelig" : "niet hoofdlettergevoelig";
-  return `${operatorLabels[recognition.operator]} “${recognition.value}” · ${extensions} · ${caseMode}`;
 }

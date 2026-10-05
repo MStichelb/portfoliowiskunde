@@ -4,7 +4,8 @@ import { useState } from "react";
 
 import type { StorageSourceType } from "@/lib/repositories";
 import type { Subject } from "@/lib/subjects";
-import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
+import { DEFAULT_LEARNING_SPACE_COLOR } from "@/lib/ui-colors";
+import { initialLearningSpaceDescription } from "@/lib/collection-terminology";
 
 interface LearningSpaceCreateFormProps {
   action: (formData: FormData) => void | Promise<void>;
@@ -27,7 +28,7 @@ export function LearningSpaceCreateForm({ action, subjects, error = null, genera
         <label>Weergavenaam<input name="name" required maxLength={100} placeholder="5MTWE 5LWE" /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
         <label>URL<input name="slug" required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" placeholder="5we" /><small>Dit wordt gebruikt in het webadres van deze leeromgeving.</small></label>
         <label>Kort label<input name="shortLabel" required maxLength={6} placeholder="5WET" /><small>Compacte naam voor de navigatie, maximaal 6 karakters.</small></label>
-        <label className="field-full">{generalOnly ? "Omschrijving" : "Beschrijving"}<textarea name="description" defaultValue={DEFAULT_LEARNING_SPACE_DESCRIPTION} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
+        <label className="field-full">{generalOnly ? "Omschrijving" : "Beschrijving"}<textarea name="description" defaultValue={initialLearningSpaceDescription()} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
         <label className="color-field">Kleur<span><input name="cardColor" type="color" defaultValue={DEFAULT_LEARNING_SPACE_COLOR} /><code>{DEFAULT_LEARNING_SPACE_COLOR}</code></span></label>
       </div>
     </fieldset>

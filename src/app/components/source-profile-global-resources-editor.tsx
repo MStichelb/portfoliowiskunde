@@ -16,6 +16,7 @@ import {
   type GlobalResourceFileMatchOperator,
   type GlobalResourceSemanticRole,
 } from "@/lib/source-profile-config";
+import { globalResourceCaseLabel, globalResourceRuleLabel } from "@/lib/source-profile-recognition-labels";
 
 const roleLabels: Record<GlobalResourceSemanticRole, string> = {
   assignment: "Opgave",
@@ -59,8 +60,8 @@ export function SourceProfileGlobalResourcesViewer({ resources }: { resources: r
               <div className="source-profile-resource-readonly-type"><span>Type</span><strong>{resource.kind === "source_file" ? "Bestand uit bron" : "Externe link"}</strong></div>
               {resource.kind === "source_file" ? <div className="source-profile-resource-readonly-rule">
                 <span>Herkenningsregel</span>
-                <strong>{operatorLabels[resource.recognition.operator]} “{resource.recognition.value}”</strong>
-                <small>{resource.recognition.fileExtensions.map((extension) => extension.toUpperCase()).join(", ") || "Geen"} · {resource.recognition.caseSensitive ? "Hoofdlettergevoelig" : "Niet hoofdlettergevoelig"}</small>
+                <strong>{globalResourceRuleLabel(resource.recognition)}</strong>
+                <small>{resource.recognition.fileExtensions.map((extension) => extension.toUpperCase()).join(", ") || "Geen"} · {globalResourceCaseLabel(resource.recognition.caseSensitive)}</small>
               </div> : <p className="source-profile-resource-note">De concrete URL wordt per portfolio ingesteld.</p>}
             </div>
           </div>

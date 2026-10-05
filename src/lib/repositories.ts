@@ -22,7 +22,7 @@ import {
 } from "@/lib/exercise-level-presentation";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import type { IndexedLearningSpaceHeader } from "@/lib/learning-space-header";
-import { normalizeCollectionTerminology, normalizeExerciseShortLabel, normalizeExerciseTerminology } from "@/lib/collection-terminology";
+import { initialLearningSpaceDescription, normalizeCollectionTerminology, normalizeExerciseShortLabel, normalizeExerciseTerminology } from "@/lib/collection-terminology";
 import { comparePortfolioIds, comparePortfolioRelativePaths, normalizeSectionCode, relativePathBelongsToDirectory } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { ExerciseNotePosition } from "@/lib/exercise-note";
@@ -51,9 +51,9 @@ import {
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
 import { getActiveSourceProfileConfigForLearningSpace, getSourceProfileIndexContextForLearningSpace } from "@/lib/source-profiles";
-import { StaleSynchronizationError } from "@/lib/source-errors";
+import { SourceConfigurationError, StaleSynchronizationError } from "@/lib/source-errors";
 import { requireActiveSubject } from "@/lib/subjects";
-import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
+import { DEFAULT_LEARNING_SPACE_COLOR } from "@/lib/ui-colors";
 import {
   resolveChildPublication,
   resolvePortfolioPublication,
@@ -678,6 +678,7 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
   const terminology = normalizeCollectionTerminology({ singular: input.collectionLabelSingular, plural: input.collectionLabelPlural });
   const exerciseTerminology = normalizeExerciseTerminology({ singular: input.exerciseLabelSingular, plural: input.exerciseLabelPlural });
   const exerciseLabelShort = normalizeExerciseShortLabel(input.exerciseLabelShort);
+  const description = input.description?.trim() ? input.description : initialLearningSpaceDescription(terminology.plural, exerciseTerminology.plural);
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
   const template = await getDefaultSourceProfileTemplate();
@@ -689,7 +690,7 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
   const levelPresentation = validateExerciseLevelPresentation(input.levelPresentation ?? DEFAULT_EXERCISE_LEVEL_PRESENTATION);
   const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, subject_id, collection_label_singular, collection_label_plural, exercise_label_singular, exercise_label_plural, exercise_label_short, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
     local_source_path, onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, google_drive_folder_id, google_drive_folder_label, created_at, updated_at)
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM learning_spaces)), 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM subjects WHERE id = ? AND is_active = 1`, args: [id, input.subjectId, terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, input.description ?? DEFAULT_LEARNING_SPACE_DESCRIPTION, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder ?? null,
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM learning_spaces)), 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM subjects WHERE id = ? AND is_active = 1`, args: [id, input.subjectId, terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, description, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder ?? null,
       legacyStorageProvider(primary.providerType), primary.providerType, primary.localSourcePath ?? null, primary.oneDriveDriveId ?? null,
       primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now, input.subjectId] }];
   statements.push(...levelPresentationStatements(id, levelPresentation));
@@ -928,10 +929,15 @@ export async function moveTheme(id: string, learningSpaceId: string, direction: 
 }
 
 export async function deleteTheme(id: string, learningSpaceId: string): Promise<void> {
+  if ((await getActiveSourceProfileConfigForLearningSpace(learningSpaceId)).scanner.portfolio.themeMode === "folder") {
+    throw new SourceConfigurationError("De thema-indeling wordt bepaald door de bronmappen. Pas de bronmappen aan om de indeling te wijzigen.");
+  }
   await executeBatch([{ sql: "UPDATE portfolios SET theme_id = NULL WHERE theme_id = ? AND learning_space_id = ?", args: [id, learningSpaceId] }, { sql: "DELETE FROM themes WHERE id = ? AND learning_space_id = ?", args: [id, learningSpaceId] }]);
 }
 
 export async function setPortfolioTheme(id: string, learningSpaceId: string, themeId: string | null): Promise<void> {
+  // Keep source membership intact while allowing the combined settings form to save its other fields.
+  if ((await getActiveSourceProfileConfigForLearningSpace(learningSpaceId)).scanner.portfolio.themeMode === "folder") return;
   const database = await getDatabase();
   if (themeId) {
     const theme = await database.execute({ sql: "SELECT id FROM themes WHERE id = ? AND learning_space_id = ?", args: [themeId, learningSpaceId] });
@@ -1221,11 +1227,20 @@ export async function persistIndex(
     archivedAt: nullableText(row, "archived_at"),
   }));
   const existingExercisesById = new Map(existingExerciseRows.map((exercise) => [exercise.id, exercise]));
-  const incomingExerciseCodeCounts = new Map<string, number>();
+  const incomingExerciseLocations = new Map<string, string>();
   for (const portfolio of indexablePortfolios) {
     const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
     for (const context of indexedExerciseContexts(portfolio, portfolioId)) {
-      for (const exercise of context.exercises) incrementCount(incomingExerciseCodeCounts, exerciseCodeKey(portfolioId, exercise.code));
+      for (const exercise of context.exercises) {
+        const codeKey = exerciseCodeKey(portfolioId, exercise.code);
+        const previousLocation = incomingExerciseLocations.get(codeKey);
+        if (previousLocation !== undefined) {
+          throw new SourceConfigurationError(
+            `Oefeningscode ${exercise.code} komt meerdere keren voor binnen portfolio ${portfolio.code}: ${previousLocation} en ${context.relativePath}. Verplaats de volledige oefening naar één onderdeel of rechtstreeks naar de portfoliomap.`,
+          );
+        }
+        incomingExerciseLocations.set(codeKey, context.relativePath);
+      }
     }
   }
   const exerciseResolutions = new Map<string, string>();
@@ -1253,11 +1268,6 @@ export async function persistIndex(
       for (const exercise of context.exercises) {
         const desiredId = indexedExerciseId(portfolioId, context.sectionId, exercise.code);
         const exact = existingExercisesById.get(desiredId);
-        const codeKey = exerciseCodeKey(portfolioId, exercise.code);
-        if ((incomingExerciseCodeCounts.get(codeKey) ?? 0) !== 1) {
-          exerciseResolutions.set(desiredId, desiredId);
-          continue;
-        }
         const candidates = existingExerciseRows.filter((candidate) => candidate.portfolioId === portfolioId
           && normalizeExerciseIdentityCode(candidate.code) === normalizeExerciseIdentityCode(exercise.code)
           && candidate.archivedAt === null && candidate.id !== exact?.id);
@@ -2176,7 +2186,7 @@ async function getAdminPortfolioReadModels(spaceId: string, portfolioId?: string
       customTextPosition: text(portfolio, "custom_text_position") as PortfolioCustomTextPosition,
       exercises: exercises.rows.filter((exercise) => text(exercise, "portfolio_id") === portfolioId && exercise.section_id === null)
         .map((exercise) => adminExerciseReadModel(exercise, portfolioStatus)),
-      sections: sections.rows.filter((section) => text(section, "portfolio_id") === portfolioId).map((section) => {
+      sections: sections.rows.filter((section) => text(section, "portfolio_id") === portfolioId && bool(section.is_indexed)).map((section) => {
         const sectionId = text(section, "id");
         const sectionPublication = { mode: childMode(section), limited: bool(section.publication_limited), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
         const sectionStatus = resolveChildPublication(sectionPublication, portfolioStatus, now);

@@ -48,7 +48,7 @@ describe("SourceProfileGlobalResourcesEditor", () => {
     const markup = renderToStaticMarkup(<SourceProfileGlobalResourcesViewer resources={BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources} />);
     expect(markup).toContain("Deze configuratie is alleen-lezen.");
     expect(markup).toContain("Opgaven");
-    expect(markup).toContain("Begint met");
+    expect(markup).toContain("Bestandsnaam begint met");
     expect(markup).not.toContain("<dt>Label</dt>");
     expect(markup).not.toContain("<dt>Betekenis</dt>");
     expect(markup).toContain("PDF");

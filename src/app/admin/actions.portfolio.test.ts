@@ -43,7 +43,9 @@ describe("savePortfolioAction custom message", () => {
   });
 
   it("slaat plain multiline tekst en positie mee op via de bestaande settingsflow", async () => {
-    await savePortfolioAction(portfolioForm("  Eerste regel\nTweede regel  ", "below_documents"));
+    mocks.getAdminPortfolioAny.mockResolvedValueOnce({ id: "portfolio-1", learningSpaceId: "space-5", publishFrom: null, publishUntil: null })
+      .mockResolvedValueOnce({ id: "portfolio-1", themeId: "theme-saved" });
+    await expect(savePortfolioAction(portfolioForm("  Eerste regel\nTweede regel  ", "below_documents"))).resolves.toEqual({ themeId: "theme-saved" });
 
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.objectContaining({ id: "teacher" }), "space-5");
     expect(mocks.setPortfolioTitle).toHaveBeenCalledWith("portfolio-1", "Goniometrie");

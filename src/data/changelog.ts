@@ -31,7 +31,7 @@ export const changelog: ChangelogEntry[] = [{
   date: "2026-10-05",
   category: "new",
   title: "Thema's herkennen uit mappen",
-  description: "Een bronprofiel kan nu één mapniveau gebruiken om portfolio's automatisch aan thema's te koppelen. Kies dit in je bronprofiel; het structuurvoorbeeld toont portfolio's binnen thema's én rechtstreeks in de bronmap.",
+  description: "Een bronprofiel kan nu één mapniveau gebruiken om portfolio's automatisch aan thema's te koppelen. Kies dit in je bronprofiel; het structuurvoorbeeld toont portfolio's binnen thema's én rechtstreeks in de bronmap. Bij deze instelling bepaalt de bronmap het thema; je kunt de indeling niet handmatig overschrijven in de portfolio-instellingen.",
   audiences: ["teacher", "superadmin"],
   notify: true,
 }, {

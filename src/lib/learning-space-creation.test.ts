@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
 import { createUser } from "./identity";
-import { createLearningSpaceForOwner, getActiveLearningSpaceSource, getAdminLearningSpaceBySlug, type LearningSpaceInput } from "./repositories";
+import { createLearningSpaceForOwner, getActiveLearningSpaceSource, getAdminLearningSpaceBySlug, updateLearningSpace, type LearningSpaceInput } from "./repositories";
 import { ensureStorageConnection } from "./storage-connections";
 import { createSubject, setSubjectActive } from "./subjects";
 
@@ -25,6 +25,29 @@ afterEach(async () => {
 });
 
 describe("transactional LearningSpace owner creation", () => {
+  it.each([
+    ["Portfolio", "Portfolio's", "Oefening", "Oefeningen", "Overzicht van de portfolio's met oefeningen."],
+    ["Bundel", "Bundels", "Oefening", "Oefeningen", "Overzicht van de bundels met oefeningen."],
+    ["Portfolio", "Portfolio's", "Opdracht", "Opdrachten", "Overzicht van de portfolio's met opdrachten."],
+  ])("stores an initial description for %s and preserves it after terminology changes", async (singular: string, plural: string, exerciseSingular: string, exercisePlural: string, expected: string) => {
+    await useTemporaryDatabase();
+    const teacher = await createUser({ displayName: "Leraar", role: "teacher" });
+    const before = (await (await getDatabase()).execute("SELECT id, description FROM learning_spaces ORDER BY id")).rows;
+    const input = { ...localInput("description-space"), collectionLabelSingular: singular, collectionLabelPlural: plural, exerciseLabelSingular: exerciseSingular, exerciseLabelPlural: exercisePlural };
+    const space = await createLearningSpaceForOwner(input, teacher.id);
+    expect(space.description).toBe(expected);
+    const after = (await (await getDatabase()).execute({ sql: "SELECT id, description FROM learning_spaces WHERE id <> ? ORDER BY id", args: [space.id] })).rows;
+    expect(after).toEqual(before);
+    await updateLearningSpace(space.id, { ...input, collectionLabelSingular: "Boek", collectionLabelPlural: "Boeken", exerciseLabelSingular: "Vraag", exerciseLabelPlural: "Vragen" });
+    await expect(getAdminLearningSpaceBySlug(space.slug)).resolves.toMatchObject({ description: expected, collectionLabelPlural: "Boeken", exerciseLabelPlural: "Vragen" });
+  });
+
+  it("preserves a custom creation description", async () => {
+    await useTemporaryDatabase();
+    const teacher = await createUser({ displayName: "Leraar", role: "teacher" });
+    const space = await createLearningSpaceForOwner({ ...localInput("custom-description"), description: "Onze eigen beschrijving." }, teacher.id);
+    expect(space.description).toBe("Onze eigen beschrijving.");
+  });
   it("creates a teacher-owned LearningSpace and preserves their OneDrive connection", async () => {
     await useTemporaryDatabase();
     const teacher = await createUser({ displayName: "Leraar", role: "teacher" });

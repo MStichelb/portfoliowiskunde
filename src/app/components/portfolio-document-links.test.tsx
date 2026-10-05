@@ -103,10 +103,15 @@ describe("PortfolioDocumentLinks", () => {
     expect(markup).toContain('href="#portfolio-resource-rules-portfolio-1"');
     expect(markup).toContain("Herkenningsregels");
     expect(markup).toContain("Bestandsnaam begint met");
+    expect(markup).toContain("ruleItem");
     expect(markup).toContain("Portfolio");
     expect(markup).toContain("Bestandsnaam bevat");
     expect(markup).toContain("Hints");
     expect(markup).toContain("PDF");
+    expect(markup).toContain("Herkenning");
+    expect(markup).toContain("Bestandstypes");
+    expect(markup).toContain("Hoofdletters");
+    expect(markup).not.toMatch(/\bsuffix\b|\bprefix\b|\bmarker\b|\bregex\b|\bscanner\b/);
     expect(markup).toContain('class="icon-button"');
   });
 });

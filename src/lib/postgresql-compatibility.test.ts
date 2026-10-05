@@ -27,6 +27,8 @@ import {
   getAdminPortfolios,
   getIndexedSourceManifest,
   updateTheme,
+  setPortfolioTheme,
+  deleteTheme,
 } from "./repositories";
 import { uniqueSourceProfileName } from "./source-profile-name";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, INITIAL_SOURCE_PROFILE_TEMPLATE_ID } from "./source-profile-config";
@@ -99,6 +101,7 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
       sourceType: "local",
       localSourcePath: null,
     }, superadmin.id);
+    expect(space.description).toBe("Overzicht van de portfolio's met oefeningen.");
     await updateLearningSpace(space.id, {
       subjectId: subject.id,
       collectionLabelSingular: space.collectionLabelSingular,
@@ -174,6 +177,17 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     await persistIndex([directIndex], activeSource.providerType, space.id);
     expect((await database.execute({ sql: "SELECT id, section_id FROM exercises WHERE id = ?", args: [originalExerciseId] })).rows[0])
       .toMatchObject({ id: originalExerciseId, section_id: null });
+    expect((await getAdminPortfolios(space.id))[0]).toMatchObject({
+      sections: [], exercises: [expect.objectContaining({ id: originalExerciseId })],
+    });
+    await persistIndex([directIndex], activeSource.providerType, space.id);
+    const conflictingIndex = structuredClone(directIndex);
+    conflictingIndex.sections = firstIndex.sections;
+    await expect(persistIndex([conflictingIndex], activeSource.providerType, space.id)).rejects.toThrow("Oefeningscode 20a");
+    expect((await database.execute({ sql: "SELECT id, section_id FROM exercises WHERE id = ?", args: [originalExerciseId] })).rows[0])
+      .toMatchObject({ id: originalExerciseId, section_id: null });
+    await expect(persistIndex([firstIndex], activeSource.providerType, space.id)).resolves.toMatchObject({ added: 0, missing: 0 });
+    expect((await getAdminPortfolios(space.id))[0].sections[0].exercises[0].id).toBe(originalExerciseId);
     await persistIndex([directIndex], activeSource.providerType, space.id);
     await expect(database.execute({
       sql: "INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix) SELECT ?, portfolio_id, NULL, exercise_code, exercise_number, exercise_suffix FROM exercises WHERE id = ?",
@@ -199,6 +213,9 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     expect((await database.execute({ sql: "SELECT * FROM themes WHERE id = ?", args: [theme.id] })).rows[0]).toEqual(themeBefore);
     expect(await getThemes(space.id)).toHaveLength(2);
     expect((await getAdminPortfolios(space.id))[0]).toMatchObject({ id: portfolioId, themeId: theme.id });
+    await setPortfolioTheme(portfolioId, space.id, null);
+    expect((await getAdminPortfolios(space.id))[0].themeId).toBe(theme.id);
+    await expect(deleteTheme(theme.id, space.id)).rejects.toThrow("bepaald door de bronmappen");
     expect((await getIndexedSourceManifest(space.id)).find((entry) => entry.kind === "portfolio")?.sourceTheme).toEqual(directIndex.sourceTheme);
     await expect(database.execute({
       sql: `INSERT INTO themes (id, learning_space_id, name, created_at, updated_at, source_scope, source_id, source_folder_name, source_relative_path)

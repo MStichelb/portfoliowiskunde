@@ -56,6 +56,10 @@ export function miscellaneousCollectionLabel(plural: string): string {
   return `Overige ${formatTerminologyLabel(plural, "inline")}`;
 }
 
+export function initialLearningSpaceDescription(collectionPlural = DEFAULT_COLLECTION_LABEL_PLURAL, exercisePlural = DEFAULT_EXERCISE_LABEL_PLURAL): string {
+  return `Overzicht van de ${formatTerminologyLabel(collectionPlural, "inline")} met ${formatTerminologyLabel(exercisePlural, "inline")}.`;
+}
+
 export function formatExerciseShortLabel(shortLabel: string, exerciseCode: string): string {
   const label = formatTerminologyLabel(shortLabel.trim(), "standalone");
   if (!label) return exerciseCode;
