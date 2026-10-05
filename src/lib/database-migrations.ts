@@ -1212,6 +1212,10 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE sections ADD CONSTRAINT sections_portfolio_id_section_code_key UNIQUE(portfolio_id, section_code)",
     ],
   },
+  {
+    version: "056_user_changelog_read_state",
+    statements: ["ALTER TABLE users ADD COLUMN last_seen_changelog_entry_id TEXT"],
+  },
 ];
 
 function sqlText(value: string): string {

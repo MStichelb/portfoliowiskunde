@@ -7,6 +7,8 @@ import { getDatabase, resetDatabaseForTests } from "./database";
 import { migrations } from "./database-migrations";
 import type { IndexedPortfolio } from "./domain";
 import { createUser } from "./identity";
+import { getLastSeenChangelogEntryId, markChangelogSeen } from "./changelog-read-state";
+import { getChangelogForRole } from "./changelog";
 import {
   createLearningSpaceForOwner,
   getLearningSpace,
@@ -55,6 +57,9 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
 
     const suffix = randomUUID();
     const superadmin = await createUser({ displayName: `PostgreSQL ${suffix}`, role: "superadmin" });
+    expect(await getLastSeenChangelogEntryId(superadmin.id)).toBeNull();
+    await markChangelogSeen(superadmin);
+    expect(await getLastSeenChangelogEntryId(superadmin.id)).toBe(getChangelogForRole(superadmin.role)[0]?.id);
 
     const initialSubject = await createSubject(superadmin, { name: `Initial compat ${suffix}` });
     const subject = await createSubject(superadmin, { name: `Compat ${suffix}` });
