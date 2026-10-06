@@ -54,14 +54,14 @@ describe("SourceProfileTemplateManager", () => {
     expect(markup).toContain("Als standaard instellen");
     expect(markup).toContain("Naam bestaat al.");
     expect(markup.match(/<form/g)).toHaveLength(1);
-    expect(markup).toContain("Globale documenten");
+    expect(markup).toContain("Documenten bij portfolio&#x27;s");
     expect(markup).toContain("Opgaven");
     expect(markup).toContain("Oefeningen herkennen");
-    expect(markup).toContain("Portfoliomarker");
+    expect(markup).toContain("Mapnaam begint met");
     expect(markup).toContain('name="portfolioScannerJson"');
     expect(markup).toContain('name="exerciseScannerJson"');
-    expect(markup).toContain("Onderdelen per oefening");
-    expect(markup).not.toContain("Globale documenten opslaan");
+    expect(markup).toContain("Materialen bij oefeningen");
+    expect(markup).not.toContain("Documenten bij portfolio&#x27;s opslaan");
     expect(markup).not.toContain("Onderdelen opslaan");
     expect(markup).toContain("Alternatieve uitwerking");
     expect(markup).toContain('name="exerciseResourcesJson"');

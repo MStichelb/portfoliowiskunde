@@ -3,7 +3,7 @@ import { Folder } from "lucide-react";
 import { PortfolioInfoButton, PortfolioInfoDialog, RecognitionRuleCard } from "./portfolio-info-dialog";
 import { portfolioStructureRulesDialogId } from "./portfolio-resource-dialog-ids";
 import { DEFAULT_SECTION_LABEL_PLURAL, DEFAULT_SECTION_LABEL_SINGULAR, formatTerminologyLabel } from "@/lib/collection-terminology";
-import { exerciseModeContextLabel, exerciseNumberRuleLabel, exerciseResourceLocationLabel, exerciseResourceRuleLabel } from "@/lib/source-profile-recognition-labels";
+import { sectionNumberRuleLabel, exerciseModeContextLabel, exerciseNumberRuleLabel, exerciseResourceLocationLabel, exerciseResourceRuleLabel } from "@/lib/source-profile-recognition-labels";
 import type { SourceProfileConfig } from "@/lib/source-profile-config";
 import styles from "./portfolio-resource-admin.module.css";
 
@@ -26,7 +26,7 @@ export function PortfolioStructureInfo({ portfolioId, kind, collectionLabel, exe
       {kind === "sections" ? <>
         <div className={styles.rulesList}>
           <RecognitionRuleCard title={formatTerminologyLabel(sectionLabelSingular, "standalone")} iconNode={<Folder size={17} aria-hidden />} rows={[
-            { id: "code", label: "Code", value: "Mapnaam begint met een cijfercode (bijvoorbeeld 1, 1.2 of 1.10)" },
+            { id: "code", label: "Code", value: sectionNumberRuleLabel() },
             { id: "name", label: "Naam", value: "De tekst na de code vormt de naam." },
             { id: "context", label: "Herkenning in", value: "Map" },
           ]} />

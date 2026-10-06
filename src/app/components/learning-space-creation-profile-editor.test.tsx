@@ -13,7 +13,7 @@ describe("embedded creation profile", () => {
     const markup = renderToStaticMarkup(<LearningSpaceCreationProfileEditor config={config} draftKey="template:one" />);
     for (const name of ["portfolioScannerJson", "exerciseScannerJson", "resourcesJson", "exerciseResourcesJson", "levelRecognitionJson"]) expect(markup).toContain(`name="${name}"`);
     expect(markup).not.toContain("<form"); expect(markup).not.toContain('type="submit"');
-    expect(markup).toContain("Globale documenten"); expect(markup).toContain("Oefeningen herkennen");
+    expect(markup).toContain("Documenten bij portfolio&#x27;s"); expect(markup).toContain("Oefeningen herkennen");
     const form = new FormData();
     for (const [key, value] of Object.entries({ portfolioScannerJson: config.scanner.portfolio, exerciseScannerJson: config.scanner.exercise, resourcesJson: config.globalResources, exerciseResourcesJson: config.exerciseResources, levelRecognitionJson: config.levelRecognition })) form.set(key, JSON.stringify(value));
     expect(parseCreationProfileDraft(form)).toEqual(config);

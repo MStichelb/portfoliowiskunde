@@ -14,8 +14,8 @@ describe("SourceProfileGlobalResourcesEditor", () => {
       ownerIdField="sourceProfileId"
       ownerId="profile-1"
     />);
-    expect(markup).toContain("Globale documenten");
-    expect(markup).toContain("Uitleg over globale documenten");
+    expect(markup).toContain("Documenten bij portfolio&#x27;s");
+    expect(markup).toContain("Uitleg over documenten bij portfolio&#x27;s");
     expect(markup).toContain("Opgaven");
     expect(markup).toContain("Hints");
     expect(markup).toContain("Eindoplossingen");
@@ -55,7 +55,7 @@ describe("SourceProfileGlobalResourcesEditor", () => {
     expect(markup).toContain("Niet hoofdlettergevoelig");
     expect(markup).not.toContain(">Icoon<");
     expect(markup).not.toContain("Document toevoegen");
-    expect(markup).not.toContain("Globale documenten opslaan");
+    expect(markup).not.toContain("Documenten bij portfolio&#x27;s opslaan");
   });
 
 });

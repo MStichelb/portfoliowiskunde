@@ -21,7 +21,7 @@ export function SourceProfileCard({ profile, canConfigure, learningSpaceId, temp
         <h2 id="source-profile-heading">Bronprofiel</h2>
         <p>Het bronprofiel bepaalt hoe bestanden en mappen in de bron worden geïnterpreteerd.</p>
       </div>
-      <Link className="secondary-button link-button source-profile-management-link" href="/admin/bronprofielen">
+      <Link className="secondary-button link-button source-profile-management-link" href={learningSpaceId ? `/admin/bronprofielen?profile=${encodeURIComponent(profile.id)}&space=${encodeURIComponent(learningSpaceId)}` : "/admin/bronprofielen"}>
         <SlidersHorizontal size={16} aria-hidden />Bronprofielen {canConfigure ? "beheren" : "bekijken"}
       </Link>
     </div>

@@ -28,7 +28,7 @@ describe("SourceProfileCard", () => {
     expect(markup).toContain("Eigen profiel");
     expect(markup).toContain("Eigenaar: Mathias");
     expect(markup).toContain("Bronprofielen beheren");
-    expect(markup).toContain('href="/admin/bronprofielen"');
+    expect(markup).toContain('href="/admin/bronprofielen?profile=profile-1&amp;space=space-5"');
     expect(markup).toContain("lucide-sliders-horizontal");
     expect(markup).not.toContain("Ander profiel kiezen");
     expect(markup).not.toContain("Naam wijzigen");
@@ -87,5 +87,5 @@ function renderCard(canConfigure: boolean, usages: AvailableSourceProfile["usage
     canArchive: canConfigure && usages.length === 0,
     linkTargets: [],
   };
-  return renderToStaticMarkup(<SourceProfileCard profile={profile} canConfigure={canConfigure} />);
+  return renderToStaticMarkup(<SourceProfileCard profile={profile} canConfigure={canConfigure} learningSpaceId="space-5" />);
 }

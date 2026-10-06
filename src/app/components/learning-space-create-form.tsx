@@ -11,6 +11,7 @@ import { parseCreationProfileDraft, WIZARD_DEFAULT_DESCRIPTION, EMPTY_CREATION_O
 import type { SourceProfileConfig } from "@/lib/source-profile-config";
 import { creationProfileSummary } from "@/lib/learning-space-creation-summary";
 import { LearningSpaceCreationSuccess } from "./learning-space-creation-success";
+import { SourceProfileTerminologyProvider } from "./source-profile-presentation";
 import { LearningSpaceCreationProfileEditor } from "./learning-space-creation-profile-editor";
 import { ExerciseLevelPresentationSettings } from "./exercise-level-presentation-settings";
 
@@ -94,10 +95,11 @@ export function LearningSpaceCreateForm({ action, subjects, options = EMPTY_CREA
     setEditorOpen(false); setValidationError(null);
   };
   const summaryConfig = editable ? summaryConfigs[profileKey] ?? activeDraft?.config : selected?.config;
-  const summary = summaryConfig ? creationProfileSummary(summaryConfig, Object.fromEntries(["theme", "collection", "section", "exercise"].flatMap((entity) => {
+  const terminology = Object.fromEntries(["theme", "collection", "section", "exercise"].flatMap((entity) => {
     const labels = terms[entity as keyof typeof terms];
     return [[`${entity}LabelSingular`, labels.singular], [`${entity}LabelPlural`, labels.plural]];
-  }))) : selected?.summary ?? [];
+  }));
+  const summary = summaryConfig ? creationProfileSummary(summaryConfig, terminology) : selected?.summary ?? [];
   if (result && result.error === null) return <LearningSpaceCreationSuccess result={result} />;
   const terminologyGroups = [
     ["theme", "Groepering", "themeLabel", "Groepeert meerdere hoofdgehelen, bijvoorbeeld thema's of delen."],
@@ -167,7 +169,7 @@ export function LearningSpaceCreateForm({ action, subjects, options = EMPTY_CREA
       {activeDraft ? <input type="hidden" name="profileDraftEnabled" value="1" /> : null}
       {drafts.map((draft) => <fieldset className="creation-profile-draft" key={draft.key} hidden={!editorOpen || draft.key !== activeDraft?.key} disabled={draft.key !== activeDraft?.key || pending}>
         <legend className="sr-only">Eigen bronprofiel aanpassen</legend>
-        <LearningSpaceCreationProfileEditor config={draft.config} draftKey={draft.key} />
+        <SourceProfileTerminologyProvider value={terminology}><LearningSpaceCreationProfileEditor config={draft.config} draftKey={draft.key} /></SourceProfileTerminologyProvider>
       </fieldset>)}
     </fieldset>
     <fieldset data-step="4" hidden={step !== 4} disabled={pending}>

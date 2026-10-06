@@ -28,6 +28,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-06-bronprofielen-overzichtelijker",
+  date: "2026-10-06",
+  category: "improved",
+  title: "Bronprofielen overzichtelijk instellen",
+  description: "Bronprofielen werken met duidelijke tabbladen en gebruiken automatisch de benamingen van je leeromgeving. Bij een gedeeld profiel kun je kiezen met welke benamingen je de instellingen bekijkt.",
+  audiences: ["teacher", "superadmin"],
+  notify: false,
+}, {
   id: "2026-10-06-wizard-nieuwe-leeromgeving",
   date: "2026-10-06",
   category: "improved",

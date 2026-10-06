@@ -23,6 +23,34 @@ describe("source profile layout styles", () => {
     expect(css).toMatch(/\.source-profile-owner-filter \.filter-control \{[^}]*flex: 0 1 280px;/);
     expect(css).toMatch(/@media \(max-width: 640px\)[\s\S]*\.source-profile-owner-filter, \.source-profile-owner-filter \.filter-control \{ width: 100%; \}/);
   });
+  it("keeps shared editor content aligned and permits narrow layouts without hiding overflow", async () => {
+    const css = await globalsCss();
+    const editorCss = css.slice(css.indexOf("/* One presentation rhythm"));
+    expect(editorCss).toMatch(/max-width: 760px; min-width: 0; margin-inline: auto/);
+    expect(editorCss).toMatch(/source-profile-editor-tabs \{ display: flex; flex-wrap: nowrap;[\s\S]*overflow-x: auto/);
+    expect(editorCss).toContain(".source-profile-editor-panel[hidden] { display: none; }");
+    expect(editorCss).toMatch(/@container \(max-width: 560px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
+    expect(editorCss).not.toContain("overflow-x: hidden");
+  });
+
+  it("reuses the admin label pattern and one content rhythm across every editor tab", async () => {
+    const css = await globalsCss();
+    const moduleCss = await readFile(path.join(process.cwd(), "src/app/components/portfolio-resource-scanner-v2.module.css"), "utf8");
+    expect(css).toMatch(/\.learning-space-settings-form label, \.source-profile-dialog-form label, \.admin-form-label[^{}]*\{ display: grid; gap: 6px; color: #314149; font-size: 14px; font-weight: 700;/);
+    expect(moduleCss).toContain("composes: admin-form-label from global;");
+    expect(css).not.toContain(".source-profile-config-sections label { font-weight: 500;");
+    expect(css).toContain(".source-profile-editor-panel { min-width: 0; padding-block: 18px 6px; }");
+    expect(css).not.toContain(".source-profile-config-sections > [id]");
+    expect(css).toContain(".source-profile-editor-panel .source-profile-resource-editor { margin-top: 0; padding-top: 0; border-top: 0; }");
+  });
+  it("anchors editor dialogs at the top while retaining viewport limits and scrolling", async () => {
+    const css = await globalsCss();
+    expect(css).toContain(".source-profile-editor-backdrop { align-items: start; padding-top: clamp(24px, 5vh, 48px); }");
+    expect(css).toContain("max-height: calc(100dvh - clamp(24px, 5vh, 48px) - 20px)");
+    expect(css).toMatch(/\.source-profile-dialog-wide \{[^}]*overflow-y: auto/);
+    expect(css).toContain(".source-profile-editor-backdrop { padding-top: 16px; }");
+  });
+
 });
 
 async function globalsCss(): Promise<string> {

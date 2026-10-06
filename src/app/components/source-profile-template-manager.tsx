@@ -7,8 +7,9 @@ import type { SourceProfileTemplateSummary } from "@/lib/source-profile-template
 import type { SourceProfileCopyTarget } from "@/lib/source-profiles";
 
 import { ArchiveVisibilityToggle } from "./archive-visibility-toggle";
+import { SourceProfileViewContext } from "./source-profile-presentation";
 import { SourceProfileExerciseConfigurationEditors } from "./source-profile-exercise-configuration-editors";
-import { SourceProfileGlobalResourcesEditor } from "./source-profile-global-resources-editor";
+
 import { ConfirmActionButton } from "./confirm-action-button";
 
 export type SourceProfileTemplateModal = "create" | "manage" | "default" | "copy";
@@ -83,12 +84,13 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
       </article>)}
     </div>}
 
-    {modal ? <div className="confirm-backdrop" role="presentation">
+    {modal ? <div className={`confirm-backdrop${modal === "manage" ? " source-profile-editor-backdrop" : ""}`} role="presentation">
       <div className={`source-profile-dialog${modal === "manage" ? " source-profile-dialog-wide source-profile-manage-dialog" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className={`source-profile-dialog-heading${modal === "manage" ? " source-profile-dialog-heading-sticky" : ""}`}>
           <h2 id={titleId}>{modalTitle(modal)}</h2>
           {modal === "manage" && selected ? <div className="source-profile-dialog-heading-actions">
             <button className="secondary-button" type="submit" form={`source-profile-template-manage-${selected.id}`} formAction={actions.duplicate}><Copy size={16} aria-hidden />Dupliceren</button>
+            <SourceProfileViewContext />
             <button className="primary-button" type="submit" form={`source-profile-template-manage-${selected.id}`}><Save size={16} aria-hidden />Opslaan</button>
             <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
           </div> : <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>}
@@ -109,26 +111,21 @@ export function SourceProfileTemplateManager({ templates, copyTargets, canManage
           className="source-profile-template-manage-form"
         >
           <input type="hidden" name="templateId" value={selected.id} />
-          <div className="source-profile-manage-content">
-            <div className="source-profile-dialog-form source-profile-main-fields">
-              <label>Naam<input name="name" defaultValue={selected.name} maxLength={80} required /></label>
-              <label>Beschrijving (optioneel)<textarea name="description" defaultValue={selected.description ?? ""} maxLength={240} rows={3} /></label>
-              <div className="source-profile-template-default-state">
-                {selected.isDefault ? <span className="active-source-badge">Standaard</span> : <button className="secondary-button" type="button" onClick={() => setModal("default")}>Als standaard instellen</button>}
-                {selected.canArchive ? <button className="secondary-button" type="submit" formAction={actions.archive}><Archive size={16} aria-hidden />Archiveren</button> : null}
-              </div>
-            </div>
+          <div className="source-profile-manage-content source-profile-template-config">
 
             <TemplateError error={error} />
 
-            <SourceProfileGlobalResourcesEditor
-              resources={selected.config?.globalResources ?? []}
-              ownerIdField="templateId"
-              ownerId={selected.id}
-              embedded
-            />
             <SourceProfileExerciseConfigurationEditors
+              overview={<div className="source-profile-dialog-form source-profile-main-fields">
+                <label>Profielnaam<input name="name" defaultValue={selected.name} maxLength={80} required /></label>
+                <label>Beschrijving (optioneel)<textarea name="description" defaultValue={selected.description ?? ""} maxLength={240} rows={3} /></label>
+                <div className="source-profile-template-default-state">
+                  {selected.isDefault ? <span className="active-source-badge">Standaard</span> : <button className="secondary-button" type="button" onClick={() => setModal("default")}>Als standaard instellen</button>}
+                  {selected.canArchive ? <button className="secondary-button" type="submit" formAction={actions.archive}><Archive size={16} aria-hidden />Archiveren</button> : null}
+                </div>
+              </div>}
               key={selected.id}
+              globalResources={selected.config?.globalResources ?? []}
               portfolioScanner={selected.config?.scanner.portfolio ?? { marker: "Portfolio", themeMode: "none" }}
               scanner={selected.config?.scanner.exercise ?? { exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Oef" }}
               resources={selected.config?.exerciseResources ?? []}

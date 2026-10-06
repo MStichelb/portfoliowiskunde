@@ -1,5 +1,7 @@
 "use client";
 
+import { useSourceProfileLabels } from "./source-profile-presentation";
+
 import { useEffect, useMemo, useState } from "react";
 
 import { EXERCISE_LEVELS, type ExerciseLevel } from "@/lib/exercise-level";
@@ -88,6 +90,7 @@ export function SourceProfileLevelRecognitionEditor({
   onDirtyChange?: (dirty: boolean) => void;
   onChange?: (recognition: ExerciseLevelRecognitionConfig) => void;
 }) {
+  const labels = useSourceProfileLabels();
   const initial = useMemo(() => exerciseLevelRecognitionSchema.parse(recognition), [recognition]);
   const baseline = useMemo(() => JSON.stringify(initial), [initial]);
   const [value, setValue] = useState<ExerciseLevelRecognitionConfig>(initial);
@@ -118,9 +121,9 @@ export function SourceProfileLevelRecognitionEditor({
     <input type="hidden" name="levelRecognitionJson" value={serialized} />
     <div className="source-profile-resource-editor-heading">
       <div>
-        <h3 id="level-recognition-heading">Niveauherkenning</h3>
-        <p>Leid een intern oefeningniveau af uit de structuur of naamgeving van je bronbestanden.</p>
-        <p className={styles.levelRecognitionIntro}>Deze niveaus zijn intern vast. De namen en symbolen die leerlingen zien stel je per leeromgeving in.</p>
+        <h3 id="level-recognition-heading">Niveaus</h3>
+        <p>Herken het niveau van {labels.exercises} via de structuur of naam van je bronbestanden.</p>
+        <p className={styles.levelRecognitionIntro}>De weergavenaam, kleur en symbolen stel je bij Personalisatie van je leeromgeving in.</p>
       </div>
     </div>
     <div className={`source-profile-resource-form source-profile-resource-form-embedded ${styles.levelRecognitionControls}`}>
@@ -129,12 +132,12 @@ export function SourceProfileLevelRecognitionEditor({
           <option value="none">Geen automatische herkenning</option>
           <option value="subdirectory">Niveau via submappen bepalen</option>
           <option value="resource_file_name" disabled={suitableResources.length === 0}>Niveau uit bestandsnaam bepalen</option>
-          <option value="exercise_directory_name" disabled={exerciseMode === "files"}>Niveau uit mapnaam van oefening bepalen</option>
+          <option value="exercise_directory_name" disabled={exerciseMode === "files"}>Niveau uit mapnaam van {labels.exercise} bepalen</option>
         </select>
       </label>
 
-      {exerciseMode === "files" ? <p className={styles.levelRecognitionHint}>Niveau uit mapnaam is niet beschikbaar wanneer oefeningen alleen als bestanden voorkomen.</p> : null}
-      {choice === "exercise_directory_name" && exerciseMode === "files_and_directories" ? <p className={styles.levelRecognitionWarning}>Niveauherkenning via de mapnaam werkt alleen voor oefeningen die als map voorkomen. Wil je voor alle oefeningen automatisch een niveau herkennen, dan moeten alle oefeningen als map worden voorgesteld.</p> : null}
+      {exerciseMode === "files" ? <p className={styles.levelRecognitionHint}>Niveau uit mapnaam is niet beschikbaar wanneer {labels.exercises} alleen als bestanden voorkomen.</p> : null}
+      {choice === "exercise_directory_name" && exerciseMode === "files_and_directories" ? <p className={styles.levelRecognitionWarning}>Niveauherkenning via de mapnaam werkt alleen voor {labels.exercises} die als map voorkomen. Voor automatische herkenning van alle {labels.exercises} moeten ze allemaal als map voorkomen.</p> : null}
 
       {value.method !== "none" ? <>
         {choice === "resource_file_name" && value.method === "marker" ? <label className={styles.stackedField}>Niveau bepalen via
@@ -150,7 +153,7 @@ export function SourceProfileLevelRecognitionEditor({
               <option value="prefixed_code">{markerSubject} bevat</option>
             </select>
           </label>
-          {value.convention === "prefixed_code" ? <label className={styles.stackedField}>Herkenner
+          {value.convention === "prefixed_code" ? <label className={styles.stackedField}>Vaste tekst
             <input className={styles.control} value={value.prefix} maxLength={20} placeholder="Niv" required onChange={(event) => update({ ...value, prefix: event.target.value })} />
           </label> : null}
         </div> : null}

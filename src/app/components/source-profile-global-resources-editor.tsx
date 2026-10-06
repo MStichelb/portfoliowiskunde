@@ -1,5 +1,7 @@
 "use client";
 
+import { useSourceProfileLabels } from "./source-profile-presentation";
+
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, CircleHelp, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
@@ -34,12 +36,13 @@ const operatorLabels: Record<GlobalResourceFileMatchOperator, string> = {
 
 
 export function SourceProfileGlobalResourcesViewer({ resources }: { resources: readonly GlobalResourceConfig[] }) {
+  const labels = useSourceProfileLabels();
   const items = sortGlobalResources(resources);
 
-  return <section className="source-profile-resource-editor source-profile-resource-viewer" aria-label="Globale documenten">
+  return <section className="source-profile-resource-editor source-profile-resource-viewer" aria-label={labels.documentsHeading}>
     <div className="source-profile-resource-editor-heading">
       <div>
-        <div className="source-profile-resource-title-row"><h3>Globale documenten</h3></div>
+        <div className="source-profile-resource-title-row"><h3>{labels.documentsHeading}</h3></div>
         <p>Deze configuratie is alleen-lezen.</p>
       </div>
       <span className="source-role-badge">{items.length}/{GLOBAL_RESOURCE_LIMIT}</span>
@@ -62,7 +65,7 @@ export function SourceProfileGlobalResourcesViewer({ resources }: { resources: r
                 <span>Herkenningsregel</span>
                 <strong>{globalResourceRuleLabel(resource.recognition)}</strong>
                 <small>{resource.recognition.fileExtensions.map((extension) => extension.toUpperCase()).join(", ") || "Geen"} · {globalResourceCaseLabel(resource.recognition.caseSensitive)}</small>
-              </div> : <p className="source-profile-resource-note">De concrete URL wordt per portfolio ingesteld.</p>}
+              </div> : <p className="source-profile-resource-note">De concrete URL wordt per {labels.collection} ingesteld.</p>}
             </div>
           </div>
         </article>;
@@ -88,6 +91,7 @@ export function SourceProfileGlobalResourcesEditor({
   embedded?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
+  const labels = useSourceProfileLabels();
   const [items, setItems] = useState<GlobalResourceConfig[]>(() => normalizeOrders(sortGlobalResources(resources)));
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [showHelp, setShowHelp] = useState(false);
@@ -159,7 +163,7 @@ export function SourceProfileGlobalResourcesEditor({
           {expanded ? <div className="source-profile-resource-details">
             <div className="source-profile-resource-top-grid">
               <SourceProfileIconPicker value={resource.icon} onChange={(icon) => update(index, (current) => ({ ...current, icon }))} />
-              <label>Label<input value={resource.label} maxLength={40} required onChange={(event) => update(index, (current) => ({ ...current, label: event.target.value }))} /></label>
+              <label>Weergavenaam<input value={resource.label} maxLength={40} required onChange={(event) => update(index, (current) => ({ ...current, label: event.target.value }))} /></label>
             </div>
 
             <div className="source-profile-resource-grid">
@@ -176,6 +180,7 @@ export function SourceProfileGlobalResourcesEditor({
                 <select aria-label="Herkenningsregel" value={resource.recognition.operator} onChange={(event) => update(index, (current) => current.kind === "source_file" ? ({ ...current, recognition: { ...current.recognition, operator: event.target.value as GlobalResourceFileMatchOperator } }) : current)}>{globalResourceFileMatchOperators.map((operator) => <option key={operator} value={operator}>{operatorLabels[operator]}</option>)}</select>
                 <input aria-label="Herkenningstekst" value={resource.recognition.value} maxLength={120} required onChange={(event) => update(index, (current) => current.kind === "source_file" ? ({ ...current, recognition: { ...current.recognition, value: event.target.value } }) : current)} />
               </div>
+              <p className="source-profile-resource-note">{globalResourceRuleLabel(resource.recognition)}</p>
               <fieldset className="source-profile-resource-extensions">
                 <legend>Toegelaten bestandstypen</legend>
                 {globalResourceFileExtensions.map((extension) => <label key={extension}><input type="checkbox" checked={resource.recognition.fileExtensions.includes(extension)} onChange={() => update(index, (current) => current.kind === "source_file" ? toggleExtension(current, extension) : current)} />{extension.toUpperCase()}</label>)}
@@ -192,7 +197,7 @@ export function SourceProfileGlobalResourcesEditor({
                 <span className="source-profile-case-track" aria-hidden><span /></span>
                 <span>{resource.recognition.caseSensitive ? "Hoofdlettergevoelig" : "Niet hoofdlettergevoelig"}</span>
               </button>
-            </div> : <p className="source-profile-resource-note">De concrete URL wordt per portfolio ingesteld in een volgende stap. Hier leg je alleen de knop en betekenis vast.</p>}
+            </div> : <p className="source-profile-resource-note">De concrete URL wordt per {labels.collection} ingesteld in een volgende stap. Hier leg je alleen de knop en betekenis vast.</p>}
           </div> : null}
         </article>;
       })}
@@ -209,17 +214,17 @@ export function SourceProfileGlobalResourcesEditor({
     <div className="source-profile-resource-editor-heading">
       <div>
         <div className="source-profile-resource-title-row">
-          <h3 id={`${ownerId}-global-resources-heading`}>Globale documenten</h3>
-          <button className="source-profile-help-button" type="button" onClick={() => setShowHelp((current) => !current)} aria-expanded={showHelp} aria-label="Uitleg over globale documenten" title="Uitleg over globale documenten"><CircleHelp size={17} aria-hidden /></button>
+          <h3 id={`${ownerId}-global-resources-heading`}>{labels.documentsHeading}</h3>
+          <button className="source-profile-help-button" type="button" onClick={() => setShowHelp((current) => !current)} aria-expanded={showHelp} aria-label={`Uitleg over ${labels.documentsHeading.toLocaleLowerCase("nl")}`} title={`Uitleg over ${labels.documentsHeading.toLocaleLowerCase("nl")}`}><CircleHelp size={17} aria-hidden /></button>
         </div>
-        <p>Configureer documenten die bovenaan elk portfolio beschikbaar kunnen zijn. De scanner gebruikt deze regels bij synchronisatie.</p>
+        <p>Stel in welke documenten bij je {labels.collections} worden gevonden of als link beschikbaar zijn.</p>
       </div>
       <span className="source-role-badge">{items.length}/{GLOBAL_RESOURCE_LIMIT}</span>
     </div>
 
     {showHelp ? <div className="source-profile-resource-help" role="note">
       <strong>Wat stel je hier in?</strong>
-      <p><b>Label</b> is de tekst op de knop. <b>Betekenis</b> is de interne rol van het document. <b>Type</b> bepaalt of de app later een bestand in de bron zoekt of een externe link gebruikt.</p>
+      <p><b>Weergavenaam</b> is de tekst op de knop. <b>Betekenis</b> geeft aan waarvoor het document dient. <b>Type</b> bepaalt of de app later een bestand in de bron zoekt of een externe link gebruikt.</p>
       <p>Voor bronbestanden bepaalt de <b>herkenningsregel</b> hoe de bestandsnaam wordt gevonden. Met bestandstypes beperk je welke extensies meetellen; hoofdlettergevoelig maakt de tekstvergelijking exact.</p>
     </div> : null}
 

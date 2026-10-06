@@ -7,7 +7,8 @@ import { useRouter } from "next/navigation";
 import type { ManagedSourceProfile } from "@/lib/source-profiles";
 
 import { SourceProfileExerciseConfigurationEditors } from "./source-profile-exercise-configuration-editors";
-import { SourceProfileGlobalResourcesEditor } from "./source-profile-global-resources-editor";
+import { SourceProfilePresentation, SourceProfileViewContext } from "./source-profile-presentation";
+import type { SourceProfilePresentationSpace } from "@/lib/source-profile-presentation";
 
 type ServerAction = (formData: FormData) => void | Promise<void>;
 
@@ -16,11 +17,15 @@ export function SourceProfileManageDialog({
   saveAction,
   archiveAction,
   error,
+  presentationSpaces = [],
+  contextSpaceId,
 }: {
   profile: ManagedSourceProfile;
   saveAction: ServerAction;
   archiveAction: ServerAction;
   error?: string;
+  presentationSpaces?: SourceProfilePresentationSpace[];
+  contextSpaceId?: string;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const saveModeRef = useRef<HTMLInputElement>(null);
@@ -81,8 +86,9 @@ const leave = useCallback(() => {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [closePrompt, requestClose, sharedPrompt]);
 
-  return <div className="confirm-backdrop" role="presentation">
+  return <div className="confirm-backdrop source-profile-editor-backdrop" role="presentation">
     <div className="source-profile-dialog source-profile-dialog-wide source-profile-manage-dialog" role="dialog" aria-modal="true" aria-labelledby="manage-source-profile-title">
+      <SourceProfilePresentation spaces={presentationSpaces} linkedSpaceCount={profile.usageCount} contextSpaceId={contextSpaceId}>
       <form ref={formRef} action={saveAction}>
         <input type="hidden" name="sourceProfileId" value={profile.id} />
         <input ref={saveModeRef} type="hidden" name="saveMode" defaultValue="all" />
@@ -92,35 +98,28 @@ const leave = useCallback(() => {
           <h2 id="manage-source-profile-title">Bronprofiel beheren</h2>
           <div className="source-profile-dialog-heading-actions">
             {profile.canArchive ? <button className="secondary-button" type="submit" formAction={archiveAction}><Archive size={16} aria-hidden />Archiveren</button> : null}
+            <SourceProfileViewContext />
             <button className="primary-button" type="button" onClick={requestSave}><Save size={16} aria-hidden />Opslaan</button>
             <button className="icon-button" type="button" onClick={requestClose} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
           </div>
         </div>
 
         <div className="source-profile-manage-content">
-          <div className="source-profile-central-usage">
-            <span>{profile.isInactive
-              ? "Inactief"
-              : <>Gebruikt in: <strong>{profile.usages.map((usage) => usage.learningSpaceShortLabel).join(", ")}</strong></>}</span>
-            {profile.ownerName ? <small>Eigenaar: {profile.ownerName}</small> : null}
-          </div>
-
-          <div className="source-profile-dialog-form source-profile-main-fields">
-            <label>Profielnaam<input name="name" value={name} maxLength={80} required onChange={(event) => setName(event.target.value)} /></label>
-          </div>
-
           {error ? <p className="form-message" role="alert">{error}</p> : null}
 
-          <SourceProfileGlobalResourcesEditor
-            resources={profile.config.globalResources}
-            ownerIdField="sourceProfileId"
-            ownerId={profile.id}
-            embedded
-            onDirtyChange={setGlobalResourcesDirty}
-          />
-
           <SourceProfileExerciseConfigurationEditors
+            overview={<>
+              <div className="source-profile-dialog-form source-profile-main-fields">
+                <label>Profielnaam<input name="name" value={name} maxLength={80} required onChange={(event) => setName(event.target.value)} /></label>
+              </div>
+              <div className="source-profile-central-usage">
+                <span>{profile.isInactive ? "Inactief" : <>Gebruikt in: <strong>{profile.usages.map((usage) => usage.learningSpaceShortLabel).join(", ")}</strong></>}</span>
+                {profile.ownerName ? <small>Eigenaar: {profile.ownerName}</small> : null}
+              </div>
+            </>}
             key={profile.id}
+            globalResources={profile.config.globalResources}
+            onGlobalResourcesDirtyChange={setGlobalResourcesDirty}
             portfolioScanner={profile.config.scanner.portfolio}
             scanner={profile.config.scanner.exercise}
             resources={profile.config.exerciseResources}
@@ -132,9 +131,9 @@ const leave = useCallback(() => {
             onResourcesDirtyChange={setExerciseResourcesDirty}
             onLevelRecognitionDirtyChange={setLevelRecognitionDirty}
           />
-
         </div>
       </form>
+      </SourceProfilePresentation>
 
       {closePrompt ? <div className="confirm-backdrop source-profile-nested-backdrop" role="presentation">
         <div className="source-profile-dialog source-profile-choice-dialog" role="dialog" aria-modal="true" aria-labelledby="unsaved-source-profile-title">

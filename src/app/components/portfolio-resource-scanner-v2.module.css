@@ -74,12 +74,8 @@
 }
 
 .stackedField {
-  display: grid;
+  composes: admin-form-label from global;
   width: 100%;
-  gap: 5px;
-  color: #314149;
-  font-size: 13px;
-  font-weight: 700;
 }
 
 .labelWithInfo,
@@ -154,68 +150,23 @@
 }
 
 .structurePreview {
-   position: relative;
-  margin-top: 1.25rem;
-  border: 1px solid #c9d8d5;
-  border-radius: 7px;
-  background: #fbfcfc;
-  overflow: hidden;
-}
-
-.structurePreview::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: -1rem;
-  border-top: 1px solid #dce6e3;
-}
-
-.structurePreviewSummary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.9rem 1rem;
-  cursor: pointer;
-  list-style: none;
-  background: #f4f8f7;
-  color: #17222b;
-}
-
-.structurePreviewSummary::-webkit-details-marker {
-  display: none;
-}
-
-.structurePreviewSummary > span {
   display: grid;
-  gap: 0.15rem;
+  gap: 14px;
+  min-width: 0;
 }
 
-.structurePreviewSummary strong {
-  font-size: 0.95rem;
+.structurePreviewHeading {
+  display: grid;
+  gap: 8px;
 }
 
-.structurePreviewSummary small {
-  color: #607078;
-  font-size: 0.78rem;
-  font-weight: 400;
-}
-
-.structurePreviewChevron {
-  flex: 0 0 auto;
-  transition: transform 140ms ease;
-}
-
-.structurePreview details[open] .structurePreviewChevron {
-  transform: rotate(180deg);
-}
+.structurePreviewHeading h3 { margin: 0; }
+.structurePreviewHeading p { margin: 0; color: #52616a; line-height: 1.45; }
 
 .structurePreviewBody {
   display: grid;
   gap: 0.85rem;
-  padding: 0.9rem 1rem 1rem;
-  border-top: 1px solid #dce6e3;
+  min-width: 0;
 }
 
 .structurePreviewIntro {
@@ -290,11 +241,6 @@
 }
 
 @media (max-width: 640px) {
-  .structurePreviewSummary,
-  .structurePreviewBody {
-    padding-inline: 0.75rem;
-  }
-
   .structurePreviewIntro {
     grid-template-columns: 1fr;
   }
@@ -320,4 +266,15 @@
 @container (max-width: 440px) {
   :global(.creation-profile-editor) .twoColumnControls,
   :global(.creation-profile-editor) .levelMappingGrid { grid-template-columns: minmax(0, 1fr); }
+}
+
+:global(.source-profile-config-sections) .scannerControls,
+:global(.source-profile-config-sections) .stackedField,
+:global(.source-profile-config-sections) .control,
+:global(.source-profile-config-sections) .levelMappingGrid > * { min-width: 0; }
+:global(.source-profile-config-sections) .structureTreeRow { flex-wrap: wrap; }
+:global(.source-profile-config-sections) .structureTreeRow > span { min-width: 0; overflow-wrap: anywhere; }
+@container (max-width: 560px) {
+  :global(.source-profile-config-sections) .twoColumnControls,
+  :global(.source-profile-config-sections) .levelMappingGrid { grid-template-columns: minmax(0, 1fr); }
 }

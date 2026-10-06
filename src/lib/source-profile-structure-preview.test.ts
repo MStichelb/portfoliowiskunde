@@ -91,8 +91,8 @@ describe("buildSourceStructurePreview", () => {
       "header.png",
     ]));
     expect(flatten(preview.root)).not.toContain("Uitwerkingen");
-    expect(preview.notes).toContain("Geldige portfoliocodes zijn bijvoorbeeld 1, A, 1A, A1, 1.1 en A.1. Mapnamen zoals “H 1.1 Stelsels”, “H 1.1 - Stelsels” en “H1.1-Stelsels” zijn geldig.");
-    expect(preview.notes).toContain("Onderdeelcodes bestaan uit cijfers en optionele numerieke segmenten, zoals 1, 1.1, 1.2 en 1.10. Onderdelen staan rechtstreeks onder het portfolio; een structurele map ‘Uitwerkingen’ is niet nodig. Letter-startende onderdeelcodes worden niet herkend.");
+    expect(preview.notes).toContain("Geldige codes voor portfolio's zijn bijvoorbeeld 1, A, 1A, A1, 1.1 en A.1. Mapnamen zoals “H 1.1 Stelsels”, “H 1.1 - Stelsels” en “H1.1-Stelsels” zijn geldig.");
+    expect(preview.notes).toContain("Codes voor onderdelen bestaan uit cijfers en numerieke segmenten, zoals 1, 1.1, 1.2 en 1.10. Onderdelen staan rechtstreeks onder de portfolio; een structurele map ‘Uitwerkingen’ is niet nodig. Letter-startende codes worden niet herkend.");
   });
 
   it("shows a file exercise and a matching direct resource in files mode", () => {
@@ -138,7 +138,7 @@ describe("buildSourceStructurePreview", () => {
     });
 
     expect(flatten(preview.root)).toEqual(expect.arrayContaining(["Kern", "Oef1.png", "Oef1-uitwerking.png"]));
-    expect(preview.notes).toContain("De ingestelde submapnaam bepaalt in dit voorbeeld automatisch het interne oefeningniveau.");
+    expect(preview.notes).toContain("De ingestelde submapnaam bepaalt in dit voorbeeld automatisch het niveau van de oefening.");
     expect(flatten(preview.root)).toEqual(expect.arrayContaining(["1.1 Inleiding", "Kern", "Oef1.png"]));
   });
 

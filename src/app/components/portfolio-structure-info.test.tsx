@@ -32,7 +32,7 @@ describe("portfolio source recognition info", () => {
     profile.scanner.exercise.exerciseMode = "files";
     profile.scanner.exercise.numberLocation = "start";
     const markup = renderInfo(profile);
-    expect(markup).toContain("Bestand begint met nummer");
+    expect(markup).toContain("Bestandsnaam begint met het nummer");
     expect(markup).not.toContain("Nummer staat na tekst");
   });
 

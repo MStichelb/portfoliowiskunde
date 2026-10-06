@@ -1,3 +1,5 @@
+import { sourceProfileLabels } from "./source-profile-presentation";
+import type { LearningSpaceTerminologyInput } from "./collection-terminology";
 import type {
   ExerciseLevelRecognitionConfig,
   ExerciseMode,
@@ -32,7 +34,9 @@ export function buildSourceStructurePreview(
   resources: readonly ExerciseResourceConfig[],
   levelRecognition: ExerciseLevelRecognitionConfig = { method: "none" },
   portfolioScanner: Pick<PortfolioScannerConfig, "marker"> & Partial<Pick<PortfolioScannerConfig, "themeMode">> = DEFAULT_PORTFOLIO_SCANNER_CONFIG,
+  terminology: LearningSpaceTerminologyInput = {},
 ): SourceStructurePreview {
+  const labels = sourceProfileLabels(terminology);
   const portfolioMarker = safeStem(portfolioScanner.marker, "Portfolio");
   const compactMarker = portfolioMarker.length === 1;
   const root: SourceStructurePreviewNode = {
@@ -51,20 +55,20 @@ export function buildSourceStructurePreview(
   const exerciseTwoRoot = exampleExerciseRoot(sectionTwo, "uitdaging", levelRecognition);
 
   if (scanner.exerciseMode === "files") {
-    addFileExercise(exerciseOneRoot, exerciseOne, resources, notes, levelRecognition, "basis");
+    addFileExercise(exerciseOneRoot, exerciseOne, resources, notes, levelRecognition, "basis", labels.exercise);
   } else if (scanner.exerciseMode === "directories") {
     addDirectoryExercise(exerciseOneRoot, exerciseOne, resources, notes, levelRecognition, "basis");
   } else {
-    addFileExercise(exerciseOneRoot, exerciseOne, resources, notes, levelRecognition, "basis");
+    addFileExercise(exerciseOneRoot, exerciseOne, resources, notes, levelRecognition, "basis", labels.exercise);
     addDirectoryExercise(exerciseTwoRoot, exerciseTwo, resources, notes, levelRecognition, "uitdaging");
-    notes.add("In deze stand mogen beide vormen door elkaar voorkomen. Je hoeft dus niet elke oefening zowel als bestand als map te maken.");
+    notes.add(`In deze stand mogen beide vormen door elkaar voorkomen. Je hoeft dus niet elke ${labels.exercise} zowel als bestand als map te maken.`);
   }
 
   addPath(root, [{ kind: "file", name: "header.png" }]);
-  notes.add(`Geldige portfoliocodes zijn bijvoorbeeld 1, A, 1A, A1, 1.1 en A.1. Mapnamen zoals “${portfolioMarker} 1.1 Stelsels”, “${portfolioMarker} 1.1 - Stelsels” en “${portfolioMarker}1.1-Stelsels” zijn geldig.`);
-  notes.add("Onderdeelcodes bestaan uit cijfers en optionele numerieke segmenten, zoals 1, 1.1, 1.2 en 1.10. Onderdelen staan rechtstreeks onder het portfolio; een structurele map ‘Uitwerkingen’ is niet nodig. Letter-startende onderdeelcodes worden niet herkend.");
+  notes.add(`Geldige codes voor ${labels.collections} zijn bijvoorbeeld 1, A, 1A, A1, 1.1 en A.1. Mapnamen zoals “${portfolioMarker} 1.1 Stelsels”, “${portfolioMarker} 1.1 - Stelsels” en “${portfolioMarker}1.1-Stelsels” zijn geldig.`);
+  notes.add(`Codes voor ${labels.sections} bestaan uit cijfers en numerieke segmenten, zoals 1, 1.1, 1.2 en 1.10. ${labels.terms.section.plural} staan rechtstreeks onder de ${labels.collection}; een structurele map ‘Uitwerkingen’ is niet nodig. Letter-startende codes worden niet herkend.`);
 
-  addLevelRecognitionNote(notes, levelRecognition, resources);
+  addLevelRecognitionNote(notes, levelRecognition, resources, labels.exercise);
 
   if (resources.some((resource) => resource.location.scope === "alongside_and_subdirectory")) {
     notes.add("Bij ‘direct … of in een submap’ toont dit voorbeeld één geldige plaats. De andere ingestelde plaats is ook toegestaan.");
@@ -80,13 +84,13 @@ export function buildSourceStructurePreview(
       { sourceTheme: analysis, node: { kind: "folder", name: portfolioName("2", "Limieten"), children: [] } },
       { sourceTheme: algebra, node: { kind: "folder", name: portfolioName("3", "Matrices"), children: [] } },
       { node: { kind: "folder", name: portfolioName("4", "Herhaling"), children: [] } },
-    ]);
-    notes.add("Eén mapniveau onder de bronmap wordt als thema gebruikt. De naam van die map is de bron-themanaam. Portfolio's rechtstreeks in de bronmap hebben geen thema; diepere themaniveaus worden niet herkend.");
+    ], labels.terms.theme.singular);
+    notes.add(`Eén mapniveau onder de bronmap wordt als ${labels.theme} gebruikt. ${labels.terms.collection.plural} rechtstreeks in de bronmap hebben geen ${labels.theme}; diepere niveaus worden niet herkend.`);
   }
 
   return {
-    modeLabel: modeLabel(scanner.exerciseMode),
-    explanation: modeExplanation(scanner.exerciseMode),
+    modeLabel: modeLabel(scanner.exerciseMode).replace("Oefeningen", labels.terms.exercise.plural),
+    explanation: modeExplanation(scanner.exerciseMode, labels.exercise),
     root: previewRoot,
     notes: [...notes],
   };
@@ -95,6 +99,7 @@ export function buildSourceStructurePreview(
 // Membership comes from scanner/manifest metadata, never from interpreting folder paths.
 export function groupSourceStructurePreview(
   portfolios: readonly { node: SourceStructurePreviewNode; sourceTheme?: IndexedSourceTheme }[],
+  themeLabel = "Thema",
 ): SourceStructurePreviewNode {
   const root: SourceStructurePreviewNode = { kind: "folder", name: "Bronmap", children: [] };
   const themes = new Map<string, SourceStructurePreviewNode>();
@@ -105,7 +110,7 @@ export function groupSourceStructurePreview(
     }
     let theme = themes.get(sourceTheme.sourceId);
     if (!theme) {
-      theme = { kind: "folder", name: sourceTheme.name, annotation: "Thema uit bronmap", children: [] };
+      theme = { kind: "folder", name: sourceTheme.name, annotation: `${themeLabel} uit bronmap`, children: [] };
       themes.set(sourceTheme.sourceId, theme);
       root.children!.push(theme);
     }
@@ -121,6 +126,7 @@ function addFileExercise(
   notes: Set<string>,
   levelRecognition: ExerciseLevelRecognitionConfig,
   level: "basis" | "uitdaging",
+  exerciseLabel: string,
 ) {
   addPath(root, [{ kind: "file", name: `${exerciseName}.png` }]);
 
@@ -147,7 +153,7 @@ function addFileExercise(
   }
 
   if (resources.some((resource) => resource.recognition.file?.target === "fallback" && resource.location.scope === "alongside_exercise")) {
-    notes.add("Bij een standaardregel naast oefeningsbestanden moet de bestandsnaam nog steeds het oefeningnummer bevatten, zodat de app weet bij welke oefening het bestand hoort.");
+    notes.add(`Bij een standaardregel naast bestanden van ${exerciseLabel} moet de bestandsnaam nog steeds het ${exerciseLabel}nummer bevatten, zodat de app weet bij welke ${exerciseLabel} het bestand hoort.`);
   }
 }
 
@@ -184,7 +190,7 @@ function addDirectoryExercise(
   }
 
   if (resources.length === 0) {
-    notes.add("Er zijn nog geen onderdelen per oefening ingesteld. Daarom is de oefeningsmap in het voorbeeld nog leeg.");
+    notes.add("Er zijn nog geen materialen ingesteld. Daarom is de map in het voorbeeld nog leeg.");
   }
 }
 
@@ -289,19 +295,20 @@ function addLevelRecognitionNote(
   notes: Set<string>,
   recognition: ExerciseLevelRecognitionConfig,
   resources: readonly ExerciseResourceConfig[],
+  exerciseLabel: string,
 ) {
   if (recognition.method === "none") return;
   if (recognition.method === "subdirectory") {
-    notes.add("De ingestelde submapnaam bepaalt in dit voorbeeld automatisch het interne oefeningniveau.");
+    notes.add(`De ingestelde submapnaam bepaalt in dit voorbeeld automatisch het niveau van de ${exerciseLabel}.`);
     return;
   }
   if (recognition.source.type === "exercise_directory") {
-    notes.add("De ingestelde code in de naam van de oefeningsmap bepaalt automatisch het interne oefeningniveau.");
+    notes.add(`De ingestelde code in de naam van de map van de ${exerciseLabel} bepaalt automatisch het niveau.`);
     return;
   }
   const sourceResourceId = recognition.source.resourceId;
-  const label = resources.find((resource) => resource.id === sourceResourceId)?.label ?? "het gekozen onderdeel";
-  notes.add(`De ingestelde code in de bestandsnaam van “${label}” bepaalt automatisch het interne oefeningniveau.`);
+  const label = resources.find((resource) => resource.id === sourceResourceId)?.label ?? "het gekozen materiaal";
+  notes.add(`De ingestelde code in de bestandsnaam van “${label}” bepaalt automatisch het niveau van de ${exerciseLabel}.`);
 }
 
 function modeLabel(mode: ExerciseMode): string {
@@ -310,14 +317,14 @@ function modeLabel(mode: ExerciseMode): string {
   return "Oefeningen als bestanden en mappen";
 }
 
-function modeExplanation(mode: ExerciseMode): string {
+function modeExplanation(mode: ExerciseMode, exerciseLabel = "oefening"): string {
   if (mode === "files") {
-    return "Elke oefening is een bestand. Extra bestanden moeten zelf het oefeningnummer bevatten, zodat de app weet bij welke oefening ze horen.";
+    return `Elke ${exerciseLabel} is een bestand. Extra bestanden moeten zelf het ${exerciseLabel}nummer bevatten, zodat de app weet bij welke ${exerciseLabel} ze horen.`;
   }
   if (mode === "directories") {
-    return "Elke oefening is een map. Bestanden binnen die map horen automatisch bij die oefening; de herkenningsregel bepaalt alleen nog welk soort onderdeel het is.";
+    return `Elke ${exerciseLabel} is een map. Bestanden binnen die map horen automatisch bij die ${exerciseLabel}; de herkenningsregel bepaalt welk soort materiaal het is.`;
   }
-  return "Beide vormen zijn toegestaan. In dit voorbeeld staat oefening 1 als bestand en oefening 2 als map, zodat je meteen ziet hoe beide structuren werken.";
+  return `Beide vormen zijn toegestaan. In dit voorbeeld staat ${exerciseLabel} 1 als bestand en ${exerciseLabel} 2 als map, zodat je beide structuren ziet.`;
 }
 
 function safeStem(value: string, fallback: string): string {

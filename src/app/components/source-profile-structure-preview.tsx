@@ -1,6 +1,8 @@
 "use client";
 
-import { ChevronDown, FileText, Folder, Info } from "lucide-react";
+import { useSourceProfileTerminology } from "./source-profile-presentation";
+
+import { FileText, Folder, Info } from "lucide-react";
 
 import styles from "./portfolio-resource-scanner-v2.module.css";
 import type { ExerciseLevelRecognitionConfig, ExerciseResourceConfig, ExerciseScannerConfig, PortfolioScannerConfig } from "@/lib/source-profile-config";
@@ -14,43 +16,40 @@ export function SourceProfileStructurePreview({
   portfolioScanner,
   resources,
   levelRecognition,
+  headingId = "source-structure-preview-heading",
 }: {
   scanner: ExerciseScannerConfig;
   portfolioScanner: PortfolioScannerConfig;
   resources: readonly ExerciseResourceConfig[];
   levelRecognition: ExerciseLevelRecognitionConfig;
+  headingId?: string;
 }) {
-  const preview = buildSourceStructurePreview(scanner, resources, levelRecognition, portfolioScanner);
+  const terminology = useSourceProfileTerminology();
+  const preview = buildSourceStructurePreview(scanner, resources, levelRecognition, portfolioScanner, terminology);
 
-  return <section className={styles.structurePreview} aria-labelledby="source-structure-preview-heading">
-    <details open>
-      <summary className={styles.structurePreviewSummary}>
-        <span>
-          <strong id="source-structure-preview-heading">Zo kan je Drive-map eruitzien</strong>
-          <small>Een concreet voorbeeld op basis van je instellingen</small>
-        </span>
-        <ChevronDown size={18} aria-hidden className={styles.structurePreviewChevron} />
-      </summary>
-
-      <div className={styles.structurePreviewBody}>
-        <div className={styles.structurePreviewIntro}>
-          <div className={styles.structurePreviewIntroIcon}><Info size={17} aria-hidden /></div>
-          <div>
-            <strong>{preview.modeLabel}</strong>
-            <p>{preview.explanation}</p>
-            <p className={styles.structurePreviewMuted}>Dit is één geldig voorbeeld. Je eigen namen mogen verschillen zolang ze voldoen aan de herkenningsregels die je hierboven instelt.</p>
-          </div>
+  return <section className={styles.structurePreview} aria-labelledby={headingId}>
+    <div className={styles.structurePreviewHeading}>
+      <h3 id={headingId}>Voorbeeld van je bronmap</h3>
+      <p>Een voorbeeld op basis van je instellingen.</p>
+    </div>
+    <div className={styles.structurePreviewBody}>
+      <div className={styles.structurePreviewIntro}>
+        <div className={styles.structurePreviewIntroIcon}><Info size={17} aria-hidden /></div>
+        <div>
+          <strong>{preview.modeLabel}</strong>
+          <p>{preview.explanation}</p>
+          <p className={styles.structurePreviewMuted}>Dit is één geldig voorbeeld. Je eigen namen mogen verschillen zolang ze voldoen aan de herkenningsregels die je hierboven instelt.</p>
         </div>
-
-        <div className={styles.structureTree} role="group" aria-label="Voorbeeld van de mapstructuur">
-          <PreviewTreeNode node={preview.root} depth={0} />
-        </div>
-
-        {preview.notes.length > 0 ? <div className={styles.structurePreviewNotes}>
-          {preview.notes.map((note) => <p key={note}><Info size={14} aria-hidden />{note}</p>)}
-        </div> : null}
       </div>
-    </details>
+
+      <div className={styles.structureTree} role="group" aria-label="Voorbeeld van de mapstructuur">
+        <PreviewTreeNode node={preview.root} depth={0} />
+      </div>
+
+      {preview.notes.length > 0 ? <div className={styles.structurePreviewNotes}>
+        {preview.notes.map((note) => <p key={note}><Info size={14} aria-hidden />{note}</p>)}
+      </div> : null}
+    </div>
   </section>;
 }
 
