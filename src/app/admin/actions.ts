@@ -8,7 +8,9 @@ import { z } from "zod";
 import { endAdminSession, requireAdmin, requireAdminUser } from "@/lib/auth";
 import { bulkSelectionError } from "@/lib/admin-validation";
 import { adminExerciseNoteReturnHref } from "@/lib/admin-routes";
-import { CollectionTerminologyError, initialLearningSpaceDescription } from "@/lib/collection-terminology";
+import { CollectionTerminologyError, initialLearningSpaceDescription, learningSpaceTerminologyLabel } from "@/lib/collection-terminology";
+import { WIZARD_DEFAULT_DESCRIPTION, parseCreationProfileDraft, validateCreationStep, MISSING_PROFILE_MESSAGE, MISSING_SOURCE_MESSAGE, type CreationProfileChoice, type CreationResult } from "@/lib/learning-space-creation-wizard";
+import { getActiveSourceProfileForLearningSpace } from "@/lib/source-profiles";
 import { requireLearningSpaceConfiguration, requireLearningSpaceCreation, requireLearningSpaceManagement } from "@/lib/authorization";
 import { exerciseNoteSchema } from "@/lib/exercise-note";
 import { EXERCISE_LEVELS, validateExerciseLevelOverrideInput, type ExerciseLevel, type ExerciseLevelOverrideInput } from "@/lib/exercise-level";
@@ -19,6 +21,7 @@ import { parseBrusselsDateTime, type ChildVisibilityMode, type PortfolioVisibili
 import { portfolioCustomMessageSchema } from "@/lib/portfolio-custom-message";
 import {
   getAdminPortfolioAny,
+  getAdminPortfolios,
   getAdminExercise,
   getErrorReportThreadLearningSpaceId,
   getErrorReportLearningSpaceId,
@@ -90,6 +93,8 @@ export async function syncSpaceAction(_previousState: AdminActionState, formData
     const result = await synchronizeSource(learningSpaceId);
     if (result.skipped) return { error: "skipReason" in result && result.skipReason === "archived"
       ? "Deze leeromgeving is gearchiveerd en kan niet worden gesynchroniseerd."
+      : "skipReason" in result && result.skipReason === "configuration"
+      ? "Stel eerst een bronprofiel en een bron in voordat je synchroniseert."
       : "Er loopt al een synchronisatie voor deze leeromgeving." };
   } catch (error) {
     const message = userFacingSourceError(error);
@@ -210,28 +215,81 @@ export async function saveLearningSpaceEditorPermissionsAction(learningSpaceId: 
   }
 }
 
-export async function createLearningSpaceAction(formData: FormData) {
+export async function createLearningSpaceAction(formData: FormData): Promise<void | CreationResult> {
   const admin = await requireAdminUser();
   requireLearningSpaceCreation(admin);
+  const wizard = stringValue(formData, "creationFlow") === "wizard";
+  if (wizard) {
+    for (let step = 1; step <= 4; step++) {
+      const error = validateCreationStep(step, formData);
+      if (error) return { error, step };
+    }
+  }
   const returnToAdmin = stringValue(formData, "returnTo") === "admin";
   let input: ReturnType<typeof learningSpaceInput>;
   try {
-    input = learningSpaceInput(formData, true);
+    const creationForm = new FormData();
+    for (const [key, value] of formData.entries()) creationForm.append(key, value);
+    if (wizard) {
+      creationForm.delete("primaryProviderType");
+      creationForm.delete("mirrorEnabled");
+      if (!stringValue(formData, "description")) creationForm.set("description", WIZARD_DEFAULT_DESCRIPTION);
+      if (stringValue(formData, "sourceSetup") === "later") creationForm.set("sourceType", "local");
+    }
+    input = learningSpaceInput(creationForm, true);
+    if (wizard) {
+      const mode = stringValue(formData, "profileMode") as CreationProfileChoice["mode"];
+      input.creationProfileChoice = mode === "new" || mode === "later" ? { mode } : { mode, id: stringValue(formData, "profileSelectionId") };
+      const choice = input.creationProfileChoice;
+      if (formData.has("profileDraftEnabled") && choice && (choice.mode === "template" || choice.mode === "copy" || choice.mode === "new")) {
+        input.creationProfileChoice = { ...choice, config: parseCreationProfileDraft(formData) };
+      }
+      if (stringValue(formData, "sourceSetup") === "later") {
+        input = { ...input, skipSourceOnCreation: true, sourceType: "local", localSourcePath: null, oneDriveDriveId: null, oneDriveFolderId: null, googleDriveFolderId: null };
+      }
+    }
     input = await assignOwnedStorageConnections(input, admin.id);
   } catch (error) {
+    if (wizard) return { error: error instanceof Error ? error.message : "Controleer de ingevulde gegevens.", step: 4 };
     redirect(`/admin?create=1&createError=${error instanceof SubjectSelectionError ? "subject" : "invalid"}`);
   }
-  if (await getAdminLearningSpaceBySlug(input.slug)) redirect("/admin?create=1&createError=duplicate");
+  if (await getAdminLearningSpaceBySlug(input.slug)) {
+    if (wizard) return { error: "Deze URL bestaat al. Kies een andere URL.", step: 1 };
+    redirect("/admin?create=1&createError=duplicate");
+  }
   let space;
   try {
     space = await createLearningSpaceForOwner(input, admin.id);
   } catch (error) {
+    if (wizard) return { error: isUniqueConstraintError(error) ? "Deze URL of profielnaam bestaat al. Kies een andere naam." : error instanceof Error ? error.message : "De leeromgeving kon niet worden aangemaakt.", step: error instanceof SubjectSelectionError || isUniqueConstraintError(error) ? 1 : 3 };
     if (error instanceof SubjectSelectionError) redirect("/admin?create=1&createError=subject");
     if (error instanceof CollectionTerminologyError) redirect("/admin?create=1&createError=invalid");
     if (isUniqueConstraintError(error)) redirect("/admin?create=1&createError=duplicate");
     throw error;
   }
   revalidatePath("/admin");
+  if (wizard) {
+    const warnings: string[] = [];
+    const profile = await getActiveSourceProfileForLearningSpace(space.id);
+    const editProfile = Boolean(profile && !(input.creationProfileChoice && "config" in input.creationProfileChoice && input.creationProfileChoice.config) && (input.creationProfileChoice?.mode === "new" || (input.creationProfileChoice?.mode === "template" && stringValue(formData, "profileIntent") === "edit")));
+    if (!profile) warnings.push(MISSING_PROFILE_MESSAGE);
+    if (input.skipSourceOnCreation) warnings.push(MISSING_SOURCE_MESSAGE);
+    let summary = "Leeromgeving aangemaakt.";
+    if (editProfile) warnings.push("Pas je eigen bronprofiel aan voordat je de eerste synchronisatie start.");
+    if (profile && !input.skipSourceOnCreation && !editProfile) {
+      try {
+        const result = await synchronizeSource(space.id);
+        if (result.skipped) warnings.push("De eerste synchronisatie is nog niet uitgevoerd. Je kunt deze later starten.");
+        else {
+          const portfolios = await getAdminPortfolios(space.id);
+          const sections = portfolios.reduce((sum, portfolio) => sum + portfolio.sections.length, 0);
+          const exercises = portfolios.reduce((sum, portfolio) => sum + (portfolio.exercises?.length ?? 0) + portfolio.sections.reduce((count, section) => count + section.exercises.length, 0), 0);
+          summary = `${portfolios.length} ${learningSpaceTerminologyLabel(space, "collection", portfolios.length === 1 ? "singular" : "plural", "inline")}, ${sections} ${learningSpaceTerminologyLabel(space, "section", sections === 1 ? "singular" : "plural", "inline")} en ${exercises} ${learningSpaceTerminologyLabel(space, "exercise", exercises === 1 ? "singular" : "plural", "inline")} herkend. ${result.warnings} waarschuwingen.`;
+        }
+      } catch (error) { warnings.push(userFacingSourceError(error) ?? "De eerste synchronisatie is niet gelukt. Controleer je bron via Instellingen."); }
+    }
+    return { error: null, spaceId: space.id, slug: space.slug, summary, warnings, ...(editProfile && profile ? { editProfileId: profile.id } : {}) };
+  }
   redirect(returnToAdmin ? "/admin?created=1" : `/admin/${encodeURIComponent(space.slug)}/instellingen`);
 }
 

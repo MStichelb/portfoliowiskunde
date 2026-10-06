@@ -3,13 +3,19 @@ import Link from "next/link";
 
 import type { AvailableSourceProfile } from "@/lib/source-profiles";
 import { sourceProfileUsageLabel } from "@/lib/source-profile-usage";
+import { MISSING_PROFILE_MESSAGE } from "@/lib/learning-space-creation-wizard";
+import type { SourceProfileTemplateSummary } from "@/lib/source-profile-templates";
+import { copyManagedSourceProfileTemplateAction } from "@/app/admin/bronprofielen/actions";
 
-export function SourceProfileCard({ profile, canConfigure }: {
-  profile: AvailableSourceProfile;
+export function SourceProfileCard({ profile, canConfigure, learningSpaceId, templates = [] }: {
+  profile: AvailableSourceProfile | null;
   canConfigure: boolean;
+  learningSpaceId?: string;
+  templates?: SourceProfileTemplateSummary[];
 }) {
+  if (!profile) return <section id="source-profile-settings" className="settings-card source-profile-card"><h2>Bronprofiel</h2><p className="archived-message">{MISSING_PROFILE_MESSAGE}</p>{canConfigure && learningSpaceId ? <form action={copyManagedSourceProfileTemplateAction} className="settings-grid"><input type="hidden" name="managementLearningSpaceId" value={learningSpaceId} /><label>Sjabloon<select name="templateId" required defaultValue={templates.find((template) => template.isDefault)?.id ?? templates[0]?.id}>{templates.map((template) => <option key={template.id} value={template.id}>{template.name}</option>)}</select></label><button type="submit" className="primary-button">Eigen bronprofiel instellen</button></form> : null}</section>;
   const isShared = profile.usageCount > 1;
-  return <section className="settings-card source-profile-card" aria-labelledby="source-profile-heading">
+  return <section id="source-profile-settings" className="settings-card source-profile-card" aria-labelledby="source-profile-heading">
     <div className="source-profile-heading">
       <div>
         <h2 id="source-profile-heading">Bronprofiel</h2>

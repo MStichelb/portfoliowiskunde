@@ -6,7 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { syncSpaceAction, type AdminActionState } from "@/app/admin/actions";
 import { SubmitButton } from "@/app/components/submit-button";
 
-export function SyncSpaceForm({ learningSpaceId }: { learningSpaceId: string }) {
+export function SyncSpaceForm({ learningSpaceId, disabledReason }: { learningSpaceId: string; disabledReason?: string | null }) {
   const [state, action] = useActionState(syncSpaceAction, { error: null } satisfies AdminActionState);
   const [dismissedState, setDismissedState] = useState<AdminActionState | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -35,7 +35,7 @@ export function SyncSpaceForm({ learningSpaceId }: { learningSpaceId: string }) 
 
   return <><form ref={formRef} action={action}>
     <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
-    <SubmitButton className="primary-button sync-submit-button" pendingLabel="Synchroniseren..."><RefreshCw size={17} aria-hidden />Nu synchroniseren</SubmitButton>
+    <SubmitButton className={`primary-button sync-submit-button${disabledReason ? " sync-setup-disabled" : ""}`} pendingLabel="Synchroniseren..." disabled={Boolean(disabledReason)} title={disabledReason ?? undefined}><RefreshCw size={17} aria-hidden />Nu synchroniseren</SubmitButton>
     {state.error && conflictMessage === null ? <p className="form-message" role="alert">{state.error}</p> : null}
   </form>
     {open ? <div className="confirm-backdrop" role="presentation">

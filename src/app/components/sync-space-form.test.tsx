@@ -45,6 +45,15 @@ beforeEach(() => {
 });
 
 describe("SyncSpaceForm", () => {
+  it.each(["Stel eerst een bronprofiel en bron in.", "Stel eerst een bronprofiel in.", "Stel eerst een bron in.", null])("keeps the sync button visible and applies reason %s", (disabledReason) => {
+    const markup = renderToStaticMarkup(<SyncSpaceForm learningSpaceId="space-5" disabledReason={disabledReason} />);
+    expect(markup).toContain("Nu synchroniseren");
+    expect(markup.includes('disabled=""')).toBe(Boolean(disabledReason));
+    expect(markup.includes("sync-setup-disabled")).toBe(Boolean(disabledReason));
+    expect(markup).toContain("primary-button sync-submit-button");
+    if (disabledReason) expect(markup).toContain(`title="${disabledReason}"`);
+  });
+
   it("keeps the existing sync action wiring and shows RefreshCw", () => {
     const markup = render();
 

@@ -303,3 +303,21 @@
     display: none;
   }
 }
+
+/* The existing profile editors also run inside the narrower creation wizard. */
+:global(.creation-profile-editor) .scannerControls,
+:global(.creation-profile-editor) .stackedField,
+:global(.creation-profile-editor) .control,
+:global(.creation-profile-editor) .levelMappingGrid > * {
+  min-width: 0;
+}
+:global(.creation-profile-editor) .structureTreeRow { flex-wrap: wrap; }
+:global(.creation-profile-editor) .structureTreeRow > span { min-width: 0; overflow-wrap: anywhere; }
+@container (max-width: 660px) {
+  :global(.creation-profile-editor) .twoColumnControls,
+  :global(.creation-profile-editor) .levelMappingGrid { grid-template-columns: minmax(0, 1fr); }
+}
+@container (max-width: 440px) {
+  :global(.creation-profile-editor) .twoColumnControls,
+  :global(.creation-profile-editor) .levelMappingGrid { grid-template-columns: minmax(0, 1fr); }
+}

@@ -1,3 +1,6 @@
+import { getActiveSourceProfileForLearningSpace } from "@/lib/source-profiles";
+import { hasConfiguredActiveSource } from "@/lib/storage";
+import { setupSyncDisabledReason, type LearningSpaceSetup } from "@/lib/learning-space-setup";
 import { Bell, Info, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 
@@ -8,19 +11,22 @@ import type { AppUser } from "@/lib/identity";
 import type { LearningSpaceSourceStatus } from "@/lib/learning-space-source-status";
 import { getLatestSyncSummary, getOpenErrorThreadCount, type LearningSpace } from "@/lib/repositories";
 
-export async function AdminSpaceHeader({ current, section, user, canConfigure, sourceStatus }: {
+export async function AdminSpaceHeader({ current, section, user, canConfigure, sourceStatus, setup }: {
   current: LearningSpace;
   section: AdminSpaceSection;
   user: AppUser;
   canConfigure?: boolean;
   sourceStatus?: LearningSpaceSourceStatus;
+  setup?: LearningSpaceSetup;
 }) {
-  const [sync, reportCount] = await Promise.all([
+  const [sync, reportCount, currentSetup] = await Promise.all([
     sourceStatus ? Promise.resolve(null) : getLatestSyncSummary(current.id),
     getOpenErrorThreadCount(current.id),
+    setup ? Promise.resolve(setup) : Promise.all([getActiveSourceProfileForLearningSpace(current.id), hasConfiguredActiveSource(current.id)]).then(([profile, source]) => ({ missingProfile: !profile, missingSource: !source })),
   ]);
   const showSettings = canConfigure ?? await canConfigureLearningSpace(user, current.id);
-  const syncSummary = sourceStatus ? sourceStatusSummaryLabel(sourceStatus) : sync ? syncSummaryLabel(sync) : "Nog niet gesynchroniseerd.";
+  const disabledReason = setupSyncDisabledReason(currentSetup);
+  const syncSummary = disabledReason ?? (sourceStatus ? sourceStatusSummaryLabel(sourceStatus) : sync ? syncSummaryLabel(sync) : "Nog niet gesynchroniseerd.");
   return <>
     <header className="admin-header admin-space-header">
       <div><p className="eyebrow">Beheer</p><h1>{current.name}</h1><p className="file-reference">{syncSummary}</p></div>
@@ -32,7 +38,7 @@ export async function AdminSpaceHeader({ current, section, user, canConfigure, s
           aria-current={section === "status" ? "page" : undefined}
         ><Info size={17} aria-hidden />Status</Link>
         <Link className="secondary-button link-button notification-link" href={`/admin/${encodeURIComponent(current.slug)}/foutmeldingen`}><Bell size={17} aria-hidden />Foutmeldingen{reportCount > 0 ? <span className="notification-badge">{reportCount}</span> : null}</Link>
-        {current.isActive ? <SyncSpaceForm learningSpaceId={current.id} /> : null}
+        {current.isActive ? <SyncSpaceForm learningSpaceId={current.id} disabledReason={disabledReason} /> : null}
       </div>
     </header>
     <LearningSpaceNav current={current} section={section} showSettings={showSettings} />

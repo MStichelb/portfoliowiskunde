@@ -26,7 +26,9 @@ import { getLearningSpaceTerminology, initialLearningSpaceDescription, normalize
 import { comparePortfolioIds, comparePortfolioRelativePaths, normalizeSectionCode, relativePathBelongsToDirectory } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { ExerciseNotePosition } from "@/lib/exercise-note";
-import { LEGACY_SUPERADMIN_USER_ID } from "@/lib/identity";
+import { getUser, LEGACY_SUPERADMIN_USER_ID } from "@/lib/identity";
+import { prepareCreationSourceProfile } from "@/lib/source-profiles";
+import type { CreationProfileChoice } from "@/lib/learning-space-creation-wizard";
 import type { SourceManifestEntry } from "@/lib/source-comparison";
 import { getDefaultSourceProfileTemplate, prepareSourceProfileTemplateClone } from "@/lib/source-profile-templates";
 import {
@@ -283,6 +285,8 @@ export interface LearningSpaceSourceInput {
 
 export interface LearningSpaceInput {
   subjectId: string;
+  creationProfileChoice?: CreationProfileChoice;
+  skipSourceOnCreation?: boolean;
   themeLabelSingular?: string;
   themeLabelPlural?: string;
   sectionLabelSingular?: string;
@@ -693,10 +697,17 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
   const description = input.description?.trim() ? input.description : initialLearningSpaceDescription(terminology.plural, exerciseTerminology.plural);
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
-  const template = await getDefaultSourceProfileTemplate();
   const profileOwnerUserId = ownerUserId ?? LEGACY_SUPERADMIN_USER_ID;
-  const profileName = await availableSourceProfileName(profileOwnerUserId, template.name);
-  const profileClone = prepareSourceProfileTemplateClone({ ...template, name: profileName }, id, profileOwnerUserId, now);
+  let profileClone;
+  if (input.creationProfileChoice) {
+    const creator = ownerUserId ? await getUser(ownerUserId) : null;
+    if (!creator) throw new Error("Een maker is vereist voor deze bronprofielkeuze.");
+    profileClone = await prepareCreationSourceProfile(creator, id, input.creationProfileChoice, now);
+  } else {
+    const template = await getDefaultSourceProfileTemplate();
+    const profileName = await availableSourceProfileName(profileOwnerUserId, template.name);
+    profileClone = prepareSourceProfileTemplateClone({ ...template, name: profileName }, id, profileOwnerUserId, now);
+  }
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
   const mirror = input.mirrorSource ?? null;
   const levelPresentation = validateExerciseLevelPresentation(input.levelPresentation ?? DEFAULT_EXERCISE_LEVEL_PRESENTATION);
@@ -707,7 +718,7 @@ async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUser
       primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now, input.subjectId] }];
   statements.push(...levelPresentationStatements(id, levelPresentation));
   statements.push(...profileClone.statements);
-  statements.push(sourceUpsertStatement(id, "primary", primary, true, now));
+  if (!input.skipSourceOnCreation) statements.push(sourceUpsertStatement(id, "primary", primary, true, now));
   if (mirror) statements.push(sourceUpsertStatement(id, "mirror", mirror, false, now));
   if (ownerUserId) {
     statements.push({

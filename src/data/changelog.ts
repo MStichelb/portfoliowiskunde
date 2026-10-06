@@ -28,6 +28,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-06-wizard-nieuwe-leeromgeving",
+  date: "2026-10-06",
+  category: "improved",
+  title: "Een nieuwe leeromgeving stap voor stap instellen",
+  description: "Nieuwe leeromgevingen kun je stap voor stap instellen, met eigen benamingen en een bronprofiel dat je meteen kunt aanpassen. Je kiest zelf welke bron je gebruikt of wat je later instelt; het beheer toont wat nog ontbreekt.",
+  audiences: ["teacher", "superadmin"],
+  notify: true,
+}, {
   id: "2026-10-06-benamingen-leeromgeving",
   date: "2026-10-06",
   category: "improved",

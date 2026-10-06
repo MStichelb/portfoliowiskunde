@@ -20,6 +20,7 @@ vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
 vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: mocks.canConfigureLearningSpace }));
 vi.mock("@/lib/repositories", () => ({ getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug }));
 vi.mock("@/lib/source-profiles", () => ({ getSourceProfileForLearningSpaceCard: mocks.getSourceProfileForLearningSpaceCard }));
+vi.mock("@/lib/source-profile-templates", () => ({ listSourceProfileTemplates: vi.fn(async () => []) }));
 vi.mock("@/lib/subjects", () => ({ listActiveSubjects: mocks.listActiveSubjects }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
 vi.mock("../../actions", () => ({ saveLearningSpaceAction: mocks.saveLearningSpaceAction }));
@@ -111,7 +112,7 @@ describe("LearningSpace settings page", () => {
       params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({}),
     }));
     const props = mocks.sourceProfileCard.mock.calls[0][0] as Record<string, unknown>;
-    expect(props).toEqual({ profile: expect.objectContaining({ name: "Standaard portfolio" }), canConfigure: true });
+    expect(props).toMatchObject({ profile: expect.objectContaining({ name: "Standaard portfolio" }), canConfigure: true });
     expect(props).not.toHaveProperty("actions");
     expect(props).not.toHaveProperty("initialModal");
   });

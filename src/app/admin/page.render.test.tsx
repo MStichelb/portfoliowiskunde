@@ -23,6 +23,7 @@ vi.mock("@/lib/authorization", () => ({
   getManageableLearningSpaceIds: mocks.getManageableLearningSpaceIds,
 }));
 vi.mock("@/lib/repositories", () => ({ getLearningSpaces: mocks.getLearningSpaces }));
+vi.mock("@/lib/learning-space-creation-options", () => ({ getLearningSpaceCreationOptions: vi.fn(async () => ({ templates: [], copies: [], links: [] })) }));
 vi.mock("@/lib/subjects", () => ({ listActiveSubjects: mocks.listActiveSubjects }));
 vi.mock("@/lib/user-learning-space-order", () => ({ orderLearningSpacesForUser: mocks.orderLearningSpacesForUser }));
 vi.mock("@/lib/user-management", () => ({

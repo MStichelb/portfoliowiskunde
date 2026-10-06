@@ -12,7 +12,7 @@ describe("LearningSpaceCreateModal", () => {
     expect(markup).not.toContain('role="dialog"');
   });
 
-  it("renders the existing general create form and cancel action when open", () => {
+  it("renders the four-step wizard and cancel action when open", () => {
     const markup = renderToStaticMarkup(<LearningSpaceCreateModal action={() => undefined} subjects={subjects} initialOpen />);
 
     expect(markup).toContain('role="dialog"');
@@ -24,10 +24,10 @@ describe("LearningSpaceCreateModal", () => {
     expect(markup).toContain('name="description"');
     expect(markup).toContain('name="cardColor"');
     expect(markup).toContain('name="subjectId"');
-    expect(markup).toContain("Omschrijving");
-    expect(markup).toContain('name="returnTo" value="admin"');
+    expect(markup).toContain("Beschrijving");
+    expect(markup).toContain('name="creationFlow" value="wizard"');
     expect(markup).toContain("Annuleren");
-    expect(markup).not.toContain('name="sourceType"');
+    expect(markup).toContain('data-step="4" hidden=""');
   });
 
   it("keeps a validation error visible inside the open modal", () => {

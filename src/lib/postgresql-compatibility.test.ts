@@ -35,6 +35,9 @@ import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, INITIAL_SOURCE_PROFILE_TEMPLATE
 import { createSourceProfileTemplate, updateSourceProfileTemplateMetadata } from "./source-profile-templates";
 import { createSubject, renameSubject } from "./subjects";
 
+import { getActiveSourceProfileForLearningSpace } from "./source-profiles";
+import { getDefaultSourceProfileTemplate } from "./source-profile-templates";
+
 const postgresUrl = process.env.POSTGRES_TEST_DATABASE_URL?.trim();
 const describeWithPostgres = postgresUrl ? describe : describe.skip;
 let originalDatabaseUrl: string | undefined;
@@ -55,6 +58,27 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     if (originalDatabasePath === undefined) delete process.env.PORTFOLIO_DATABASE_PATH;
     else process.env.PORTFOLIO_DATABASE_PATH = originalDatabasePath;
     resetDatabaseForTests();
+  });
+
+  it("creates wizard profile choices and skipped sources in the same owner transaction", async () => {
+    const suffix = randomUUID();
+    const teacher = await createUser({ displayName: `Wizard ${suffix}`, role: "teacher" });
+    const template = await getDefaultSourceProfileTemplate();
+    const input = { subjectId: "subject-wiskunde", name: "Wizard PostgreSQL", shortLabel: "PG", sourceType: "local" as const, localSourcePath: null, skipSourceOnCreation: true };
+    const later = await createLearningSpaceForOwner({ ...input, slug: `pg-later-${suffix}`, creationProfileChoice: { mode: "later" } }, teacher.id);
+    expect(await getActiveSourceProfileForLearningSpace(later.id)).toBeNull();
+    expect(await getActiveLearningSpaceSource(later.id)).toBeNull();
+    const original = await createLearningSpaceForOwner({ ...input, slug: `pg-template-${suffix}`, creationProfileChoice: { mode: "template", id: template.id } }, teacher.id);
+    const profile = (await getActiveSourceProfileForLearningSpace(original.id))!;
+    const linked = await createLearningSpaceForOwner({ ...input, slug: `pg-link-${suffix}`, creationProfileChoice: { mode: "link", id: profile.id } }, teacher.id);
+    const draft = structuredClone(profile.config); draft.scanner.portfolio.marker = "Eigen bundel";
+    const copied = await createLearningSpaceForOwner({ ...input, slug: `pg-copy-${suffix}`, creationProfileChoice: { mode: "copy", id: original.id, config: draft } }, teacher.id);
+    expect((await getActiveSourceProfileForLearningSpace(linked.id))?.id).toBe(profile.id);
+    const copy = (await getActiveSourceProfileForLearningSpace(copied.id))!;
+    expect(copy.id).not.toBe(profile.id); expect(copy.config).toEqual(draft);
+    expect((await getActiveSourceProfileForLearningSpace(original.id))?.config).toEqual(profile.config);
+    const members = await (await getDatabase()).execute({ sql: "SELECT role FROM learning_space_members WHERE learning_space_id = ? AND user_id = ?", args: [copied.id, teacher.id] });
+    expect(members.rows[0]?.role).toBe("owner");
   });
 
   it("applies every migration and exercises representative shared repository queries", async () => {

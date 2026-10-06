@@ -7,6 +7,16 @@ import type { AvailableSourceProfile } from "@/lib/source-profiles";
 import { displayProfileDescription, SourceProfileCard } from "./source-profile-card";
 
 describe("SourceProfileCard", () => {
+  it("offers the existing template-copy flow only to configure an absent profile", () => {
+    const markup = renderToStaticMarkup(<SourceProfileCard profile={null} canConfigure learningSpaceId="space-new" />);
+    expect(markup).toContain('id="source-profile-settings"');
+    expect(markup).toContain("Er is nog geen bronprofiel ingesteld.");
+    expect(markup).toContain('name="managementLearningSpaceId" value="space-new"');
+    expect(markup).toContain("Eigen bronprofiel instellen");
+    const readOnly = renderToStaticMarkup(<SourceProfileCard profile={null} canConfigure={false} learningSpaceId="space-new" />);
+    expect(readOnly).not.toContain("<form");
+  });
+
   it("does not present a concrete snapshot as the app-wide template", () => {
     expect(displayProfileDescription("Appbreed standaardsjabloon voor de huidige portfolio- en bestandsconventies.")).toBe("Gebaseerd op het appbrede standaardsjabloon.");
   });
@@ -14,6 +24,7 @@ describe("SourceProfileCard", () => {
   it("keeps the LearningSpace card read-only for an owner", () => {
     const markup = renderCard(true);
     expect(markup).toContain("Bronprofiel");
+    expect(markup).toContain('id="source-profile-settings"');
     expect(markup).toContain("Eigen profiel");
     expect(markup).toContain("Eigenaar: Mathias");
     expect(markup).toContain("Bronprofielen beheren");

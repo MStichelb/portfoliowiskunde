@@ -14,7 +14,7 @@ import {
   type ExerciseLevelSymbolId,
 } from "@/lib/exercise-level-presentation";
 
-export function ExerciseLevelPresentationSettings({ initialPresentation }: { initialPresentation?: ExerciseLevelPresentation }) {
+export function ExerciseLevelPresentationSettings({ initialPresentation, layout = "rows" }: { initialPresentation?: ExerciseLevelPresentation; layout?: "rows" | "cards" }) {
   const [presentation, setPresentation] = useState<ExerciseLevelPresentation>(initialPresentation ?? DEFAULT_EXERCISE_LEVEL_PRESENTATION);
   const update = (level: ExerciseLevel, item: Partial<ExerciseLevelPresentation[ExerciseLevel]>) => {
     setPresentation((current) => ({ ...current, [level]: { ...current[level], ...item } }));
@@ -23,7 +23,7 @@ export function ExerciseLevelPresentationSettings({ initialPresentation }: { ini
     setPresentation((current) => resetExerciseLevelPresentation(current, level));
   };
 
-  return <div className="personalization-settings-section exercise-level-presentation-settings">
+  return <div className={`personalization-settings-section exercise-level-presentation-settings${layout === "cards" ? " exercise-level-presentation-cards" : ""}`}>
     <div><h3>Niveaus</h3><p>Pas per niveau de naam, het symbool, het aantal, de kleur en de leerlingachtergrond aan.</p></div>
     <div className="exercise-level-presentation-list">
       {EXERCISE_LEVELS.map((level) => <div className="exercise-level-presentation-row" key={level}>
@@ -46,7 +46,7 @@ export function ExerciseLevelPresentationSettings({ initialPresentation }: { ini
         <label className="exercise-level-public-background">Achtergrond
           <input name={`levelShowPublicBackground_${level}`} type="checkbox" value="true" checked={presentation[level].showPublicBackground} onChange={(event) => update(level, { showPublicBackground: event.target.checked })} />
         </label>
-        <span className="exercise-level-presentation-preview"><span className="sr-only">Voorbeeld: </span><ExerciseLevelBadge level={level} presentation={presentation} context="public" /></span>
+        {layout === "cards" ? <div className="exercise-level-preview-field"><span>Voorbeeld</span><span className="exercise-level-presentation-preview"><ExerciseLevelBadge level={level} presentation={presentation} context="public" /></span></div> : <span className="exercise-level-presentation-preview"><span className="sr-only">Voorbeeld: </span><ExerciseLevelBadge level={level} presentation={presentation} context="public" /></span>}
         <button className="mini-icon-button exercise-level-presentation-reset" type="button" onClick={() => reset(level)} aria-label={`Herstel standaardinstellingen voor ${presentation[level].displayName}`} title="Standaard herstellen"><RotateCcw size={15} aria-hidden /></button>
       </div>)}
     </div>

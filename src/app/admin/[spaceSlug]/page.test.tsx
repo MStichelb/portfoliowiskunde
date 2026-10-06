@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
   canManageLearningSpace: vi.fn(),
   canConfigureLearningSpace: vi.fn(),
   getLearningSpaceSourceStatus: vi.fn(),
+  getActiveSourceProfile: vi.fn(),
+  hasConfiguredActiveSource: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
   getAdminPortfolios: vi.fn(),
   getThemes: vi.fn(),
@@ -21,6 +23,8 @@ vi.mock("@/lib/authorization", () => ({
   canConfigureLearningSpace: mocks.canConfigureLearningSpace,
 }));
 vi.mock("@/lib/learning-space-source-status", () => ({ getLearningSpaceSourceStatus: mocks.getLearningSpaceSourceStatus }));
+vi.mock("@/lib/source-profiles", () => ({ getActiveSourceProfileForLearningSpace: mocks.getActiveSourceProfile }));
+vi.mock("@/lib/storage", () => ({ hasConfiguredActiveSource: mocks.hasConfiguredActiveSource }));
 vi.mock("@/lib/repositories", () => ({
   getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug,
   getAdminPortfolios: mocks.getAdminPortfolios,
@@ -50,9 +54,47 @@ describe("LearningSpace portfolio management source status", () => {
     mocks.getLearningSpaceSourceStatus.mockResolvedValue({ learningSpaceId: "space-5" });
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
     mocks.getAdminPortfolios.mockResolvedValue([]);
+    mocks.getActiveSourceProfile.mockResolvedValue({ id: "profile-1" });
+    mocks.hasConfiguredActiveSource.mockResolvedValue(true);
     mocks.getThemes.mockResolvedValue([]);
     mocks.getActiveWarningCounts.mockResolvedValue(new Map());
     mocks.getMissingIndexCounts.mockResolvedValue({ exercises: 0, assets: 0 });
+  });
+
+  it.each([[true, true], [true, false], [false, true], [false, false]])("shows only missing setup items for profile=%s/source=%s", async (missingProfile, missingSource) => {
+    mocks.canConfigureLearningSpace.mockResolvedValue(true);
+    mocks.getActiveSourceProfile.mockResolvedValue(missingProfile ? null : { id: "profile" });
+    mocks.hasConfiguredActiveSource.mockResolvedValue(!missingSource);
+    const markup = renderToStaticMarkup(await LearningSpaceAdminPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+    expect(markup.includes("Maak de configuratie af")).toBe(missingProfile || missingSource);
+    expect(markup.includes("Bronprofiel instellen")).toBe(missingProfile);
+    expect(markup.includes("Bron instellen")).toBe(missingSource);
+    expect(mocks.header).toHaveBeenCalledWith(expect.objectContaining({ setup: { missingProfile, missingSource } }));
+    if (!missingProfile && !missingSource) expect(markup).toContain("Synchroniseer om de eerste inhoud te laden.");
+  });
+
+  it("shows a content empty state after successful synchronization", async () => {
+    mocks.getLearningSpaceSourceStatus.mockResolvedValue({ synchronization: { latestSuccessful: { id: "sync" } } });
+    const markup = renderToStaticMarkup(await LearningSpaceAdminPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+    expect(markup).toContain("Nog geen");
+    expect(markup).not.toContain("Synchroniseer om de eerste inhoud");
+  });
+
+  it("shows incomplete configuration warnings and removes them after configuration", async () => {
+    mocks.getActiveSourceProfile.mockResolvedValue(null);
+    mocks.hasConfiguredActiveSource.mockResolvedValue(false);
+    const incomplete = renderToStaticMarkup(await LearningSpaceAdminPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+    expect(incomplete).toContain("Bronprofiel ontbreekt");
+    expect(incomplete).toContain("Bron ontbreekt");
+    expect(incomplete.match(/Bronprofiel ontbreekt/g)).toHaveLength(1);
+    expect(incomplete.match(/Bron ontbreekt/g)).toHaveLength(1);
+    expect(incomplete).toContain("Je inhoud verschijnt zodra de instellingen zijn aangevuld.");
+    expect(incomplete).not.toContain("Configureer een bron en synchroniseer");
+    mocks.getActiveSourceProfile.mockResolvedValue({ id: "profile-1" });
+    mocks.hasConfiguredActiveSource.mockResolvedValue(true);
+    const complete = renderToStaticMarkup(await LearningSpaceAdminPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+    expect(complete).not.toContain("Bronprofiel ontbreekt");
+    expect(complete).not.toContain("Bron ontbreekt");
   });
 
   it("passes the authorized stored status into the existing header for an editor", async () => {

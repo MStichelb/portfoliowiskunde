@@ -4,10 +4,16 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
-import { createUser } from "./identity";
+import { createUser, setLearningSpaceMember } from "./identity";
 import { createLearningSpaceForOwner, getActiveLearningSpaceSource, getAdminLearningSpaceBySlug, updateLearningSpace, type LearningSpaceInput } from "./repositories";
 import { ensureStorageConnection } from "./storage-connections";
 import { createSubject, setSubjectActive } from "./subjects";
+
+import { getActiveSourceProfileForLearningSpace } from "./source-profiles";
+import { getDefaultSourceProfileTemplate, copySourceProfileTemplateToLearningSpace } from "./source-profile-templates";
+import { synchronizeSource } from "./sync";
+import { getLearningSpaceCreationOptions } from "./learning-space-creation-options";
+import { hasConfiguredActiveSource } from "./storage";
 
 let temporaryDirectory: string | undefined;
 
@@ -25,6 +31,109 @@ afterEach(async () => {
 });
 
 describe("transactional LearningSpace owner creation", () => {
+  it("creates a deliberately unconfigured space, skips sync without a failed run and recovers with existing template flow", async () => {
+    await useTemporaryDatabase();
+    const teacher = await createUser({ displayName: "Leraar", role: "teacher" });
+    const space = await createLearningSpaceForOwner({ ...localInput("later"), creationProfileChoice: { mode: "later" }, skipSourceOnCreation: true }, teacher.id);
+    expect(await memberRole(space.id, teacher.id)).toBe("owner");
+    expect(await getActiveSourceProfileForLearningSpace(space.id)).toBeNull();
+    expect(await getActiveLearningSpaceSource(space.id)).toBeNull();
+    expect(await synchronizeSource(space.id)).toMatchObject({ skipped: true, skipReason: "configuration" });
+    const runs = await (await getDatabase()).execute({ sql: "SELECT id FROM sync_runs WHERE learning_space_id = ?", args: [space.id] });
+    expect(runs.rows).toHaveLength(0);
+    const template = await getDefaultSourceProfileTemplate();
+    await copySourceProfileTemplateToLearningSpace(teacher, template.id, space.id);
+    expect(await getActiveSourceProfileForLearningSpace(space.id)).toMatchObject({ ownerUserId: teacher.id });
+    await updateLearningSpace(space.id, { ...localInput("later"), localSourcePath: "C:\\test" });
+    expect(await hasConfiguredActiveSource(space.id)).toBe(true);
+  });
+
+  it("links an owned existing profile and snapshots a copy independently", async () => {
+    await useTemporaryDatabase();
+    const teacher = await createUser({ displayName: "Leraar", role: "teacher" });
+    const original = await createLearningSpaceForOwner(localInput("original"), teacher.id);
+    const profile = (await getActiveSourceProfileForLearningSpace(original.id))!;
+    const linked = await createLearningSpaceForOwner({ ...localInput("linked"), creationProfileChoice: { mode: "link", id: profile.id } }, teacher.id);
+    const copied = await createLearningSpaceForOwner({ ...localInput("copied"), creationProfileChoice: { mode: "copy", id: original.id } }, teacher.id);
+    expect((await getActiveSourceProfileForLearningSpace(linked.id))?.id).toBe(profile.id);
+    const snapshot = (await getActiveSourceProfileForLearningSpace(copied.id))!;
+    expect(snapshot.id).not.toBe(profile.id);
+    expect(snapshot.config).toEqual(profile.config);
+    const changed = structuredClone(profile.config); changed.scanner.portfolio.marker = "Boek";
+    await (await getDatabase()).execute({ sql: "UPDATE source_profiles SET config_json = ? WHERE id = ?", args: [JSON.stringify(changed), profile.id] });
+    expect((await getActiveSourceProfileForLearningSpace(copied.id))?.config).toEqual(snapshot.config);
+    expect((await getActiveSourceProfileForLearningSpace(linked.id))?.config.scanner.portfolio.marker).toBe("Boek");
+    expect(await memberRole(copied.id, teacher.id)).toBe("owner");
+  });
+
+  it("rejects forged inaccessible copy/link choices without leaving any created rows", async () => {
+    await useTemporaryDatabase();
+    const owner = await createUser({ displayName: "Eigenaar", role: "teacher" });
+    const other = await createUser({ displayName: "Andere leraar", role: "teacher" });
+    const original = await createLearningSpaceForOwner(localInput("private-original"), owner.id);
+    const profile = (await getActiveSourceProfileForLearningSpace(original.id))!;
+    const database = await getDatabase();
+    const before = await database.execute("SELECT id FROM source_profiles ORDER BY id");
+    for (const choice of [{ mode: "link", id: profile.id }, { mode: "copy", id: original.id }] as const) {
+      await expect(createLearningSpaceForOwner({ ...localInput(`denied-${choice.mode}`), creationProfileChoice: choice }, other.id)).rejects.toThrow();
+      expect(await getAdminLearningSpaceBySlug(`denied-${choice.mode}`)).toBeNull();
+    }
+    expect((await database.execute("SELECT id FROM source_profiles ORDER BY id")).rows).toEqual(before.rows);
+    const options = await getLearningSpaceCreationOptions(other);
+    expect(options.links.map((p) => p.id)).not.toContain(profile.id);
+    expect(options.copies.map((p) => p.id)).not.toContain(original.id);
+    const student = await createUser({ displayName: "Leerling", role: "student" });
+    await expect(createLearningSpaceForOwner({ ...localInput("student-denied"), creationProfileChoice: { mode: "later" } }, student.id)).rejects.toThrow();
+    expect(await getAdminLearningSpaceBySlug("student-denied")).toBeNull();
+  });
+
+  it("allows an existing editor to copy an accessible active profile without gaining its ownership or linking it", async () => {
+    await useTemporaryDatabase();
+    const owner = await createUser({ displayName: "Eigenaar", role: "teacher" });
+    const editor = await createUser({ displayName: "Bewerker", role: "teacher" });
+    const original = await createLearningSpaceForOwner(localInput("editor-source"), owner.id);
+    await setLearningSpaceMember(original.id, editor.id, "editor");
+    const profile = (await getActiveSourceProfileForLearningSpace(original.id))!;
+    const options = await getLearningSpaceCreationOptions(editor);
+    expect(options.copies.map((p) => p.id)).toContain(original.id);
+    expect(options.links.map((p) => p.id)).not.toContain(profile.id);
+    const copy = await createLearningSpaceForOwner({ ...localInput("editor-copy"), creationProfileChoice: { mode: "copy", id: original.id } }, editor.id);
+    expect(await getActiveSourceProfileForLearningSpace(copy.id)).toMatchObject({ ownerUserId: editor.id, config: profile.config });
+    expect(await getActiveSourceProfileForLearningSpace(original.id)).toMatchObject({ id: profile.id, ownerUserId: owner.id });
+    expect(await memberRole(original.id, editor.id)).toBe("editor");
+    await expect(createLearningSpaceForOwner({ ...localInput("editor-link-denied"), creationProfileChoice: { mode: "link", id: profile.id } }, editor.id)).rejects.toThrow();
+  });
+
+  it("uses the selected template and persists terminology without linking the template", async () => {
+    await useTemporaryDatabase();
+    const teacher = await createUser({ displayName: "Leraar", role: "teacher" });
+    const template = await getDefaultSourceProfileTemplate();
+    const input = { ...localInput("template-choice"), creationProfileChoice: { mode: "template" as const, id: template.id }, themeLabelSingular: "Deel", themeLabelPlural: "Delen", sectionLabelSingular: "Sectie", sectionLabelPlural: "Secties", collectionLabelSingular: "Bundel", collectionLabelPlural: "Bundels", exerciseLabelSingular: "Opdracht", exerciseLabelPlural: "Opdrachten", exerciseLabelShort: "Opdr.", description: "Mijn beschrijving" };
+    const space = await createLearningSpaceForOwner(input, teacher.id);
+    expect(space).toMatchObject({ themeLabelSingular: "Deel", themeLabelPlural: "Delen", sectionLabelSingular: "Sectie", sectionLabelPlural: "Secties", collectionLabelSingular: "Bundel", collectionLabelPlural: "Bundels", exerciseLabelSingular: "Opdracht", exerciseLabelPlural: "Opdrachten", exerciseLabelShort: "Opdr.", description: "Mijn beschrijving" });
+    const profile = (await getActiveSourceProfileForLearningSpace(space.id))!;
+    expect(profile.id).not.toBe(template.id); expect(profile.config).toEqual(template.config);
+    const rows = await (await getDatabase()).execute({ sql: "SELECT id FROM learning_spaces WHERE slug = ?", args: [input.slug] });
+    expect(rows.rows).toHaveLength(1);
+  });
+
+  it("stores edited template/copy/new drafts as independent snapshots without changing the original", async () => {
+    await useTemporaryDatabase();
+    const teacher = await createUser({ displayName: "Leraar", role: "teacher" });
+    const original = await createLearningSpaceForOwner(localInput("draft-original"), teacher.id);
+    const source = (await getActiveSourceProfileForLearningSpace(original.id))!;
+    const template = await getDefaultSourceProfileTemplate();
+    const draft = structuredClone(source.config); draft.scanner.portfolio.marker = "Eigen bundel"; draft.scanner.portfolio.themeMode = "folder";
+    for (const choice of [{ mode: "template", id: template.id, config: draft }, { mode: "copy", id: original.id, config: draft }, { mode: "new", config: draft }] as const) {
+      const space = await createLearningSpaceForOwner({ ...localInput(`edited-${choice.mode}`), creationProfileChoice: choice, skipSourceOnCreation: true }, teacher.id);
+      const profile = (await getActiveSourceProfileForLearningSpace(space.id))!;
+      expect(profile.id).not.toBe(source.id); expect(profile.config.scanner.portfolio).toEqual(draft.scanner.portfolio);
+      expect(profile.ownerUserId).toBe(teacher.id); expect(await memberRole(space.id, teacher.id)).toBe("owner");
+    }
+    expect((await getActiveSourceProfileForLearningSpace(original.id))?.config).toEqual(source.config);
+    expect((await getDefaultSourceProfileTemplate()).config).toEqual(template.config);
+  });
+
   it("persists custom hierarchy terms on creation and update without changing descriptions or omitted labels", async () => {
     await useTemporaryDatabase();
     const teacher = await createUser({ displayName: "Leraar", role: "teacher" });

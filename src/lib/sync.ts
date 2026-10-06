@@ -13,6 +13,7 @@ import {
 } from "@/lib/repositories";
 import { indexSource } from "@/lib/storage/portfolio-indexer";
 import { getStorageProviderWithType } from "@/lib/storage";
+import { getActiveSourceProfileForLearningSpace } from "@/lib/source-profiles";
 import { SourceAccessError, SourceConfigurationError, StaleSynchronizationError } from "@/lib/source-errors";
 import { detectLearningSpaceHeader } from "@/lib/learning-space-header";
 import type { StorageProvider } from "@/lib/storage/provider";
@@ -34,6 +35,9 @@ export async function synchronizeSource(learningSpaceId?: string, dependencies: 
   if (!requestedSpace) throw new SourceConfigurationError("Leeromgeving niet gevonden.");
   if (!requestedSpace.isActive) {
     return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true, skipReason: "archived" as const };
+  }
+  if (!await getActiveSourceProfileForLearningSpace(requestedSpace.id) || !await getActiveLearningSpaceSource(requestedSpace.id)) {
+    return { portfolios: 0, warnings: 0, added: 0, updated: 0, missing: 0, skipped: true, skipReason: "configuration" as const };
   }
   let providerType = "local";
   let lease: { learningSpaceId: string; ownerId: string } | null = null;

@@ -2,7 +2,9 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { AuthorizationError, canAccessAdmin, requireLearningSpaceConfiguration, requireLearningSpaceManagement } from "@/lib/authorization";
+import { AuthorizationError, canAccessAdmin, requireLearningSpaceConfiguration, requireLearningSpaceCreation, requireLearningSpaceManagement } from "@/lib/authorization";
+import type { CreationProfileChoice } from "@/lib/learning-space-creation-wizard";
+import { getDefaultSourceProfileTemplate, getSourceProfileTemplate, prepareSourceProfileTemplateClone } from "@/lib/source-profile-templates";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { getDatabase } from "@/lib/database";
 import type { AppUser } from "@/lib/identity";
@@ -135,6 +137,32 @@ export async function getActiveSourceProfileConfigForLearningSpace(learningSpace
     ?? BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG;
 }
 
+/** Prepare the existing snapshot/assignment statements before the creation transaction. */
+export async function prepareCreationSourceProfile(user: AppUser, learningSpaceId: string, choice: CreationProfileChoice, now: string): Promise<{ profile: SourceProfile | null; statements: InStatement[] }> {
+  requireLearningSpaceCreation(user);
+  if (choice.mode === "later") return { profile: null, statements: [] };
+  if (choice.mode === "link") {
+    const profile = await requireOwnedSourceProfile(user, choice.id);
+    // The new space has exactly one owner: its creator. Keep existing owner-target semantics.
+    if (profile.ownerUserId !== user.id) throw new AuthorizationError("Kies een bronprofiel waarvan jij eigenaar bent.");
+    return { profile, statements: [{ sql: "INSERT INTO learning_space_source_profiles (learning_space_id, source_profile_id, assigned_at, updated_at) VALUES (?, ?, ?, ?)", args: [learningSpaceId, profile.id, now, now] }] };
+  }
+  let template;
+  if (choice.mode === "copy") {
+    await requireLearningSpaceManagement(user, choice.id);
+    const active = await getActiveSourceProfileForLearningSpace(choice.id);
+    if (!active) throw new AuthorizationError("Deze leeromgeving heeft geen beschikbaar bronprofiel.");
+    const source = await requireVisibleSourceProfile(user, active.id);
+    template = { ...source, name: copyName(source.name) };
+  } else {
+    template = choice.mode === "template" ? await getSourceProfileTemplate(choice.id) : await getDefaultSourceProfileTemplate();
+    if (choice.mode === "new") template = { ...template, name: "Nieuw bronprofiel" };
+  }
+  if (choice.config) template = { ...template, config: parseSourceProfileConfig(choice.config) };
+  const name = await availableSourceProfileName(user.id, template.name);
+  return prepareSourceProfileTemplateClone({ ...template, name }, learningSpaceId, user.id, now);
+}
+
 export async function getSourceProfileIndexContextForLearningSpace(learningSpaceId: string): Promise<SourceProfileIndexContext | null> {
   const row = (await (await getDatabase()).execute({
     sql: `SELECT source_profiles.*, learning_space_source_profiles.updated_at AS assignment_updated_at,
@@ -185,7 +213,7 @@ export async function getSourceProfileOverview(user: AppUser, options: { archive
   };
 }
 
-export async function getSourceProfileForLearningSpaceCard(user: AppUser, learningSpaceId: string): Promise<AvailableSourceProfile> {
+export async function getSourceProfileForLearningSpaceCard(user: AppUser, learningSpaceId: string): Promise<AvailableSourceProfile | null> {
   await requireLearningSpaceManagement(user, learningSpaceId);
   const result = await (await getDatabase()).execute({
     sql: `${sourceProfileDetailsSelect()} WHERE source_profiles.id = (
@@ -194,8 +222,7 @@ export async function getSourceProfileForLearningSpaceCard(user: AppUser, learni
     args: [learningSpaceId],
   });
   const profile = sourceProfileDetailsFromRows(result.rows, user, false, new Map(), true)[0];
-  if (!profile) throw new Error("Deze leeromgeving heeft geen geldig actief bronprofiel.");
-  return profile;
+  return profile ?? null;
 }
 
 export async function getSourceProfileCopyTargets(user: AppUser): Promise<SourceProfileCopyTarget[]> {

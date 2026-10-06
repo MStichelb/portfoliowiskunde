@@ -9,6 +9,7 @@ import { canConfigureLearningSpace } from "@/lib/authorization";
 import { getAdminLearningSpaceBySlug } from "@/lib/repositories";
 import { getSourceProfileForLearningSpaceCard } from "@/lib/source-profiles";
 import { listActiveSubjects } from "@/lib/subjects";
+import { listSourceProfileTemplates } from "@/lib/source-profile-templates";
 
 import { saveLearningSpaceAction } from "../../actions";
 export const dynamic = "force-dynamic";
@@ -19,9 +20,10 @@ export default async function LearningSpaceSettingsPage({ params, searchParams }
   const [query, space] = await Promise.all([searchParams, getAdminLearningSpaceBySlug(spaceSlug)]);
   const canConfigure = space ? await canConfigureLearningSpace(user, space.id) : false;
   if (!space || !canConfigure) notFound();
-  const [sourceProfile, subjects] = await Promise.all([
+  const [sourceProfile, subjects, templates] = await Promise.all([
     getSourceProfileForLearningSpaceCard(user, space.id),
     listActiveSubjects(),
+    listSourceProfileTemplates(user),
   ]);
   return <main className="page-shell admin-page admin-space-page learning-space-settings-page">
     <AdminSpaceHeader current={space} section="settings" user={user} canConfigure={canConfigure} />
@@ -33,7 +35,7 @@ export default async function LearningSpaceSettingsPage({ params, searchParams }
       canPermanentlyDelete={user.role === "superadmin"}
       action={saveLearningSpaceAction}
     />
-    <SourceProfileCard profile={sourceProfile} canConfigure />
+    <SourceProfileCard profile={sourceProfile} canConfigure learningSpaceId={space.id} templates={templates} />
     {space.isActive ? <SourceSwitchPanel space={space} /> : null}
   </main>;
 }
