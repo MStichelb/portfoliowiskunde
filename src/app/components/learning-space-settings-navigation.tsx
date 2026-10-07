@@ -2,17 +2,18 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
+import { LearningSpaceLocalNavigation } from "./learning-space-local-navigation";
 
 const sections = [
   { id: "general", label: "Algemeen", hash: "general-settings-heading", group: "Algemeen" },
+  { id: "management", label: "Beheer", hash: "lifecycle-settings-heading", group: "Algemeen" },
   { id: "appearance", label: "Vormgeving", hash: "appearance-settings-heading", group: "Personalisatie" },
   { id: "labels", label: "Benamingen", hash: "label-settings-heading", group: "Personalisatie" },
   { id: "levels", label: "Niveaus", hash: "level-settings-heading", group: "Personalisatie" },
+  { id: "rights", label: "Rechten", hash: "rights-settings-heading", group: "Rechten" },
   { id: "profile", label: "Bronprofiel", hash: "source-profile-settings", group: "Bron" },
   { id: "source", label: "Bron", hash: "source-settings-heading", group: "Bron" },
-  { id: "status", label: "Status", hash: "lifecycle-settings-heading", group: "Beheer" },
 ] as const;
-const groups = ["Algemeen", "Personalisatie", "Bron", "Beheer"] as const;
 
 type SettingsSection = typeof sections[number]["id"];
 const SettingsContext = createContext<{ active: SettingsSection; select: (section: SettingsSection) => void } | null>(null);
@@ -40,26 +41,7 @@ export function LearningSpaceSettingsNavigation({ children }: { children: ReactN
 
   return <SettingsContext.Provider value={{ active, select }}>
     <div className="learning-space-settings-layout">
-      <nav className="learning-space-settings-navigation" aria-label="Instellingen van deze leeromgeving">
-        {groups.map((group) => <div key={group} className="learning-space-settings-nav-group" role="group" aria-label={group}>
-          <span className="learning-space-settings-group-label" aria-hidden>{group}</span>
-          <div className="learning-space-settings-group-items">
-            {sections.filter((section) => section.group === group).map((section) => <button key={section.id} id={`settings-nav-${section.id}`} type="button"
-              aria-current={active === section.id ? "true" : undefined} aria-controls={`settings-panel-${section.id}`}
-              className={active === section.id ? "is-active" : ""} onClick={() => select(section.id)}
-              onKeyDown={(event) => {
-                const index = sections.indexOf(section);
-                const target = event.key === "ArrowDown" || event.key === "ArrowRight" ? (index + 1) % sections.length
-                  : event.key === "ArrowUp" || event.key === "ArrowLeft" ? (index + sections.length - 1) % sections.length
-                  : event.key === "Home" ? 0 : event.key === "End" ? sections.length - 1 : null;
-                if (target === null) return;
-                event.preventDefault();
-                select(sections[target].id);
-                document.getElementById(`settings-nav-${sections[target].id}`)?.focus();
-              }}>{section.label}</button>)}
-          </div>
-        </div>)}
-      </nav>
+      <LearningSpaceLocalNavigation sections={sections} active={active} onSelect={select} idPrefix="settings" ariaLabel="Instellingen van deze leeromgeving" />
       <div className="learning-space-settings-content">{children}</div>
     </div>
   </SettingsContext.Provider>;

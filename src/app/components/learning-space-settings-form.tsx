@@ -51,13 +51,22 @@ export function LearningSpaceSettingsForm({
           <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
         </div>
       </section>
+    </LearningSpaceSettingsPanel>
 
-      <EditorPermissionsToggle
-        learningSpaceId={space.id}
-        initialEnabled={space.editorsCanManageAccess}
-        canChange
-        action={saveLearningSpaceEditorPermissionsAction}
-      />
+    <LearningSpaceSettingsPanel section="management">
+      <section className="settings-card" aria-labelledby="lifecycle-settings-heading">
+        <div className="card-heading"><div><h2 id="lifecycle-settings-heading">Beheer</h2><p>Beheer de status en levenscyclus van deze leeromgeving.</p></div></div>
+        <p>{space.isActive ? "Deze leeromgeving is actief." : "Deze leeromgeving is gearchiveerd."}</p>
+        <LearningSpaceLifecycleActions
+          space={space}
+          showManage={false}
+          showDelete={canPermanentlyDelete}
+          embeddedInForm
+          deleteLabel="Leeromgeving verwijderen"
+          deleteConfirmTitle="Leeromgeving permanent verwijderen?"
+          deleteConfirmText="Deze actie kan niet ongedaan worden gemaakt. De leeromgeving en bijhorende configuratie worden permanent verwijderd."
+        />
+      </section>
     </LearningSpaceSettingsPanel>
 
     <LearningSpaceSettingsPanel section="appearance">
@@ -122,6 +131,16 @@ export function LearningSpaceSettingsForm({
       </section>
     </LearningSpaceSettingsPanel>
 
+    <LearningSpaceSettingsPanel section="rights">
+      <div className="card-heading"><div><h2 id="rights-settings-heading">Rechten</h2><p>Beheer welke mogelijkheden verschillende gebruikersrollen binnen deze leeromgeving hebben.</p></div></div>
+      <EditorPermissionsToggle
+        learningSpaceId={space.id}
+        initialEnabled={space.editorsCanManageAccess}
+        canChange
+        action={saveLearningSpaceEditorPermissionsAction}
+      />
+    </LearningSpaceSettingsPanel>
+
     <LearningSpaceSettingsPanel section="source">
       <section className="settings-card source-settings-card" aria-labelledby="source-settings-heading">
         <div className="source-settings-heading">
@@ -153,22 +172,6 @@ export function LearningSpaceSettingsForm({
         </div>
       </section>
 
-    </LearningSpaceSettingsPanel>
-
-    <LearningSpaceSettingsPanel section="status">
-      <section className="settings-card" aria-labelledby="lifecycle-settings-heading">
-        <h2 id="lifecycle-settings-heading">Status</h2>
-        <p>{space.isActive ? "Deze leeromgeving is actief." : "Deze leeromgeving is gearchiveerd."}</p>
-        <LearningSpaceLifecycleActions
-          space={space}
-          showManage={false}
-          showDelete={canPermanentlyDelete}
-          embeddedInForm
-          deleteLabel="Leeromgeving verwijderen"
-          deleteConfirmTitle="Leeromgeving permanent verwijderen?"
-          deleteConfirmText="Deze actie kan niet ongedaan worden gemaakt. De leeromgeving en bijhorende configuratie worden permanent verwijderd."
-        />
-      </section>
     </LearningSpaceSettingsPanel>
 
     {state.error ? <p className="form-message" role="alert">{state.error}</p> : null}

@@ -20,12 +20,15 @@ vi.mock("react", async (original: <T>() => Promise<T>) => {
 });
 
 import { LearningSpaceSettingsNavigation, LearningSpaceSettingsPanel, settingsSectionFromHash } from "./learning-space-settings-navigation";
+import { LearningSpaceLocalNavigation } from "./learning-space-local-navigation";
 import { LearningSpaceSettingsForm } from "./learning-space-settings-form";
 import { ExerciseLevelPresentationSettings } from "./exercise-level-presentation-settings";
+import { EditorPermissionsToggle } from "./editor-permissions-toggle";
 
 function nodes(value: unknown): ReactElement<Record<string, unknown>>[] {
   if (Array.isArray(value)) return value.flatMap(nodes);
   if (!isValidElement<Record<string, unknown>>(value)) return [];
+  if (value.type === LearningSpaceLocalNavigation) return nodes(LearningSpaceLocalNavigation(value.props as Parameters<typeof LearningSpaceLocalNavigation>[0]));
   return [value, ...nodes(value.props.children)];
 }
 
@@ -58,19 +61,21 @@ describe("LearningSpace settings navigation", () => {
   it("starts on General with one visible main section and all forms mounted", () => {
     const { navigation, panels, form } = render();
     expect(panels.filter((panel) => !panel.props.hidden).map((panel) => panel.props.id)).toEqual(["settings-panel-general"]);
-    expect(panels).toHaveLength(8);
+    expect(panels).toHaveLength(9);
     expect(nodes(navigation).filter((node) => node.props["aria-current"] === "true").map((node) => node.props.children)).toEqual(["Algemeen"]);
     expect(nodes(form).filter((node) => node.type === "form")).toHaveLength(1);
     expect(nodes(navigation).filter((node) => node.type === "form")).toHaveLength(3);
   });
 
-  it("groups the seven navigation items under subtle non-interactive labels", () => {
+  it("groups the eight navigation items under subtle non-interactive labels", () => {
     const { navigation } = render();
     const groups = nodes(navigation).filter((node) => node.props.role === "group");
-    expect(groups.map((node) => node.props["aria-label"])).toEqual(["Algemeen", "Personalisatie", "Bron", "Beheer"]);
+    expect(groups.map((node) => node.props["aria-label"])).toEqual(["Algemeen", "Personalisatie", "Rechten", "Bron"]);
     expect(groups.map((group) => nodes(group).filter((node) => node.type === "button").map((node) => node.props.children)))
-      .toEqual([["Algemeen"], ["Vormgeving", "Benamingen", "Niveaus"], ["Bronprofiel", "Bron"], ["Status"]]);
-    expect(nodes(navigation).some((node) => node.type === "button" && node.props.children === "Personalisatie")).toBe(false);
+      .toEqual([["Algemeen", "Beheer"], ["Vormgeving", "Benamingen", "Niveaus"], ["Rechten"], ["Bronprofiel", "Bron"]]);
+    expect(nodes(navigation).some((node) => node.type === "button" && ["Personalisatie", "Status"].includes(node.props.children as string))).toBe(false);
+    expect(settingsSectionFromHash("#lifecycle-settings-heading")).toBe("management");
+    expect(settingsSectionFromHash("#rights-settings-heading")).toBe("rights");
   });
 
   it("uses the existing burgundy accent and compact responsive groups", async () => {
@@ -83,7 +88,7 @@ describe("LearningSpace settings navigation", () => {
     expect(css).toContain(".learning-space-settings-navigation { display: flex; flex-wrap: wrap;");
   });
 
-  it.each(["Algemeen", "Vormgeving", "Benamingen", "Niveaus", "Bronprofiel", "Bron", "Status"])("switches to %s without submitting or unmounting fields", (label: string) => {
+  it.each(["Algemeen", "Beheer", "Vormgeving", "Benamingen", "Niveaus", "Rechten", "Bronprofiel", "Bron"])("switches to %s without submitting or unmounting fields", (label: string) => {
     const originalFields = nodes(render().form).filter((node) => node.type === "input").map((node) => node.props.name);
     click(label);
     const { navigation, panels, form } = render();
@@ -104,6 +109,19 @@ describe("LearningSpace settings navigation", () => {
     expect(nodes(changed.form).find((node) => node.props.name === "name")?.props.defaultValue).toBe("Zesde jaar");
     expect(changed.panels.map((panel) => panel.props.id)).toEqual(original.panels.map((panel) => panel.props.id));
     expect(hooks.save).not.toHaveBeenCalled();
+  });
+
+  it("keeps editor permissions mounted with the same action and props across navigation", () => {
+    const original = render().panels.find((panel) => panel.props.id === "settings-panel-rights")!;
+    const toggle = nodes(original).find((node) => node.type === EditorPermissionsToggle)!;
+    expect(toggle.props).toMatchObject({ learningSpaceId: space.id, initialEnabled: false, canChange: true });
+    click("Rechten"); click("Beheer"); click("Algemeen"); click("Rechten");
+    const retained = render().panels.find((panel) => panel.props.id === "settings-panel-rights")!;
+    expect(retained.props.hidden).toBe(false);
+    expect(nodes(retained).find((node) => node.type === EditorPermissionsToggle)?.props).toEqual(toggle.props);
+    expect(hooks.save).not.toHaveBeenCalled();
+    const form = render().form;
+    expect(form.props.action).toBe(hooks.save);
   });
 
   it("keeps every uncontrolled naming field mounted in its same panel across switches", () => {
@@ -177,7 +195,7 @@ describe("LearningSpace settings navigation", () => {
     const first = nodes(render().navigation).find((node) => node.props["aria-controls"] === "settings-panel-general")!;
     const preventDefault = vi.fn();
     (first.props.onKeyDown as (event: unknown) => void)({ key: "ArrowDown", preventDefault });
-    expect(render().panels.find((node) => node.props.id === "settings-panel-appearance")?.props.hidden).toBe(false);
+    expect(render().panels.find((node) => node.props.id === "settings-panel-management")?.props.hidden).toBe(false);
     expect(focus).toHaveBeenCalled();
     expect(preventDefault).toHaveBeenCalled();
   });

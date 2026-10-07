@@ -28,6 +28,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-07-toegangsbeheer-overzichtelijker",
+  date: "2026-10-07",
+  category: "improved",
+  title: "Toegangsbeheer overzichtelijker",
+  description: "Toegangsbeheer per leeromgeving is overzichtelijk gegroepeerd in Leraren, Groepen, Individueel en Leerlingen. Zo vind je sneller de koppelingen en het overzicht van leerlingen met toegang.",
+  audiences: ["teacher", "superadmin"],
+  notify: false,
+}, {
   id: "2026-10-07-instellingennavigatie-leeromgeving",
   date: "2026-10-07",
   category: "improved",

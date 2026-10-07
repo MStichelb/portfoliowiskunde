@@ -65,7 +65,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .external-login-option span { color: #52616a; }
 .settings-heading { margin-bottom: 20px; }
 .learning-space-settings-page { max-width: none; }
-html:has(.learning-space-settings-page) { scrollbar-gutter: stable; }
+html:has(.learning-space-settings-page, .learning-space-access-page) { scrollbar-gutter: stable; }
 .learning-space-settings-form { display: grid; gap: 18px; }
 .learning-space-settings-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 24px; align-items: start; }
 .learning-space-settings-navigation { display: grid; gap: 18px; }
@@ -78,6 +78,8 @@ html:has(.learning-space-settings-page) { scrollbar-gutter: stable; }
 .learning-space-settings-content label, .learning-space-settings-content input, .learning-space-settings-content select, .learning-space-settings-content textarea { min-width: 0; }
 .learning-space-settings-content .source-profile-summary { overflow-wrap: anywhere; }
 .learning-space-settings-panel[hidden] { display: none; }
+.learning-space-access-page .learning-space-settings-panel > .admin-card { margin: 0; min-width: 0; }
+.learning-space-access-page .individual-student-access { margin-top: 0; padding-top: 0; border-top: 0; }
 .learning-space-settings-panel > .source-profile-card, .learning-space-settings-panel > .source-switch-card { margin-top: 0; }
 .learning-space-settings-content:has(#settings-panel-profile:not([hidden])) > .learning-space-settings-form:not(:has(> .form-message)) { display: none; }
 @media (max-width: 800px) {

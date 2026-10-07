@@ -44,6 +44,24 @@ describe("LearningSpaceSettingsForm", () => {
     for (const section of [appearance, labels, levels]) expect(section).toContain('type="submit">Instellingen opslaan');
   });
 
+  it("places only lifecycle controls in Beheer and editor permissions in Rechten", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} subjects={subjects} canPermanentlyDelete action={() => ({ error: null })} />);
+    const general = markup.slice(markup.indexOf('id="settings-panel-general"'), markup.indexOf('id="settings-panel-management"'));
+    const management = markup.slice(markup.indexOf('id="settings-panel-management"'), markup.indexOf('id="settings-panel-appearance"'));
+    const rights = markup.slice(markup.indexOf('id="settings-panel-rights"'), markup.indexOf('id="settings-panel-source"'));
+    expect(general).not.toMatch(/Bewerkersrechten|Archiveren|Herstellen|Leeromgeving verwijderen/);
+    expect(management).toContain('<h2 id="lifecycle-settings-heading">Beheer</h2>');
+    expect(management).toContain("Beheer de status en levenscyclus van deze leeromgeving.");
+    expect(management).toContain("Deze leeromgeving is actief.");
+    expect(management).toContain("Archiveren");
+    expect(management).not.toMatch(/Bewerkersrechten|name="name"/);
+    expect(rights).toContain('<h2 id="rights-settings-heading">Rechten</h2>');
+    expect(rights).toContain("Beheer welke mogelijkheden verschillende gebruikersrollen binnen deze leeromgeving hebben.");
+    expect(rights).toContain("Bewerkersrechten");
+    expect(rights).toContain('role="switch"');
+    expect(rights).not.toMatch(/Archiveren|type="submit"/);
+  });
+
   it("renders saved terms in hierarchy order and keeps an empty abbreviation", () => {
     const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={{ ...space,
       themeLabelSingular: "Deel", themeLabelPlural: "Delen", sectionLabelSingular: "Sectie", sectionLabelPlural: "Secties",
@@ -124,7 +142,8 @@ describe("LearningSpaceSettingsForm", () => {
     expect(editorPermissionsSwitch).not.toContain("formAction");
     expect(personalizationStart).toBeGreaterThan(generalStart);
     expect(editorPermissionsStart).toBeGreaterThan(generalStart);
-    expect(editorPermissionsStart).toBeLessThan(personalizationStart);
+    expect(editorPermissionsStart).toBeGreaterThan(personalizationStart);
+    expect(editorPermissionsStart).toBeLessThan(sourceStart);
     expect(saveButtons).toHaveLength(5);
     expect(saveButtons[0]).toBeGreaterThan(generalStart);
     expect(saveButtons[0]).toBeLessThan(personalizationStart);
