@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
@@ -29,6 +30,10 @@ import {
   updateTheme,
   setPortfolioTheme,
   deleteTheme,
+  archiveLearningSpace,
+  permanentlyDeleteLearningSpace,
+  moveTheme,
+  setExerciseNote,
 } from "./repositories";
 import { uniqueSourceProfileName } from "./source-profile-name";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, INITIAL_SOURCE_PROFILE_TEMPLATE_ID } from "./source-profile-config";
@@ -60,6 +65,61 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     resetDatabaseForTests();
   });
 
+  it("upgrades a populated checkpoint through 055-059 without losing data or references", async () => {
+    const schema = `release_upgrade_${randomUUID().replaceAll("-", "")}`;
+    const sql = postgres(postgresUrl!, { max: 1, prepare: false, onnotice: () => {} });
+    const session = await sql.reserve();
+    try {
+      await session.unsafe(`CREATE SCHEMA ${schema}`);
+      await session.unsafe(`SET search_path TO ${schema}`);
+      await session.unsafe("CREATE TABLE schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL)");
+      async function apply(version: number) {
+        for (const migration of migrations.filter((item) => Number(item.version.slice(0, 3)) === version)) {
+          await session.unsafe("BEGIN");
+          try {
+            await session.unsafe((migration.postgresStatements ?? migration.statements).join(";\n"));
+            await session.unsafe("INSERT INTO schema_migrations VALUES ($1, $2)", [migration.version, "2026-10-08T00:00:00.000Z"]);
+            await session.unsafe("COMMIT");
+          } catch (error) { await session.unsafe("ROLLBACK"); throw error; }
+        }
+      }
+      for (let version = 1; version <= 54; version++) await apply(version);
+      await session.unsafe(`
+        INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at) VALUES ('legacy-theme', 'space-6', 'Eigen groepering', 70, 'created', 'edited');
+        INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, title_override, relative_path, indexed_at, theme_id, visible, publication_limited, publish_from)
+          VALUES ('legacy-p', 'space-6:99', '99', 'space-6', 'Bron', 'Eigen titel', 'Bronmap', '2026-10-08', 'legacy-theme', 0, 1, '2099-01-01T12:00:00+02:00');
+        INSERT INTO sections (id, portfolio_id, sort_order, title, relative_path) VALUES ('legacy-s', 'legacy-p', 1, 'Basis', 'Bronmap/1');
+        INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, custom_note, note_label, note_position, visibility_mode, level_source, level_override_mode, level_override)
+          VALUES ('legacy-e', 'legacy-p', 'legacy-s', '1', 1, '', 'Eigen notitie', 'Tip', 'below_solution', 'hidden', 'basis', 'level', 'uitdaging');
+        INSERT INTO solution_variants (id, exercise_id, kind, label) VALUES ('legacy-v', 'legacy-e', 'standard', 'Uitwerking');
+        INSERT INTO solution_assets (id, variant_id, relative_path, file_name, extension, step) VALUES ('legacy-a', 'legacy-v', 'test.png', 'test.png', 'png', 1);
+        INSERT INTO error_reports (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, message, status, created_at, updated_at)
+          VALUES ('legacy-report', 'legacy-p', 'legacy-s', 'legacy-e', 'standard', '[]', 'Bewaar melding', 'TODO', '2026-10-08', '2026-10-08');
+      `);
+      const tables = ["portfolios", "sections", "exercises", "solution_variants", "solution_assets", "error_reports", "themes", "learning_spaces", "users", "source_profiles", "learning_space_source_profiles", "learning_space_sources", "learning_space_members"];
+      const before = new Map<string, Record<string, unknown>[]>();
+      for (const table of tables) before.set(table, [...await session.unsafe(`SELECT * FROM ${table}`)]);
+      for (let version = 55; version <= 59; version++) await apply(version);
+      for (const table of tables) {
+        const after = await session.unsafe(`SELECT * FROM ${table}`);
+        expect(after).toHaveLength(before.get(table)!.length);
+        for (const row of before.get(table)!) expect(after).toContainEqual(expect.objectContaining(row));
+      }
+      expect((await session.unsafe("SELECT version FROM schema_migrations ORDER BY version")).map((row) => row.version)).toEqual(migrations.map((item) => item.version));
+      expect((await session.unsafe("SELECT theme_label_singular, section_label_singular FROM learning_spaces WHERE id = 'space-6'"))[0]).toEqual({ theme_label_singular: "Thema", section_label_singular: "Onderdeel" });
+      await session.unsafe("UPDATE exercises SET section_id = NULL WHERE id = 'legacy-e'");
+      await expect(session.unsafe("INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix) VALUES ('duplicate-root', 'legacy-p', NULL, '1', 1, '')")).rejects.toMatchObject({ code: "23505" });
+      await expect(session.unsafe("UPDATE themes SET source_scope = 'partial' WHERE id = 'legacy-theme'")).rejects.toMatchObject({ code: "23514" });
+      await expect(session.unsafe("UPDATE exercises SET portfolio_id = 'missing' WHERE id = 'legacy-e'")).rejects.toMatchObject({ code: "23503" });
+      expect((await session.unsafe("SELECT id, exercise_id FROM solution_variants WHERE id = 'legacy-v'"))[0]).toEqual({ id: "legacy-v", exercise_id: "legacy-e" });
+    } finally {
+      await session.unsafe("SET search_path TO public");
+      await session.unsafe(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+      session.release();
+      await sql.end({ timeout: 3 });
+    }
+  }, 120_000);
+
   it("creates wizard profile choices and skipped sources in the same owner transaction", async () => {
     const suffix = randomUUID();
     const teacher = await createUser({ displayName: `Wizard ${suffix}`, role: "teacher" });
@@ -80,6 +140,101 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     const members = await (await getDatabase()).execute({ sql: "SELECT role FROM learning_space_members WHERE learning_space_id = ? AND user_id = ?", args: [copied.id, teacher.id] });
     expect(members.rows[0]?.role).toBe("owner");
   });
+
+  it("retains mixed hierarchy metadata and access through sync, then atomically deletes one space with rollback", async () => {
+    const database = await getDatabase();
+    const suffix = randomUUID();
+    const owner = await createUser({ displayName: `Release owner ${suffix}`, role: "teacher" });
+    const student = await createUser({ displayName: `Release student ${suffix}`, role: "student" });
+    const input = { subjectId: "subject-wiskunde", name: "Release fixture", shortLabel: "REL", sourceType: "local" as const, localSourcePath: null };
+    const space = await createLearningSpaceForOwner({ ...input, slug: `release-target-${suffix}` }, owner.id);
+    const profile = (await getActiveSourceProfileForLearningSpace(space.id))!;
+    const other = await createLearningSpaceForOwner({ ...input, slug: `release-retained-${suffix}`, creationProfileChoice: { mode: "link", id: profile.id } }, owner.id);
+    const config = structuredClone(profile.config);
+    config.scanner.portfolio.themeMode = "folder";
+    await database.execute({ sql: "UPDATE source_profiles SET config_json = ?, management_learning_space_id = ? WHERE id = ?", args: [JSON.stringify(config), space.id, profile.id] });
+    const connection = `release-connection-${suffix}`;
+    await database.execute({ sql: "INSERT INTO storage_connections (id, owner_user_id, provider, display_name, created_at, updated_at) VALUES (?, ?, 'onedrive', 'Release fixture', ?, ?)", args: [connection, owner.id, "2026-10-08", "2026-10-08"] });
+    await database.execute({ sql: "UPDATE learning_space_sources SET storage_connection_id = ? WHERE learning_space_id = ?", args: [connection, space.id] });
+    for (const id of [space.id, other.id]) {
+      await database.execute({ sql: "INSERT INTO individual_learning_space_access (user_id, learning_space_id, created_at, updated_at) VALUES (?, ?, ?, ?)", args: [student.id, id, "2026-10-08", "2026-10-08"] });
+      await database.execute({ sql: "INSERT INTO learning_space_group_mappings (id, learning_space_id, provider, external_group_id, created_at, updated_at) VALUES (?, ?, 'smartschool', ?, ?, ?)", args: [`group-${id}`, id, `external-${suffix}`, "2026-10-08", "2026-10-08"] });
+    }
+    const themed = postgresExerciseMoveFixture("1", 1, `asset-${suffix}`);
+    themed.sourceTheme = { name: "Analyse", relativePath: "Analyse", sourceId: `theme-${suffix}` };
+    themed.exercises = [{ code: "1", number: 1, suffix: "", assets: [] }];
+    const root = postgresExerciseMoveFixture("2", 1, `root-${suffix}`);
+    root.exercises = root.sections[0].exercises; root.sections = [];
+    const fixtures = [themed, root];
+    await persistIndex(fixtures, "local", space.id);
+    await persistIndex([root], "local", other.id);
+    const original = (await getAdminPortfolios(space.id)).find((item) => item.code === "1")!;
+    const sourceTheme = (await getThemes(space.id))[0];
+    await createTheme(space.id, "Handmatig", 80);
+    await updateTheme(sourceTheme.id, space.id, "Eigen analyse");
+    await moveTheme(sourceTheme.id, space.id, "down");
+    await database.execute({ sql: "UPDATE portfolios SET title_override = 'Eigen titel', visible = 0, publication_limited = 1, publish_from = '2099-01-01T12:00:00+02:00', custom_text = 'Eigen uitleg' WHERE id = ?", args: [original.id] });
+    const exercise = original.sections[0].exercises[0];
+    await setExerciseNote(exercise.id, "Bewaar notitie", "Tip", "below_solution");
+    await database.execute({ sql: "UPDATE exercises SET visibility_mode = 'hidden', level_override_mode = 'level', level_override = 'uitdaging' WHERE id = ?", args: [exercise.id] });
+    const profileBefore = (await database.execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [profile.id] })).rows;
+    const accessTables = ["learning_space_members", "individual_learning_space_access", "learning_space_group_mappings", "learning_space_sources", "learning_space_source_profiles"];
+    const accessBefore = new Map<string, unknown>();
+    for (const table of accessTables) accessBefore.set(table, (await database.execute({ sql: `SELECT * FROM ${table} WHERE learning_space_id = ?`, args: [space.id] })).rows);
+    const themesBefore = await getThemes(space.id);
+    const portfoliosBefore = await getAdminPortfolios(space.id);
+    for (let repeat = 0; repeat < 2; repeat++) await persistIndex(fixtures, "local", space.id);
+    expect(await getThemes(space.id)).toEqual(themesBefore);
+    expect(await getAdminPortfolios(space.id)).toEqual(portfoliosBefore);
+    expect((await getAdminPortfolios(space.id)).find((item) => item.code === "2")!.themeId).toBeNull();
+    for (const table of accessTables) expect((await database.execute({ sql: `SELECT * FROM ${table} WHERE learning_space_id = ?`, args: [space.id] })).rows).toEqual(accessBefore.get(table));
+    expect((await database.execute({ sql: "SELECT * FROM source_profiles WHERE id = ?", args: [profile.id] })).rows).toEqual(profileBefore);
+    const moved = structuredClone(themed);
+    moved.exercises!.push(...moved.sections[0].exercises); moved.sections = [];
+    await persistIndex([moved, root], "local", space.id);
+    expect((await database.execute({ sql: "SELECT id, section_id, custom_note, level_override, visibility_mode FROM exercises WHERE id = ?", args: [exercise.id] })).rows[0])
+      .toMatchObject({ id: exercise.id, section_id: null, custom_note: "Bewaar notitie", level_override: "uitdaging", visibility_mode: "hidden" });
+    await persistIndex(fixtures, "local", space.id);
+    expect((await database.execute({ sql: "SELECT id, section_id, custom_note, level_override, visibility_mode FROM exercises WHERE id = ?", args: [exercise.id] })).rows[0])
+      .toMatchObject({ id: exercise.id, section_id: original.sections[0].id, custom_note: "Bewaar notitie", level_override: "uitdaging", visibility_mode: "hidden" });
+    const thread = `thread-${suffix}`, issue = `issue-${suffix}`, report = `report-${suffix}`;
+    await database.execute({ sql: "INSERT INTO error_report_threads (id, learning_space_id, portfolio_id, exercise_id, exercise_code, created_at, updated_at) VALUES (?, ?, ?, ?, '20a', ?, ?)", args: [thread, space.id, original.id, exercise.id, "2026-10-08", "2026-10-08"] });
+    await database.execute({ sql: "INSERT INTO error_report_issues (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, created_at, updated_at) VALUES (?, ?, ?, ?, ?, '20a', 'exercise_solution', ?, ?)", args: [issue, thread, space.id, original.id, exercise.id, "2026-10-08", "2026-10-08"] });
+    await database.execute({ sql: "INSERT INTO error_reports (id, portfolio_id, section_id, exercise_id, issue_id, variant_kind, asset_snapshot, message, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'standard', '[]', 'Release fixture', 'TODO', ?, ?)", args: [report, original.id, original.sections[0].id, exercise.id, issue, "2026-10-08", "2026-10-08"] });
+    const retained = await getAdminPortfolios(other.id);
+    const retainedSource = await getActiveLearningSpaceSource(other.id);
+    expect(await permanentlyDeleteLearningSpace(space.id)).toBe(false);
+    await archiveLearningSpace(space.id);
+    const probe = `pg_delete_probe_${suffix.replaceAll("-", "")}`;
+    await database.execute(`CREATE TABLE ${probe} (space_id TEXT REFERENCES learning_spaces(id))`);
+    try {
+      await database.execute({ sql: `INSERT INTO ${probe} VALUES (?)`, args: [space.id] });
+      await expect(permanentlyDeleteLearningSpace(space.id)).rejects.toMatchObject({ code: "23503" });
+      for (const [table, id] of [["error_reports", report], ["error_report_issues", issue], ["error_report_threads", thread]]) {
+        expect((await database.execute({ sql: `SELECT id FROM ${table} WHERE id = ?`, args: [id] })).rows).toHaveLength(1);
+      }
+      expect(await getThemes(space.id)).toEqual(themesBefore);
+      expect(await getAdminPortfolios(space.id)).toEqual(portfoliosBefore);
+      expect((await database.execute({ sql: "SELECT management_learning_space_id FROM source_profiles WHERE id = ?", args: [profile.id] })).rows[0].management_learning_space_id).toBe(space.id);
+      for (const table of accessTables) expect((await database.execute({ sql: `SELECT * FROM ${table} WHERE learning_space_id = ?`, args: [space.id] })).rows).toEqual(accessBefore.get(table));
+    } finally { await database.execute(`DROP TABLE ${probe}`); }
+    expect(await permanentlyDeleteLearningSpace(space.id)).toBe(true);
+    expect(await getLearningSpace(space.id)).toBeNull();
+    expect(await getAdminPortfolios(space.id)).toEqual([]);
+    expect(await getThemes(space.id)).toEqual([]);
+    for (const table of [...accessTables, "error_report_threads", "error_report_issues", "source_resource_assets", "sync_runs", "sync_leases"]) {
+      expect((await database.execute({ sql: `SELECT learning_space_id FROM ${table} WHERE learning_space_id = ?`, args: [space.id] })).rows).toEqual([]);
+    }
+    for (const [table, id] of [["error_reports", report], ["exercises", exercise.id], ["sections", original.sections[0].id]]) {
+      expect((await database.execute({ sql: `SELECT id FROM ${table} WHERE id = ?`, args: [id] })).rows).toEqual([]);
+    }
+    expect((await database.execute({ sql: "SELECT id FROM users WHERE id IN (?, ?)", args: [owner.id, student.id] })).rows).toHaveLength(2);
+    expect((await database.execute({ sql: "SELECT id FROM storage_connections WHERE id = ?", args: [connection] })).rows).toHaveLength(1);
+    expect((await database.execute({ sql: "SELECT id, management_learning_space_id FROM source_profiles WHERE id = ?", args: [profile.id] })).rows[0]).toMatchObject({ id: profile.id, management_learning_space_id: null });
+    expect((await getActiveSourceProfileForLearningSpace(other.id))?.id).toBe(profile.id);
+    expect(await getAdminPortfolios(other.id)).toEqual(retained);
+    expect(await getActiveLearningSpaceSource(other.id)).toEqual(retainedSource);
+  }, 120_000);
 
   it("applies every migration and exercises representative shared repository queries", async () => {
     const database = await getDatabase();

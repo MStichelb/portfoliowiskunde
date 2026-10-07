@@ -27,7 +27,7 @@ describe("source profile layout styles", () => {
     const css = await globalsCss();
     const editorCss = css.slice(css.indexOf("/* One presentation rhythm"));
     expect(editorCss).toMatch(/max-width: 760px; min-width: 0; margin-inline: auto/);
-    expect(editorCss).toMatch(/source-profile-editor-tabs \{ display: flex; flex-wrap: nowrap;[\s\S]*overflow-x: auto/);
+    expect(editorCss).toMatch(/source-profile-editor-tabs \{[^}]*display: flex;[^}]*flex-wrap: nowrap;[^}]*overflow-x: auto/);
     expect(editorCss).toContain(".source-profile-editor-panel[hidden] { display: none; }");
     expect(editorCss).toMatch(/@container \(max-width: 560px\)[\s\S]*grid-template-columns: minmax\(0, 1fr\)/);
     expect(editorCss).not.toContain("overflow-x: hidden");
@@ -39,16 +39,16 @@ describe("source profile layout styles", () => {
     expect(css).toMatch(/\.learning-space-settings-form label, \.source-profile-dialog-form label, \.admin-form-label[^{}]*\{ display: grid; gap: 6px; color: #314149; font-size: 14px; font-weight: 700;/);
     expect(moduleCss).toContain("composes: admin-form-label from global;");
     expect(css).not.toContain(".source-profile-config-sections label { font-weight: 500;");
-    expect(css).toContain(".source-profile-editor-panel { min-width: 0; padding-block: 18px 6px; }");
+    expect(css).toMatch(/\.source-profile-editor-panel \{[^}]*min-width: 0;[^}]*padding-block: 18px 6px;/);
     expect(css).not.toContain(".source-profile-config-sections > [id]");
     expect(css).toContain(".source-profile-editor-panel .source-profile-resource-editor { margin-top: 0; padding-top: 0; border-top: 0; }");
   });
   it("anchors editor dialogs at the top while retaining viewport limits and scrolling", async () => {
     const css = await globalsCss();
-    expect(css).toContain(".source-profile-editor-backdrop { align-items: start; padding-top: clamp(24px, 5vh, 48px); }");
+    expect(css).toMatch(/\.source-profile-editor-backdrop(?:\s*,[^{}]+)?\s*\{[^}]*align-items: start;[^}]*padding-top: clamp\(24px, 5vh, 48px\);/);
     expect(css).toContain("max-height: calc(100dvh - clamp(24px, 5vh, 48px) - 20px)");
     expect(css).toMatch(/\.source-profile-dialog-wide \{[^}]*overflow-y: auto/);
-    expect(css).toContain(".source-profile-editor-backdrop { padding-top: 16px; }");
+    expect(css).toMatch(/@media \(max-width: 600px\)\s*\{\s*\.source-profile-editor-backdrop(?:\s*,[^{}]+)?\s*\{[^}]*padding-top: 16px;/);
   });
 
 });
