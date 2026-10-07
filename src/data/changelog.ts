@@ -28,6 +28,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-07-groeperingen-beheren",
+  date: "2026-10-07",
+  category: "improved",
+  title: "Groeperingen duidelijker beheren",
+  description: "Bij het beheren van groeperingen zie je welke uit een bronmap komen, welke handmatig zijn en hoeveel hoofdgehelen erbij horen. Je kunt de weergavenaam en volgorde aanpassen. Groeperingen uit bronmappen blijven beschermd tegen verwijderen; hoofdgehelen zonder groepering staan apart in het beheeroverzicht.",
+  audiences: ["teacher", "superadmin"],
+  notify: false,
+}, {
   id: "2026-10-07-toegangsbeheer-overzichtelijker",
   date: "2026-10-07",
   category: "improved",

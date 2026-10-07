@@ -247,6 +247,20 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     await setPortfolioTheme(portfolioId, space.id, null);
     expect((await getAdminPortfolios(space.id))[0].themeId).toBe(theme.id);
     await expect(deleteTheme(theme.id, space.id)).rejects.toThrow("bepaald door de bronmappen");
+    const manualTheme = (await getThemes(space.id)).find((item) => !item.sourceTheme)!;
+    await deleteTheme(manualTheme.id, space.id);
+    expect(await getThemes(space.id)).toEqual([expect.objectContaining({ id: theme.id })]);
+    themeConfig.scanner.portfolio.themeMode = "none";
+    await database.execute({
+      sql: "UPDATE source_profiles SET config_json = ? WHERE id IN (SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = ?)",
+      args: [JSON.stringify(themeConfig), space.id],
+    });
+    await expect(deleteTheme(theme.id, space.id)).rejects.toThrow("bepaald door de bronmappen");
+    themeConfig.scanner.portfolio.themeMode = "folder";
+    await database.execute({
+      sql: "UPDATE source_profiles SET config_json = ? WHERE id IN (SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = ?)",
+      args: [JSON.stringify(themeConfig), space.id],
+    });
     expect((await getIndexedSourceManifest(space.id)).find((entry) => entry.kind === "portfolio")?.sourceTheme).toEqual(directIndex.sourceTheme);
     await expect(database.execute({
       sql: `INSERT INTO themes (id, learning_space_id, name, created_at, updated_at, source_scope, source_id, source_folder_name, source_relative_path)

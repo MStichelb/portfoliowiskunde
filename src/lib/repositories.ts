@@ -962,7 +962,8 @@ export async function moveTheme(id: string, learningSpaceId: string, direction: 
 }
 
 export async function deleteTheme(id: string, learningSpaceId: string): Promise<void> {
-  if ((await getActiveSourceProfileConfigForLearningSpace(learningSpaceId)).scanner.portfolio.themeMode === "folder") {
+  const theme = (await getThemes(learningSpaceId)).find((item) => item.id === id);
+  if (theme?.sourceTheme) {
     throw new SourceConfigurationError("De thema-indeling wordt bepaald door de bronmappen. Pas de bronmappen aan om de indeling te wijzigen.");
   }
   await executeBatch([{ sql: "UPDATE portfolios SET theme_id = NULL WHERE theme_id = ? AND learning_space_id = ?", args: [id, learningSpaceId] }, { sql: "DELETE FROM themes WHERE id = ? AND learning_space_id = ?", args: [id, learningSpaceId] }]);

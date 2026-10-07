@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { formatExerciseShortLabel, formatTerminologyLabel, getLearningSpaceTerminology, initialLearningSpaceDescription, learningSpaceTerminologyLabel, miscellaneousCollectionLabel, normalizeCollectionTerminology, normalizeExerciseTerminology, normalizeSectionTerminology, normalizeThemeTerminology } from "./collection-terminology";
+import { formatExerciseShortLabel, formatTerminologyLabel, getLearningSpaceTerminology, initialLearningSpaceDescription, learningSpaceTerminologyLabel, miscellaneousCollectionLabel, normalizeCollectionTerminology, normalizeExerciseTerminology, normalizeSectionTerminology, normalizeThemeTerminology, withoutThemeLabel } from "./collection-terminology";
 
 describe("LearningSpace terminology", () => {
+  it.each([["Thema", "Zonder thema"], ["Hoofdstuk", "Zonder hoofdstuk"], ["dEEL", "Zonder deel"]])("formats the optional root label for %s", (singular: string, expected: string) => {
+    expect(withoutThemeLabel(singular)).toBe(expected);
+  });
   it("provides all hierarchy defaults while preserving an explicitly empty abbreviation", () => {
     expect(getLearningSpaceTerminology()).toEqual({
       theme: { singular: "Thema", plural: "Thema's" },

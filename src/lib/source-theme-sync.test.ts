@@ -66,6 +66,30 @@ function fixture(code: string, sourceTheme?: IndexedSourceTheme): IndexedPortfol
 const analysisTheme: IndexedSourceTheme = { name: "02 Analyse & functies", relativePath: "02 Analyse & functies", sourceId: "opaque-folder-42" };
 
 describe("source theme synchronization", () => {
+  it("protects source identity after switching to none and permits safe manual deletion in folder mode", async () => {
+    const { database, config } = await setupDatabase();
+    await persistIndex([fixture("1", analysisTheme), fixture("2")], "local", "space-6");
+    const source = (await getThemes("space-6"))[0];
+    await createTheme("space-6", "Handmatig");
+    const manual = (await getThemes("space-6")).find((item) => !item.sourceTheme)!;
+    const request = (id: string) => {
+      const form = new FormData();
+      form.set("id", id);
+      form.set("learningSpaceId", "space-6");
+      return form;
+    };
+    await deleteThemeAction(request(manual.id));
+    expect(await getThemes("space-6")).toEqual([source]);
+    config.scanner.portfolio.themeMode = "none";
+    await database.execute({
+      sql: "UPDATE source_profiles SET config_json = ? WHERE id IN (SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = 'space-6')",
+      args: [JSON.stringify(config)],
+    });
+    await expect(deleteThemeAction(request(source.id))).rejects.toThrow("bepaald door de bronmappen");
+    expect(await getThemes("space-6")).toEqual([source]);
+    expect((await getAdminPortfolios("space-6")).map((item) => item.themeId)).toEqual([source.id, null]);
+  });
+
   it.each(["none", "folder"] as const)("protects theme membership through both server actions while saving other settings (%s)", async (themeMode: "none" | "folder") => {
     await setupDatabase(themeMode);
     const indexed = [fixture("1", analysisTheme), fixture("2")];

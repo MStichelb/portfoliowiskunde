@@ -110,6 +110,10 @@ export function miscellaneousCollectionLabel(plural: string): string {
   return `Overige ${formatTerminologyLabel(plural, "inline")}`;
 }
 
+export function withoutThemeLabel(singular: string): string {
+  return `Zonder ${formatTerminologyLabel(singular, "inline")}`;
+}
+
 export function initialLearningSpaceDescription(collectionPlural = DEFAULT_COLLECTION_LABEL_PLURAL, exercisePlural = DEFAULT_EXERCISE_LABEL_PLURAL): string {
   return `Overzicht van de ${formatTerminologyLabel(collectionPlural, "inline")} met ${formatTerminologyLabel(exercisePlural, "inline")}.`;
 }

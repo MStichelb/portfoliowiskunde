@@ -80,7 +80,15 @@ describe("LearningSpace theme ordering", () => {
       expect.objectContaining({ name: "Blijft", sortOrder: 20 }),
     ]);
 
+    const database = await getDatabase();
+    await database.execute({
+      sql: "INSERT INTO portfolios (id, code, portfolio_code, learning_space_id, title, relative_path, indexed_at, theme_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+      args: ["manual-member", "space-5:99", "99", "space-5", "Blijft bestaan", "Portfolio 99", "2026-10-07", theme.id],
+    });
     await deleteTheme(theme.id, "space-5");
     expect((await getThemes("space-5")).map((item) => item.name)).toEqual(["Blijft"]);
+    expect((await database.execute("SELECT id, theme_id FROM portfolios WHERE id = 'manual-member'")).rows).toEqual([
+      expect.objectContaining({ id: "manual-member", theme_id: null }),
+    ]);
   });
 });

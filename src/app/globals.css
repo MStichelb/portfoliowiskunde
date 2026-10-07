@@ -816,13 +816,27 @@ html:has(.learning-space-settings-page, .learning-space-access-page) { scrollbar
 .source-help-link { flex: 0 0 auto; }
 .source-switch-actions .secondary-button { display: inline-flex; align-items: center; gap: 7px; }
 .save-feedback { padding: 11px 13px; border-left: 4px solid #2f7b58; background: #e8f4ed; }
-.theme-create-card { margin-top: 30px; }
-.theme-create-form { display: grid; grid-template-columns: minmax(220px, 1fr) auto; align-items: end; gap: 12px; }
+.theme-source-info { padding: 12px 14px; border-left: 3px solid #9ab0ad; background: #f1f6f4; }
+.theme-source-info h3 { margin: 0 0 5px; font-size: 15px; }
+.theme-source-info p { margin: 0; font-size: 14px; }
+.theme-create-dialog .theme-create-form { display: grid; gap: 16px; }
+.theme-create-dialog .confirm-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
 .theme-create-form label { display: grid; gap: 6px; color: #314149; font-size: 14px; font-weight: 700; }
 .theme-create-form input, .theme-name-form input { width: 100%; min-height: 40px; border: 1px solid #9ab0ad; border-radius: 4px; padding: 8px; font: inherit; }
 .theme-create-form button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 7px; }
-.theme-editor-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px; border: 1px solid #d5ddda; border-radius: 5px; background: #fff; }
+.theme-editor-card { padding: 12px; border: 1px solid #d5ddda; border-radius: 5px; background: #fff; }
+.theme-edit-row { display: flex; align-items: flex-end; gap: 12px; }
+.theme-edit-row .theme-name-form { flex: 1; min-width: 0; }
+.theme-edit-row .icon-button { align-self: center; }
+.theme-edit-row .theme-row-actions { flex-shrink: 0; margin-bottom: 2px; }
 .theme-name-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.theme-name-form label { grid-column: 1 / -1; font-size: 14px; font-weight: 700; }
+.theme-item-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 12px; font-size: 13px; }
+.theme-origin-label { color: #53635d; font-weight: 500; }
+.theme-source-description { margin: 8px 0 0; color: #53635d; font-size: 14px; overflow-wrap: anywhere; }
+.theme-root-group { padding: 12px; }
+.theme-root-group h2 { margin: 0 0 5px; font-size: 17px; }
+.theme-root-group p { margin: 0; font-size: 14px; }
 .theme-row-actions, .order-controls { display: flex; align-items: center; gap: 5px; }
 .theme-row-actions form { margin: 0; }
 .theme-row-actions .icon-button, .theme-name-form .icon-button { flex: 0 0 36px; width: 36px; height: 36px; min-height: 36px; }
@@ -1527,3 +1541,14 @@ body:has(.changelog-drawer[open]) { overflow: hidden; }
   .source-profile-editor-tabs { gap: 0; }
   .source-profile-editor-tabs button { padding-inline: 6px; font-size: 12px; }
 }
+
+.theme-section-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin: 20px 0 16px; }
+.theme-section-heading h2 { margin: 0; }
+.theme-add-button { display: inline-flex; align-items: center; gap: 7px; }
+.theme-create-dialog { width: min(420px, calc(100vw - 32px)); margin: auto; border: 1px solid var(--admin-border, #dccfd1); }
+.theme-create-dialog::backdrop { background: rgba(0,0,0,.35); }
+.theme-edit-row .theme-row-actions { gap: 12px; }
+.theme-manual-help { display: flex; align-items: center; gap: 10px; font-size: 14px; color: #53635d; }
+.theme-manual-help p { margin: 0; }
+.theme-manual-help a { flex-shrink: 0; }
+@media (max-width: 640px) { .theme-edit-row { flex-wrap: wrap; } .theme-edit-row .theme-name-form { flex-basis: 100%; } .theme-edit-row .theme-row-actions { margin-left: auto; } }
