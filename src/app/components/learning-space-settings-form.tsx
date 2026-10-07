@@ -8,6 +8,7 @@ import { saveLearningSpaceEditorPermissionsAction, type AdminActionState } from 
 import { COLLECTION_LABEL_MAX_LENGTH, DEFAULT_COLLECTION_LABEL_PLURAL, DEFAULT_COLLECTION_LABEL_SINGULAR, DEFAULT_EXERCISE_LABEL_PLURAL, DEFAULT_EXERCISE_LABEL_SHORT, DEFAULT_EXERCISE_LABEL_SINGULAR, DEFAULT_SECTION_LABEL_PLURAL, DEFAULT_SECTION_LABEL_SINGULAR, DEFAULT_THEME_LABEL_PLURAL, DEFAULT_THEME_LABEL_SINGULAR, EXERCISE_LABEL_SHORT_MAX_LENGTH, getLearningSpaceTerminology } from "@/lib/collection-terminology";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
 import type { Subject } from "@/lib/subjects";
+import { LearningSpaceSettingsPanel } from "./learning-space-settings-navigation";
 import { LearningSpaceLifecycleActions } from "./learning-space-lifecycle-actions";
 import { EditorPermissionsToggle } from "./editor-permissions-toggle";
 import { ExerciseLevelPresentationSettings } from "./exercise-level-presentation-settings";
@@ -36,17 +37,128 @@ export function LearningSpaceSettingsForm({
     <input type="hidden" name="id" value={space.id} />
     <input type="hidden" name="sortOrder" value={space.sortOrder} />
 
-    <section className="settings-card" aria-labelledby="general-settings-heading">
-      <h2 id="general-settings-heading">Algemeen</h2>
-      <div className="settings-grid general-settings-grid">
-        <label>Weergavenaam<input name="name" defaultValue={space.name} required maxLength={100} /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
-        <label>Vak<select name="subjectId" defaultValue={space.subjectId} required>{!currentSubjectIsListed ? <option value={space.subjectId}>{space.subjectName}{space.subjectIsActive ? "" : " (inactief)"}</option> : null}{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
-        <label>URL<input name="slug" defaultValue={space.slug} required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" /><small>Dit wordt gebruikt in het webadres van deze leeromgeving.</small></label>
-        <label>Kort label<input name="shortLabel" defaultValue={space.shortLabel} required maxLength={6} /><small>Compacte naam voor de navigatie, maximaal 6 tekens.</small></label>
-        <label className="field-full">Beschrijving<textarea name="description" defaultValue={space.description} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
-      </div>
-      <div className="settings-card-actions settings-card-lifecycle-actions">
-        <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
+    <LearningSpaceSettingsPanel section="general">
+      <section className="settings-card" aria-labelledby="general-settings-heading">
+        <h2 id="general-settings-heading">Algemeen</h2>
+        <div className="settings-grid general-settings-grid">
+          <label>Weergavenaam<input name="name" defaultValue={space.name} required maxLength={100} /><small>Met deze naam verschijnt de leeromgeving bij de leerlingen.</small></label>
+          <label>Vak<select name="subjectId" defaultValue={space.subjectId} required>{!currentSubjectIsListed ? <option value={space.subjectId}>{space.subjectName}{space.subjectIsActive ? "" : " (inactief)"}</option> : null}{subjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}</select></label>
+          <label>URL<input name="slug" defaultValue={space.slug} required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" /><small>Dit wordt gebruikt in het webadres van deze leeromgeving.</small></label>
+          <label>Kort label<input name="shortLabel" defaultValue={space.shortLabel} required maxLength={6} /><small>Compacte naam voor de navigatie, maximaal 6 tekens.</small></label>
+          <label className="field-full">Beschrijving<textarea name="description" defaultValue={space.description} maxLength={240} rows={3} /><small>Korte beschrijving die op het kaartje voor leerlingen verschijnt.</small></label>
+        </div>
+        <div className="settings-card-actions">
+          <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
+        </div>
+      </section>
+
+      <EditorPermissionsToggle
+        learningSpaceId={space.id}
+        initialEnabled={space.editorsCanManageAccess}
+        canChange
+        action={saveLearningSpaceEditorPermissionsAction}
+      />
+    </LearningSpaceSettingsPanel>
+
+    <LearningSpaceSettingsPanel section="appearance">
+      <section className="settings-card personalization-settings-card" aria-labelledby="appearance-settings-heading">
+        <div className="card-heading"><div><h2 id="appearance-settings-heading">Vormgeving</h2><p>Pas het uiterlijk van deze leeromgeving aan.</p></div></div>
+        <div className="personalization-settings-section">
+          <label className="color-field">Kleur<span><input name="cardColor" type="color" value={cardColor} onChange={(event) => setCardColor(event.target.value.toUpperCase())} /><code>{cardColor.toUpperCase()}</code></span><small>Accentkleur van het kaartje.</small></label>
+        </div>
+        <div className="personalization-settings-section">
+          <h3>Header</h3>
+          <p>Om een eigen afbeelding bovenaan het portfolio weer te geven, plaats je de gewenste afbeelding als &apos;header.png&apos; of &apos;header.jpg&apos; in de bronmap van de leeromgeving. Zo niet wordt de standaardheader gebruikt.</p>
+        </div>
+        <div className="settings-card-actions"><button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button></div>
+      </section>
+    </LearningSpaceSettingsPanel>
+
+    <LearningSpaceSettingsPanel section="labels">
+      <section className="settings-card personalization-settings-card" aria-labelledby="label-settings-heading">
+        <div className="card-heading"><div><h2 id="label-settings-heading">Benamingen</h2><p>Kies welke woorden in deze leeromgeving worden gebruikt.</p></div></div>
+        <div className="personalization-settings-section">
+          <h3>Groepering</h3>
+          <p>Groepeert meerdere hoofdgehelen, bijvoorbeeld in thema&apos;s of delen.</p>
+          <div className="settings-grid">
+            <label>Enkelvoud<input name="themeLabelSingular" defaultValue={terminology.theme.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_THEME_LABEL_SINGULAR}</small></label>
+            <label>Meervoud<input name="themeLabelPlural" defaultValue={terminology.theme.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_THEME_LABEL_PLURAL}</small></label>
+          </div>
+        </div>
+        <div className="personalization-settings-section">
+          <h3>Hoofdgeheel</h3>
+          <p>Het geheel waarin leerlingen werken, bijvoorbeeld een portfolio, bundel of hoofdstuk.</p>
+          <div className="settings-grid">
+            <label>Enkelvoud<input name="collectionLabelSingular" defaultValue={terminology.collection.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_COLLECTION_LABEL_SINGULAR}</small></label>
+            <label>Meervoud<input name="collectionLabelPlural" defaultValue={terminology.collection.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_COLLECTION_LABEL_PLURAL}</small></label>
+          </div>
+        </div>
+        <div className="personalization-settings-section">
+          <h3>Onderverdeling</h3>
+          <p>Een optionele opdeling binnen het hoofdgeheel, bijvoorbeeld onderdelen of secties.</p>
+          <div className="settings-grid">
+            <label>Enkelvoud<input name="sectionLabelSingular" defaultValue={terminology.section.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_SECTION_LABEL_SINGULAR}</small></label>
+            <label>Meervoud<input name="sectionLabelPlural" defaultValue={terminology.section.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_SECTION_LABEL_PLURAL}</small></label>
+          </div>
+        </div>
+        <div className="personalization-settings-section">
+          <h3>Oefeneenheid</h3>
+          <p>Waar een leerling aan werkt, bijvoorbeeld een oefening, opdracht of vraag.</p>
+          <div className="settings-grid">
+            <label>Enkelvoud<input name="exerciseLabelSingular" defaultValue={terminology.exercise.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SINGULAR}</small></label>
+            <label>Meervoud<input name="exerciseLabelPlural" defaultValue={terminology.exercise.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_PLURAL}</small></label>
+            <label>Afkorting<input name="exerciseLabelShort" defaultValue={terminology.exercise.short} maxLength={EXERCISE_LABEL_SHORT_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SHORT} - Laat leeg om enkel het nummer te tonen.</small></label>
+          </div>
+        </div>
+        <div className="settings-card-actions"><button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button></div>
+      </section>
+    </LearningSpaceSettingsPanel>
+
+    <LearningSpaceSettingsPanel section="levels">
+      <section className="settings-card personalization-settings-card level-settings-card" aria-labelledby="level-settings-heading">
+        <div className="card-heading"><div><h2 id="level-settings-heading">Niveaus</h2><p>Pas de niveaus en hun weergave aan.</p></div></div>
+        <ExerciseLevelPresentationSettings initialPresentation={space.levelPresentation} />
+        <div className="settings-card-actions"><button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button></div>
+      </section>
+    </LearningSpaceSettingsPanel>
+
+    <LearningSpaceSettingsPanel section="source">
+      <section className="settings-card source-settings-card" aria-labelledby="source-settings-heading">
+        <div className="source-settings-heading">
+          <div><h2 id="source-settings-heading">Bronnen</h2><p>Stel een primaire bron in waaruit de portfolio&apos;s worden gehaald. Daarnaast kan je een mirror instellen in geval van problemen met de primaire bron.</p></div>
+          <Link className="icon-button source-help-link" href="/admin/help/bronnen" aria-label="Hulp bij bronnen instellen" title="Hulp bij bronnen instellen"><CircleHelp size={18} aria-hidden /></Link>
+          {space.mirrorSource?.isActive ? <span className="mirror-active-badge">Mirror actief</span> : null}
+        </div>
+        <div className="source-role-grid">
+          <fieldset className={`source-role-card${primary.isActive ? " active-source-card" : ""}`}>
+            <legend>Primaire bron</legend>
+            <SourceStatus source={primary} />
+            <label>Brontype<select name="primaryProviderType" value={primaryProvider} onChange={(event) => setPrimaryProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
+            <SourceFields prefix="primary" provider={primaryProvider} source={primary} />
+          </fieldset>
+
+          <fieldset className={`source-role-card${space.mirrorSource?.isActive ? " active-source-card" : ""}`}>
+            <legend>Mirror</legend>
+            <label className="source-enabled-control"><input type="checkbox" name="mirrorEnabled" value="true" checked={mirrorEnabled} disabled={space.mirrorSource?.isActive} onChange={(event) => setMirrorEnabled(event.target.checked)} />Mirror configureren</label>
+            {space.mirrorSource?.isActive ? <input type="hidden" name="mirrorEnabled" value="true" /> : null}
+            {mirrorEnabled ? <>
+              <SourceStatus source={space.mirrorSource} />
+              <label>Brontype<select name="mirrorProviderType" value={mirrorProvider} onChange={(event) => setMirrorProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
+              <SourceFields prefix="mirror" provider={mirrorProvider} source={space.mirrorSource} />
+            </> : <p className="source-connection-status">Nog geen mirror geconfigureerd.</p>}
+          </fieldset>
+        </div>
+        <div className="settings-card-actions">
+          <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
+        </div>
+      </section>
+
+    </LearningSpaceSettingsPanel>
+
+    <LearningSpaceSettingsPanel section="status">
+      <section className="settings-card" aria-labelledby="lifecycle-settings-heading">
+        <h2 id="lifecycle-settings-heading">Status</h2>
+        <p>{space.isActive ? "Deze leeromgeving is actief." : "Deze leeromgeving is gearchiveerd."}</p>
         <LearningSpaceLifecycleActions
           space={space}
           showManage={false}
@@ -56,91 +168,8 @@ export function LearningSpaceSettingsForm({
           deleteConfirmTitle="Leeromgeving permanent verwijderen?"
           deleteConfirmText="Deze actie kan niet ongedaan worden gemaakt. De leeromgeving en bijhorende configuratie worden permanent verwijderd."
         />
-      </div>
-    </section>
-
-    <section className="settings-card personalization-settings-card" aria-labelledby="personalization-settings-heading">
-      <div className="card-heading"><div><h2 id="personalization-settings-heading">Personalisatie</h2><p>Pas de herkenbare vormgeving en benamingen van deze leeromgeving aan.</p></div></div>
-      <div className="personalization-settings-section">
-        <label className="color-field">Kleur<span><input name="cardColor" type="color" value={cardColor} onChange={(event) => setCardColor(event.target.value.toUpperCase())} /><code>{cardColor.toUpperCase()}</code></span><small>Accentkleur van het kaartje.</small></label>
-      </div>
-      <div className="personalization-settings-section">
-        <h3>Header</h3>
-        <p>Om een eigen afbeelding bovenaan het portfolio weer te geven, plaats je de gewenste afbeelding als &apos;header.png&apos; of &apos;header.jpg&apos; in de bronmap van de leeromgeving. Zo niet wordt de standaardheader gebruikt.</p>
-      </div>
-      <div className="personalization-settings-section">
-        <h3>Groepering</h3>
-        <p>Groepeert meerdere hoofdgehelen, bijvoorbeeld in thema&apos;s of delen.</p>
-        <div className="settings-grid">
-          <label>Enkelvoud<input name="themeLabelSingular" defaultValue={terminology.theme.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_THEME_LABEL_SINGULAR}</small></label>
-          <label>Meervoud<input name="themeLabelPlural" defaultValue={terminology.theme.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_THEME_LABEL_PLURAL}</small></label>
-        </div>
-      </div>
-      <div className="personalization-settings-section">
-        <h3>Hoofdgeheel</h3>
-        <p>Het geheel waarin leerlingen werken, bijvoorbeeld een portfolio, bundel of hoofdstuk.</p>
-        <div className="settings-grid">
-          <label>Enkelvoud<input name="collectionLabelSingular" defaultValue={terminology.collection.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_COLLECTION_LABEL_SINGULAR}</small></label>
-          <label>Meervoud<input name="collectionLabelPlural" defaultValue={terminology.collection.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_COLLECTION_LABEL_PLURAL}</small></label>
-        </div>
-      </div>
-      <div className="personalization-settings-section">
-        <h3>Onderverdeling</h3>
-        <p>Een optionele opdeling binnen het hoofdgeheel, bijvoorbeeld onderdelen of secties.</p>
-        <div className="settings-grid">
-          <label>Enkelvoud<input name="sectionLabelSingular" defaultValue={terminology.section.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_SECTION_LABEL_SINGULAR}</small></label>
-          <label>Meervoud<input name="sectionLabelPlural" defaultValue={terminology.section.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_SECTION_LABEL_PLURAL}</small></label>
-        </div>
-      </div>
-      <div className="personalization-settings-section">
-        <h3>Oefeneenheid</h3>
-        <p>Waar een leerling aan werkt, bijvoorbeeld een oefening, opdracht of vraag.</p>
-        <div className="settings-grid">
-          <label>Enkelvoud<input name="exerciseLabelSingular" defaultValue={terminology.exercise.singular} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SINGULAR}</small></label>
-          <label>Meervoud<input name="exerciseLabelPlural" defaultValue={terminology.exercise.plural} required maxLength={COLLECTION_LABEL_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_PLURAL}</small></label>
-          <label>Afkorting<input name="exerciseLabelShort" defaultValue={terminology.exercise.short} maxLength={EXERCISE_LABEL_SHORT_MAX_LENGTH} /><small>Standaard: {DEFAULT_EXERCISE_LABEL_SHORT} - Laat leeg om enkel het nummer te tonen.</small></label>
-        </div>
-      </div>
-      <ExerciseLevelPresentationSettings initialPresentation={space.levelPresentation} />
-      <div className="settings-card-actions"><button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button></div>
-    </section>
-
-    <EditorPermissionsToggle
-      learningSpaceId={space.id}
-      initialEnabled={space.editorsCanManageAccess}
-      canChange
-      action={saveLearningSpaceEditorPermissionsAction}
-    />
-
-    <section className="settings-card source-settings-card" aria-labelledby="source-settings-heading">
-      <div className="source-settings-heading">
-        <div><h2 id="source-settings-heading">Bronnen</h2><p>Stel een primaire bron in waaruit de portfolio&apos;s worden gehaald. Daarnaast kan je een mirror instellen in geval van problemen met de primaire bron.</p></div>
-        <Link className="icon-button source-help-link" href="/admin/help/bronnen" aria-label="Hulp bij bronnen instellen" title="Hulp bij bronnen instellen"><CircleHelp size={18} aria-hidden /></Link>
-        {space.mirrorSource?.isActive ? <span className="mirror-active-badge">Mirror actief</span> : null}
-      </div>
-      <div className="source-role-grid">
-        <fieldset className={`source-role-card${primary.isActive ? " active-source-card" : ""}`}>
-          <legend>Primaire bron</legend>
-          <SourceStatus source={primary} />
-          <label>Brontype<select name="primaryProviderType" value={primaryProvider} onChange={(event) => setPrimaryProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
-          <SourceFields prefix="primary" provider={primaryProvider} source={primary} />
-        </fieldset>
-
-        <fieldset className={`source-role-card${space.mirrorSource?.isActive ? " active-source-card" : ""}`}>
-          <legend>Mirror</legend>
-          <label className="source-enabled-control"><input type="checkbox" name="mirrorEnabled" value="true" checked={mirrorEnabled} disabled={space.mirrorSource?.isActive} onChange={(event) => setMirrorEnabled(event.target.checked)} />Mirror configureren</label>
-          {space.mirrorSource?.isActive ? <input type="hidden" name="mirrorEnabled" value="true" /> : null}
-          {mirrorEnabled ? <>
-            <SourceStatus source={space.mirrorSource} />
-            <label>Brontype<select name="mirrorProviderType" value={mirrorProvider} onChange={(event) => setMirrorProvider(parseSourceType(event.target.value))}><ProviderOptions /></select></label>
-            <SourceFields prefix="mirror" provider={mirrorProvider} source={space.mirrorSource} />
-          </> : <p className="source-connection-status">Nog geen mirror geconfigureerd.</p>}
-        </fieldset>
-      </div>
-      <div className="settings-card-actions">
-        <button className="primary-button settings-save-button" type="submit">Instellingen opslaan</button>
-      </div>
-    </section>
+      </section>
+    </LearningSpaceSettingsPanel>
 
     {state.error ? <p className="form-message" role="alert">{state.error}</p> : null}
   </form>;

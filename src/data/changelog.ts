@@ -28,6 +28,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-07-instellingennavigatie-leeromgeving",
+  date: "2026-10-07",
+  category: "improved",
+  title: "Instellingen sneller bereikbaar",
+  description: "Instellingen van een leeromgeving zijn nu overzichtelijk gegroepeerd in duidelijke onderdelen, met aparte onderdelen voor Vormgeving, Benamingen en Niveaus. Je kunt tussen onderdelen wisselen zonder je niet-opgeslagen invoer te verliezen.",
+  audiences: ["teacher", "superadmin"],
+  notify: false,
+}, {
   id: "2026-10-07-leeromgeving-permanent-verwijderen",
   date: "2026-10-07",
   category: "fixed",

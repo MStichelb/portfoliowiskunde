@@ -20,6 +20,30 @@ const space: LearningSpace = {
 const subjects = [{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true, usageCount: 0, createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:00:00.000Z" }];
 
 describe("LearningSpaceSettingsForm", () => {
+  it("separates appearance, naming and levels without changing the shared save form", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} subjects={subjects} canPermanentlyDelete={false} action={() => ({ error: null })} />);
+    const appearance = markup.slice(markup.indexOf('id="settings-panel-appearance"'), markup.indexOf('id="settings-panel-labels"'));
+    const labels = markup.slice(markup.indexOf('id="settings-panel-labels"'), markup.indexOf('id="settings-panel-levels"'));
+    const levels = markup.slice(markup.indexOf('id="settings-panel-levels"'), markup.indexOf('id="settings-panel-source"'));
+    expect(appearance).toContain("Pas het uiterlijk van deze leeromgeving aan.");
+    expect(appearance).toContain('name="cardColor"');
+    expect(appearance).toContain("Header");
+    expect(appearance).not.toMatch(/name="(?:themeLabel|levelName)/);
+    expect(labels).toContain("Kies welke woorden in deze leeromgeving worden gebruikt.");
+    for (const field of ["themeLabelSingular", "themeLabelPlural", "collectionLabelSingular", "collectionLabelPlural", "sectionLabelSingular", "sectionLabelPlural", "exerciseLabelSingular", "exerciseLabelPlural", "exerciseLabelShort"]) {
+      expect(labels).toContain(`name="${field}"`);
+    }
+    expect(labels).not.toMatch(/name="(?:cardColor|levelName)/);
+    expect(levels).toContain("Pas de niveaus en hun weergave aan.");
+    for (const field of ["levelName_basis", "levelSymbol_basis", "levelCount_basis", "levelColor_basis", "levelShowPublicBackground_basis"]) expect(levels).toContain(`name="${field}"`);
+    expect(levels).toContain('class="exercise-level-presentation-preview"');
+    expect(levels).toContain("Herstel standaardinstellingen voor Basis");
+    expect(levels).not.toMatch(/name="(?:cardColor|themeLabel)/);
+    expect((markup.match(/<form/g) ?? [])).toHaveLength(1);
+    expect((markup.match(/>Instellingen opslaan<\/button>/g) ?? [])).toHaveLength(5);
+    for (const section of [appearance, labels, levels]) expect(section).toContain('type="submit">Instellingen opslaan');
+  });
+
   it("renders saved terms in hierarchy order and keeps an empty abbreviation", () => {
     const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={{ ...space,
       themeLabelSingular: "Deel", themeLabelPlural: "Delen", sectionLabelSingular: "Sectie", sectionLabelPlural: "Secties",
@@ -36,7 +60,7 @@ describe("LearningSpaceSettingsForm", () => {
   it("keeps general settings separate from the existing-space personalization card", () => {
     const markup = renderToStaticMarkup(<LearningSpaceSettingsForm space={space} subjects={subjects} canPermanentlyDelete action={() => ({ error: null })} />);
     const generalStart = markup.indexOf('id="general-settings-heading"');
-    const personalizationStart = markup.indexOf('id="personalization-settings-heading"');
+    const personalizationStart = markup.indexOf('id="appearance-settings-heading"');
     const editorPermissionsStart = markup.indexOf('id="editor-permissions-heading"');
     const sourceStart = markup.indexOf('id="source-settings-heading"');
     const saveButtons = [...markup.matchAll(/class="primary-button settings-save-button"/g)].map((match) => match.index ?? -1);
@@ -51,7 +75,8 @@ describe("LearningSpaceSettingsForm", () => {
     expect(markup).not.toContain('type="number"');
     expect(markup).toContain("Beschrijving");
     expect(markup).toContain("Kleur");
-    expect(markup).toContain("Personalisatie");
+    expect(markup).toContain("Vormgeving");
+    expect(markup).toContain("Benamingen");
     expect(markup).toContain("Header");
     expect(markup).toContain("Om een eigen afbeelding bovenaan het portfolio weer te geven, plaats je de gewenste afbeelding als &#x27;header.png&#x27; of &#x27;header.jpg&#x27; in de bronmap van de leeromgeving. Zo niet wordt de standaardheader gebruikt.");
     expect(markup).toContain("Groepering");
@@ -98,15 +123,15 @@ describe("LearningSpaceSettingsForm", () => {
     expect(editorPermissionsSwitch).toContain('aria-checked="false"');
     expect(editorPermissionsSwitch).not.toContain("formAction");
     expect(personalizationStart).toBeGreaterThan(generalStart);
-    expect(editorPermissionsStart).toBeGreaterThan(personalizationStart);
-    expect(editorPermissionsStart).toBeLessThan(sourceStart);
-    expect(saveButtons).toHaveLength(3);
+    expect(editorPermissionsStart).toBeGreaterThan(generalStart);
+    expect(editorPermissionsStart).toBeLessThan(personalizationStart);
+    expect(saveButtons).toHaveLength(5);
     expect(saveButtons[0]).toBeGreaterThan(generalStart);
     expect(saveButtons[0]).toBeLessThan(personalizationStart);
     expect(saveButtons[1]).toBeGreaterThan(personalizationStart);
-    expect(saveButtons[1]).toBeLessThan(editorPermissionsStart);
-    expect(saveButtons[2]).toBeGreaterThan(sourceStart);
-    expect((markup.match(/>Instellingen opslaan<\/button>/g) ?? [])).toHaveLength(3);
+    expect(saveButtons[1]).toBeLessThan(sourceStart);
+    expect(saveButtons[4]).toBeGreaterThan(sourceStart);
+    expect((markup.match(/>Instellingen opslaan<\/button>/g) ?? [])).toHaveLength(5);
     expect(markup).toContain("Archiveren");
     expect(markup).not.toContain("Herstellen");
     expect(markup).not.toContain("Leeromgeving verwijderen");
