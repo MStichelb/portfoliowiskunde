@@ -118,11 +118,14 @@ describe("wizard navigation handlers", () => {
   });
   it.each(["template", "copy"])("opens %s editing locally and retains the same draft through closing and previous/next", (mode) => {
     profileStep(); change("profileMode", mode); fields.set("profileSelectionId", mode === "template" ? "template-1" : "other-space");
+    expect(render().props["data-profile-editor-open"]).toBeUndefined();
     click("Bronprofiel controleren en aanpassen"); draftFields();
+    expect(render().props["data-profile-editor-open"]).toBe("true");
     fields.set("portfolioScannerJson", JSON.stringify({ ...config.scanner.portfolio, marker: "Eigen bundel" }));
     const editor = nodes(render()).find((node) => node.type === LearningSpaceCreationProfileEditor)!;
     expect(editor.props.draftKey).toBe(`${mode}:${mode === "template" ? "template-1" : "other-space"}`);
     click("Wijzigingen gebruiken");
+    expect(render().props["data-profile-editor-open"]).toBeUndefined();
     expect(nodes(render()).some((node) => node.type === "li" && String(node.props.children).includes("Eigen bundel"))).toBe(true);
     click("Vorige"); click("Volgende"); click("Bronprofiel controleren en aanpassen");
     expect(nodes(render()).find((node) => node.type === LearningSpaceCreationProfileEditor)?.props.config).toBe(editor.props.config);

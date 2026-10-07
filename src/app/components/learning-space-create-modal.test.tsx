@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
@@ -30,6 +32,19 @@ describe("LearningSpaceCreateModal", () => {
     expect(markup).toContain('data-step="4" hidden=""');
   });
 
+  it("only top-aligns the wizard when the profile subeditor is open and preserves modal margins", async () => {
+    const css = await readFile(path.join(process.cwd(), "src/app/globals.css"), "utf8");
+    expect(css).toContain('.confirm-backdrop:has(.learning-space-create-form[data-profile-editor-open="true"]) { align-items: start;');
+    expect(css).toContain("padding-top: clamp(24px, 5vh, 48px)");
+    expect(css).toContain("max-height: calc(100dvh - 36px)");
+    expect(css).toContain('width: fit-content');
+    expect(css).toContain('min-width: min(800px, calc(100vw - 48px))');
+    expect(css).toContain('max-width: min(1100px, calc(100vw - 48px))');
+    expect(css).toContain('.learning-space-create-dialog:has(.learning-space-create-form[data-profile-editor-open="true"])');
+    expect(css).toContain("width: min(880px, 100%)");
+    const markup = renderToStaticMarkup(<LearningSpaceCreateModal action={() => undefined} subjects={subjects} initialOpen />);
+    expect(markup).not.toContain('data-profile-editor-open="true"');
+  });
   it("keeps a validation error visible inside the open modal", () => {
     const markup = renderToStaticMarkup(<LearningSpaceCreateModal action={() => undefined} subjects={subjects} initialOpen error="Controleer de ingevulde gegevens." />);
 

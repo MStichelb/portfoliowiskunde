@@ -1812,9 +1812,23 @@ describe("persistIndex", () => {
       VALUES (?, ?, ?, ?, 'standard', '[]', 'Lifecycle test', 'TODO', ?, ?)`, args: ["report-space-5", String(references.portfolio_id), String(references.section_id), String(references.exercise_id), "2026-08-14T10:00:00.000Z", "2026-08-14T10:00:00.000Z"] });
     await database.execute({ sql: "INSERT INTO sync_warnings (id, sync_run_id, severity, relative_path, message) VALUES (?, ?, 'warning', 'test', 'Lifecycle test')", args: ["warning-space-5", syncRunId] });
     await database.execute({ sql: "INSERT INTO portfolio_external_links (portfolio_id, resource_id, url, updated_at) VALUES (?, 'video', 'https://example.com', ?)", args: [String(references.portfolio_id), "2026-09-12T20:00:00.000Z"] });
+    await database.execute({ sql: `INSERT INTO error_report_threads (id, learning_space_id, portfolio_id, exercise_id, exercise_code, created_at, updated_at)
+      VALUES ('thread-space-5', 'space-5', ?, ?, '1', ?, ?)`, args: [String(references.portfolio_id), String(references.exercise_id), "2026-10-07", "2026-10-07"] });
+    await database.execute({ sql: `INSERT INTO error_report_issues (id, thread_id, learning_space_id, portfolio_id, exercise_id, exercise_code, document_kind, created_at, updated_at)
+      VALUES ('issue-space-5', 'thread-space-5', 'space-5', ?, ?, '1', 'exercise_solution', ?, ?)`, args: [String(references.portfolio_id), String(references.exercise_id), "2026-10-07", "2026-10-07"] });
+    await database.execute("UPDATE error_reports SET issue_id = 'issue-space-5' WHERE id = 'report-space-5'");
     const retainedPortfolioIds = (await getAdminPortfolios("space-6")).map((portfolio) => portfolio.id);
 
     expect(await archiveLearningSpace("space-5")).toBe(true);
+    // A failure at the final parent delete must roll back all earlier cleanup.
+    await database.execute("CREATE TABLE delete_rollback_probe (space_id TEXT REFERENCES learning_spaces(id))");
+    await database.execute("INSERT INTO delete_rollback_probe (space_id) VALUES ('space-5')");
+    await expect(permanentlyDeleteLearningSpace("space-5")).rejects.toThrow(/FOREIGN KEY/i);
+    for (const table of ["error_reports", "error_report_issues", "error_report_threads"]) {
+      expect((await database.execute(`SELECT id FROM ${table}`)).rows).toHaveLength(1);
+    }
+    expect((await getAdminPortfolios("space-5")).length).toBeGreaterThan(0);
+    await database.execute("DROP TABLE delete_rollback_probe");
     expect(await permanentlyDeleteLearningSpace("space-5")).toBe(true);
     expect(await getLearningSpace("space-5")).toBeNull();
     expect(await getAdminLearningSpaceBySlug("5")).toBeNull();
@@ -1825,6 +1839,8 @@ describe("persistIndex", () => {
     expect((await database.execute("SELECT learning_space_id FROM sync_leases WHERE learning_space_id = 'space-5'")).rows).toEqual([]);
     expect((await database.execute("SELECT id FROM learning_space_sources WHERE learning_space_id = 'space-5'")).rows).toEqual([]);
     expect((await database.execute("SELECT id FROM error_reports WHERE id = 'report-space-5'")).rows).toEqual([]);
+    expect((await database.execute("SELECT id FROM error_report_issues WHERE learning_space_id = 'space-5'")).rows).toEqual([]);
+    expect((await database.execute("SELECT id FROM error_report_threads WHERE learning_space_id = 'space-5'")).rows).toEqual([]);
     expect((await database.execute("SELECT portfolio_id FROM portfolio_external_links")).rows).toEqual([]);
     expect((await database.execute("SELECT id FROM sync_warnings WHERE id = 'warning-space-5'")).rows).toEqual([]);
     expect((await database.execute("PRAGMA foreign_key_check")).rows).toEqual([]);

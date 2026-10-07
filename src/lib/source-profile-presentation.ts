@@ -19,6 +19,7 @@ export function sourceProfileLabels(input: LearningSpaceTerminologyInput = {}) {
   const inline = (entity: keyof typeof terms) => formatTerminologyLabel(terms[entity].singular, "inline");
   const plural = (entity: keyof typeof terms) => formatTerminologyLabel(terms[entity].plural, "inline");
   return {
+    tabTheme: formatTerminologyLabel(terms.theme.plural, "standalone"),
     tabCollection: formatTerminologyLabel(terms.collection.plural, "standalone"),
     tabSection: formatTerminologyLabel(terms.section.plural, "standalone"),
     tabExercise: formatTerminologyLabel(terms.exercise.plural, "standalone"),

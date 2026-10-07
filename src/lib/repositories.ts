@@ -883,6 +883,7 @@ export async function permanentlyDeleteLearningSpace(id: string): Promise<boolea
   await executeBatch([
     { sql: `DELETE FROM error_reports WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
     { sql: "DELETE FROM error_report_issues WHERE learning_space_id = ?", args: [id] },
+    { sql: "DELETE FROM error_report_threads WHERE learning_space_id = ?", args: [id] },
     { sql: `DELETE FROM solution_assets WHERE variant_id IN (${variantIds})`, args: [id] },
     { sql: `DELETE FROM solution_variants WHERE exercise_id IN (${exerciseIds})`, args: [id] },
     { sql: `DELETE FROM exercises WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
@@ -895,6 +896,8 @@ export async function permanentlyDeleteLearningSpace(id: string): Promise<boolea
     { sql: "DELETE FROM themes WHERE learning_space_id = ?", args: [id] },
     { sql: "DELETE FROM app_settings WHERE key = 'legacy_default_learning_space_id' AND value = ?", args: [id] },
     { sql: "DELETE FROM learning_space_sources WHERE learning_space_id = ?", args: [id] },
+    // Older databases still RESTRICT this optional management-context reference.
+    { sql: "UPDATE source_profiles SET management_learning_space_id = NULL WHERE management_learning_space_id = ?", args: [id] },
     { sql: "DELETE FROM learning_spaces WHERE id = ?", args: [id] },
   ]);
   return true;

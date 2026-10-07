@@ -28,11 +28,19 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-07-leeromgeving-permanent-verwijderen",
+  date: "2026-10-07",
+  category: "fixed",
+  title: "Leeromgevingen betrouwbaar permanent verwijderen",
+  description: "Gearchiveerde leeromgevingen kunnen weer permanent worden verwijderd, ook met foutmeldingen of gekoppelde bronprofielen. De bronprofielen zelf en gegevens van andere leeromgevingen blijven behouden.",
+  audiences: ["teacher", "superadmin"],
+  notify: false,
+}, {
   id: "2026-10-06-bronprofielen-overzichtelijker",
   date: "2026-10-06",
   category: "improved",
   title: "Bronprofielen overzichtelijk instellen",
-  description: "Bronprofielen werken met duidelijke tabbladen en gebruiken automatisch de benamingen van je leeromgeving. Bij een gedeeld profiel kun je kiezen met welke benamingen je de instellingen bekijkt.",
+  description: "Bronprofielen werken met duidelijke tabbladen en gebruiken automatisch de benamingen van je leeromgeving. Bij een gedeeld profiel kun je kiezen met welke benamingen je de instellingen bekijkt. Het bronmapvoorbeeld kan ook tonen hoe mappen en bestanden door de app worden geïnterpreteerd.",
   audiences: ["teacher", "superadmin"],
   notify: false,
 }, {

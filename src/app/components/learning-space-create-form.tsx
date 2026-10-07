@@ -107,7 +107,7 @@ export function LearningSpaceCreateForm({ action, subjects, options = EMPTY_CREA
     ["section", "Onderverdeling", "sectionLabel", "Een optionele opdeling, bijvoorbeeld onderdelen of secties."],
     ["exercise", "Oefeneenheid", "exerciseLabel", "Waar een leerling aan werkt, bijvoorbeeld een oefening, opdracht of vraag."],
   ] as const;
-  return <form ref={formRef} noValidate className="learning-space-create-form" onSubmit={(event) => {
+  return <form ref={formRef} noValidate data-profile-editor-open={step === 3 && editorOpen ? "true" : undefined} className="learning-space-create-form" onSubmit={(event) => {
     event.preventDefault();
     if (pending) return;
     if (step !== 4) { move(step + 1); return; }

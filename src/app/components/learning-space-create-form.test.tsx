@@ -3,12 +3,23 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
+import { LearningSpaceCreationProfileEditor } from "./learning-space-creation-profile-editor";
+import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "@/lib/source-profile-config";
 import { ExerciseLevelPresentationSettings } from "./exercise-level-presentation-settings";
 import { DEFAULT_EXERCISE_LEVEL_PRESENTATION } from "@/lib/exercise-level-presentation";
 
 import { LearningSpaceCreateForm } from "./learning-space-create-form";
 
 describe("LearningSpaceCreateForm", () => {
+  it("reuses the shared nine-tab editor and preview slider in the wizard subeditor", () => {
+    const markup = renderToStaticMarkup(<LearningSpaceCreationProfileEditor config={BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG} draftKey="template:test" />);
+    expect(markup.match(/role="tab"/g)).toHaveLength(9);
+    expect(markup.match(/Interpretatie tonen/g)).toHaveLength(1);
+    expect(markup).toContain("editor-permissions-track");
+    expect(markup).toContain('role="switch" aria-checked="false"');
+    expect(markup).toContain('aria-label="Voorbeeld van de mapstructuur"');
+    expect(markup).toContain("Thema&#x27;s</button>");
+  });
   it("uses the agreed labels and help text without visible duplicate section legends", () => {
     const markup = renderToStaticMarkup(<LearningSpaceCreateForm action={() => undefined} subjects={subjects} />);
 

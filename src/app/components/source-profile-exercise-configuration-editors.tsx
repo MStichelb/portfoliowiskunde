@@ -58,6 +58,7 @@ export function SourceProfileExerciseConfigurationEditors({
   const [portfolioScannerPreview, setPortfolioScannerPreview] = useState<PortfolioScannerConfig>(portfolioScanner);
   const [scannerPreview, setScannerPreview] = useState<ExerciseScannerConfig>(scanner);
   const [exerciseScannerDirty, setExerciseScannerDirty] = useState(false);
+  const [previewGlobalResources, setPreviewGlobalResources] = useState<GlobalResourceConfig[]>(() => [...globalResources]);
   const [previewResources, setPreviewResources] = useState<ExerciseResourceConfig[]>(() => [...resources]);
   const [previewLevelRecognition, setPreviewLevelRecognition] = useState<ExerciseLevelRecognitionConfig>(levelRecognition);
   const exerciseMode: ExerciseMode = scannerPreview.exerciseMode;
@@ -74,8 +75,8 @@ export function SourceProfileExerciseConfigurationEditors({
   return <div className="source-profile-config-sections">
     <SourceProfileTabs keepMounted className="source-profile-editor-tabs" panelClassName="source-profile-editor-panel" ariaLabel="Bronprofielinstellingen" panels={[
       { id: "overview", label: "Overzicht", content: <section className="source-profile-overview-section"><h3>Overzicht</h3>{overview}</section> },
-      { id: "structure", label: "Structuur", content: <section id={sectionId("structure")} className="source-profile-resource-editor">
-      <div className="source-profile-resource-editor-heading"><div><h3>Structuur</h3><p>Groepeer {labels.collections} eventueel via één mapniveau.</p></div></div>
+      { id: "structure", label: labels.tabTheme, content: <section id={sectionId("structure")} className="source-profile-resource-editor">
+      <div className="source-profile-resource-editor-heading"><div><h3>{labels.tabTheme}</h3><p>Groepeer {labels.collections} eventueel via één mapniveau.</p></div></div>
       {readOnly ? <p>{portfolioScanner.themeMode === "folder" ? `Eén mapniveau als ${labels.themes}` : `Geen ${labels.themes} uit mappen`}</p> : <div className="source-profile-resource-form source-profile-resource-form-embedded">
         <input type="hidden" name="portfolioScannerJson" value={JSON.stringify(portfolioScannerPreview)} />
         <label className={styles.stackedField}>Groepering uit mappen
@@ -93,7 +94,7 @@ export function SourceProfileExerciseConfigurationEditors({
       </label></div>}
       <p className="source-profile-resource-note">{portfolioScannerPreview.marker.trim() ? <>Na deze vaste tekst volgt de code, bijvoorbeeld <code>{portfolioScannerPreview.marker}1.1 - Stelsels</code>. De tekst na de code wordt de titel.</> : "Dit bronprofiel vereist vaste tekst vóór de code."}</p>
     </section> },
-      { id: "documents", label: "Documenten", content: <div id={sectionId("documents")}>{readOnly ? <SourceProfileGlobalResourcesViewer resources={globalResources} /> : <SourceProfileGlobalResourcesEditor resources={globalResources} ownerIdField={ownerIdField} ownerId={ownerId} embedded onDirtyChange={onGlobalResourcesDirtyChange} />}</div> },
+      { id: "documents", label: "Documenten", content: <div id={sectionId("documents")}>{readOnly ? <SourceProfileGlobalResourcesViewer resources={globalResources} /> : <SourceProfileGlobalResourcesEditor resources={globalResources} ownerIdField={ownerIdField} ownerId={ownerId} embedded onChange={setPreviewGlobalResources} onDirtyChange={onGlobalResourcesDirtyChange} />}</div> },
       { id: "sections", label: labels.tabSection, content: <section id={sectionId("sections")} className="source-profile-resource-editor">
       <div className="source-profile-resource-editor-heading"><div><h3>{labels.sectionHeading}</h3><p>{sectionNumberRuleLabel()}</p></div></div>
       <p className="source-profile-resource-note">Tekst na de code wordt de naam. Zonder zulke submappen staan {labels.exercises} rechtstreeks in de {labels.collection}. Letter-startende codes worden niet herkend.</p>
@@ -120,7 +121,7 @@ export function SourceProfileExerciseConfigurationEditors({
         </> : null}
       </section> : <SourceProfileLevelRecognitionEditor recognition={levelRecognition} resources={previewResources} exerciseMode={exerciseMode} onDirtyChange={onLevelRecognitionDirtyChange} onChange={setPreviewLevelRecognition} />}
     </div> },
-      { id: "preview", label: "Voorbeeld", content: <div id={sectionId("preview")}><SourceProfileStructurePreview headingId={sectionId("preview-heading")} portfolioScanner={portfolioScannerPreview} scanner={scannerPreview} resources={previewResources} levelRecognition={previewLevelRecognition} /></div> },
+      { id: "preview", label: "Voorbeeld", content: <div id={sectionId("preview")}><SourceProfileStructurePreview globalResources={previewGlobalResources} headingId={sectionId("preview-heading")} portfolioScanner={portfolioScannerPreview} scanner={scannerPreview} resources={previewResources} levelRecognition={previewLevelRecognition} /></div> },
     ]} />
   </div>;
 }

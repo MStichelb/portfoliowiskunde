@@ -22,7 +22,8 @@ describe("SourceProfileManageDialog", () => {
     expect(markup).toContain("Groepering uit mappen");
     expect(markup).toContain(`<option value="${themeMode}" selected="">`);
     expect(markup).toContain(`&quot;themeMode&quot;:&quot;${themeMode}&quot;`);
-    expect(markup.includes("Thema uit bronmap")).toBe(themeMode === "folder");
+    expect(markup).not.toContain("Thema uit bronmap");
+    expect(markup).toContain("Interpretatie tonen");
     expect(markup.includes("Bronmap")).toBe(themeMode === "folder");
     if (themeMode === "folder") {
       expect(markup).toContain(">Analyse<");

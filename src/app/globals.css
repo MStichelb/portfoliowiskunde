@@ -1219,7 +1219,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-profile-recognition-panel { display: grid; gap: 10px; }
 .source-profile-recognition-label { color: #314149; font-size: 13px; font-weight: 700; }
 .source-profile-recognition-grid { display: grid; grid-template-columns: minmax(130px, .75fr) minmax(0, 1.25fr); gap: 10px 12px; }
-.source-profile-resource-extensions { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 0; border: 0; padding: 0; }
+fieldset.source-profile-resource-extensions { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 0; border: 0; padding: 0; }
 .source-profile-resource-extensions legend { width: 100%; margin-bottom: 2px; color: #314149; font-size: 13px; font-weight: 700; }
 .source-profile-resource-extensions label, .source-profile-resource-checkbox { display: inline-flex; align-items: center; gap: 6px; color: #314149; font-size: 13px; font-weight: 600; }
 .source-profile-resource-extensions input, .source-profile-resource-checkbox input { width: 16px; height: 16px; min-height: 0; margin: 0; padding: 0; accent-color: #075c75; }
@@ -1277,7 +1277,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
 .source-profile-resource-summary { overflow: hidden; }
 .source-profile-resource-summary > svg { flex: 0 0 auto; }
 .source-profile-resource-summary strong { min-width: 0; flex: 1 1 auto; }
-.source-profile-resource-extensions { row-gap: 10px; column-gap: 16px; padding-bottom: 4px; }
+fieldset.source-profile-resource-extensions { row-gap: 10px; column-gap: 16px; padding-bottom: 4px; }
 .source-profile-resource-extensions label, .source-profile-resource-checkbox { line-height: 1.35; }
 .source-profile-resource-checkbox { margin-top: 2px; padding-top: 8px; border-top: 1px solid #e2e8e5; }
 .source-profile-resource-viewer { margin-top: 16px; }
@@ -1298,7 +1298,7 @@ h3 { font-size: 17px; margin-bottom: 12px; }
   .source-profile-resource-order-actions { gap: 3px; }
   .source-profile-resource-order-actions .icon-button { width: 31px; height: 31px; min-height: 31px; padding: 0; }
   .source-profile-resource-readonly-grid, .source-profile-resource-readonly-recognition { grid-template-columns: 1fr; }
-  .source-profile-resource-extensions { column-gap: 14px; }
+  fieldset.source-profile-resource-extensions { column-gap: 14px; }
 }
 
 
@@ -1417,7 +1417,8 @@ body:has(.changelog-drawer[open]) { overflow: hidden; }
 .creation-profile-editor .source-profile-icon-picker-menu { left: 0; right: auto; width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 /* One presentation rhythm for concrete profiles, templates and wizard drafts. */
-.source-profile-config-sections, .source-profile-overview-section { width: 100%; max-width: 760px; min-width: 0; margin-inline: auto; }
+.source-profile-config-sections { width: 100%; min-width: 0; }
+.source-profile-overview-section { width: 100%; max-width: 760px; min-width: 0; margin-inline: auto; }
 .source-profile-overview-section { display: grid; gap: 12px; }
 .source-profile-overview-section h3, .source-profile-overview-section p { margin: 0; }
 .source-profile-overview-section p { color: #52616a; line-height: 1.45; }
@@ -1431,18 +1432,18 @@ body:has(.changelog-drawer[open]) { overflow: hidden; }
 .source-profile-level-summary { display: grid; gap: 8px; margin: 0; }
 .source-profile-level-summary > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .source-profile-level-summary dd { margin: 0; }
-.source-profile-manage-dialog, .source-profile-readonly-config { container-type: inline-size; }
+.source-profile-readonly-config { container-type: inline-size; }
 @container (max-width: 560px) {
   .source-profile-config-sections .source-profile-resource-grid, .source-profile-config-sections .source-profile-resource-top-grid, .source-profile-config-sections .source-profile-recognition-grid { grid-template-columns: minmax(0, 1fr); }
   .source-profile-config-sections .source-profile-resource-editor-heading { flex-wrap: wrap; gap: 8px; }
 }
 
 /* Local editor tabs keep fields mounted; only the active panel is visible. */
-.source-profile-editor-tabs { display: flex; flex-wrap: nowrap; gap: 2px; min-width: 0; max-width: 100%; overflow-x: auto; border-bottom: 1px solid var(--admin-border); scrollbar-width: thin; }
-.source-profile-editor-tabs button { flex: 0 0 auto; min-height: 42px; padding: 10px 9px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: #52616a; font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.source-profile-editor-tabs { width: max-content; display: flex; flex-wrap: nowrap; gap: 2px; min-width: 0; max-width: 100%; overflow-x: auto; border-bottom: 1px solid var(--admin-border); scrollbar-width: thin; }
+.source-profile-editor-tabs button { flex: 0 0 auto; min-height: 42px; padding: 10px 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: #52616a; font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .source-profile-editor-tabs button.is-active { border-bottom-color: #08758d; color: #075c75; background: #f0f7f8; font-weight: 600; }
 .source-profile-editor-tabs button:focus-visible { outline: 2px solid #08758d; outline-offset: -2px; }
-.source-profile-editor-panel { min-width: 0; padding-block: 18px 6px; }
+.source-profile-editor-panel { contain: inline-size; container-type: inline-size; width: 100%; max-width: 760px; min-width: 0; margin-inline: auto; padding-block: 18px 6px; }
 .source-profile-editor-panel[hidden] { display: none; }
 .source-profile-editor-panel .source-profile-resource-editor { margin-top: 0; padding-top: 0; border-top: 0; }
 .source-profile-editor-panel .source-profile-main-fields { margin-top: 0; }
@@ -1463,7 +1464,7 @@ body:has(.changelog-drawer[open]) { overflow: hidden; }
 .source-profile-view-options button:hover, .source-profile-view-options button[aria-pressed=true] { background: #edf5f6; }
 .source-profile-view-options button > span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .source-profile-view-check { flex: 0 0 14px; width: 14px; }
-@container (max-width: 560px) {
+@media (max-width: 600px) {
   .source-profile-dialog-heading { flex-wrap: wrap; gap: 10px; }
   .source-profile-dialog-heading-actions { position: relative; width: 100%; flex-wrap: wrap; justify-content: flex-end; }
   .source-profile-view-context { white-space: normal; overflow-wrap: anywhere; }
@@ -1471,9 +1472,33 @@ body:has(.changelog-drawer[open]) { overflow: hidden; }
   .source-profile-view-options { right: 0; max-width: min(280px, calc(100vw - 64px)); }
 }
 
-.source-profile-editor-backdrop { align-items: start; padding-top: clamp(24px, 5vh, 48px); }
-.source-profile-editor-backdrop > .source-profile-dialog { max-height: calc(100dvh - clamp(24px, 5vh, 48px) - 20px); }
+.source-profile-editor-backdrop,
+.confirm-backdrop:has(.learning-space-create-form[data-profile-editor-open="true"]) { align-items: start; padding-top: clamp(24px, 5vh, 48px); }
+.source-profile-editor-backdrop > .source-profile-dialog,
+.confirm-backdrop:has(.learning-space-create-form[data-profile-editor-open="true"]) > .learning-space-create-dialog { max-height: calc(100dvh - clamp(24px, 5vh, 48px) - 20px); }
 @media (max-width: 600px) {
-  .source-profile-editor-backdrop { padding-top: 16px; }
-  .source-profile-editor-backdrop > .source-profile-dialog { max-height: calc(100dvh - 36px); }
+  .source-profile-editor-backdrop,
+  .confirm-backdrop:has(.learning-space-create-form[data-profile-editor-open="true"]) { padding-top: 16px; }
+  .source-profile-editor-backdrop > .source-profile-dialog,
+  .confirm-backdrop:has(.learning-space-create-form[data-profile-editor-open="true"]) > .learning-space-create-dialog { max-height: calc(100dvh - 36px); }
+}
+
+/* Only navigation contributes intrinsic width; panels and headers follow it. */
+.source-profile-manage-dialog,
+.learning-space-create-dialog:has(.learning-space-create-form[data-profile-editor-open="true"]) {
+  container-type: normal;
+  width: fit-content;
+  min-width: min(800px, calc(100vw - 48px));
+  max-width: min(1100px, calc(100vw - 48px));
+}
+.source-profile-manage-dialog > form > .source-profile-dialog-heading,
+.learning-space-create-dialog:has(.learning-space-create-form[data-profile-editor-open="true"]) > .learning-space-create-dialog-heading,
+.learning-space-create-form[data-profile-editor-open="true"] > .creation-wizard-footer,
+.learning-space-create-form[data-profile-editor-open="true"] .creation-step-heading {
+  contain: inline-size;
+}
+
+@media (max-width: 760px) {
+  .source-profile-editor-tabs { gap: 0; }
+  .source-profile-editor-tabs button { padding-inline: 6px; font-size: 12px; }
 }

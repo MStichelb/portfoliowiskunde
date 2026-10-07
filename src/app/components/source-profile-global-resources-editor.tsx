@@ -82,6 +82,7 @@ export function SourceProfileGlobalResourcesEditor({
   shared = false,
   embedded = false,
   onDirtyChange,
+  onChange,
 }: {
   resources: readonly GlobalResourceConfig[];
   action?: (formData: FormData) => Promise<void>;
@@ -90,18 +91,24 @@ export function SourceProfileGlobalResourcesEditor({
   shared?: boolean;
   embedded?: boolean;
   onDirtyChange?: (dirty: boolean) => void;
+  onChange?: (resources: GlobalResourceConfig[]) => void;
 }) {
   const labels = useSourceProfileLabels();
   const [items, setItems] = useState<GlobalResourceConfig[]>(() => normalizeOrders(sortGlobalResources(resources)));
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
   const [showHelp, setShowHelp] = useState(false);
   const initialSerialized = useMemo(() => JSON.stringify(normalizeOrders(sortGlobalResources(resources))), [resources]);
-  const serialized = useMemo(() => JSON.stringify(normalizeOrders(items)), [items]);
+  const previewItems = useMemo(() => normalizeOrders(items), [items]);
+  const serialized = useMemo(() => JSON.stringify(previewItems), [previewItems]);
   const canAdd = items.length < GLOBAL_RESOURCE_LIMIT;
 
   useEffect(() => {
     onDirtyChange?.(serialized !== initialSerialized);
   }, [initialSerialized, onDirtyChange, serialized]);
+
+  useEffect(() => {
+    onChange?.(previewItems);
+  }, [onChange, previewItems]);
 
   const update = (index: number, updater: (resource: GlobalResourceConfig) => GlobalResourceConfig) => {
     setItems((current) => current.map((resource, position) => position === index ? updater(resource) : resource));
