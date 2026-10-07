@@ -15,6 +15,31 @@ import { ExerciseBulkTable, sectionSelectionState, toggleSectionSelection } from
 import { DEFAULT_EXERCISE_LEVEL_PRESENTATION } from "@/lib/exercise-level-presentation";
 
 describe("exercise section selection", () => {
+  it.each([false, true])("renders direct controls before real sections when present (mixed=%s)", (mixed: boolean) => {
+    const props: Parameters<typeof ExerciseBulkTable>[0] = {
+      portfolioId: "portfolio-1", learningSpaceId: "space-5", spaceSlug: "5wis", sections: [],
+      exercises: [{
+        id: "direct", code: "2", configuredVisible: true,
+        status: { configuredVisibility: "visible", state: "visible", reason: null, effectiveFrom: null, effectiveUntil: null },
+        levelSource: null, levelOverrideMode: "inherit", levelOverride: null, effectiveLevel: null,
+        standardAssets: 1, alternativeAssets: 1, missingAssets: 0, showAlternativeToStudents: true,
+        isIndexed: true, noteLabel: null, customNote: null, notePosition: "above_solution",
+      }],
+    };
+    if (mixed) props.sections = [{ id: "real-section", code: "1", title: "Basis", exercises: [{ ...props.exercises![0], id: "section-exercise", code: "3" }] }];
+    const markup = renderToStaticMarkup(createElement(ExerciseBulkTable, props));
+    expect(markup).toContain('/admin/5wis/oefening/direct');
+    expect(markup).toContain('aria-label="Oefening 2 selecteren"');
+    expect(markup).toContain('aria-label="Alternatieve uitwerking voor oefening 2 tonen"');
+    expect(markup.match(/class="section-table-row"/g)?.length ?? 0).toBe(mixed ? 1 : 0);
+    if (mixed) {
+      expect(markup.indexOf('id="exercise-direct"')).toBeLessThan(markup.indexOf("1. Basis"));
+      expect(markup).toContain('/admin/5wis/oefening/section-exercise');
+      expect(markup).toContain('aria-label="Alle oefeningen van 1. Basis selecteren"');
+    }
+    expect(markup).not.toContain("per onderdeel");
+  });
+
   const sectionIds = ["exercise-1", "exercise-2", "exercise-3"];
 
   it("selects only all exercises from the requested section", () => {
@@ -39,6 +64,7 @@ describe("exercise section selection", () => {
       spaceSlug: "5wis",
       exerciseLabelSingular: "OpGavE",
       exerciseLabelPlural: "OPGAVEN",
+      sectionLabelSingular: "sECTIE",
       levelPresentation: {
         ...DEFAULT_EXERCISE_LEVEL_PRESENTATION,
         uitdaging: { ...DEFAULT_EXERCISE_LEVEL_PRESENTATION.uitdaging, color: "#123456" },
@@ -57,7 +83,7 @@ describe("exercise section selection", () => {
     }));
 
     expect(markup).toContain(">Notitie<");
-    expect(markup).toContain("Opgaven per onderdeel");
+    expect(markup).toContain("Opgaven per sectie");
     expect(markup).toContain("1.1 Inleiding");
     expect(markup).not.toContain("1.1. Inleiding");
     expect(markup).toContain('aria-label="Alle opgaven van 1.1 Inleiding selecteren"');

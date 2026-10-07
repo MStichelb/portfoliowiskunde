@@ -35,6 +35,15 @@ import LearningSpaceAdminExercisePage from "./page";
 import { DEFAULT_EXERCISE_LEVEL_PRESENTATION } from "@/lib/exercise-level-presentation";
 
 describe("LearningSpace admin exercise terminology", () => {
+  it("shows the portfolio and existing controls for a direct exercise without a null section label", async () => {
+    mocks.getAdminExercise.mockResolvedValue({ ...(await mocks.getAdminExercise()), sectionCode: null, sectionTitle: null });
+    const markup = renderToStaticMarkup(await LearningSpaceAdminExercisePage({ params: Promise.resolve({ spaceSlug: "fysica", id: "exercise-1c" }) }));
+    expect(markup).toContain("<p>Krachten</p>");
+    expect(markup).toContain("Eigen status");
+    expect(markup.split("<script>")[0]).not.toContain("null");
+    expect(markup).not.toContain("1.1 Basis");
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requireAdminUser.mockResolvedValue({ id: "teacher", role: "teacher", status: "active" });

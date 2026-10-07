@@ -5,7 +5,7 @@ import path from "node:path";
 import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { executeBatch, executeGuardedBatch, getDatabase } from "@/lib/database";
-import type { IndexedPortfolio } from "@/lib/domain";
+import type { IndexedPortfolio, IndexedSourceTheme } from "@/lib/domain";
 import { listErrorReportExerciseIdentities, normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
 import { ErrorReportRateLimitError } from "@/lib/error-report-rate-limit";
 import {
@@ -22,11 +22,13 @@ import {
 } from "@/lib/exercise-level-presentation";
 import { canPermanentlyDeleteLearningSpace } from "@/lib/learning-space-lifecycle";
 import type { IndexedLearningSpaceHeader } from "@/lib/learning-space-header";
-import { normalizeCollectionTerminology, normalizeExerciseShortLabel, normalizeExerciseTerminology } from "@/lib/collection-terminology";
+import { getLearningSpaceTerminology, initialLearningSpaceDescription, normalizeCollectionTerminology, normalizeExerciseShortLabel, normalizeExerciseTerminology, normalizeSectionTerminology, normalizeThemeTerminology } from "@/lib/collection-terminology";
 import { comparePortfolioIds, comparePortfolioRelativePaths, normalizeSectionCode, relativePathBelongsToDirectory } from "@/lib/parser";
 import type { PortfolioCustomTextPosition } from "@/lib/portfolio-custom-message";
 import type { ExerciseNotePosition } from "@/lib/exercise-note";
-import { LEGACY_SUPERADMIN_USER_ID } from "@/lib/identity";
+import { getUser, LEGACY_SUPERADMIN_USER_ID } from "@/lib/identity";
+import { prepareCreationSourceProfile } from "@/lib/source-profiles";
+import type { CreationProfileChoice } from "@/lib/learning-space-creation-wizard";
 import type { SourceManifestEntry } from "@/lib/source-comparison";
 import { getDefaultSourceProfileTemplate, prepareSourceProfileTemplateClone } from "@/lib/source-profile-templates";
 import {
@@ -50,10 +52,10 @@ import {
   type GlobalResourceSemanticRole,
   type SourceProfileConfig,
 } from "@/lib/source-profile-config";
-import { getSourceProfileIndexContextForLearningSpace } from "@/lib/source-profiles";
-import { StaleSynchronizationError } from "@/lib/source-errors";
+import { getActiveSourceProfileConfigForLearningSpace, getSourceProfileIndexContextForLearningSpace } from "@/lib/source-profiles";
+import { SourceConfigurationError, StaleSynchronizationError } from "@/lib/source-errors";
 import { requireActiveSubject } from "@/lib/subjects";
-import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION } from "@/lib/ui-colors";
+import { DEFAULT_LEARNING_SPACE_COLOR } from "@/lib/ui-colors";
 import {
   resolveChildPublication,
   resolvePortfolioPublication,
@@ -167,6 +169,8 @@ export interface AdminPortfolio {
   customText: string | null;
   customTextPosition: PortfolioCustomTextPosition;
   sections: AdminSection[];
+  /** Direct exercises; sectioned exercises remain under sections. */
+  exercises?: AdminExercise[];
 }
 
 export interface StudentPortfolio {
@@ -182,6 +186,7 @@ export interface StudentPortfolio {
   hintsDocumentPath: string | null;
   finalSolutionsPdfPath: string | null;
   globalResources: PortfolioGlobalResource[];
+  exercises?: Array<{ id: string; code: string; visible: boolean; hasAlternativeSolution: boolean } & ExerciseLevelMetadata>;
   sections: Array<{
     id: string;
     code: string;
@@ -213,6 +218,10 @@ export interface LearningSpace {
   subjectId: string;
   subjectName: string;
   subjectIsActive: boolean;
+  themeLabelSingular?: string;
+  themeLabelPlural?: string;
+  sectionLabelSingular?: string;
+  sectionLabelPlural?: string;
   collectionLabelSingular: string;
   collectionLabelPlural: string;
   exerciseLabelSingular: string;
@@ -276,6 +285,12 @@ export interface LearningSpaceSourceInput {
 
 export interface LearningSpaceInput {
   subjectId: string;
+  creationProfileChoice?: CreationProfileChoice;
+  skipSourceOnCreation?: boolean;
+  themeLabelSingular?: string;
+  themeLabelPlural?: string;
+  sectionLabelSingular?: string;
+  sectionLabelPlural?: string;
   collectionLabelSingular?: string;
   collectionLabelPlural?: string;
   exerciseLabelSingular?: string;
@@ -305,6 +320,7 @@ export interface Theme {
   learningSpaceId: string;
   name: string;
   sortOrder: number;
+  sourceTheme?: IndexedSourceTheme & { scope: string };
 }
 
 const bool = (value: unknown) => value === true || Number(value) === 1;
@@ -336,6 +352,19 @@ function groupBy<T>(items: readonly T[], keyFor: (item: T) => string): Map<strin
 
 function indexedSectionId(portfolioId: string, sectionCode: string): string {
   return `${portfolioId}-section-${normalizeSectionCode(sectionCode)}`;
+}
+
+function indexedExerciseId(portfolioId: string, sectionId: string | null, code: string): string {
+  return `${sectionId ?? portfolioId}-exercise-${code}`;
+}
+
+// Persistence contexts describe real parent relationships, never synthetic sections.
+function indexedExerciseContexts(portfolio: IndexedPortfolio, portfolioId: string) {
+  return [
+    { sectionId: null as string | null, relativePath: portfolio.relativePath, exercises: portfolio.exercises ?? [] },
+    ...portfolio.sections.map((section) => ({ sectionId: indexedSectionId(portfolioId, section.code),
+      relativePath: section.relativePath, exercises: section.exercises })),
+  ];
 }
 
 interface ExerciseOwnedMetadata {
@@ -545,6 +574,8 @@ function learningSpaceFromRow(row: DatabaseRow, sources: LearningSpaceSource[], 
   const archivedAt = nullableText(row, "archived_at");
   return {
     id: text(row, "id"), subjectId: text(row, "subject_id"), subjectName: text(row, "subject_name"), subjectIsActive: bool(row.subject_is_active),
+    themeLabelSingular: text(row, "theme_label_singular"), themeLabelPlural: text(row, "theme_label_plural"),
+    sectionLabelSingular: text(row, "section_label_singular"), sectionLabelPlural: text(row, "section_label_plural"),
     collectionLabelSingular: text(row, "collection_label_singular"), collectionLabelPlural: text(row, "collection_label_plural"),
     exerciseLabelSingular: text(row, "exercise_label_singular"), exerciseLabelPlural: text(row, "exercise_label_plural"),
     exerciseLabelShort: text(row, "exercise_label_short"),
@@ -658,26 +689,36 @@ export async function createLearningSpaceForOwner(input: LearningSpaceInput, own
 
 async function createLearningSpaceWithOwner(input: LearningSpaceInput, ownerUserId: string | null): Promise<LearningSpace> {
   await requireActiveSubject(input.subjectId);
+  const themeTerminology = normalizeThemeTerminology({ singular: input.themeLabelSingular, plural: input.themeLabelPlural });
+  const sectionTerminology = normalizeSectionTerminology({ singular: input.sectionLabelSingular, plural: input.sectionLabelPlural });
   const terminology = normalizeCollectionTerminology({ singular: input.collectionLabelSingular, plural: input.collectionLabelPlural });
   const exerciseTerminology = normalizeExerciseTerminology({ singular: input.exerciseLabelSingular, plural: input.exerciseLabelPlural });
   const exerciseLabelShort = normalizeExerciseShortLabel(input.exerciseLabelShort);
+  const description = input.description?.trim() ? input.description : initialLearningSpaceDescription(terminology.plural, exerciseTerminology.plural);
   const now = new Date().toISOString();
   const id = stableId("space", input.slug);
-  const template = await getDefaultSourceProfileTemplate();
   const profileOwnerUserId = ownerUserId ?? LEGACY_SUPERADMIN_USER_ID;
-  const profileName = await availableSourceProfileName(profileOwnerUserId, template.name);
-  const profileClone = prepareSourceProfileTemplateClone({ ...template, name: profileName }, id, profileOwnerUserId, now);
+  let profileClone;
+  if (input.creationProfileChoice) {
+    const creator = ownerUserId ? await getUser(ownerUserId) : null;
+    if (!creator) throw new Error("Een maker is vereist voor deze bronprofielkeuze.");
+    profileClone = await prepareCreationSourceProfile(creator, id, input.creationProfileChoice, now);
+  } else {
+    const template = await getDefaultSourceProfileTemplate();
+    const profileName = await availableSourceProfileName(profileOwnerUserId, template.name);
+    profileClone = prepareSourceProfileTemplateClone({ ...template, name: profileName }, id, profileOwnerUserId, now);
+  }
   const primary = input.primarySource ?? sourceFromLegacyInput(input);
   const mirror = input.mirrorSource ?? null;
   const levelPresentation = validateExerciseLevelPresentation(input.levelPresentation ?? DEFAULT_EXERCISE_LEVEL_PRESENTATION);
-  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, subject_id, collection_label_singular, collection_label_plural, exercise_label_singular, exercise_label_plural, exercise_label_short, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
+  const statements: InStatement[] = [{ sql: `INSERT INTO learning_spaces (id, subject_id, theme_label_singular, theme_label_plural, section_label_singular, section_label_plural, collection_label_singular, collection_label_plural, exercise_label_singular, exercise_label_plural, exercise_label_short, name, slug, short_label, description, card_color, sort_order, is_active, storage_provider, source_type,
     local_source_path, onedrive_drive_id, onedrive_folder_id, onedrive_folder_path, google_drive_folder_id, google_drive_folder_label, created_at, updated_at)
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM learning_spaces)), 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM subjects WHERE id = ? AND is_active = 1`, args: [id, input.subjectId, terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, input.description ?? DEFAULT_LEARNING_SPACE_DESCRIPTION, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder ?? null,
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, (SELECT COALESCE(MAX(sort_order), 0) + 10 FROM learning_spaces)), 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? FROM subjects WHERE id = ? AND is_active = 1`, args: [id, input.subjectId, themeTerminology.singular, themeTerminology.plural, sectionTerminology.singular, sectionTerminology.plural, terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, description, input.cardColor ?? DEFAULT_LEARNING_SPACE_COLOR, input.sortOrder ?? null,
       legacyStorageProvider(primary.providerType), primary.providerType, primary.localSourcePath ?? null, primary.oneDriveDriveId ?? null,
       primary.oneDriveFolderId ?? null, primary.oneDriveFolderPath ?? null, primary.googleDriveFolderId ?? null, primary.googleDriveFolderLabel ?? null, now, now, input.subjectId] }];
   statements.push(...levelPresentationStatements(id, levelPresentation));
   statements.push(...profileClone.statements);
-  statements.push(sourceUpsertStatement(id, "primary", primary, true, now));
+  if (!input.skipSourceOnCreation) statements.push(sourceUpsertStatement(id, "primary", primary, true, now));
   if (mirror) statements.push(sourceUpsertStatement(id, "mirror", mirror, false, now));
   if (ownerUserId) {
     statements.push({
@@ -698,6 +739,13 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
   const existing = await getLearningSpace(id);
   if (!existing) throw new Error("Leeromgeving niet gevonden.");
   if (input.subjectId !== existing.subjectId) await requireActiveSubject(input.subjectId);
+  const existingTerminology = getLearningSpaceTerminology(existing);
+  const themeTerminology = normalizeThemeTerminology(
+    { singular: input.themeLabelSingular, plural: input.themeLabelPlural }, existingTerminology.theme,
+  );
+  const sectionTerminology = normalizeSectionTerminology(
+    { singular: input.sectionLabelSingular, plural: input.sectionLabelPlural }, existingTerminology.section,
+  );
   const terminology = normalizeCollectionTerminology(
     { singular: input.collectionLabelSingular, plural: input.collectionLabelPlural },
     { singular: existing.collectionLabelSingular, plural: existing.collectionLabelPlural },
@@ -721,10 +769,10 @@ export async function updateLearningSpace(id: string, input: LearningSpaceInput)
     ? { sql: "?", args: [input.subjectId] }
     : { sql: "CASE WHEN EXISTS (SELECT 1 FROM subjects WHERE id = ? AND is_active = 1) THEN ? ELSE '__invalid-subject__' END", args: [input.subjectId, input.subjectId] };
   const statements: InStatement[] = [{ sql: `UPDATE learning_spaces SET subject_id = ${subjectAssignment.sql},
-    collection_label_singular = ?, collection_label_plural = ?, exercise_label_singular = ?, exercise_label_plural = ?, exercise_label_short = ?, name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
+    theme_label_singular = ?, theme_label_plural = ?, section_label_singular = ?, section_label_plural = ?, collection_label_singular = ?, collection_label_plural = ?, exercise_label_singular = ?, exercise_label_plural = ?, exercise_label_short = ?, name = ?, slug = ?, short_label = ?, description = ?, card_color = ?, sort_order = ?, storage_provider = ?, source_type = ?,
     local_source_path = ?, onedrive_drive_id = ?, onedrive_folder_id = ?, onedrive_folder_path = ?, google_drive_folder_id = ?, google_drive_folder_label = ?, updated_at = ? WHERE id = ?`,
     args: [...subjectAssignment.args,
-      terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder ?? existing.sortOrder,
+      themeTerminology.singular, themeTerminology.plural, sectionTerminology.singular, sectionTerminology.plural, terminology.singular, terminology.plural, exerciseTerminology.singular, exerciseTerminology.plural, exerciseLabelShort, input.name, input.slug, input.shortLabel, input.description ?? existing.description, input.cardColor ?? existing.cardColor, input.sortOrder ?? existing.sortOrder,
       legacyStorageProvider(active.providerType), active.providerType,
       local?.localSourcePath ?? existing.localSourcePath,
       oneDrive?.oneDriveDriveId ?? existing.oneDriveDriveId, oneDrive?.oneDriveFolderId ?? existing.oneDriveFolderId,
@@ -835,6 +883,7 @@ export async function permanentlyDeleteLearningSpace(id: string): Promise<boolea
   await executeBatch([
     { sql: `DELETE FROM error_reports WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
     { sql: "DELETE FROM error_report_issues WHERE learning_space_id = ?", args: [id] },
+    { sql: "DELETE FROM error_report_threads WHERE learning_space_id = ?", args: [id] },
     { sql: `DELETE FROM solution_assets WHERE variant_id IN (${variantIds})`, args: [id] },
     { sql: `DELETE FROM solution_variants WHERE exercise_id IN (${exerciseIds})`, args: [id] },
     { sql: `DELETE FROM exercises WHERE portfolio_id IN (${portfolioIds})`, args: [id] },
@@ -847,6 +896,8 @@ export async function permanentlyDeleteLearningSpace(id: string): Promise<boolea
     { sql: "DELETE FROM themes WHERE learning_space_id = ?", args: [id] },
     { sql: "DELETE FROM app_settings WHERE key = 'legacy_default_learning_space_id' AND value = ?", args: [id] },
     { sql: "DELETE FROM learning_space_sources WHERE learning_space_id = ?", args: [id] },
+    // Older databases still RESTRICT this optional management-context reference.
+    { sql: "UPDATE source_profiles SET management_learning_space_id = NULL WHERE management_learning_space_id = ?", args: [id] },
     { sql: "DELETE FROM learning_spaces WHERE id = ?", args: [id] },
   ]);
   return true;
@@ -855,7 +906,14 @@ export async function permanentlyDeleteLearningSpace(id: string): Promise<boolea
 export async function getThemes(learningSpaceId: string): Promise<Theme[]> {
   const database = await getDatabase();
   const result = await database.execute({ sql: "SELECT * FROM themes WHERE learning_space_id = ? ORDER BY sort_order, name", args: [learningSpaceId] });
-  return result.rows.map((row) => ({ id: text(row, "id"), learningSpaceId: text(row, "learning_space_id"), name: text(row, "name"), sortOrder: Number(row.sort_order) }));
+  return result.rows.map((row) => ({
+    id: text(row, "id"), learningSpaceId: text(row, "learning_space_id"), name: text(row, "name"), sortOrder: Number(row.sort_order),
+    ...(row.source_scope != null ? { sourceTheme: { ...sourceThemeFromRow(row), scope: text(row, "source_scope") } } : {}),
+  }));
+}
+
+function sourceThemeFromRow(row: DatabaseRow): IndexedSourceTheme {
+  return { name: text(row, "source_folder_name"), relativePath: text(row, "source_relative_path"), sourceId: text(row, "source_id") };
 }
 
 export async function createTheme(learningSpaceId: string, name: string, sortOrder?: number): Promise<void> {
@@ -904,10 +962,16 @@ export async function moveTheme(id: string, learningSpaceId: string, direction: 
 }
 
 export async function deleteTheme(id: string, learningSpaceId: string): Promise<void> {
+  const theme = (await getThemes(learningSpaceId)).find((item) => item.id === id);
+  if (theme?.sourceTheme) {
+    throw new SourceConfigurationError("De thema-indeling wordt bepaald door de bronmappen. Pas de bronmappen aan om de indeling te wijzigen.");
+  }
   await executeBatch([{ sql: "UPDATE portfolios SET theme_id = NULL WHERE theme_id = ? AND learning_space_id = ?", args: [id, learningSpaceId] }, { sql: "DELETE FROM themes WHERE id = ? AND learning_space_id = ?", args: [id, learningSpaceId] }]);
 }
 
 export async function setPortfolioTheme(id: string, learningSpaceId: string, themeId: string | null): Promise<void> {
+  // Keep source membership intact while allowing the combined settings form to save its other fields.
+  if ((await getActiveSourceProfileConfigForLearningSpace(learningSpaceId)).scanner.portfolio.themeMode === "folder") return;
   const database = await getDatabase();
   if (themeId) {
     const theme = await database.execute({ sql: "SELECT id FROM themes WHERE id = ? AND learning_space_id = ?", args: [themeId, learningSpaceId] });
@@ -1125,6 +1189,41 @@ export async function persistIndex(
   const portfolioCodeCounts = new Map<string, number>();
   for (const portfolio of portfolios) portfolioCodeCounts.set(portfolio.code, (portfolioCodeCounts.get(portfolio.code) ?? 0) + 1);
   const indexablePortfolios = portfolios.filter((portfolio) => portfolioCodeCounts.get(portfolio.code) === 1);
+  const profileConfig = options.publicationGuard?.snapshot.sourceProfileConfig
+    ?? await getActiveSourceProfileConfigForLearningSpace(spaceId);
+  const synchronizesThemes = profileConfig.scanner.portfolio.themeMode === "folder";
+  const themeStatements: InStatement[] = [];
+  const sourceThemeIds = new Map<string, string>();
+  if (synchronizesThemes) {
+    const themeSource = source ?? await getActiveLearningSpaceSource(spaceId);
+    if (!themeSource) throw new Error("De synchronisatiebron voor thema's ontbreekt.");
+    const scope = themeSource.id;
+    const existingThemes = await getThemes(spaceId);
+    const themesByReference = new Map(existingThemes
+      .filter((theme) => theme.sourceTheme?.scope === scope)
+      .map((theme) => [theme.sourceTheme!.sourceId, theme]));
+    let sortOrder = Math.max(0, ...existingThemes.map((theme) => theme.sortOrder));
+    for (const portfolio of portfolios) {
+      const incoming = portfolio.sourceTheme;
+      if (!incoming || sourceThemeIds.has(incoming.sourceId)) continue;
+      const existing = themesByReference.get(incoming.sourceId);
+      const id = existing?.id ?? randomUUID();
+      sourceThemeIds.set(incoming.sourceId, id);
+      if (!existing) {
+        sortOrder += 10;
+        themeStatements.push({
+          sql: `INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at,
+            source_scope, source_id, source_folder_name, source_relative_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          args: [id, spaceId, incoming.name, sortOrder, startedAt, startedAt, scope, incoming.sourceId, incoming.name, incoming.relativePath],
+        });
+      } else if (existing.sourceTheme!.name !== incoming.name || existing.sourceTheme!.relativePath !== incoming.relativePath) {
+        themeStatements.push({
+          sql: "UPDATE themes SET source_folder_name = ?, source_relative_path = ?, updated_at = ? WHERE id = ?",
+          args: [incoming.name, incoming.relativePath, startedAt, id],
+        });
+      }
+    }
+  }
   const [existingAssets, existingVariants, existingResourceAssets, existingPortfolios, existingExercises, existingErrorThreads, existingErrorIssues] = await Promise.all([
     database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.source_id,
       solution_assets.file_name, solution_assets.extension, solution_assets.step, solution_assets.last_modified_at, solution_assets.source_version,
@@ -1156,17 +1255,26 @@ export async function persistIndex(
     row,
     id: text(row, "id"),
     portfolioId: text(row, "portfolio_id"),
-    sectionId: text(row, "section_id"),
+    sectionId: nullableText(row, "section_id"),
     code: text(row, "exercise_code"),
     isIndexed: bool(row.is_indexed),
     archivedAt: nullableText(row, "archived_at"),
   }));
   const existingExercisesById = new Map(existingExerciseRows.map((exercise) => [exercise.id, exercise]));
-  const incomingExerciseCodeCounts = new Map<string, number>();
+  const incomingExerciseLocations = new Map<string, string>();
   for (const portfolio of indexablePortfolios) {
     const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
-    for (const section of portfolio.sections) {
-      for (const exercise of section.exercises) incrementCount(incomingExerciseCodeCounts, exerciseCodeKey(portfolioId, exercise.code));
+    for (const context of indexedExerciseContexts(portfolio, portfolioId)) {
+      for (const exercise of context.exercises) {
+        const codeKey = exerciseCodeKey(portfolioId, exercise.code);
+        const previousLocation = incomingExerciseLocations.get(codeKey);
+        if (previousLocation !== undefined) {
+          throw new SourceConfigurationError(
+            `Oefeningscode ${exercise.code} komt meerdere keren voor binnen portfolio ${portfolio.code}: ${previousLocation} en ${context.relativePath}. Verplaats de volledige oefening naar één onderdeel of rechtstreeks naar de portfoliomap.`,
+          );
+        }
+        incomingExerciseLocations.set(codeKey, context.relativePath);
+      }
     }
   }
   const exerciseResolutions = new Map<string, string>();
@@ -1185,21 +1293,15 @@ export async function persistIndex(
     exerciseId: text(row, "exercise_id"), key: `${text(row, "document_kind")}\u0000${nullableText(row, "variant_kind") ?? ""}`,
   })), (issue) => issue.exerciseId);
 
-  // Exercise identity contract: portfolio code + normalized section code + normalized exercise code form the deterministic ID.
+  // Existing sectioned IDs are unchanged; direct exercises use portfolio ID + exercise code.
   // A unique same-code candidate may safely retain identity across a section move; ambiguous candidates never trigger
   // content/path-based guessing and therefore fall back to the new deterministic ID with a warning.
   for (const portfolio of indexablePortfolios) {
     const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
-    for (const section of portfolio.sections) {
-      const targetSectionId = indexedSectionId(portfolioId, section.code);
-      for (const exercise of section.exercises) {
-        const desiredId = `${targetSectionId}-exercise-${exercise.code}`;
+    for (const context of indexedExerciseContexts(portfolio, portfolioId)) {
+      for (const exercise of context.exercises) {
+        const desiredId = indexedExerciseId(portfolioId, context.sectionId, exercise.code);
         const exact = existingExercisesById.get(desiredId);
-        const codeKey = exerciseCodeKey(portfolioId, exercise.code);
-        if ((incomingExerciseCodeCounts.get(codeKey) ?? 0) !== 1) {
-          exerciseResolutions.set(desiredId, desiredId);
-          continue;
-        }
         const candidates = existingExerciseRows.filter((candidate) => candidate.portfolioId === portfolioId
           && normalizeExerciseIdentityCode(candidate.code) === normalizeExerciseIdentityCode(exercise.code)
           && candidate.archivedAt === null && candidate.id !== exact?.id);
@@ -1207,7 +1309,7 @@ export async function persistIndex(
           if (candidates.length === 1) exerciseResolutions.set(desiredId, candidates[0].id);
           else {
             exerciseResolutions.set(desiredId, desiredId);
-            if (candidates.length > 1) warnings.push(exerciseMoveConflictWarning(section.relativePath, exercise.code));
+            if (candidates.length > 1) warnings.push(exerciseMoveConflictWarning(context.relativePath, exercise.code));
           }
           continue;
         }
@@ -1219,7 +1321,7 @@ export async function persistIndex(
         }
         if (missingCandidates.length !== 1) {
           exerciseResolutions.set(desiredId, exact.id);
-          if (missingCandidates.length > 1) warnings.push(exerciseMoveConflictWarning(section.relativePath, exercise.code));
+          if (missingCandidates.length > 1) warnings.push(exerciseMoveConflictWarning(context.relativePath, exercise.code));
           continue;
         }
 
@@ -1232,7 +1334,7 @@ export async function persistIndex(
         const hasSolutionConflict = hasAmbiguousSolutionMerge(retained.id, exact.id, existingVariantRows, rawSolutionAssetRows);
         if (metadataMerge.conflicts.length > 0 || hasErrorReportConflict || hasSolutionConflict) {
           exerciseResolutions.set(desiredId, exact.id);
-          warnings.push(exerciseMoveConflictWarning(section.relativePath, exercise.code));
+          warnings.push(exerciseMoveConflictWarning(context.relativePath, exercise.code));
           continue;
         }
         exerciseResolutions.set(desiredId, retained.id);
@@ -1241,16 +1343,16 @@ export async function persistIndex(
     }
   }
 
-  const resolvedExerciseId = (portfolioId: string, sectionId: string, exerciseCode: string) => {
-    const desiredId = `${sectionId}-exercise-${exerciseCode}`;
+  const resolvedExerciseId = (portfolioId: string, sectionId: string | null, exerciseCode: string) => {
+    const desiredId = indexedExerciseId(portfolioId, sectionId, exerciseCode);
     return exerciseResolutions.get(desiredId) ?? desiredId;
   };
-  const movedExerciseTargetSections = new Map<string, string>();
+  const movedExerciseTargetSections = new Map<string, string | null>();
   for (const portfolio of indexablePortfolios) {
     const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
-    for (const section of portfolio.sections) {
-      const targetSectionId = indexedSectionId(portfolioId, section.code);
-      for (const exercise of section.exercises) {
+    for (const context of indexedExerciseContexts(portfolio, portfolioId)) {
+      const targetSectionId = context.sectionId;
+      for (const exercise of context.exercises) {
         const exerciseId = resolvedExerciseId(portfolioId, targetSectionId, exercise.code);
         const existingExercise = existingExercisesById.get(exerciseId);
         if (existingExercise && existingExercise.sectionId !== targetSectionId) movedExerciseTargetSections.set(exerciseId, targetSectionId);
@@ -1293,9 +1395,9 @@ export async function persistIndex(
       incrementCount(incomingResourceAssetCounts, resourceAssetLogicalKey("portfolio", portfolioId, asset.resourceId, 1, asset.extension));
       incrementCount(incomingResourceExactCounts, resourceAssetExactKey("portfolio", asset.resourceId, asset.sourceId));
     }
-    for (const section of portfolio.sections) {
-      const sectionId = indexedSectionId(portfolioId, section.code);
-      for (const exercise of section.exercises) {
+    for (const context of indexedExerciseContexts(portfolio, portfolioId)) {
+      const sectionId = context.sectionId;
+      for (const exercise of context.exercises) {
         const exerciseId = resolvedExerciseId(portfolioId, sectionId, exercise.code);
         for (const asset of exercise.assets) {
           incrementCount(incomingResourceAssetCounts, resourceAssetLogicalKey("exercise", exerciseId, asset.resourceId, asset.parsed.step, asset.parsed.extension));
@@ -1370,6 +1472,7 @@ export async function persistIndex(
   let updated = 0;
 
   const statements: InStatement[] = [
+    ...themeStatements,
     {
       sql: `INSERT INTO sync_runs (id, learning_space_id, source_id, started_at, portfolio_count, warning_count, status, provider_type)
         VALUES (?, ?, ?, ?, ?, ?, 'running', ?)`,
@@ -1438,6 +1541,17 @@ export async function persistIndex(
         portfolio.finalSolutionsPdfPath, portfolio.finalSolutionsPdfSourceId, startedAt, startedAt],
     });
 
+    if (synchronizesThemes) {
+      const themeId = portfolio.sourceTheme ? sourceThemeIds.get(portfolio.sourceTheme.sourceId)! : null;
+      statements.push(themeId ? {
+        sql: "UPDATE portfolios SET theme_id = ? WHERE id = ? AND (theme_id IS NULL OR theme_id <> ?)",
+        args: [themeId, portfolioId, themeId],
+      } : {
+        sql: "UPDATE portfolios SET theme_id = NULL WHERE id = ? AND theme_id IS NOT NULL",
+        args: [portfolioId],
+      });
+    }
+
     for (const resourceAsset of portfolio.resourceAssets) {
       const resourceAssetId = stableId("source-resource-asset", spaceId, "portfolio", resourceAsset.resourceId, resourceAsset.sourceId);
       const logicalKey = resourceAssetLogicalKey("portfolio", portfolioId, resourceAsset.resourceId, 1, resourceAsset.extension);
@@ -1494,6 +1608,9 @@ export async function persistIndex(
             is_indexed = 1, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
         args: [sectionId, portfolioId, section.code, section.sortOrder, section.title, section.relativePath, startedAt],
       });
+    }
+    for (const context of indexedExerciseContexts(portfolio, portfolioId)) {
+      const sectionId = context.sectionId;
       for (const [exerciseId, targetSectionId] of movedExerciseTargetSections) {
         if (targetSectionId === sectionId) statements.push({
           sql: "UPDATE error_reports SET section_id = ? WHERE exercise_id = ?",
@@ -1501,7 +1618,7 @@ export async function persistIndex(
         });
       }
 
-      for (const exercise of section.exercises) {
+      for (const exercise of context.exercises) {
         const exerciseId = resolvedExerciseId(portfolioId, sectionId, exercise.code);
         statements.push(writesExerciseLevelSource ? {
           sql: `INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix, level_source, visibility_mode, visible, is_indexed, last_seen_at)
@@ -1747,8 +1864,10 @@ export async function persistIndex(
 export async function getIndexedSourceManifest(learningSpaceId: string): Promise<SourceManifestEntry[]> {
   const database = await getDatabase();
   const [portfolios, sections, legacyAssets, resourceAssets] = await Promise.all([
-    database.execute({ sql: `SELECT relative_path, assignment_pdf_path, hints_document_path, final_solutions_pdf_path FROM portfolios
-      WHERE learning_space_id = ? AND is_indexed = 1`, args: [learningSpaceId] }),
+    database.execute({ sql: `SELECT portfolios.relative_path, assignment_pdf_path, hints_document_path, final_solutions_pdf_path,
+      themes.source_scope, themes.source_id, themes.source_folder_name, themes.source_relative_path FROM portfolios
+      LEFT JOIN themes ON themes.id = portfolios.theme_id AND themes.learning_space_id = portfolios.learning_space_id
+      WHERE portfolios.learning_space_id = ? AND portfolios.is_indexed = 1`, args: [learningSpaceId] }),
     database.execute({ sql: `SELECT sections.relative_path FROM sections JOIN portfolios ON portfolios.id = sections.portfolio_id
       WHERE portfolios.learning_space_id = ? AND sections.is_indexed = 1 AND (
         EXISTS (
@@ -1779,7 +1898,10 @@ export async function getIndexedSourceManifest(learningSpaceId: string): Promise
     manifest.push({ kind: "file", relativePath });
   };
   for (const row of portfolios.rows) {
-    manifest.push({ kind: "portfolio", relativePath: text(row, "relative_path") });
+    manifest.push({
+      kind: "portfolio", relativePath: text(row, "relative_path"),
+      ...(row.source_scope != null ? { sourceTheme: sourceThemeFromRow(row) } : {}),
+    });
     addFile(nullableText(row, "assignment_pdf_path"));
     addFile(nullableText(row, "hints_document_path"));
     addFile(nullableText(row, "final_solutions_pdf_path"));
@@ -2036,6 +2158,39 @@ async function getAdminPortfolioReadModels(spaceId: string, portfolioId?: string
     const portfolioStatus = resolvePortfolioPublication({
       visible: bool(portfolio.visible), limited: bool(portfolio.publication_limited), publishFrom: nullableText(portfolio, "publish_from"), publishUntil: nullableText(portfolio, "publish_until"),
     }, now);
+    const adminExerciseReadModel = (exercise: DatabaseRow, parentStatus: EffectivePublication): AdminExercise => {
+      const exerciseId = text(exercise, "id");
+      const exerciseAssets = assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId);
+      const exerciseResourceAssets = resourceAssets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && text(asset, "resource_scope") === "exercise");
+      const exercisePublication = { mode: childMode(exercise), limited: false, publishFrom: null, publishUntil: null };
+      const exerciseStatus = resolveChildPublication(exercisePublication, parentStatus, now);
+      return {
+        id: exerciseId,
+        code: text(exercise, "exercise_code"),
+        ...exerciseLevelMetadataFromRow(exercise),
+        visible: childMode(exercise) === "visible",
+        visibilityMode: exercisePublication.mode,
+        publishFrom: exercisePublication.publishFrom,
+        publishUntil: exercisePublication.publishUntil,
+        effectiveStatus: exerciseStatus,
+        effectivePublished: exerciseStatus.state === "visible",
+        isIndexed: bool(exercise.is_indexed),
+        showAlternativeToStudents: bool(exercise.show_alternative_to_students),
+        standardAssets: exerciseAssets.filter((asset) => text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
+        alternativeAssets: exerciseAssets.filter((asset) => text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
+        missingAssets: missingExerciseAssetCount(exerciseAssets, exerciseResourceAssets),
+        hasNote: Boolean(nullableText(exercise, "custom_note")),
+        noteLabel: nullableText(exercise, "note_label"),
+        customNote: nullableText(exercise, "custom_note"),
+        notePosition: text(exercise, "note_position") as ExerciseNotePosition,
+        resources: exerciseResourceReadModel(exerciseResources, exerciseAssets, profileIndexAligned ? exerciseResourceAssets : [], { includeUnavailable: true, showAlternative: true }),
+        assets: exerciseAssets.map((asset) => ({
+          id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"),
+          step: Number(asset.step), variant: text(asset, "kind") as AdminAsset["variant"],
+          isIndexed: bool(asset.is_indexed), lastModifiedAt: nullableText(asset, "last_modified_at"),
+        })),
+      };
+    };
     return {
       id: portfolioId,
       code: nullableText(portfolio, "portfolio_code") ?? text(portfolio, "code"),
@@ -2063,7 +2218,9 @@ async function getAdminPortfolioReadModels(spaceId: string, portfolioId?: string
       cardColor: text(portfolio, "card_color"),
       customText: nullableText(portfolio, "custom_text"),
       customTextPosition: text(portfolio, "custom_text_position") as PortfolioCustomTextPosition,
-      sections: sections.rows.filter((section) => text(section, "portfolio_id") === portfolioId).map((section) => {
+      exercises: exercises.rows.filter((exercise) => text(exercise, "portfolio_id") === portfolioId && exercise.section_id === null)
+        .map((exercise) => adminExerciseReadModel(exercise, portfolioStatus)),
+      sections: sections.rows.filter((section) => text(section, "portfolio_id") === portfolioId && bool(section.is_indexed)).map((section) => {
         const sectionId = text(section, "id");
         const sectionPublication = { mode: childMode(section), limited: bool(section.publication_limited), publishFrom: nullableText(section, "publish_from"), publishUntil: nullableText(section, "publish_until") };
         const sectionStatus = resolveChildPublication(sectionPublication, portfolioStatus, now);
@@ -2078,39 +2235,7 @@ async function getAdminPortfolioReadModels(spaceId: string, portfolioId?: string
           effectiveStatus: sectionStatus,
           effectivePublished: sectionStatus.state === "visible",
           isIndexed: bool(section.is_indexed),
-          exercises: exercises.rows.filter((exercise) => text(exercise, "section_id") === sectionId).map((exercise) => {
-            const exerciseId = text(exercise, "id");
-            const exerciseAssets = assets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId);
-            const exerciseResourceAssets = resourceAssets.rows.filter((asset) => text(asset, "exercise_id") === exerciseId && text(asset, "resource_scope") === "exercise");
-            const exercisePublication = { mode: childMode(exercise), limited: false, publishFrom: null, publishUntil: null };
-            const exerciseStatus = resolveChildPublication(exercisePublication, sectionStatus, now);
-            return {
-              id: exerciseId,
-              code: text(exercise, "exercise_code"),
-              ...exerciseLevelMetadataFromRow(exercise),
-              visible: childMode(exercise) === "visible",
-              visibilityMode: exercisePublication.mode,
-              publishFrom: exercisePublication.publishFrom,
-              publishUntil: exercisePublication.publishUntil,
-              effectiveStatus: exerciseStatus,
-              effectivePublished: exerciseStatus.state === "visible",
-              isIndexed: bool(exercise.is_indexed),
-              showAlternativeToStudents: bool(exercise.show_alternative_to_students),
-              standardAssets: exerciseAssets.filter((asset) => text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
-              alternativeAssets: exerciseAssets.filter((asset) => text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
-              missingAssets: missingExerciseAssetCount(exerciseAssets, exerciseResourceAssets),
-              hasNote: Boolean(nullableText(exercise, "custom_note")),
-              noteLabel: nullableText(exercise, "note_label"),
-              customNote: nullableText(exercise, "custom_note"),
-              notePosition: text(exercise, "note_position") as ExerciseNotePosition,
-              resources: exerciseResourceReadModel(exerciseResources, exerciseAssets, profileIndexAligned ? exerciseResourceAssets : [], { includeUnavailable: true, showAlternative: true }),
-              assets: exerciseAssets.map((asset) => ({
-                id: text(asset, "id"), fileName: text(asset, "file_name"), extension: text(asset, "extension"),
-                step: Number(asset.step), variant: text(asset, "kind") as AdminAsset["variant"],
-                isIndexed: bool(asset.is_indexed), lastModifiedAt: nullableText(asset, "last_modified_at"),
-              })),
-            };
-          }),
+          exercises: exercises.rows.filter((exercise) => text(exercise, "section_id") === sectionId).map((exercise) => adminExerciseReadModel(exercise, sectionStatus)),
         };
       }),
     };
@@ -2285,6 +2410,15 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
     const publication = resolvePortfolioPublication({ visible: bool(portfolio.visible), limited: bool(portfolio.publication_limited), publishFrom: nullableText(portfolio, "publish_from"), publishUntil: nullableText(portfolio, "publish_until") }, now);
     if (publication.state !== "visible") continue;
     const portfolioId = text(portfolio, "id");
+    const studentExerciseReadModel = (exercise: DatabaseRow, parentStatus: EffectivePublication) => {
+      const exercisePublication = { mode: childMode(exercise), limited: false, publishFrom: null, publishUntil: null };
+      return {
+        id: text(exercise, "id"), code: text(exercise, "exercise_code"),
+        ...exerciseLevelMetadataFromRow(exercise),
+        visible: resolveChildPublication(exercisePublication, parentStatus, now).state === "visible",
+        hasAlternativeSolution: bool(exercise.has_alternative_solution),
+      };
+    };
     const studentPortfolio: StudentPortfolio = {
       id: portfolioId,
       code: nullableText(portfolio, "portfolio_code") ?? text(portfolio, "code"),
@@ -2302,6 +2436,8 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
         profileIndexAligned ? externalLinksByPortfolio.get(portfolioId) : undefined,
         profileIndexAligned ? resourceAssets.rows.filter((asset) => text(asset, "portfolio_id") === portfolioId) : [],
       ).filter((resource) => resource.available),
+      exercises: exercises.rows.filter((exercise) => text(exercise, "portfolio_id") === portfolioId && exercise.section_id === null)
+        .map((exercise) => studentExerciseReadModel(exercise, publication)),
       sections: [],
     };
     for (const section of sections.rows.filter((row) => text(row, "portfolio_id") === portfolioId)) {
@@ -2310,15 +2446,7 @@ export async function getStudentPortfolios(learningSpaceId?: string): Promise<St
       const sectionId = text(section, "id");
       studentPortfolio.sections.push({
         id: sectionId, code: text(section, "section_code"), title: text(section, "title"),
-        exercises: exercises.rows.filter((row) => text(row, "section_id") === sectionId).map((exercise) => {
-          const exercisePublication = { mode: childMode(exercise), limited: false, publishFrom: null, publishUntil: null };
-          return {
-            id: text(exercise, "id"), code: text(exercise, "exercise_code"),
-            ...exerciseLevelMetadataFromRow(exercise),
-            visible: resolveChildPublication(exercisePublication, sectionStatus, now).state === "visible",
-            hasAlternativeSolution: bool(exercise.has_alternative_solution),
-          };
-        }),
+        exercises: exercises.rows.filter((exercise) => text(exercise, "section_id") === sectionId).map((exercise) => studentExerciseReadModel(exercise, sectionStatus)),
       });
     }
     result.push(studentPortfolio);
@@ -2337,15 +2465,15 @@ export async function getVisibleExercise(id: string, learningSpaceId?: string) {
       sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
       portfolios.id AS portfolio_id, portfolios.portfolio_code, portfolios.learning_space_id, portfolios.title AS portfolio_title, portfolios.title_override,
       portfolios.visible AS portfolio_visible, portfolios.publication_limited, portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until
-      FROM exercises JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
-      WHERE exercises.id = ? AND exercises.is_indexed = 1 AND sections.is_indexed = 1 AND portfolios.is_indexed = 1${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`,
+      FROM exercises LEFT JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
+      WHERE exercises.id = ? AND exercises.is_indexed = 1 AND (exercises.section_id IS NULL OR sections.is_indexed = 1) AND portfolios.is_indexed = 1${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`,
     args: learningSpaceId ? [id, learningSpaceId] : [id],
   });
   const exercise = exerciseResult.rows[0];
   if (!exercise) return null;
   const now = new Date();
   const portfolioStatus = resolvePortfolioPublication({ visible: bool(exercise.portfolio_visible), limited: bool(exercise.publication_limited), publishFrom: nullableText(exercise, "portfolio_publish_from"), publishUntil: nullableText(exercise, "portfolio_publish_until") }, now);
-  const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: exercise.section_visibility_mode }), limited: bool(exercise.section_publication_limited), publishFrom: nullableText(exercise, "section_publish_from"), publishUntil: nullableText(exercise, "section_publish_until") }, portfolioStatus, now);
+  const sectionStatus = exercise.section_id == null ? portfolioStatus : resolveChildPublication({ mode: childMode({ visibility_mode: exercise.section_visibility_mode }), limited: bool(exercise.section_publication_limited), publishFrom: nullableText(exercise, "section_publish_from"), publishUntil: nullableText(exercise, "section_publish_until") }, portfolioStatus, now);
   const exerciseStatus = resolveChildPublication({ mode: childMode(exercise), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now);
   if (exerciseStatus.state !== "visible") return null;
 
@@ -2371,7 +2499,7 @@ export async function getVisibleExercise(id: string, learningSpaceId?: string) {
     : BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.exerciseResources;
   const visibleAssetRows = assets.rows.filter((asset) => text(asset, "kind") !== "alternative" || bool(exercise.show_alternative_to_students));
   return {
-    id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionCode: text(exercise, "section_code"), sectionTitle: text(exercise, "section_title"),
+    id, portfolioId: text(exercise, "portfolio_id"), learningSpaceId: text(exercise, "learning_space_id"), code: text(exercise, "exercise_code"), sectionCode: nullableText(exercise, "section_code"), sectionTitle: nullableText(exercise, "section_title"),
     ...exerciseLevelMetadataFromRow(exercise),
     portfolioCode: text(exercise, "portfolio_code"), portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
     customNote: nullableText(exercise, "custom_note"), noteLabel: nullableText(exercise, "note_label"), notePosition: text(exercise, "note_position") as ExerciseNotePosition,
@@ -2382,7 +2510,7 @@ export async function getVisibleExercise(id: string, learningSpaceId?: string) {
 
 export async function getAdminExercise(id: string, learningSpaceId?: string) {
   const database = await getDatabase();
-  const result = await database.execute({ sql: `SELECT exercises.exercise_code, exercises.custom_note, exercises.note_label, exercises.note_position,
+  const result = await database.execute({ sql: `SELECT exercises.section_id, exercises.exercise_code, exercises.custom_note, exercises.note_label, exercises.note_position,
     exercises.level_source, exercises.level_override_mode, exercises.level_override, exercises.visibility_mode,
     exercises.show_alternative_to_students,
     exercises.is_indexed AS exercise_is_indexed, exercises.archived_at AS exercise_archived_at,
@@ -2393,7 +2521,7 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     portfolios.visible AS portfolio_visible, portfolios.publication_limited AS portfolio_publication_limited,
     portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until,
     portfolios.learning_space_id, portfolios.is_indexed AS portfolio_is_indexed
-    FROM exercises JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
+    FROM exercises LEFT JOIN sections ON sections.id = exercises.section_id JOIN portfolios ON portfolios.id = exercises.portfolio_id
     WHERE exercises.id = ? AND exercises.archived_at IS NULL${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`, args: learningSpaceId ? [id, learningSpaceId] : [id] });
   const exercise = result.rows[0];
   if (!exercise) return null;
@@ -2410,13 +2538,13 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
       ORDER BY step, file_name`,
     args: [id],
   });
-  const isIndexed = bool(exercise.exercise_is_indexed) && bool(exercise.section_is_indexed) && bool(exercise.portfolio_is_indexed);
+  const isIndexed = bool(exercise.exercise_is_indexed) && (exercise.section_id == null || bool(exercise.section_is_indexed)) && bool(exercise.portfolio_is_indexed);
   const now = new Date();
   const portfolioStatus = resolvePortfolioPublication({
     visible: bool(exercise.portfolio_visible), limited: bool(exercise.portfolio_publication_limited),
     publishFrom: nullableText(exercise, "portfolio_publish_from"), publishUntil: nullableText(exercise, "portfolio_publish_until"),
   }, now);
-  const sectionStatus = resolveChildPublication({
+  const sectionStatus = exercise.section_id == null ? portfolioStatus : resolveChildPublication({
     mode: childMode({ visibility_mode: exercise.section_visibility_mode }), limited: bool(exercise.section_publication_limited),
     publishFrom: nullableText(exercise, "section_publish_from"), publishUntil: nullableText(exercise, "section_publish_until"),
   }, portfolioStatus, now);
@@ -2441,8 +2569,8 @@ export async function getAdminExercise(id: string, learningSpaceId?: string) {
     standardAssets: assets.rows.filter((asset) => text(asset, "kind") === "standard" && bool(asset.is_indexed)).length,
     alternativeAssets: assets.rows.filter((asset) => text(asset, "kind") === "alternative" && bool(asset.is_indexed)).length,
     missingAssets: missingExerciseAssetCount(assets.rows, resourceAssets.rows),
-    sectionCode: text(exercise, "section_code"),
-    sectionTitle: text(exercise, "section_title"),
+    sectionCode: nullableText(exercise, "section_code"),
+    sectionTitle: nullableText(exercise, "section_title"),
     portfolioCode: text(exercise, "portfolio_code"),
     portfolioTitle: nullableText(exercise, "title_override") ?? text(exercise, "portfolio_title"),
     isIndexed,
@@ -2488,16 +2616,16 @@ export async function getPublicAsset(id: string, learningSpaceId?: string) {
       portfolios.visible AS portfolio_visible, portfolios.publication_limited, portfolios.publish_from AS portfolio_publish_from,
       portfolios.publish_until AS portfolio_publish_until, portfolios.is_indexed AS portfolio_is_indexed, portfolios.learning_space_id
       FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
-      JOIN exercises ON exercises.id = solution_variants.exercise_id JOIN sections ON sections.id = exercises.section_id
+      JOIN exercises ON exercises.id = solution_variants.exercise_id LEFT JOIN sections ON sections.id = exercises.section_id
       JOIN portfolios ON portfolios.id = exercises.portfolio_id WHERE solution_assets.id = ?
         AND solution_assets.is_indexed = 1 AND solution_variants.is_indexed = 1${learningSpaceId ? " AND portfolios.learning_space_id = ?" : ""}`,
     args: learningSpaceId ? [id, learningSpaceId] : [id],
   });
   const row = result.rows[0];
-  if (!row || !bool(row.is_indexed) || !bool(row.section_is_indexed) || !bool(row.portfolio_is_indexed) || (text(row, "variant_kind") === "alternative" && !bool(row.show_alternative_to_students))) return null;
+  if (!row || !bool(row.is_indexed) || (row.section_id != null && !bool(row.section_is_indexed)) || !bool(row.portfolio_is_indexed) || (text(row, "variant_kind") === "alternative" && !bool(row.show_alternative_to_students))) return null;
   const now = new Date();
   const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
-  const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now);
+  const sectionStatus = row.section_id == null ? portfolioStatus : resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now);
   if (resolveChildPublication({ mode: childMode(row), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now).state !== "visible") return null;
   return { learningSpaceId: text(row, "learning_space_id"), sourceId: nullableText(row, "source_id") ?? text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension") };
 }
@@ -2529,7 +2657,7 @@ export async function getPublicResourceAsset(id: string, learningSpaceId?: strin
   const result = await database.execute({
     sql: `SELECT source_resource_assets.relative_path, source_resource_assets.source_id, source_resource_assets.file_name,
       source_resource_assets.extension, source_resource_assets.resource_scope, source_resource_assets.semantic_role,
-      exercises.visibility_mode AS exercise_visibility_mode, exercises.is_indexed AS exercise_is_indexed,
+      exercises.section_id, exercises.visibility_mode AS exercise_visibility_mode, exercises.is_indexed AS exercise_is_indexed,
       exercises.show_alternative_to_students,
       sections.visibility_mode AS section_visibility_mode, sections.publication_limited AS section_publication_limited,
       sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
@@ -2555,9 +2683,9 @@ export async function getPublicResourceAsset(id: string, learningSpaceId?: strin
   if (portfolioStatus.state !== "visible") return null;
 
   if (text(row, "resource_scope") === "exercise") {
-    if (!bool(row.exercise_is_indexed) || !bool(row.section_is_indexed)) return null;
+    if (!bool(row.exercise_is_indexed) || (row.section_id != null && !bool(row.section_is_indexed))) return null;
     if (text(row, "semantic_role") === "alternative_solution" && !bool(row.show_alternative_to_students)) return null;
-    const sectionStatus = resolveChildPublication({
+    const sectionStatus = row.section_id == null ? portfolioStatus : resolveChildPublication({
       mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited),
       publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until"),
     }, portfolioStatus, now);
@@ -2657,8 +2785,8 @@ export async function createErrorReport(input: CreateErrorReportInput): Promise<
   if (!portfolio) throw new Error("De portfolio is niet beschikbaar.");
   const requestedExerciseCode = normalizeErrorReportExerciseCode(input.exerciseCode ?? initialExercise?.code ?? "");
   if (!requestedExerciseCode) throw new Error("Vul een geldige oefening in, bijvoorbeeld 5 of 5a.");
-  const portfolioExercise = listErrorReportExerciseIdentities(portfolio.sections)
-    .find((item) => normalizeErrorReportExerciseCode(item.code) === requestedExerciseCode);
+  const portfolioExercise = listErrorReportExerciseIdentities(portfolio.sections, portfolio.exercises)
+    .find((item) => initialExercise ? item.id === initialExercise.id : normalizeErrorReportExerciseCode(item.code) === requestedExerciseCode);
   const exerciseId = portfolioExercise?.id ?? null;
   const exercise = exerciseId === initialExercise?.id ? initialExercise : exerciseId ? await getVisibleExercise(exerciseId, learningSpaceId) : null;
   if (initialExercise && (initialExercise.learningSpaceId !== learningSpaceId || initialExercise.portfolioId !== portfolioId)) throw new Error("De gekozen oefening hoort niet bij deze portfolio.");
@@ -2765,7 +2893,7 @@ export interface AdminErrorReport {
   portfolioId: string;
   portfolioCode: string;
   portfolioTitle: string;
-  sectionTitle: string;
+  sectionTitle: string | null;
   exerciseId: string;
   exerciseCode: string;
   variant: string;
@@ -2806,7 +2934,7 @@ export interface ErrorReportIssue {
 export interface GroupedErrorReportIssue extends Omit<ErrorReportIssue, "variantKind"> {
   portfolioCode: string;
   portfolioTitle: string;
-  sectionTitle: string;
+  sectionTitle: string | null;
   isMatchedExercise: boolean;
   variant: "standard" | "alternative" | null;
   reportCount: number;
@@ -2838,7 +2966,7 @@ export interface GroupedErrorReportThread {
   portfolioTitle: string;
   exerciseId: string | null;
   exerciseCode: string;
-  sectionTitle: string;
+  sectionTitle: string | null;
   isMatchedExercise: boolean;
   status: "TODO" | "DONE";
   pinned: boolean;
@@ -2895,7 +3023,7 @@ export async function getGroupedErrorReportIssues(learningSpaceId?: string): Pro
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const result = await database.execute({
     sql: `SELECT error_report_issues.*, portfolios.portfolio_code, portfolios.title AS portfolio_title,
-      portfolios.title_override, sections.title AS section_title,
+      portfolios.title_override, exercises.section_id, sections.title AS section_title,
       exercises.visibility_mode AS exercise_visibility_mode,
       sections.visibility_mode AS section_visibility_mode,
       sections.publication_limited AS section_publication_limited,
@@ -2933,7 +3061,7 @@ export async function getGroupedErrorReportIssues(learningSpaceId?: string): Pro
   return result.rows.map((row) => {
     const exerciseId = nullableText(row, "exercise_id");
     const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
-    const sectionStatus = exerciseId ? resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now) : null;
+    const sectionStatus = exerciseId ? row.section_id == null ? portfolioStatus : resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now) : null;
     const solutionStatus = sectionStatus ? resolveChildPublication({ mode: childMode({ visibility_mode: row.exercise_visibility_mode }), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now) : null;
     return {
       id: text(row, "id"),
@@ -2942,7 +3070,7 @@ export async function getGroupedErrorReportIssues(learningSpaceId?: string): Pro
       portfolioId: text(row, "portfolio_id"),
       portfolioCode: text(row, "portfolio_code"),
       portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"),
-      sectionTitle: nullableText(row, "section_title") ?? "Onbekende oefening",
+      sectionTitle: nullableText(row, "section_title") ?? (exerciseId ? null : "Onbekende oefening"),
       exerciseId,
       exerciseCode: text(row, "exercise_code"),
       isMatchedExercise: exerciseId !== null,
@@ -2969,7 +3097,7 @@ export async function getGroupedErrorReportThreads(learningSpaceId?: string): Pr
   const spaceId = learningSpaceId ?? await defaultLearningSpaceId();
   const result = await database.execute({
     sql: `SELECT error_report_threads.*, portfolios.portfolio_code, portfolios.title AS portfolio_title,
-      portfolios.title_override, sections.title AS section_title,
+      portfolios.title_override, exercises.section_id, sections.title AS section_title,
       exercises.custom_note, exercises.note_label, exercises.note_position,
       exercises.visibility_mode AS exercise_visibility_mode,
       sections.visibility_mode AS section_visibility_mode,
@@ -3007,7 +3135,7 @@ export async function getGroupedErrorReportThreads(learningSpaceId?: string): Pr
   return result.rows.map((row) => {
     const exerciseId = nullableText(row, "exercise_id");
     const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
-    const sectionStatus = exerciseId ? resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now) : null;
+    const sectionStatus = exerciseId ? row.section_id == null ? portfolioStatus : resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now) : null;
     const solutionStatus = sectionStatus ? resolveChildPublication({ mode: childMode({ visibility_mode: row.exercise_visibility_mode }), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now) : null;
     return {
       id: text(row, "id"),
@@ -3017,7 +3145,7 @@ export async function getGroupedErrorReportThreads(learningSpaceId?: string): Pr
       portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"),
       exerciseId,
       exerciseCode: text(row, "exercise_code"),
-      sectionTitle: nullableText(row, "section_title") ?? "Onbekende oefening",
+      sectionTitle: nullableText(row, "section_title") ?? (exerciseId ? null : "Onbekende oefening"),
       isMatchedExercise: exerciseId !== null,
       status: text(row, "status") === "DONE" ? "DONE" : "TODO",
       pinned: bool(row.pinned),
@@ -3165,14 +3293,14 @@ export async function getAdminErrorReports(learningSpaceId?: string): Promise<Ad
     exercises.publish_from AS exercise_publish_from, exercises.publish_until AS exercise_publish_until,
     sections.visibility_mode AS section_visibility_mode, sections.publication_limited AS section_publication_limited, sections.publish_from AS section_publish_from, sections.publish_until AS section_publish_until,
     portfolios.visible AS portfolio_visible, portfolios.publication_limited, portfolios.publish_from AS portfolio_publish_from, portfolios.publish_until AS portfolio_publish_until
-    FROM error_reports JOIN portfolios ON portfolios.id = error_reports.portfolio_id JOIN sections ON sections.id = error_reports.section_id
+    FROM error_reports JOIN portfolios ON portfolios.id = error_reports.portfolio_id LEFT JOIN sections ON sections.id = error_reports.section_id
     JOIN exercises ON exercises.id = error_reports.exercise_id WHERE portfolios.learning_space_id = ?`, args: [spaceId] });
   const now = new Date();
   return result.rows.map((row) => {
     const portfolioStatus = resolvePortfolioPublication({ visible: bool(row.portfolio_visible), limited: bool(row.publication_limited), publishFrom: nullableText(row, "portfolio_publish_from"), publishUntil: nullableText(row, "portfolio_publish_until") }, now);
-    const sectionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now);
+    const sectionStatus = row.section_id == null ? portfolioStatus : resolveChildPublication({ mode: childMode({ visibility_mode: row.section_visibility_mode }), limited: bool(row.section_publication_limited), publishFrom: nullableText(row, "section_publish_from"), publishUntil: nullableText(row, "section_publish_until") }, portfolioStatus, now);
     const solutionStatus = resolveChildPublication({ mode: childMode({ visibility_mode: row.exercise_visibility_mode }), limited: false, publishFrom: null, publishUntil: null }, sectionStatus, now);
-    return { id: text(row, "id"), portfolioId: text(row, "portfolio_id"), portfolioCode: text(row, "portfolio_code"), portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"), sectionTitle: text(row, "section_title"), exerciseId: text(row, "exercise_id"), exerciseCode: text(row, "exercise_code"), variant: text(row, "variant_kind"), message: text(row, "message"), reporterName: nullableText(row, "reporter_name"), status: text(row, "status") === "DONE" ? "DONE" : "TODO", pinned: bool(row.pinned), adminNote: nullableText(row, "admin_note") ?? "", createdAt: text(row, "created_at"), completedAt: nullableText(row, "completed_at"), handledAt: nullableText(row, "handled_at"), studentDismissedAt: nullableText(row, "student_dismissed_at"), teacherResponse: nullableText(row, "teacher_response"), solutionConfiguredVisible: childMode({ visibility_mode: row.exercise_visibility_mode }) === "visible", solutionStatus, solutionVisible: solutionStatus.state === "visible" };
+    return { id: text(row, "id"), portfolioId: text(row, "portfolio_id"), portfolioCode: text(row, "portfolio_code"), portfolioTitle: nullableText(row, "title_override") ?? text(row, "portfolio_title"), sectionTitle: nullableText(row, "section_title"), exerciseId: text(row, "exercise_id"), exerciseCode: text(row, "exercise_code"), variant: text(row, "variant_kind"), message: text(row, "message"), reporterName: nullableText(row, "reporter_name"), status: text(row, "status") === "DONE" ? "DONE" : "TODO", pinned: bool(row.pinned), adminNote: nullableText(row, "admin_note") ?? "", createdAt: text(row, "created_at"), completedAt: nullableText(row, "completed_at"), handledAt: nullableText(row, "handled_at"), studentDismissedAt: nullableText(row, "student_dismissed_at"), teacherResponse: nullableText(row, "teacher_response"), solutionConfiguredVisible: childMode({ visibility_mode: row.exercise_visibility_mode }) === "visible", solutionStatus, solutionVisible: solutionStatus.state === "visible" };
   });
 }
 

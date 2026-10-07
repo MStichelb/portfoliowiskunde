@@ -5,23 +5,27 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { LearningSpaceCreateForm } from "@/app/components/learning-space-create-form";
 import type { Subject } from "@/lib/subjects";
+import type { CreationAction, LearningSpaceCreationOptions } from "@/lib/learning-space-creation-wizard";
 
 interface LearningSpaceCreateModalProps {
-  action: (formData: FormData) => void | Promise<void>;
+  action: CreationAction;
   subjects: Subject[];
+  options?: LearningSpaceCreationOptions;
   initialOpen?: boolean;
   error?: string | null;
 }
 
-export function LearningSpaceCreateModal({ action, subjects, initialOpen = false, error = null }: LearningSpaceCreateModalProps) {
+export function LearningSpaceCreateModal({ action, subjects, options, initialOpen = false, error = null }: LearningSpaceCreateModalProps) {
   const [open, setOpen] = useState(initialOpen);
+  const [pending, setPending] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
   const close = useCallback(() => {
+    if (pending) return;
     setOpen(false);
     requestAnimationFrame(() => triggerRef.current?.focus());
-  }, []);
+  }, [pending]);
 
   useEffect(() => {
     if (!open) return;
@@ -37,9 +41,9 @@ export function LearningSpaceCreateModal({ action, subjects, initialOpen = false
       <div className="learning-space-create-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="learning-space-create-dialog-heading">
           <h2 id={titleId}>Leeromgeving toevoegen</h2>
-          <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
+          <button ref={closeRef} className="icon-button" type="button" disabled={pending} onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
         </div>
-        <LearningSpaceCreateForm action={action} subjects={subjects} generalOnly error={error} onCancel={close} returnTo="admin" />
+        <LearningSpaceCreateForm action={action} subjects={subjects} options={options} error={error} onCancel={close} onPendingChange={setPending} />
       </div>
     </div> : null}
   </>;

@@ -27,6 +27,15 @@ import {
 } from "./error-report-groups";
 
 describe("grouped error report thread inbox", () => {
+  it("keeps direct exercises matched and reachable without a null section prefix", () => {
+    const current = thread({ sectionTitle: null });
+    const markup = renderToStaticMarkup(<GroupedErrorReportThreadInbox threads={[current]} issuesByThread={{}} learningSpaceId="space-5" oldDoneCount={0} spaceSlug="5wis" />);
+    expect(markup).toContain(`/admin/5wis/oefening/${current.exerciseId}`);
+    expect(markup).toContain(`Oefening ${current.exerciseCode}`);
+    expect(markup).not.toContain("Onbekende oefening");
+    expect(markup).not.toContain("null -");
+  });
+
   it("renders one card with total and per-location report counts", () => {
     const current = thread({ reportCount: 6 });
     const issues = [

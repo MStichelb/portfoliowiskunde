@@ -81,6 +81,7 @@ describe("portfolio parser", () => {
     expect(parseSectionDirectory("2.Stelsels")).toEqual({ code: "2", title: "Stelsels" });
     expect(parseSectionDirectory("1.1 Stelsels")).toEqual({ code: "1.1", title: "Stelsels" });
     expect(parseSectionDirectory("1.10 - Toepassingen")).toEqual({ code: "1.10", title: "Toepassingen" });
+    expect(parseSectionDirectory("01.02 - Toepassingen")).toEqual({ code: "01.02", title: "Toepassingen" });
     expect(parseSectionDirectory("10 - Toepassingen")).toEqual({ code: "10", title: "Toepassingen" });
     expect(parseSectionDirectory("2A Methode")).toEqual({ code: "2", title: "A Methode" });
     expect(parseSectionDirectory("Uitwerkingen")).toBeNull();
@@ -94,6 +95,7 @@ describe("portfolio parser", () => {
     for (const invalid of ["A", "A1", "A.1", ".1", "1.", "1..1", ""]) expect(isValidSectionCode(invalid)).toBe(false);
     expect(normalizeSectionCode("01.010")).toBe("1.10");
     expect(["2", "1.10", "1.2", "1", "1.1"].sort(compareSectionCodes)).toEqual(["1", "1.1", "1.2", "1.10", "2"]);
+    expect(["2.1", "3", "2", "1.10", "01.02", "1.1", "1"].sort(compareSectionCodes)).toEqual(["1", "1.1", "01.02", "1.10", "2", "2.1", "3"]);
   });
 
 

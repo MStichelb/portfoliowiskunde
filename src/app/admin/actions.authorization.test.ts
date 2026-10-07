@@ -7,6 +7,9 @@ const mocks = vi.hoisted(() => ({
   getLearningSpace: vi.fn(),
   updateLearningSpace: vi.fn(),
   moveTheme: vi.fn(),
+  createTheme: vi.fn(),
+  updateTheme: vi.fn(),
+  deleteTheme: vi.fn(),
   ensureStorageConnection: vi.fn(),
   requireLearningSpaceConfiguration: vi.fn(),
   requireLearningSpaceCreation: vi.fn(),
@@ -29,10 +32,13 @@ vi.mock("@/lib/repositories", () => ({
   getLearningSpace: mocks.getLearningSpace,
   updateLearningSpace: mocks.updateLearningSpace,
   moveTheme: mocks.moveTheme,
+  createTheme: mocks.createTheme,
+  updateTheme: mocks.updateTheme,
+  deleteTheme: mocks.deleteTheme,
 }));
 vi.mock("@/lib/storage-connections", () => ({ ensureStorageConnection: mocks.ensureStorageConnection }));
 
-import { createLearningSpaceAction, moveThemeAction, saveLearningSpaceAction } from "./actions";
+import { createLearningSpaceAction, createThemeAction, deleteThemeAction, moveThemeAction, saveLearningSpaceAction, saveThemeAction } from "./actions";
 
 describe("createLearningSpaceAction authorization and ownership", () => {
   beforeEach(() => {
@@ -103,24 +109,32 @@ describe("createLearningSpaceAction authorization and ownership", () => {
     expect(mocks.requireLearningSpaceConfiguration).toHaveBeenCalledWith(expect.objectContaining({ id: "editor-1" }), "space-5");
   });
 
-  it("lets the existing configuration actor submit collection and exercise terminology", async () => {
+  it("lets the existing configuration actor submit all hierarchy terminology", async () => {
     mocks.requireAdminUser.mockResolvedValue(user("teacher", "owner-1"));
     mocks.requireLearningSpaceConfiguration.mockResolvedValue(undefined);
     const form = validForm("owner-space");
     form.set("id", "space-5");
     form.set("collectionLabelSingular", "  Practicum  ");
+    form.set("themeLabelSingular", "  Deel  ");
+    form.set("themeLabelPlural", "  Delen  ");
+    form.set("sectionLabelSingular", "  Sectie  ");
+    form.set("sectionLabelPlural", "  Secties  ");
     form.set("collectionLabelPlural", "  Practicums  ");
     form.set("exerciseLabelSingular", "  Vraag  ");
     form.set("exerciseLabelPlural", "  Vragen  ");
+    form.set("exerciseLabelShort", "Vr.");
 
     await expect(saveLearningSpaceAction({ error: null }, form)).rejects.toThrow("REDIRECT:/admin/owner-space/instellingen?saved=1");
 
     expect(mocks.requireLearningSpaceConfiguration).toHaveBeenCalledWith(expect.objectContaining({ id: "owner-1" }), "space-5");
     expect(mocks.updateLearningSpace).toHaveBeenCalledWith("space-5", expect.objectContaining({
       collectionLabelSingular: "  Practicum  ",
+      themeLabelSingular: "  Deel  ", themeLabelPlural: "  Delen  ",
+      sectionLabelSingular: "  Sectie  ", sectionLabelPlural: "  Secties  ",
       collectionLabelPlural: "  Practicums  ",
       exerciseLabelSingular: "  Vraag  ",
       exerciseLabelPlural: "  Vragen  ",
+      exerciseLabelShort: "Vr.",
     }));
   });
 });
@@ -180,6 +194,16 @@ describe("moveThemeAction authorization", () => {
 
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.objectContaining({ id: "manager-1" }), "space-5");
     expect(mocks.moveTheme).not.toHaveBeenCalled();
+  });
+
+  it.each([createThemeAction, saveThemeAction, deleteThemeAction])("blocks theme mutations before persistence without management permission", async (action: (form: FormData) => Promise<void>) => {
+    mocks.requireLearningSpaceManagement.mockRejectedValueOnce(new Error("Geen beheerrechten"));
+    const form = themeMoveForm("theme-1", "space-5", "up");
+    form.set("name", "Eigen naam");
+    await expect(action(form)).rejects.toThrow("Geen beheerrechten");
+    expect(mocks.createTheme).not.toHaveBeenCalled();
+    expect(mocks.updateTheme).not.toHaveBeenCalled();
+    expect(mocks.deleteTheme).not.toHaveBeenCalled();
   });
 
   it("forwards only the validated direction and scoped identifiers", async () => {

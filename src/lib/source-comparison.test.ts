@@ -109,6 +109,14 @@ describe("source comparison", () => {
     expect(manifest).toContainEqual({ kind: "file", relativePath: portfolio.hintsDocumentPath });
     expect(manifest).not.toContainEqual({ kind: "section", relativePath: emptySection });
     expect(manifest).toContainEqual({ kind: "section", relativePath: populatedSection });
+    const directPath = `${portfolio.relativePath}/PF5-Oef2.png`;
+    portfolio.exercises = [{ ...portfolio.sections[1].exercises[0], code: "2", number: 2,
+      assets: [{ ...portfolio.sections[1].exercises[0].assets[0], relativePath: directPath }],
+    }];
+    expect(sourceManifestFromIndex([portfolio])).toContainEqual({ kind: "file", relativePath: directPath });
+    expect(sourceManifestFromIndex([portfolio]).filter((entry) => entry.kind === "section")).toEqual([
+      { kind: "section", relativePath: populatedSection },
+    ]);
   });
 
   it("ignores a completely empty portfolio that exists only in the current source", () => {

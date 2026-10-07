@@ -5,7 +5,7 @@ import type { LearningSpace, LearningSpaceSource } from "@/lib/repositories";
 import type { LearningSpaceSourceStatus } from "@/lib/learning-space-source-status";
 
 vi.mock("@/app/components/sync-space-form", () => ({
-  SyncSpaceForm: () => <button>Nu synchroniseren</button>,
+  SyncSpaceForm: ({ disabledReason }: { disabledReason?: string | null }) => <button disabled={Boolean(disabledReason)} title={disabledReason ?? undefined}>Nu synchroniseren</button>,
 }));
 
 vi.mock("@/lib/repositories", () => ({
@@ -16,6 +16,9 @@ vi.mock("@/lib/authorization", () => ({ canConfigureLearningSpace: vi.fn() }));
 
 import { getLatestSyncSummary, getOpenErrorThreadCount } from "@/lib/repositories";
 import { canConfigureLearningSpace } from "@/lib/authorization";
+vi.mock("@/lib/source-profiles", () => ({ getActiveSourceProfileForLearningSpace: vi.fn(async () => ({ id: "profile" })) }));
+vi.mock("@/lib/storage", () => ({ hasConfiguredActiveSource: vi.fn(async () => true) }));
+
 import { AdminSpaceHeader } from "./admin-space-header";
 
 const mirror: LearningSpaceSource = {
@@ -38,6 +41,15 @@ describe("shared LearningSpace admin header", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(canConfigureLearningSpace).mockResolvedValue(true);
+  });
+
+  it.each([[true, true], [true, false], [false, true], [false, false]])("gates sync for missing profile=%s and source=%s", async (missingProfile, missingSource) => {
+    const markup = renderToStaticMarkup(await AdminSpaceHeader({ current: space, section: "portfolios", user: admin, setup: { missingProfile, missingSource } }));
+    expect(markup.includes('disabled=""')).toBe(missingProfile || missingSource);
+    if (missingProfile || missingSource) {
+      expect(markup).toContain("Stel eerst");
+      expect(markup).not.toContain("mislukt");
+    }
   });
 
   it("shows the agreed heading, mirror warning, report count, sync and compact navigation", async () => {

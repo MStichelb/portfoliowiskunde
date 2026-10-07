@@ -120,8 +120,8 @@
 
 .ruleItem {
   display: grid;
-  gap: 0.25rem;
-  padding: 0.75rem;
+  gap: 0.55rem;
+  padding: 0.85rem;
   border: 1px solid #e2e3e5;
   border-radius: 0.6rem;
   background: #fafafa;
@@ -134,10 +134,55 @@
   font-weight: 700;
 }
 
+.ruleTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0;
+  font-size: 1rem;
+}
+
+.ruleRows {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+}
+
+.ruleRow {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 0.38fr) minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: baseline;
+}
+
+.ruleRow dt {
+  color: #70757a;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.ruleRow dd {
+  margin: 0;
+  color: #34383c;
+  font-size: 0.93rem;
+  font-weight: 500;
+}
+
+.rulesList + p {
+  margin-top: 1.1rem;
+  color: #62666a;
+}
+
+.rulesList + p + p {
+  margin-top: 0.45rem;
+  color: #62666a;
+}
+
 .ruleItem dd {
   margin: 0;
-  color: #4f5357;
-  font-size: 0.92rem;
+  color: #34383c;
+  font-size: 0.93rem;
+  font-weight: 500;
 }
 
 .linkForm {

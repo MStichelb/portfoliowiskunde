@@ -21,7 +21,7 @@ import { getDatabase, resetDatabaseForTests } from "@/lib/database";
 import type { IndexedPortfolio } from "@/lib/domain";
 import { getAdminExercise, getAdminPortfolios, persistIndex } from "@/lib/repositories";
 
-import { saveExerciseLevelAction } from "./actions";
+import { bulkExercisePublicationAction, saveExerciseLevelAction, saveExercisePublicationAction, toggleExerciseAlternativeVisibilityAction, toggleExerciseVisibilityAction, toggleReportedExerciseVisibilityAction } from "./actions";
 
 let temporaryDirectory: string | undefined;
 let spaceFiveExerciseId = "";
@@ -70,6 +70,35 @@ afterAll(async () => {
 });
 
 describe("saveExerciseLevelAction", () => {
+  it("accepts direct exercises in single and bulk publication and alternative actions", async () => {
+    const database = await getDatabase();
+    const row = (await database.execute({ sql: "SELECT portfolio_id, section_id FROM exercises WHERE id = ?", args: [spaceFiveExerciseId] })).rows[0];
+    await database.execute({ sql: "UPDATE exercises SET section_id = NULL WHERE id = ?", args: [spaceFiveExerciseId] });
+    await database.execute("UPDATE solution_variants SET kind = 'alternative' WHERE id = 'level-variant'");
+    try {
+      const form = new FormData();
+      form.set("id", spaceFiveExerciseId);
+      form.set("portfolioId", String(row.portfolio_id));
+      form.set("mode", "visible");
+      form.set("visible", "true");
+      form.set("exerciseIds", spaceFiveExerciseId);
+      form.set("learningSpaceId", "space-5");
+      await saveExercisePublicationAction(form);
+      await toggleExerciseVisibilityAction(form);
+      await toggleExerciseAlternativeVisibilityAction(form);
+      await toggleReportedExerciseVisibilityAction(form);
+      expect(await bulkExercisePublicationAction({ error: null }, form)).toEqual({ error: null });
+      expect(await getAdminExercise(spaceFiveExerciseId, "space-5")).toMatchObject({
+        sectionCode: null, visibilityMode: "visible", showAlternativeToStudents: true,
+      });
+      form.set("exerciseIds", spaceSixExerciseId);
+      expect(await bulkExercisePublicationAction({ error: null }, form)).toEqual({ error: "Ongeldige oefeningselectie." });
+    } finally {
+      await database.execute({ sql: "UPDATE exercises SET section_id = ? WHERE id = ?", args: [String(row.section_id), spaceFiveExerciseId] });
+      await database.execute("UPDATE solution_variants SET kind = 'standard' WHERE id = 'level-variant'");
+    }
+  });
+
   it.each([
     ["inherit", "inherit", null, "basis"],
     ["none", "none", null, null],

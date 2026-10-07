@@ -1,5 +1,7 @@
 "use client";
 
+import { useSourceProfileLabels } from "./source-profile-presentation";
+
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, CircleHelp, Info, Plus, Trash2 } from "lucide-react";
 
 import styles from "./portfolio-resource-scanner-v2.module.css";
@@ -26,6 +28,7 @@ import {
   type ExerciseResourceLocation,
   type ExerciseResourceSemanticRole,
 } from "@/lib/source-profile-config";
+import { exerciseResourceLocationLabel, exerciseResourceLocationLabels, exerciseResourceRuleLabel } from "@/lib/source-profile-recognition-labels";
 
 const roleLabels: Record<ExerciseResourceSemanticRole, string> = {
   assignment: "Opgave",
@@ -57,16 +60,17 @@ export function SourceProfileExerciseResourcesViewer({
   resources: readonly ExerciseResourceConfig[];
   exerciseMode?: ExerciseMode;
 }) {
+  const labels = useSourceProfileLabels();
   const items = normalizeOrders(sortExerciseResources(exerciseResourceListSchema.parse(resources)));
-  return <section className="source-profile-resource-editor source-profile-resource-viewer" aria-label="Onderdelen per oefening">
+  return <section className="source-profile-resource-editor source-profile-resource-viewer" aria-label={labels.materialsHeading}>
     <div className="source-profile-resource-editor-heading">
       <div>
-        <div className="source-profile-resource-title-row"><h3>Onderdelen per oefening</h3></div>
+        <div className="source-profile-resource-title-row"><h3>{labels.materialsHeading}</h3></div>
         <p>Deze configuratie is alleen-lezen.</p>
       </div>
       <span className="source-role-badge">{items.length}/{EXERCISE_RESOURCE_LIMIT}</span>
     </div>
-    {items.length === 0 ? <p className="empty-state">Geen onderdelen per oefening ingesteld.</p> : <div className="source-profile-resource-list">
+    {items.length === 0 ? <p className="empty-state">Geen materialen bij {labels.exercises} ingesteld.</p> : <div className="source-profile-resource-list">
       {items.map((resource) => <article className="source-profile-resource-item is-expanded" key={resource.id}>
         <div className="source-profile-resource-item-heading source-profile-resource-item-heading-readonly">
           <div className="source-profile-resource-summary source-profile-resource-summary-readonly">
@@ -77,11 +81,11 @@ export function SourceProfileExerciseResourcesViewer({
         </div>
         <div className="source-profile-resource-details source-profile-resource-readonly-details">
           <div className="source-profile-resource-readonly-main">
-            <div className="source-profile-resource-readonly-type"><span>Zoeklocatie</span><strong>{locationLabel(resource.location, exerciseMode)}</strong></div>
+            <div className="source-profile-resource-readonly-type"><span>Zoeklocatie</span><strong>{locationLabel(resource.location, exerciseMode, labels.exercise)}</strong></div>
             <div className="source-profile-resource-readonly-rule">
               <span>Herkenningsregel</span>
-              {exerciseMode !== "directories" ? <RecognitionSummary label="Oefeningen als bestand" recognition={resource.recognition.file} /> : null}
-              {exerciseMode !== "files" ? <RecognitionSummary label="Oefeningen als map" recognition={resource.recognition.directory} /> : null}
+              {exerciseMode !== "directories" ? <RecognitionSummary label={`${labels.terms.exercise.plural} als bestand`} recognition={resource.recognition.file} /> : null}
+              {exerciseMode !== "files" ? <RecognitionSummary label={`${labels.terms.exercise.plural} als map`} recognition={resource.recognition.directory} /> : null}
               <small>{resource.recognition.fileExtensions.map((extension) => extension.toUpperCase()).join(", ")}</small>
             </div>
             <div className="source-profile-resource-readonly-rule"><span>Bestanden</span><strong>{resource.allowMultiple ? "Meerdere toegestaan" : "Eén bestand"}</strong><small>{resource.allowMultiple ? "Alfabetisch op bestandsnaam" : "Meerdere matches geven een conflict"}</small></div>
@@ -123,6 +127,7 @@ function SourceProfileExerciseResourcesEditorState({
   onChange,
   exerciseMode = "files_and_directories",
 }: SourceProfileExerciseResourcesEditorProps & { initial: ExerciseResourceConfig[] }) {
+  const labels = useSourceProfileLabels();
   const baseline = useMemo(() => JSON.stringify(initial), [initial]);
   const [items, setItems] = useState<ExerciseResourceConfig[]>(initial);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set());
@@ -169,7 +174,7 @@ function SourceProfileExerciseResourcesEditorState({
   const fields = <>
     {!embedded ? <input type="hidden" name={ownerIdField} value={ownerId} /> : null}
     <input type="hidden" name="exerciseResourcesJson" value={serialized} />
-    {items.length === 0 ? <p className="empty-state">Geen onderdelen per oefening ingesteld.</p> : <div className="source-profile-resource-list">
+    {items.length === 0 ? <p className="empty-state">Geen materialen bij {labels.exercises} ingesteld.</p> : <div className="source-profile-resource-list">
       {items.map((resource, index) => {
         const expanded = expandedIds.has(resource.id);
         return <article className={`source-profile-resource-item${expanded ? " is-expanded" : ""}`} key={resource.id}>
@@ -177,7 +182,7 @@ function SourceProfileExerciseResourcesEditorState({
             <button className="source-profile-resource-summary" type="button" onClick={() => toggleExpanded(resource.id)} aria-expanded={expanded}>
               {expanded ? <ChevronDown size={17} aria-hidden /> : <ChevronRight size={17} aria-hidden />}
               <ConfiguredResourceIcon icon={resource.icon} size={18} />
-              <strong title={resource.label || "Nieuw onderdeel"}>{resource.label || "Nieuw onderdeel"}</strong>
+              <strong title={resource.label || "Nieuw materiaal"}>{resource.label || "Nieuw materiaal"}</strong>
               <span>{roleLabels[resource.semanticRole]}</span>
             </button>
             <div className="source-profile-resource-order-actions">
@@ -189,7 +194,7 @@ function SourceProfileExerciseResourcesEditorState({
           {expanded ? <div className="source-profile-resource-details">
             <div className="source-profile-resource-top-grid">
               <SourceProfileIconPicker value={resource.icon} onChange={(icon) => update(index, (current) => ({ ...current, icon }))} />
-              <label>Label<input value={resource.label} maxLength={40} required onChange={(event) => update(index, (current) => ({ ...current, label: event.target.value }))} /></label>
+              <label>Weergavenaam<input value={resource.label} maxLength={40} required onChange={(event) => update(index, (current) => ({ ...current, label: event.target.value }))} /></label>
             </div>
             <div className="source-profile-resource-grid">
               <label>Betekenis<select className={styles.control} value={resource.semanticRole} onChange={(event) => update(index, (current) => changeSemanticRole(current, event.target.value as ExerciseResourceSemanticRole))}>{exerciseResourceSemanticRoles.map((role) => <option key={role} value={role}>{roleLabels[role]}</option>)}</select></label>
@@ -199,12 +204,12 @@ function SourceProfileExerciseResourcesEditorState({
             <div className="source-profile-recognition-panel">
               <div className={styles.labelWithInfo}>
                 <label className="source-profile-recognition-label">Zoeklocatie</label>
-                <span className={styles.inlineInfo} role="img" aria-label="Uitleg over zoeklocatie" title={locationHelp(resource.location, exerciseMode)}><Info size={14} aria-hidden /></span>
+                <span className={styles.inlineInfo} role="img" aria-label="Uitleg over zoeklocatie" title={locationHelp(resource.location, exerciseMode, labels.exercise)}><Info size={14} aria-hidden /></span>
               </div>
               <select className={styles.control} aria-label="Zoeklocatie" value={resource.location.scope} onChange={(event) => update(index, (current) => ({ ...current, location: changeLocation(current.location, event.target.value) }))}>
-                <option value="alongside_exercise">{locationLabels(exerciseMode).alongside}</option>
-                <option value="subdirectory">{locationLabels(exerciseMode).subdirectory}</option>
-                <option value="alongside_and_subdirectory">{locationLabels(exerciseMode).both}</option>
+                <option value="alongside_exercise">{locationLabels(exerciseMode, labels.exercise).alongside}</option>
+                <option value="subdirectory">{locationLabels(exerciseMode, labels.exercise).subdirectory}</option>
+                <option value="alongside_and_subdirectory">{locationLabels(exerciseMode, labels.exercise).both}</option>
               </select>
               {resource.location.scope !== "alongside_exercise" ? <label className={styles.stackedField}>Submap<input className={styles.control} aria-label="Submap" value={resource.location.subdirectory} maxLength={80} required onChange={(event) => update(index, (current) => ({ ...current, location: { ...current.location, subdirectory: event.target.value } as ExerciseResourceLocation }))} /></label> : null}
             </div>
@@ -212,7 +217,7 @@ function SourceProfileExerciseResourcesEditorState({
             <div className="source-profile-recognition-panel">
               <div className={styles.labelWithInfo}>
                 <label className="source-profile-recognition-label">Herkenningsregel</label>
-                <span className={styles.inlineInfo} role="img" aria-label="Uitleg over herkenningsregel" title="Bij een oefeningsbestand wordt het onderdeel herkend na het oefeningnummer. Bij een oefeningsmap bepaalt de map al om welke oefening het gaat en kan de bestandsnaam rechtstreeks worden gebruikt."><Info size={14} aria-hidden /></span>
+                <span className={styles.inlineInfo} role="img" aria-label="Uitleg over herkenningsregel" title={`Bij een bestand wordt het materiaal herkend na het ${labels.exercise}nummer. Bij een map bepaalt de map al om welke ${labels.exercise} het gaat.`}><Info size={14} aria-hidden /></span>
               </div>
               <SourceProfileExerciseRecognitionFields
                 resource={resource}
@@ -242,7 +247,7 @@ function SourceProfileExerciseResourcesEditorState({
                     ? "Bij ‘Is exact’ kan maar één bestand overeenkomen; meerdere bestanden blijft daarom uitgeschakeld."
                     : resource.allowMultiple
                       ? "Alle gevonden bestanden worden alfabetisch op bestandsnaam gesorteerd."
-                      : "Als meerdere bestanden voldoen, meldt de scanner een conflict en kiest hij niets."}
+                      : "Als meerdere bestanden voldoen, meldt de app een conflict en kiest hij niets."}
                 ><Info size={14} aria-hidden /></span>
               </div>
             </div>
@@ -256,8 +261,8 @@ function SourceProfileExerciseResourcesEditorState({
       })}
     </div>}
     <div className="source-profile-resource-footer">
-      <button className="secondary-button" type="button" onClick={add} disabled={!canAdd}><Plus size={16} aria-hidden />Onderdeel toevoegen</button>
-      {!embedded ? <button className="primary-button" type="submit">Onderdelen opslaan</button> : null}
+      <button className="secondary-button" type="button" onClick={add} disabled={!canAdd}><Plus size={16} aria-hidden />Materiaal toevoegen</button>
+      {!embedded ? <button className="primary-button" type="submit">Materialen opslaan</button> : null}
     </div>
   </>;
 
@@ -265,19 +270,18 @@ function SourceProfileExerciseResourcesEditorState({
     <div className="source-profile-resource-editor-heading">
       <div>
         <div className="source-profile-resource-title-row">
-          <h3 id={`${ownerId}-exercise-resources-heading`}>Onderdelen per oefening</h3>
-          <button className="source-profile-help-button" type="button" onClick={() => setShowHelp((current) => !current)} aria-expanded={showHelp} aria-label="Uitleg over onderdelen per oefening" title="Uitleg over onderdelen per oefening"><CircleHelp size={17} aria-hidden /></button>
+          <h3 id={`${ownerId}-exercise-resources-heading`}>{labels.materialsHeading}</h3>
+          <button className="source-profile-help-button" type="button" onClick={() => setShowHelp((current) => !current)} aria-expanded={showHelp} aria-label={`Uitleg over ${labels.materialsHeading.toLocaleLowerCase("nl")}`} title={`Uitleg over ${labels.materialsHeading.toLocaleLowerCase("nl")}`}><CircleHelp size={17} aria-hidden /></button>
         </div>
-        <p>Configureer waar onderdelen staan, hoe ze worden herkend en hoe ze later worden weergegeven.</p>
+        <p>Stel in waar materialen bij {labels.exercises} staan en hoe ze worden herkend en weergegeven.</p>
       </div>
       <span className="source-role-badge">{items.length}/{EXERCISE_RESOURCE_LIMIT}</span>
     </div>
     {showHelp ? <div className="source-profile-resource-help" role="note">
       <strong>Zoeklocatie en herkenning</strong>
-      <p><b>Direct bij de oefening</b> betekent bij een oefeningsbestand dezelfde map en bij een oefeningsmap binnen die map.</p>
+      <p><b>Direct bij de {labels.exercise}</b> betekent bij een bestand dezelfde map en bij een map binnen die map.</p>
       <p><b>In een submap</b> zoekt in één vaste submap zoals <code>assets</code>. De gecombineerde optie accepteert beide plaatsen.</p>
-      <p><b>Tekst na oefeningnummer</b> is geschikt voor namen als <code>Oef3a-alt.png</code>, ook binnen een oefeningsmap. <b>Bestandsnaam</b> kan alleen binnen een oefeningsmap worden gebruikt, bijvoorbeeld <code>Oef3a/uitwerking.png</code>. <b>Standaard / overige bestanden</b> is de contextlokale fallback nadat specifiekere regels zijn geprobeerd.</p>
-      <p>Per portfolio worden mappen volgens <code>nummer - titel</code> automatisch als portfolio-onderdelen herkend. Een portfolio zonder zulke mappen is ook geldig.</p>
+      <p><b>Tekst na {labels.exercise}nummer</b> is geschikt voor namen als <code>Oef3a-alt.png</code>. <b>Bestandsnaam</b> kan binnen een map worden gebruikt, bijvoorbeeld <code>Oef3a/uitwerking.png</code>. <b>Standaard / overige bestanden</b> vangt bestanden op die niet aan andere regels voldoen.</p>
     </div> : null}
     {embedded ? <div className="source-profile-resource-form source-profile-resource-form-embedded">{fields}</div> : <form action={action} className="source-profile-resource-form">{fields}</form>}
   </section>;
@@ -295,17 +299,18 @@ export function SourceProfileExerciseRecognitionFields({
   exerciseMode: ExerciseMode;
   onChange: (resource: ExerciseResourceConfig) => void;
 }) {
+  const labels = useSourceProfileLabels();
   return <>
     {exerciseMode !== "directories" ? <RecognitionRuleEditor
       context="file"
-      label={exerciseMode === "files_and_directories" ? "Voor oefeningen als bestand" : undefined}
+      label={exerciseMode === "files_and_directories" ? `Voor ${labels.exercises} als bestand` : undefined}
       recognition={resource.recognition.file}
       defaultValue={recognitionDefaultValue(resource)}
       onChange={(recognition) => onChange(setContextRecognition(resource, "file", recognition))}
     /> : null}
     {exerciseMode !== "files" ? <RecognitionRuleEditor
       context="directory"
-      label={exerciseMode === "files_and_directories" ? "Voor oefeningen als map" : undefined}
+      label={exerciseMode === "files_and_directories" ? `Voor ${labels.exercises} als map` : undefined}
       recognition={resource.recognition.directory}
       defaultValue={recognitionDefaultValue(resource)}
       onChange={(recognition) => onChange(setContextRecognition(resource, "directory", recognition))}
@@ -326,7 +331,8 @@ function RecognitionRuleEditor({
   defaultValue: string;
   onChange: (recognition: ContextRecognition) => void;
 }) {
-  const targetLabel = context === "file" ? "Tekst na oefeningnummer" : "Bestandsnaam";
+  const labels = useSourceProfileLabels();
+  const targetLabel = context === "file" ? `Tekst na ${labels.exercise}nummer` : "Bestandsnaam";
   return <div className={styles.contextRule}>
     {label ? <strong className={styles.contextRuleTitle}>{label}</strong> : null}
     {recognition ? <>
@@ -337,9 +343,10 @@ function RecognitionRuleEditor({
         onChange={(event) => onChange(changeRecognitionTarget(context, recognition, event.target.value as ContextRecognition["target"], defaultValue))}
       >
         {context === "directory" ? <option value="file_name">{targetLabel}</option> : null}
-        <option value="after_exercise_number">Tekst na oefeningnummer</option>
+        <option value="after_exercise_number">Tekst na {labels.exercise}nummer</option>
         <option value="fallback">Standaard / overige bestanden</option>
       </select>
+      <p className="source-profile-resource-note">{exerciseResourceRuleLabel(recognition, labels.exercise)}</p>
       {recognition.target === "fallback" ? <p className="source-profile-resource-note">Wordt gebruikt voor bestanden die niet aan een andere herkenningsregel in deze context voldoen.</p> : <>
         <div className="source-profile-recognition-grid">
           <select className={styles.control} aria-label={label ? `Vergelijking ${label.toLocaleLowerCase("nl")}` : "Vergelijking"} value={recognition.operator} onChange={(event) => onChange(updateContextRecognition(recognition, { operator: event.target.value as ExerciseResourceFileNameMatchOperator }))}>
@@ -366,9 +373,10 @@ function RecognitionRuleEditor({
 }
 
 function RecognitionSummary({ label, recognition }: { label: string; recognition: ContextRecognition | null }) {
+  const labels = useSourceProfileLabels();
   return <span className={styles.readonlyContextRule}>
     <b>{label}</b>
-    <span>{recognition ? recognitionLabel(recognition) : "Nog geen herkenningsregel ingesteld"}</span>
+    <span>{recognition ? exerciseResourceRuleLabel(recognition, labels.exercise) : "Nog geen herkenningsregel ingesteld"}</span>
   </span>;
 }
 
@@ -381,46 +389,23 @@ function recognitionOperators(recognition: ContextRecognition): ExerciseResource
   return [...exerciseResourceMatchOperators];
 }
 
-function recognitionLabel(recognition: ContextRecognition): string {
-  if (recognition.target === "fallback") return "Standaard / overige bestanden";
-  const source = recognition.target === "after_exercise_number" ? "Tekst na oefeningnummer" : "Bestandsnaam";
-  return `${source}: ${operatorLabels[recognition.operator]} “${recognition.value}”`;
+function locationLabel(location: ExerciseResourceLocation, exerciseMode: ExerciseMode, exerciseLabel: string): string {
+  return exerciseResourceLocationLabel(location, exerciseMode, exerciseLabel);
 }
 
-function locationLabel(location: ExerciseResourceLocation, exerciseMode: ExerciseMode): string {
-  const labels = locationLabels(exerciseMode);
-  if (location.scope === "alongside_exercise") return labels.alongside;
-  if (location.scope === "subdirectory") return `${labels.subdirectory} “${location.subdirectory}”`;
-  return `${labels.both} “${location.subdirectory}”`;
+function locationLabels(exerciseMode: ExerciseMode, exerciseLabel: string) {
+  return exerciseResourceLocationLabels(exerciseMode, exerciseLabel);
 }
 
-function locationHelp(location: ExerciseResourceLocation, exerciseMode: ExerciseMode): string {
+function locationHelp(location: ExerciseResourceLocation, exerciseMode: ExerciseMode, exerciseLabel: string): string {
   const context = exerciseMode === "files"
-    ? "Bij een oefeningsbestand betekent direct: in dezelfde map als het oefeningsbestand."
+    ? `Bij een ${exerciseLabel} als bestand betekent direct: in dezelfde map.`
     : exerciseMode === "directories"
-      ? "Bij een oefeningsmap betekent direct: binnen die oefeningsmap."
-      : "Direct betekent bij een oefeningsbestand dezelfde map, en bij een oefeningsmap binnen die map.";
+      ? `Bij een ${exerciseLabel} als map betekent direct: binnen die map.`
+      : `Direct betekent bij een ${exerciseLabel} als bestand dezelfde map, en bij een ${exerciseLabel} als map binnen die map.`;
   if (location.scope === "alongside_exercise") return context;
   if (location.scope === "subdirectory") return `${context} Zoekt alleen in de ingestelde submap “${location.subdirectory}”.`;
   return `${context} Zoekt direct en in de ingestelde submap “${location.subdirectory}”.`;
-}
-
-function locationLabels(exerciseMode: ExerciseMode): { alongside: string; subdirectory: string; both: string } {
-  if (exerciseMode === "files") return {
-    alongside: "Bij de oefening",
-    subdirectory: "In een submap",
-    both: "Bij de oefening of in een submap",
-  };
-  if (exerciseMode === "directories") return {
-    alongside: "In de map van de oefening",
-    subdirectory: "In een submap van de oefening",
-    both: "In de map of een submap van de oefening",
-  };
-  return {
-    alongside: "Direct bij de oefening",
-    subdirectory: "In een submap",
-    both: "Direct bij de oefening of in een submap",
-  };
 }
 
 function changeLocation(current: ExerciseResourceLocation, scope: string): ExerciseResourceLocation {
@@ -438,7 +423,7 @@ function newExerciseResource(existing: readonly ExerciseResourceConfig[], exerci
   let id = `exercise-resource-${suffix}`;
   const ids = new Set(existing.map((resource) => resource.id));
   while (ids.has(id)) id = `exercise-resource-${++suffix}`;
-  const label = "Nieuw onderdeel";
+  const label = "Nieuw materiaal";
   const defaultValue = label.toLocaleLowerCase("nl");
   return {
     id,

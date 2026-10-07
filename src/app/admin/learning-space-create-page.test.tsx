@@ -15,6 +15,7 @@ vi.mock("@/lib/authorization", () => ({
   getAccessibleLearningSpaceIds: mocks.getAccessibleLearningSpaceIds,
 }));
 vi.mock("@/lib/repositories", () => ({ getLearningSpaces: mocks.getLearningSpaces }));
+vi.mock("@/lib/learning-space-creation-options", () => ({ getLearningSpaceCreationOptions: vi.fn(async () => ({ templates: [], copies: [], links: [] })) }));
 vi.mock("@/lib/subjects", () => ({ listActiveSubjects: mocks.listActiveSubjects }));
 vi.mock("@/app/components/page-banner", () => ({ PageBanner: () => null }));
 vi.mock("./actions", () => ({ createLearningSpaceAction: vi.fn() }));

@@ -15,10 +15,27 @@ vi.mock("next/navigation", () => ({
 const action = async () => undefined;
 
 describe("SourceProfileManageDialog", () => {
+  it.each(["none", "folder"] as const)("shows the saved theme-folder setting and matching preview (%s)", (themeMode: "none" | "folder") => {
+    const config = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    config.scanner.portfolio.themeMode = themeMode;
+    const markup = renderToStaticMarkup(<SourceProfileManageDialog profile={profile({ config })} saveAction={action} archiveAction={action} />);
+    expect(markup).toContain("Groepering uit mappen");
+    expect(markup).toContain(`<option value="${themeMode}" selected="">`);
+    expect(markup).toContain(`&quot;themeMode&quot;:&quot;${themeMode}&quot;`);
+    expect(markup).not.toContain("Thema uit bronmap");
+    expect(markup).toContain("Interpretatie tonen");
+    expect(markup.includes("Bronmap")).toBe(themeMode === "folder");
+    if (themeMode === "folder") {
+      expect(markup).toContain(">Analyse<");
+      expect(markup).toContain(">Algebra<");
+      expect(markup).toContain("Portfolio 4 - Herhaling");
+    }
+  });
+
   it("uses one sticky save flow for the profile name, global resources and exercise resources", () => {
     const config = {
       ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
-      scanner: { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner, portfolio: { marker: "Bundel" } },
+      scanner: { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner, portfolio: { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.portfolio, marker: "Bundel" } },
     };
     const markup = renderToStaticMarkup(<SourceProfileManageDialog
       profile={profile({ config, usageCount: 1, usages: [usage("space-5", "5WIS")] })}
@@ -27,25 +44,41 @@ describe("SourceProfileManageDialog", () => {
     />);
 
     expect(markup).toContain("Bronprofiel beheren");
+    expect(markup).toContain("confirm-backdrop source-profile-editor-backdrop");
     expect(markup).toContain("Profielnaam");
-    expect(markup).toContain("Globale documenten");
+    expect(markup).toContain("Documenten bij portfolio&#x27;s");
     expect(markup).toContain('name="resourcesJson"');
     expect(markup).toContain("Oefeningen herkennen");
-    expect(markup).toContain("Portfoliomarker");
+    expect(markup).toContain("Mapnaam begint met");
     expect(markup).toContain('name="portfolioScannerJson"');
     expect(markup).toContain('value="Bundel"');
     expect(markup).toContain("Bundel1.1 - Stelsels oplossen");
     expect(markup).toContain("1.1 Inleiding");
-    expect(markup).toContain("Letter-startende onderdeelcodes worden niet herkend");
+    expect(markup).toContain("Letter-startende codes worden niet herkend");
     expect(markup).toContain('name="exerciseScannerJson"');
-    expect(markup).toContain("Onderdelen per oefening");
+    expect(markup).toContain("Materialen bij oefeningen");
     expect(markup).toContain('name="exerciseResourcesJson"');
     expect(markup).toContain("Opslaan");
-    expect(markup).not.toContain("Globale documenten opslaan");
+    expect(markup).not.toContain("Documenten bij portfolio&#x27;s opslaan");
     expect(markup).not.toContain("Oefeningsdocumenten opslaan");
     expect(markup).not.toContain(">Annuleren<");
   });
 
+
+  it("places the view context beside Save in the header and keeps usage metadata in Overview", () => {
+    const spaces = [
+      { id: "space-4", shortLabel: "4NW1", name: "Vierde", sortOrder: 1 },
+      { id: "space-5", shortLabel: "5WET", name: "Vijfde", sortOrder: 2 },
+    ];
+    const markup = renderToStaticMarkup(<SourceProfileManageDialog profile={profile()} presentationSpaces={spaces} saveAction={action} archiveAction={action} />);
+    const header = markup.slice(0, markup.indexOf("source-profile-manage-content"));
+    expect(header).toContain("source-profile-view-choice");
+    expect(header.indexOf("source-profile-view-choice")).toBeLessThan(header.indexOf(">Opslaan<"));
+    const content = markup.slice(markup.indexOf("source-profile-manage-content"));
+    expect(content).toContain("Gebruikt in:");
+    expect(content).not.toContain("source-profile-view-choice");
+    expect(content).not.toContain("source-profile-terminology-choice");
+  });
 
   it("places the archive action in the sticky top bar when archiving is allowed", () => {
     const markup = renderToStaticMarkup(<SourceProfileManageDialog

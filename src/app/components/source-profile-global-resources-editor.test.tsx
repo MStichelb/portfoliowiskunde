@@ -14,8 +14,8 @@ describe("SourceProfileGlobalResourcesEditor", () => {
       ownerIdField="sourceProfileId"
       ownerId="profile-1"
     />);
-    expect(markup).toContain("Globale documenten");
-    expect(markup).toContain("Uitleg over globale documenten");
+    expect(markup).toContain("Documenten bij portfolio&#x27;s");
+    expect(markup).toContain("Uitleg over documenten bij portfolio&#x27;s");
     expect(markup).toContain("Opgaven");
     expect(markup).toContain("Hints");
     expect(markup).toContain("Eindoplossingen");
@@ -48,14 +48,14 @@ describe("SourceProfileGlobalResourcesEditor", () => {
     const markup = renderToStaticMarkup(<SourceProfileGlobalResourcesViewer resources={BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.globalResources} />);
     expect(markup).toContain("Deze configuratie is alleen-lezen.");
     expect(markup).toContain("Opgaven");
-    expect(markup).toContain("Begint met");
+    expect(markup).toContain("Bestandsnaam begint met");
     expect(markup).not.toContain("<dt>Label</dt>");
     expect(markup).not.toContain("<dt>Betekenis</dt>");
     expect(markup).toContain("PDF");
     expect(markup).toContain("Niet hoofdlettergevoelig");
     expect(markup).not.toContain(">Icoon<");
     expect(markup).not.toContain("Document toevoegen");
-    expect(markup).not.toContain("Globale documenten opslaan");
+    expect(markup).not.toContain("Documenten bij portfolio&#x27;s opslaan");
   });
 
 });

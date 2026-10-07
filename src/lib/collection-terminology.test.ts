@@ -1,8 +1,45 @@
 import { describe, expect, it } from "vitest";
 
-import { formatTerminologyLabel, miscellaneousCollectionLabel, normalizeCollectionTerminology, normalizeExerciseTerminology } from "./collection-terminology";
+import { formatExerciseShortLabel, formatTerminologyLabel, getLearningSpaceTerminology, initialLearningSpaceDescription, learningSpaceTerminologyLabel, miscellaneousCollectionLabel, normalizeCollectionTerminology, normalizeExerciseTerminology, normalizeSectionTerminology, normalizeThemeTerminology, withoutThemeLabel } from "./collection-terminology";
 
 describe("LearningSpace terminology", () => {
+  it.each([["Thema", "Zonder thema"], ["Hoofdstuk", "Zonder hoofdstuk"], ["dEEL", "Zonder deel"]])("formats the optional root label for %s", (singular: string, expected: string) => {
+    expect(withoutThemeLabel(singular)).toBe(expected);
+  });
+  it("provides all hierarchy defaults while preserving an explicitly empty abbreviation", () => {
+    expect(getLearningSpaceTerminology()).toEqual({
+      theme: { singular: "Thema", plural: "Thema's" },
+      collection: { singular: "Portfolio", plural: "Portfolio's" },
+      section: { singular: "Onderdeel", plural: "Onderdelen" },
+      exercise: { singular: "Oefening", plural: "Oefeningen", short: "Oef." },
+    });
+    expect(getLearningSpaceTerminology({ themeLabelSingular: " ", sectionLabelPlural: "" }).section.plural).toBe("Onderdelen");
+    expect(getLearningSpaceTerminology({ themeLabelSingular: " " }).theme.singular).toBe("Thema");
+    expect(getLearningSpaceTerminology({ exerciseLabelShort: "" }).exercise.short).toBe("");
+    expect(formatExerciseShortLabel("", "3a")).toBe("3a");
+    expect(formatExerciseShortLabel("Vr.", "3a")).toBe("Vr. 3a");
+  });
+
+  it("formats configured singular and plural labels through the existing capitalization pattern", () => {
+    const input = { themeLabelSingular: " dEEL ", themeLabelPlural: "DELEN", sectionLabelSingular: "sECTIE", sectionLabelPlural: "Secties" };
+    expect(learningSpaceTerminologyLabel(input, "theme", "singular")).toBe("Deel");
+    expect(learningSpaceTerminologyLabel(input, "theme", "plural", "inline")).toBe("delen");
+    expect(learningSpaceTerminologyLabel(input, "section", "singular", "inline")).toBe("sectie");
+    expect(learningSpaceTerminologyLabel(input, "section", "plural")).toBe("Secties");
+    expect(input.themeLabelSingular).toBe(" dEEL ");
+  });
+
+  it.each([normalizeThemeTerminology, normalizeSectionTerminology])("validates hierarchy labels with the same rules as existing terminology", (normalize) => {
+    expect(normalize({ singular: " Deel ", plural: " Delen " })).toEqual({ singular: "Deel", plural: "Delen" });
+    expect(normalize({ plural: "Delen" }, { singular: "Deel", plural: "Domeinen" })).toEqual({ singular: "Deel", plural: "Delen" });
+    expect(() => normalize({ singular: " " })).toThrow("enkelvoud");
+    expect(() => normalize({ plural: "x".repeat(41) })).toThrow("40");
+  });
+  it("builds the initial description from the creation terminology", () => {
+    expect(initialLearningSpaceDescription()).toBe("Overzicht van de portfolio's met oefeningen.");
+    expect(initialLearningSpaceDescription("Bundels", "Oefeningen")).toBe("Overzicht van de bundels met oefeningen.");
+    expect(initialLearningSpaceDescription("Portfolio's", "Opdrachten")).toBe("Overzicht van de portfolio's met opdrachten.");
+  });
   it.each([
     ["bunDEL", "standalone", "Bundel"],
     ["bunDEL", "inline", "bundel"],

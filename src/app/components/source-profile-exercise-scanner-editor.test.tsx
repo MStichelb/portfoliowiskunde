@@ -10,9 +10,9 @@ describe("SourceProfileExerciseScannerEditor", () => {
     expect(markup).toContain("Oefeningen herkennen");
     expect(markup).toContain('name="exerciseScannerJson"');
     expect(markup).toContain('&quot;exerciseMode&quot;:&quot;files_and_directories&quot;');
-    expect(markup).toContain("Oefeningen als bestanden");
-    expect(markup).toContain("Oefeningen als mappen");
-    expect(markup).toContain("Oefeningen als bestanden en mappen");
+    expect(markup).toContain("Bestanden");
+    expect(markup).toContain("Mappen");
+    expect(markup).toContain("Bestanden en mappen");
     expect(markup).toContain('value="Oef"');
     expect(markup).toContain("Nummer staat na tekst");
     expect(markup).not.toContain("Nummer vinden");

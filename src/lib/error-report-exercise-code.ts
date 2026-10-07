@@ -14,6 +14,7 @@ export function normalizeErrorReportExerciseCode(value: string): string | null {
 
 export function listErrorReportExerciseIdentities(
   sections: readonly { exercises: readonly ErrorReportExerciseIdentity[] }[],
+  directExercises: readonly ErrorReportExerciseIdentity[] = [],
 ): ErrorReportExerciseIdentity[] {
-  return sections.flatMap((section) => section.exercises);
+  return [...directExercises, ...sections.flatMap((section) => section.exercises)];
 }

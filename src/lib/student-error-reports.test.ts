@@ -40,6 +40,17 @@ afterEach(async () => {
 });
 
 describe("student error report visibility", () => {
+  it("retains matched direct exercise responses and handled notifications without a section", async () => {
+    const database = await getDatabase();
+    await database.execute("UPDATE exercises SET section_id = NULL WHERE id = 'exercise-3a'");
+    await database.execute("UPDATE error_reports SET section_id = NULL WHERE id = 'handled-recent'");
+    expect((await getMyErrorReports(now))?.find((report) => report.reportId === "handled-recent"))
+      .toMatchObject({ exerciseCode: "3a", isMatchedExercise: true, status: "HANDLED", teacherResponse: "Eerste regel\nTweede regel", portfolioTitle: "Veeltermfuncties" });
+    expect((await listPendingHandledReportNotificationsForCurrentUser(now))?.reportIds).toContain("handled-recent");
+    expect(await dismissPendingHandledReportNotificationsForCurrentUser(["handled-recent"], now)).toBe(1);
+    expect((await listPendingHandledReportNotificationsForCurrentUser(now))?.reportIds).not.toContain("handled-recent");
+  });
+
   it("prefers individual handling and otherwise derives effective completion from a DONE thread", () => {
     expect(studentErrorReportEffectiveHandledAt({ handledAt: "2026-09-20T10:00:00.000Z", threadStatus: "DONE", threadCompletedAt: "2026-09-21T10:00:00.000Z" })).toBe("2026-09-20T10:00:00.000Z");
     expect(studentErrorReportEffectiveHandledAt({ handledAt: null, threadStatus: "DONE", threadCompletedAt: "2026-09-21T10:00:00.000Z" })).toBe("2026-09-21T10:00:00.000Z");

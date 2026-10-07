@@ -74,6 +74,38 @@ describe("LearningSpace access", () => {
     mocks.listLearningSpaceStudentRoster.mockResolvedValue([]);
   });
 
+  it("starts on Teachers and keeps all four existing sections mounted", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("owner", "teacher"));
+    const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+    const panels = [...markup.matchAll(/<div id="access-panel-([^"]+)"[^>]*>/g)];
+    expect(panels.map((panel) => panel[1])).toEqual(["teachers", "groups", "individual", "students"]);
+    expect(panels.filter((panel) => !panel[0].includes('hidden=""')).map((panel) => panel[1])).toEqual(["teachers"]);
+    expect(markup).toContain('aria-label="Toegang tot deze leeromgeving"');
+    expect(markup).toContain('class="learning-space-settings-layout"');
+    const navigation = markup.match(/<nav[^>]*aria-label="Toegang tot deze leeromgeving"[\s\S]*?<\/nav>/)?.[0] ?? "";
+    expect([...navigation.matchAll(/<button[^>]*aria-controls="access-panel-([^"]+)"[^>]*>([^<]+)<\/button>/g)]
+      .map((button) => [button[1], button[2]])).toEqual([
+        ["teachers", "Leraren"], ["groups", "Groepen"], ["individual", "Individueel"], ["students", "Leerlingen"],
+      ]);
+    expect([...navigation.matchAll(/role="group" aria-label="([^"]+)"/g)].map((group) => group[1]))
+      .toEqual(["Leraren", "Koppelen", "Leerlingen"]);
+    expect(markup).not.toContain("Leerlingen koppelen");
+  });
+
+  it.each([
+    [{ groupSaved: "1" }, "groups", "Groepskoppeling bijgewerkt."],
+    [{ groupError: "Groep mislukt" }, "groups", "Groep mislukt"],
+    [{ studentSaved: "1" }, "individual", "Individuele toegang bijgewerkt."],
+    [{ studentError: "Leerling mislukt" }, "individual", "Leerling mislukt"],
+    [{ accessSaved: "1" }, "teachers", "Lerarentoegang bijgewerkt."],
+  ] as const)("keeps existing action feedback visible (%j)", async (query, section, feedback) => {
+    mocks.requireAdminUser.mockResolvedValue(user("owner", "teacher"));
+    const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve(query) }));
+    const panels = [...markup.matchAll(/<div id="access-panel-([^"]+)"[^>]*>/g)];
+    expect(panels.filter((panel) => !panel[0].includes('hidden=""')).map((panel) => panel[1])).toEqual([section]);
+    expect(markup).toContain(feedback);
+  });
+
   it.each([
     ["superadmin", user("superadmin", "superadmin")],
     ["owner", user("owner", "teacher")],
@@ -205,7 +237,7 @@ describe("LearningSpace access", () => {
     expect(mocks.listKnownExternalGroups).not.toHaveBeenCalled();
     expect(markup).toContain("5WEWI");
     expect(markup).toContain("Klasgroep");
-    expect(markup).not.toContain("Koppelen");
+    expect(markup).not.toContain(">Koppelen</button>");
     expect(markup).not.toContain("Groepskoppeling verwijderen?");
   });
 
@@ -243,7 +275,7 @@ describe("LearningSpace access", () => {
 
     const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
 
-    expect(markup).toContain("Individuele leerlingen");
+    expect(markup).toContain('<h2 id="individual-students-heading">Individueel</h2>');
     expect(markup).toContain("Leerling toevoegen");
     expect(markup).toContain("De Smet");
     expect(markup).toContain("5WEWI");
@@ -297,9 +329,9 @@ describe("LearningSpace access", () => {
 
     expect(mocks.listLearningSpaceStudentRoster).toHaveBeenCalledWith(space.id);
     expect(markup).toContain('<h2 id="teachers-heading">Leraren</h2>');
-    expect(markup).toContain('<h2 id="groups-users-heading">Leerlingen koppelen</h2>');
-    expect(markup).toContain("<h3>Groepen</h3>");
-    expect(markup).toContain('<h2 id="users-heading">Gebruikers</h2>');
+    expect(markup).toContain('<h2 id="groups-heading">Groepen</h2>');
+    expect(markup).toContain('<h2 id="individual-students-heading">Individueel</h2>');
+    expect(markup).toContain('<h2 id="users-heading">Leerlingen</h2>');
     expect(markup).toContain("2 leerlingen");
     expect(markup).toContain("5WEWI6 • Uitdaging");
     expect(markup).toContain("Groep");

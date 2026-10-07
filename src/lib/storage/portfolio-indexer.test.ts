@@ -8,6 +8,7 @@ import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG, parseSourceProfileConfig, type 
 import { LocalFilesystemProvider } from "./local-filesystem-provider";
 import { indexSource } from "./portfolio-indexer";
 import type { StorageEntry, StorageProvider } from "./provider";
+import { sourceManifestFromIndex } from "../source-comparison";
 
 let temporaryDirectory: string | undefined;
 
@@ -39,6 +40,133 @@ const provider: StorageProvider = {
 };
 
 describe("portfolio indexer", () => {
+  it.each(["opaque", "local"])("discovers one theme level using the shared %s provider contract", async (kind: string) => {
+    const fixture = themeFolderFixture();
+    let themeProvider: StorageProvider = fixture.provider;
+    if (kind === "local") {
+      temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), "portfolio-theme-folders-"));
+      for (const entries of Object.values(fixture.tree)) {
+        for (const entry of entries) {
+          const target = path.join(temporaryDirectory, entry.relativePath);
+          if (entry.kind === "directory") await mkdir(target, { recursive: true });
+          else { await mkdir(path.dirname(target), { recursive: true }); await writeFile(target, "fixture"); }
+        }
+      }
+      themeProvider = new LocalFilesystemProvider(temporaryDirectory);
+    }
+    const config = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    config.scanner.portfolio.themeMode = "folder";
+    const portfolios = await indexSource(themeProvider, config);
+    expect(portfolios.map((portfolio) => portfolio.code)).toEqual(["1", "2", "9"]);
+    expect(portfolios[0].sourceTheme).toEqual({ name: "Analyse & functies", relativePath: "Analyse & functies", sourceId: kind === "opaque" ? "opaque-analyse" : "Analyse & functies" });
+    expect(portfolios[1].sourceTheme?.name).toBe("Algebra");
+    expect(portfolios[2].sourceTheme).toBeUndefined();
+    expect(portfolios[0].exercises?.map((exercise) => exercise.code)).toEqual(["1"]);
+    expect(portfolios[0].sections.map((section) => section.code)).toEqual(["1"]);
+    const manifest = sourceManifestFromIndex(portfolios);
+    expect(manifest).toContainEqual({ kind: "portfolio", relativePath: "Analyse & functies/Portfolio 1 - Limieten", sourceTheme: portfolios[0].sourceTheme });
+    expect(manifest).toContainEqual({ kind: "portfolio", relativePath: "Portfolio 9 - Direct" });
+    expect(manifest.filter((entry) => entry.kind === "portfolio")).toHaveLength(3);
+    // Deep nesting and apparent portfolios inside an existing portfolio are not
+    // promoted to another theme/portfolio level.
+    expect(portfolios.some((portfolio) => ["99", "100"].includes(portfolio.code))).toBe(false);
+  });
+
+  it("preserves flat scanning for legacy profiles and does not inspect theme folders", async () => {
+    const fixture = themeFolderFixture();
+    const legacy = parseSourceProfileConfig({ configVersion: 1, scanner: { portfolio: { marker: "Portfolio" } } });
+    expect(await indexSource(fixture.provider, legacy)).toEqual(await indexSource(fixture.provider));
+    expect((await indexSource(fixture.provider, legacy)).map((portfolio) => portfolio.code)).toEqual(["9"]);
+    expect(fixture.calls).not.toContain("Analyse & functies");
+    expect(fixture.calls).not.toContain("Algebra");
+  });
+
+  it("keeps globally duplicate portfolio codes conflicted across theme folders", async () => {
+    const fixture = themeFolderFixture();
+    fixture.tree.Algebra.push({ name: "Portfolio 1 - Dubbel", relativePath: "Algebra/Portfolio 1 - Dubbel", kind: "directory" });
+    const config = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    config.scanner.portfolio.themeMode = "folder";
+    const duplicates = (await indexSource(fixture.provider, config)).filter((portfolio) => portfolio.code === "1");
+    expect(duplicates).toHaveLength(2);
+    expect(duplicates.map((portfolio) => portfolio.sourceTheme?.name).sort()).toEqual(["Algebra", "Analyse & functies"]);
+    for (const portfolio of duplicates) {
+      expect(portfolio.sections).toEqual([]);
+      expect(portfolio.warnings[0].message).toContain("Dubbele portfoliocode 1");
+      expect(portfolio.warnings[0].message).toContain("Algebra/Portfolio 1 - Dubbel");
+    }
+  });
+
+  it("uses the configured portfolio marker inside themes without descending into other folders", async () => {
+    const calls: string[] = [];
+    const customProvider: StorageProvider = {
+      id: "theme-custom-marker",
+      async list(relativePath = "") {
+        calls.push(relativePath);
+        if (!relativePath) return [{ name: "Analyse", relativePath: "Analyse", kind: "directory" }];
+        if (relativePath === "Analyse") return [
+          { name: "H1B_Stelsels", relativePath: "Analyse/H1B_Stelsels", kind: "directory" },
+          { name: "Dieper", relativePath: "Analyse/Dieper", kind: "directory" },
+        ];
+        return [];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+    const config = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    config.scanner.portfolio = { marker: "H", themeMode: "folder" };
+    const portfolios = await indexSource(customProvider, config);
+    expect(portfolios).toEqual([expect.objectContaining({ code: "1B", sourceTheme: { name: "Analyse", relativePath: "Analyse", sourceId: "Analyse" } })]);
+    expect(calls).not.toContain("Analyse/Dieper");
+  });
+
+  it.each([false, true])("indexes direct files without synthetic sections, mixed=%s", async (mixed: boolean) => {
+    const portfolioPath = "Portfolio 3 - Direct";
+    const directSource: StorageProvider = {
+      id: "direct-files",
+      async list(relativePath = "") {
+        if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+        if (relativePath === portfolioPath) return [
+          { name: "PF3-Oef1.png", relativePath: `${portfolioPath}/PF3-Oef1.png`, kind: "file" },
+          ...(mixed ? [{ name: "1.2 Basis", relativePath: `${portfolioPath}/1.2 Basis`, kind: "directory" as const }] : []),
+        ];
+        if (relativePath === `${portfolioPath}/1.2 Basis`) return [{ name: "PF3-Oef2.png", relativePath: `${relativePath}/PF3-Oef2.png`, kind: "file" }];
+        return [];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+    const [portfolio] = await indexSource(directSource);
+    expect(portfolio.exercises?.map((exercise) => exercise.code)).toEqual(["1"]);
+    expect(portfolio.sections.map((section) => section.code)).toEqual(mixed ? ["1.2"] : []);
+    if (mixed) expect(portfolio.sections[0].exercises.map((exercise) => exercise.code)).toEqual(["2"]);
+  });
+
+  it("uses existing directory resource rules for direct exercise folders", async () => {
+    const portfolioPath = "Portfolio 3 - Direct";
+    const directorySource: StorageProvider = {
+      id: "direct-directories",
+      async list(relativePath = "") {
+        if (!relativePath) return [{ name: portfolioPath, relativePath: portfolioPath, kind: "directory" }];
+        if (relativePath === portfolioPath) return [
+          { name: "Oef1", relativePath: `${portfolioPath}/Oef1`, kind: "directory" },
+          { name: "1.2 Basis", relativePath: `${portfolioPath}/1.2 Basis`, kind: "directory" },
+        ];
+        if (relativePath === `${portfolioPath}/1.2 Basis`) return [{ name: "Oef2", relativePath: `${relativePath}/Oef2`, kind: "directory" }];
+        if (relativePath.endsWith("Oef1") || relativePath.endsWith("Oef2")) return [{ name: "Uitwerking.png", relativePath: `${relativePath}/Uitwerking.png`, kind: "file" }];
+        return [];
+      },
+      async readFile() { return Buffer.from(""); },
+    };
+    const config = profileConfig([], [{
+      id: "worked-solution", kind: "source_file", label: "Uitwerking", icon: "file-text", order: 1, semanticRole: "worked_solution",
+      location: { scope: "alongside_exercise" },
+      recognition: { target: "file_name", operator: "exact", value: "Uitwerking", caseSensitive: false, fileExtensions: ["png"] },
+      allowMultiple: false, displayMode: "collapsible_group",
+    }], { exerciseMode: "directories", numberLocation: "after_text", marker: "Oef" });
+    const [portfolio] = await indexSource(directorySource, config);
+    expect(portfolio.exercises?.map((exercise) => exercise.code)).toEqual(["1"]);
+    expect(portfolio.sections).toHaveLength(1);
+    expect(portfolio.sections[0].exercises.map((exercise) => exercise.code)).toEqual(["2"]);
+  });
+
   it("groepeert standaard- en alternatieve bestanden per oefening en gebruikt de portfoliomap als context", async () => {
     const [portfolio] = await indexSource(provider);
     const exercise = portfolio.sections[0].exercises.find((item) => item.code === "2b");
@@ -52,6 +180,7 @@ describe("portfolio indexer", () => {
     expect(portfolio.finalSolutionsPdfPath).toContain("Eindoplossingen");
     expect(portfolio.warnings).toHaveLength(0);
     expect(portfolio.sections[0].exercises.some((item) => item.code === "7")).toBe(true);
+    expect(portfolio.exercises).toEqual([]);
   });
 
   describe("opgaven-PDF-herkenning", () => {
@@ -730,7 +859,7 @@ describe("portfolio indexer", () => {
     };
     const config = {
       ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG,
-      scanner: { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner, portfolio: { marker: "Bundel" } },
+      scanner: { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner, portfolio: { ...BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG.scanner.portfolio, marker: "Bundel" } },
     };
 
     await expect(indexSource(customProvider, config)).resolves.toEqual([
@@ -748,7 +877,7 @@ describe("portfolio indexer", () => {
           { name: "1 Inleiding", relativePath: `${portfolioPath}/1 Inleiding`, kind: "directory" },
           { name: "1.1 Basis", relativePath: `${portfolioPath}/1.1 Basis`, kind: "directory" },
           { name: "1.10 Verdieping", relativePath: `${portfolioPath}/1.10 Verdieping`, kind: "directory" },
-          { name: "1.2 Methode", relativePath: `${portfolioPath}/1.2 Methode`, kind: "directory" },
+          { name: "01.02 Methode", relativePath: `${portfolioPath}/01.02 Methode`, kind: "directory" },
           { name: "2A Methode", relativePath: `${portfolioPath}/2A Methode`, kind: "directory" },
           { name: "10_Toepassingen", relativePath: `${portfolioPath}/10_Toepassingen`, kind: "directory" },
           { name: "Uitwerkingen", relativePath: `${portfolioPath}/Uitwerkingen`, kind: "directory" },
@@ -762,7 +891,7 @@ describe("portfolio indexer", () => {
     expect(portfolio.sections.map((section) => [section.code, section.sortOrder, section.title])).toEqual([
       ["1", 1, "Inleiding"],
       ["1.1", 2, "Basis"],
-      ["1.2", 3, "Methode"],
+      ["01.02", 3, "Methode"],
       ["1.10", 4, "Verdieping"],
       ["2", 5, "A Methode"],
       ["10", 6, "Toepassingen"],
@@ -1129,4 +1258,27 @@ function assignmentProvider(code: string, title: string, fileNames: string[]): S
     },
     async readFile() { return Buffer.from(""); },
   };
+}
+
+function themeFolderFixture() {
+  const directory = (relativePath: string, sourceId = relativePath): StorageEntry => ({ kind: "directory", relativePath, sourceId, name: relativePath.split("/").at(-1)! });
+  const file = (relativePath: string): StorageEntry => ({ kind: "file", relativePath, name: relativePath.split("/").at(-1)! });
+  const portfolio = "Analyse & functies/Portfolio 1 - Limieten";
+  const tree: Record<string, StorageEntry[]> = {
+    "": [directory("Analyse & functies", "opaque-analyse"), directory("Algebra"), directory("Portfolio 9 - Direct")],
+    "Analyse & functies": [directory(portfolio), directory("Analyse & functies/Dieper")],
+    "Analyse & functies/Dieper": [directory("Analyse & functies/Dieper/Portfolio 99 - Te diep")],
+    "Algebra": [directory("Algebra/Portfolio 2 - Matrices")],
+    [portfolio]: [file(portfolio + "/PF1-Oef1.png"), directory(portfolio + "/1 Basis"), directory(portfolio + "/Portfolio 100 - Inhoud")],
+    [portfolio + "/1 Basis"]: [file(portfolio + "/1 Basis/PF1-Oef2.png")],
+    "Algebra/Portfolio 2 - Matrices": [file("Algebra/Portfolio 2 - Matrices/PF2-Oef1.png")],
+    "Portfolio 9 - Direct": [file("Portfolio 9 - Direct/PF9-Oef1.png")],
+  };
+  const calls: string[] = [];
+  const provider: StorageProvider = {
+    id: "theme-fixture",
+    async list(relativePath = "") { calls.push(relativePath); return tree[relativePath] ?? []; },
+    async readFile() { return Buffer.from(""); },
+  };
+  return { tree, calls, provider };
 }

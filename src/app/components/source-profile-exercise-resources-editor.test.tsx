@@ -15,13 +15,13 @@ describe("SourceProfileExerciseResourcesEditor", () => {
       ownerId="profile-1"
     />);
 
-    expect(markup).toContain("Onderdelen per oefening");
+    expect(markup).toContain("Materialen bij oefeningen");
     expect(markup).toContain("Uitwerking");
     expect(markup).toContain("Alternatieve uitwerking");
     expect(markup).toContain('name="exerciseResourcesJson"');
     expect(markup).toContain("2/10");
-    expect(markup).toContain("Onderdeel toevoegen");
-    expect(markup).toContain("Uitleg over onderdelen per oefening");
+    expect(markup).toContain("Materiaal toevoegen");
+    expect(markup).toContain("Uitleg over materialen bij oefeningen");
     expect(markup).toContain("lucide-notebook-pen");
     expect(markup).toContain("lucide-shapes");
   });
@@ -184,6 +184,6 @@ describe("SourceProfileExerciseResourcesEditor", () => {
     expect(markup.indexOf("Uitwerking")).toBeLessThan(markup.indexOf("Alternatieve uitwerking"));
     expect(markup).toContain("Standaard / overige bestanden");
     expect(markup).toContain("PDF, PNG, JPG, JPEG");
-    expect(markup).not.toContain("Onderdeel toevoegen");
+    expect(markup).not.toContain("Materiaal toevoegen");
   });
 });

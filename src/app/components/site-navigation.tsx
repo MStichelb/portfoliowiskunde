@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { homeHrefForUser } from "@/lib/navigation";
+import type { ChangelogEntry } from "@/data/changelog";
+import { ChangelogDrawer } from "./changelog-drawer";
 
 export interface SiteNavigationSpace { slug: string; name: string; shortLabel: string; }
 export interface SiteNavigationUser { firstName: string; role: "superadmin" | "teacher" | "student"; }
@@ -15,7 +17,7 @@ export function currentSpaceForPath(pathname: string, spaces: SiteNavigationSpac
   return spaces.find((space) => space.slug === candidate) ?? null;
 }
 
-export function SiteNavigation({ spaces, adminSpaces = spaces, directSpaces = adminSpaces, user, emergencyAccess = false }: { spaces: SiteNavigationSpace[]; adminSpaces?: SiteNavigationSpace[]; directSpaces?: SiteNavigationSpace[]; user: SiteNavigationUser | null; emergencyAccess?: boolean }) {
+export function SiteNavigation({ spaces, adminSpaces = spaces, directSpaces = adminSpaces, user, emergencyAccess = false, changelogEntries = [], hasUnreadChangelog = false }: { spaces: SiteNavigationSpace[]; adminSpaces?: SiteNavigationSpace[]; directSpaces?: SiteNavigationSpace[]; user: SiteNavigationUser | null; emergencyAccess?: boolean; changelogEntries?: ChangelogEntry[]; hasUnreadChangelog?: boolean }) {
   const pathname = usePathname();
   if (!user || pathname === "/aanmelden" || pathname === "/admin/login" || pathname === "/breakglass") return null;
   const adminRoute = pathname === "/admin" || pathname.startsWith("/admin/");
@@ -41,7 +43,7 @@ export function SiteNavigation({ spaces, adminSpaces = spaces, directSpaces = ad
       {showSpaceNavigation ? <><span className="site-nav-divider site-nav-space-divider" aria-hidden /><div className="site-nav-space-zone"><SpaceNavigation spaces={contextSpaces} directSpaces={directContextSpaces} extraSpaces={extraContextSpaces} current={current} adminRoute={adminRoute} role={user.role} /></div></> : null}
     </div>
     <div className="site-nav-account">
-      <span className="site-nav-divider" aria-hidden /><span className="site-nav-identity" aria-label={`Aangemeld als ${firstName}, ${roleLabel(user.role)}`}><RoleIcon role={user.role} /><span className="identity-name">{firstName}</span></span>
+      <ChangelogDrawer entries={changelogEntries} hasUnread={hasUnreadChangelog} /><span className="site-nav-divider" aria-hidden /><span className="site-nav-identity" aria-label={`Aangemeld als ${firstName}, ${roleLabel(user.role)}`}><RoleIcon role={user.role} /><span className="identity-name">{firstName}</span></span>
       <form action="/api/auth/logout" method="post"><button className="site-nav-icon site-nav-logout" type="submit" aria-label="Uitloggen" title="Uitloggen"><LogOut size={19} aria-hidden /></button></form>
     </div>
   </nav>{adminRoute && canOpenAdmin && emergencyAccess ? <div className="emergency-access-banner" role="status">Publieke noodtoegang is actief</div> : null}</>;

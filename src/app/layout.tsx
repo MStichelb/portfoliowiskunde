@@ -10,6 +10,8 @@ import { getLearningSpaces } from "@/lib/repositories";
 import { userFirstName } from "@/lib/identity";
 import { orderLearningSpacesForUser } from "@/lib/user-learning-space-order";
 import { listManagedMemberships } from "@/lib/user-management";
+import { getRecentChangelogForRole, hasUnreadChangelog } from "@/lib/changelog";
+import { getLastSeenChangelogEntryId } from "@/lib/changelog-read-state";
 
 import "./globals.css";
 
@@ -30,12 +32,13 @@ export const dynamic = "force-dynamic";
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const user = await getAuthenticatedUser();
-  const [spaces, accessibleIds, manageableIds, emergencyAccess, memberships] = await Promise.all([
+  const [spaces, accessibleIds, manageableIds, emergencyAccess, memberships, lastSeenChangelogId] = await Promise.all([
     getLearningSpaces(true),
     getPubliclyAccessibleLearningSpaceIds(user),
     getManageableLearningSpaceIds(user),
     getPublicEmergencyAccess(),
     user ? listManagedMemberships() : Promise.resolve([]),
+    user ? getLastSeenChangelogEntryId(user.id) : Promise.resolve(null),
   ]);
   const orderedSpaces = user ? await orderLearningSpacesForUser(user.id, spaces) : spaces;
   const accessible = orderedSpaces.filter((space) => accessibleIds.includes(space.id));
@@ -52,6 +55,8 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
           directSpaces={direct.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
           user={user ? { firstName: userFirstName(user), role: user.role } : null}
           emergencyAccess={emergencyAccess.enabled}
+          changelogEntries={user ? getRecentChangelogForRole(user.role) : []}
+          hasUnreadChangelog={user ? hasUnreadChangelog(user.role, lastSeenChangelogId) : false}
         />
         {user ? <SessionRefresher /> : null}
         {children}

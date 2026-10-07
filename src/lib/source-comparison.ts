@@ -1,4 +1,4 @@
-import type { IndexedPortfolio, IndexWarning } from "@/lib/domain";
+import type { IndexedPortfolio, IndexedSourceTheme, IndexWarning } from "@/lib/domain";
 import { comparePortfolioRelativePaths } from "@/lib/parser";
 
 export type SourceManifestKind = "portfolio" | "section" | "file";
@@ -6,6 +6,7 @@ export type SourceManifestKind = "portfolio" | "section" | "file";
 export interface SourceManifestEntry {
   kind: SourceManifestKind;
   relativePath: string;
+  sourceTheme?: IndexedSourceTheme;
 }
 
 export interface SourceComparison {
@@ -30,10 +31,14 @@ export interface SourceComparison {
 export function sourceManifestFromIndex(portfolios: IndexedPortfolio[]): SourceManifestEntry[] {
   const entries: SourceManifestEntry[] = [];
   for (const portfolio of portfolios) {
-    entries.push({ kind: "portfolio", relativePath: portfolio.relativePath });
+    entries.push({ kind: "portfolio", relativePath: portfolio.relativePath,
+      ...(portfolio.sourceTheme ? { sourceTheme: portfolio.sourceTheme } : {}) });
     if (portfolio.assignmentPdfPath) entries.push({ kind: "file", relativePath: portfolio.assignmentPdfPath });
     if (portfolio.hintsDocumentPath) entries.push({ kind: "file", relativePath: portfolio.hintsDocumentPath });
     if (portfolio.finalSolutionsPdfPath) entries.push({ kind: "file", relativePath: portfolio.finalSolutionsPdfPath });
+    for (const exercise of portfolio.exercises ?? []) {
+      for (const asset of exercise.assets) entries.push({ kind: "file", relativePath: asset.relativePath });
+    }
     for (const section of portfolio.sections) {
       const assets = section.exercises.flatMap((exercise) => exercise.assets);
       if (assets.length > 0) entries.push({ kind: "section", relativePath: section.relativePath });

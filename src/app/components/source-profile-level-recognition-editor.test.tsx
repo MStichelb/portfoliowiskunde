@@ -62,7 +62,7 @@ describe("SourceProfileLevelRecognitionEditor", () => {
     expect(markup).not.toContain("Niveau bepalen via");
     expect(markup).toContain("Niveau 1 · Opwarmer");
     expect(markup).toContain("Niveau 4 · Verdieping");
-    expect(markup).toContain("Deze niveaus zijn intern vast.");
+    expect(markup).toContain("De weergavenaam, kleur en symbolen");
   });
 
   it("offers only suitable individual exercise resources in the file-name selector", () => {

@@ -6,13 +6,16 @@ import type { AppUser } from "@/lib/identity";
 const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   canManageLearningSpace: vi.fn(),
+  canConfigureLearningSpace: vi.fn(),
+  profile: vi.fn(),
+  source: vi.fn(),
   getLearningSpaceSourceStatus: vi.fn(),
   getAdminLearningSpaceBySlug: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NEXT_NOT_FOUND"); }),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireAdminUser: mocks.requireAdminUser }));
-vi.mock("@/lib/authorization", () => ({ canManageLearningSpace: mocks.canManageLearningSpace }));
+vi.mock("@/lib/authorization", () => ({ canManageLearningSpace: mocks.canManageLearningSpace, canConfigureLearningSpace: mocks.canConfigureLearningSpace }));
 vi.mock("@/lib/learning-space-source-status", () => ({ getLearningSpaceSourceStatus: mocks.getLearningSpaceSourceStatus }));
 vi.mock("@/lib/repositories", () => ({ getAdminLearningSpaceBySlug: mocks.getAdminLearningSpaceBySlug }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
@@ -23,15 +26,40 @@ vi.mock("@/app/components/learning-space-source-status-card", () => ({
   LearningSpaceSourceStatusOverview: () => <div>Vijf statusonderdelen</div>,
 }));
 
+vi.mock("@/lib/source-profiles", () => ({ getActiveSourceProfileForLearningSpace: mocks.profile }));
+vi.mock("@/lib/storage", () => ({ hasConfiguredActiveSource: mocks.source }));
+
 import LearningSpaceStatusPage from "./page";
 
 describe("LearningSpace status page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.canConfigureLearningSpace.mockResolvedValue(true);
+    mocks.profile.mockResolvedValue({ id: "profile" });
+    mocks.source.mockResolvedValue(true);
     mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
     mocks.canManageLearningSpace.mockResolvedValue(true);
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
     mocks.getLearningSpaceSourceStatus.mockResolvedValue({ learningSpaceId: space.id });
+  });
+
+  it.each([[true, true], [true, false], [false, true], [false, false]])("presents missing profile=%s/source=%s without technical cards", async (missingProfile, missingSource) => {
+    mocks.profile.mockResolvedValue(missingProfile ? null : { id: "profile" });
+    mocks.source.mockResolvedValue(!missingSource);
+    const markup = renderToStaticMarkup(await LearningSpaceStatusPage({ params: Promise.resolve({ spaceSlug: "5-wis" }) }));
+    expect(markup.includes("Nog niet klaar voor synchronisatie")).toBe(missingProfile || missingSource);
+    expect(markup.includes("Vijf statusonderdelen")).toBe(!missingProfile && !missingSource);
+    expect(markup.includes("Bronprofiel instellen")).toBe(missingProfile);
+    expect(markup.includes("Bron instellen")).toBe(missingSource);
+  });
+
+  it("does not offer configuration links to an editor", async () => {
+    mocks.canConfigureLearningSpace.mockResolvedValue(false);
+    mocks.profile.mockResolvedValue(null);
+    mocks.source.mockResolvedValue(false);
+    const markup = renderToStaticMarkup(await LearningSpaceStatusPage({ params: Promise.resolve({ spaceSlug: "5-wis" }) }));
+    expect(markup).toContain("Bronprofiel ontbreekt");
+    expect(markup).not.toContain("/instellingen#");
   });
 
   it.each(["superadmin", "owner", "editor"])("renders stored status for an authorized %s", async (access) => {

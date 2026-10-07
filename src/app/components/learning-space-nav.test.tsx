@@ -48,11 +48,14 @@ describe("LearningSpace admin navigation", () => {
 
   it("uses per-space terminology without deriving it from the subject", () => {
     const markup = renderToStaticMarkup(<LearningSpaceNav
-      current={{ ...base, subjectId: "subject-fysica", subjectName: "Fysica", collectionLabelSingular: "bunDEL", collectionLabelPlural: "bUNDELS" }}
+      current={{ ...base, subjectId: "subject-fysica", subjectName: "Fysica", collectionLabelSingular: "bunDEL", collectionLabelPlural: "bUNDELS", themeLabelSingular: "dEEL", themeLabelPlural: "dELEN" }}
       section="portfolios"
     />);
 
     expect(markup).toContain("Bundels");
+    expect(markup).toContain(">Delen</a>");
+    expect(markup).toContain('href="/admin/5/themas"');
+    expect(markup).not.toContain("Thema");
     expect(markup).not.toContain("bUNDELS");
     expect(markup).not.toContain("Portfolio&#x27;s");
     expect(markup).toContain('href="/admin/5"');

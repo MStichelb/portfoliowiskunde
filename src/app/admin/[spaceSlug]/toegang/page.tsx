@@ -1,6 +1,7 @@
 import { Crown, Eye, Pencil, Trash2 } from "lucide-react";
 import { notFound } from "next/navigation";
 
+import { LearningSpaceAccessNavigation, LearningSpaceAccessPanel } from "@/app/components/learning-space-access-navigation";
 import { AdminSpaceHeader } from "@/app/components/admin-space-header";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
 import { LearningSpaceGroupMappingForm } from "@/app/components/learning-space-group-mapping-form";
@@ -75,43 +76,53 @@ export default async function LearningSpaceAccessPage({
     <AdminSpaceHeader current={space} section="access" user={user} />
     {query.accessSaved === "1" ? <p className="success-message save-feedback" role="status">Lerarentoegang bijgewerkt.</p> : null}
     {query.accessError ? <p className="form-message" role="alert">{query.accessError}</p> : null}
-    <section className="admin-card" aria-labelledby="teachers-heading">
-      <div className="card-heading"><div><h2 id="teachers-heading">Leraren</h2><p>Beheer de leraren die deze leeromgeving kunnen bekijken of bewerken.</p></div></div>
-      {canManageTeacherAccess ? <TeacherAccessForm learningSpaceId={space.id} candidates={candidates} /> : null}
-      {teachers.length
-        ? <TeacherAccessTable learningSpaceId={space.id} teachers={teachers} canChange={canManageTeacherAccess} />
-        : <p className="empty-state compact-empty">Nog geen leraren met toegang.</p>}
-    </section>
-    <section className="admin-card" aria-labelledby="groups-users-heading">
-      <div className="card-heading"><div><h2 id="groups-users-heading">Leerlingen koppelen</h2></div></div>
-      <div className="student-linking-group">
-        <h3>Groepen</h3>
-        <p>Koppel Smartschoolgroepen aan deze leeromgeving om leerlingen automatisch kijktoegang te geven.</p>
-        {query.groupSaved === "1" ? <p className="success-message save-feedback" role="status">Groepskoppeling bijgewerkt.</p> : null}
-        {query.groupError ? <p className="form-message" role="alert">{query.groupError}</p> : null}
-        {canManageStudentAccess ? <div className="learning-space-group-forms">
-          <LearningSpaceGroupMappingForm learningSpaceId={space.id} label="Klasgroep" groups={classGroups} action={saveLearningSpaceGroupMappingAction} />
-          <LearningSpaceGroupMappingForm learningSpaceId={space.id} label="Andere groep" groups={otherGroups} action={saveLearningSpaceGroupMappingAction} />
-        </div> : null}
-        <GroupMappingList learningSpaceId={space.id} mappings={groupMappings} canChange={canManageStudentAccess} />
-      </div>
-      <div className="individual-student-access">
-        <div className="card-heading">
-          <div><h3>Individuele leerlingen</h3><p>Geef een leerling rechtstreeks kijktoegang tot deze leeromgeving.</p></div>
-          {canManageStudentAccess ? <LearningSpaceStudentAccessModal learningSpaceId={space.id} candidates={studentCandidates} action={saveLearningSpaceIndividualStudentAccessAction} /> : null}
-        </div>
-        {query.studentSaved === "1" ? <p className="success-message save-feedback compact-save-feedback" role="status">Individuele toegang bijgewerkt.</p> : null}
-        {query.studentError ? <p className="form-message" role="alert">{query.studentError}</p> : null}
-        <IndividualStudentAccessList learningSpaceId={space.id} students={individualStudents} canChange={canManageStudentAccess} />
-      </div>
-    </section>
-    <section className="admin-card" aria-labelledby="users-heading">
-      <div className="card-heading">
-        <div><h2 id="users-heading">Gebruikers</h2><p>Bekijk de leerlingen die toegang hebben tot deze leeromgeving.</p></div>
-        <strong className="list-count">{roster.length} {roster.length === 1 ? "leerling" : "leerlingen"}</strong>
-      </div>
-      <LearningSpaceStudentRoster students={roster} />
-    </section>
+    <LearningSpaceAccessNavigation initialSection={query.studentSaved || query.studentError ? "individual" : query.groupSaved || query.groupError ? "groups" : "teachers"}>
+      <LearningSpaceAccessPanel section="teachers">
+        <section className="admin-card" aria-labelledby="teachers-heading">
+          <div className="card-heading"><div><h2 id="teachers-heading">Leraren</h2><p>Beheer de leraren die deze leeromgeving kunnen bekijken of bewerken.</p></div></div>
+          {canManageTeacherAccess ? <TeacherAccessForm learningSpaceId={space.id} candidates={candidates} /> : null}
+          {teachers.length
+            ? <TeacherAccessTable learningSpaceId={space.id} teachers={teachers} canChange={canManageTeacherAccess} />
+            : <p className="empty-state compact-empty">Nog geen leraren met toegang.</p>}
+        </section>
+      </LearningSpaceAccessPanel>
+      <LearningSpaceAccessPanel section="groups">
+        <section className="admin-card" aria-labelledby="groups-heading">
+          <div className="card-heading"><div><h2 id="groups-heading">Groepen</h2><p>Koppel Smartschoolgroepen aan deze leeromgeving om leerlingen automatisch kijktoegang te geven.</p></div></div>
+          <div className="student-linking-group">
+            {query.groupSaved === "1" ? <p className="success-message save-feedback" role="status">Groepskoppeling bijgewerkt.</p> : null}
+            {query.groupError ? <p className="form-message" role="alert">{query.groupError}</p> : null}
+            {canManageStudentAccess ? <div className="learning-space-group-forms">
+              <LearningSpaceGroupMappingForm learningSpaceId={space.id} label="Klasgroep" groups={classGroups} action={saveLearningSpaceGroupMappingAction} />
+              <LearningSpaceGroupMappingForm learningSpaceId={space.id} label="Andere groep" groups={otherGroups} action={saveLearningSpaceGroupMappingAction} />
+            </div> : null}
+            <GroupMappingList learningSpaceId={space.id} mappings={groupMappings} canChange={canManageStudentAccess} />
+          </div>
+        </section>
+      </LearningSpaceAccessPanel>
+      <LearningSpaceAccessPanel section="individual">
+        <section className="admin-card" aria-labelledby="individual-students-heading">
+          <div className="individual-student-access">
+            <div className="card-heading">
+              <div><h2 id="individual-students-heading">Individueel</h2><p>Geef een leerling rechtstreeks kijktoegang tot deze leeromgeving.</p></div>
+              {canManageStudentAccess ? <LearningSpaceStudentAccessModal learningSpaceId={space.id} candidates={studentCandidates} action={saveLearningSpaceIndividualStudentAccessAction} /> : null}
+            </div>
+            {query.studentSaved === "1" ? <p className="success-message save-feedback compact-save-feedback" role="status">Individuele toegang bijgewerkt.</p> : null}
+            {query.studentError ? <p className="form-message" role="alert">{query.studentError}</p> : null}
+            <IndividualStudentAccessList learningSpaceId={space.id} students={individualStudents} canChange={canManageStudentAccess} />
+          </div>
+        </section>
+      </LearningSpaceAccessPanel>
+      <LearningSpaceAccessPanel section="students">
+        <section className="admin-card" aria-labelledby="users-heading">
+          <div className="card-heading">
+            <div><h2 id="users-heading">Leerlingen</h2><p>Bekijk de leerlingen die toegang hebben tot deze leeromgeving.</p></div>
+            <strong className="list-count">{roster.length} {roster.length === 1 ? "leerling" : "leerlingen"}</strong>
+          </div>
+          <LearningSpaceStudentRoster students={roster} />
+        </section>
+      </LearningSpaceAccessPanel>
+    </LearningSpaceAccessNavigation>
   </main>;
 }
 

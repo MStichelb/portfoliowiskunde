@@ -5,7 +5,7 @@ import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "@/lib/source-profile-con
 import type { AppUser } from "@/lib/identity";
 import type { ManagedSourceProfile, SourceProfileCopyTarget } from "@/lib/source-profiles";
 
-const mocks = vi.hoisted(() => ({ requireAdminUser: vi.fn(), getSourceProfileOverview: vi.fn(), listSourceProfileTemplates: vi.fn() }));
+const mocks = vi.hoisted(() => ({ requireAdminUser: vi.fn(), getSourceProfileOverview: vi.fn(), listSourceProfileTemplates: vi.fn(), loadPresentationSpaces: vi.fn() }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -33,13 +33,30 @@ vi.mock("./actions", () => ({
   updateManagedSourceProfileGlobalResourcesAction: vi.fn(),
 }));
 
+vi.mock("@/lib/source-profile-presentation-loader", () => ({ loadSourceProfilePresentationSpaces: mocks.loadPresentationSpaces }));
+
 import SourceProfilesPage from "./page";
 
 describe("central source profile page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.loadPresentationSpaces.mockResolvedValue([]);
     mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [profile()], editorAccessibleActiveProfiles: [], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [copyTarget()] });
     mocks.listSourceProfileTemplates.mockResolvedValue([template()]);
+  });
+
+  it("uses an authorized LearningSpace context from a profile link and ignores a forged context", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher"));
+    mocks.loadPresentationSpaces.mockResolvedValue([
+      { id: "space-0", name: "Eerste", shortLabel: "A", sortOrder: 1 },
+      { id: "space-1", name: "Tweede", shortLabel: "B", sortOrder: 2, collectionLabelPlural: "Hoofdstukken", sectionLabelPlural: "Secties", exerciseLabelPlural: "Opdrachten" },
+    ]);
+    const scoped = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ profile: "profile-1", space: "space-1" }) }));
+    expect(scoped.includes("Hoofdstukken herkennen")).toBe(true);
+    expect(scoped.includes("source-profile-view-choice")).toBe(false);
+    const forged = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ profile: "profile-1", space: "forbidden" }) }));
+    expect(forged.includes("source-profile-view-choice")).toBe(true);
+    expect(mocks.loadPresentationSpaces).toHaveBeenCalledWith(expect.objectContaining({ role: "teacher" }), expect.any(Array));
   });
 
   it.each(["teacher", "superadmin"] as const)("is accessible to a %s and shows current usage", async (role) => {
@@ -108,12 +125,12 @@ describe("central source profile page", () => {
     expect(markup).toContain("source-profile-tab-section");
     const viewMarkup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ tab: "editor", profile: foreign.id }) }));
     expect(viewMarkup).toContain("Bronprofiel bekijken");
-    expect(viewMarkup).toContain("Globale documenten");
+    expect(viewMarkup).toContain("Documenten bij portfolio&#x27;s");
     expect(viewMarkup).toContain("Opgaven");
-    expect(viewMarkup).toContain("Onderdelen per oefening");
+    expect(viewMarkup).toContain("Materialen bij oefeningen");
     expect(viewMarkup).toContain("Alternatieve uitwerking");
     expect(viewMarkup).toContain("PDF");
-    expect(viewMarkup).not.toContain("Globale documenten opslaan");
+    expect(viewMarkup).not.toContain("Documenten bij portfolio&#x27;s opslaan");
     expect(markup).not.toContain("TipTopPortfolio");
     expect(markup).not.toContain(`linkProfile=${foreign.id}`);
   });
@@ -140,7 +157,7 @@ describe("central source profile page", () => {
     expect(manage).toContain("Bronprofiel beheren");
     expect(manage).toContain("Opslaan");
     expect(manage).toContain("4NW1, 5WET, 6WIS, EXTRA");
-    expect(manage).toContain("Onderdelen per oefening");
+    expect(manage).toContain("Materialen bij oefeningen");
     expect(manage).toContain('name="exerciseResourcesJson"');
     expect(manage).not.toContain('name="confirmShared"');
     expect(manage).not.toContain("source-profile-shared-confirm");
@@ -192,11 +209,11 @@ describe("central source profile page", () => {
     expect(markup).toContain(`archive=1&amp;profile=${archived.id}`);
     const viewMarkup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ archive: "1", profile: archived.id }) }));
     expect(viewMarkup).toContain("Bronprofiel bekijken");
-    expect(viewMarkup).toContain("Globale documenten");
+    expect(viewMarkup).toContain("Documenten bij portfolio&#x27;s");
     expect(viewMarkup).toContain("Eindoplossingen");
-    expect(viewMarkup).toContain("Onderdelen per oefening");
+    expect(viewMarkup).toContain("Materialen bij oefeningen");
     expect(viewMarkup).toContain("Uitwerking");
-    expect(viewMarkup).not.toContain("Globale documenten opslaan");
+    expect(viewMarkup).not.toContain("Documenten bij portfolio&#x27;s opslaan");
     expect(markup).not.toContain("Beheren");
     expect(markup).not.toContain("Kopiëren");
     expect(markup).not.toContain("Koppelen");

@@ -84,7 +84,7 @@ describe("handled report banner placement", () => {
     expect(markup.match(/data-student-notification/g)).toHaveLength(1);
     expect(markup.indexOf("data-page-banner")).toBeLessThan(markup.indexOf("data-student-notification"));
     expect(markup.indexOf("data-student-notification")).toBeLessThan(markup.indexOf("Vijfde jaar"));
-    expect(markup).toContain("Portfolio&#x27;s");
+    expect(markup).toContain("Er zijn momenteel geen zichtbare items.");
   });
 
   it("does not repeat the banner on a LearningSpace page when the student has multiple spaces", async () => {
@@ -111,7 +111,7 @@ describe("handled report banner placement", () => {
 
     const markup = renderToStaticMarkup(await LearningSpacePage({ params: Promise.resolve({ spaceSlug: "5wis" }) }));
 
-    expect(markup).toContain("Bundels");
+    expect(markup).not.toContain("<h2>");
     expect(markup).toContain("Fysica");
     expect(markup).toContain("Bundel 1");
     expect(markup).toContain('href="/5wis/portfolio/portfolio-1"');

@@ -435,7 +435,7 @@ describe("global source profile templates", () => {
       resources: [{
         id: "formula", kind: "external_link", label: "Formularium", icon: "link", order: 10, semanticRole: "generic",
       }],
-      portfolioScanner: { marker: "Bundel" },
+      portfolioScanner: { marker: "Bundel", themeMode: "folder" },
       exerciseScanner: { numberLocation: "after_text", marker: "Vraag" },
       exerciseResources: [{
         id: "assignment-part", kind: "source_file", label: "Opgave", icon: "file-text", order: 10, semanticRole: "assignment",
@@ -446,7 +446,7 @@ describe("global source profile templates", () => {
     const updated = await getDefaultSourceProfileTemplate();
     expect(updated).toMatchObject({ name: "Aangepast sjabloon", description: "Nieuwe beschrijving" });
     expect(updated.config.globalResources).toEqual([expect.objectContaining({ id: "formula" })]);
-    expect(updated.config.scanner.portfolio).toEqual({ marker: "Bundel" });
+    expect(updated.config.scanner.portfolio).toEqual({ marker: "Bundel", themeMode: "folder" });
     expect(updated.config.scanner.exercise).toEqual({ exerciseMode: "files_and_directories", numberLocation: "after_text", marker: "Vraag" });
     expect(updated.config.exerciseResources).toEqual([expect.objectContaining({ id: "assignment-part", semanticRole: "assignment", allowMultiple: false, displayMode: "always" })]);
   });

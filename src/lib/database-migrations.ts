@@ -1212,6 +1212,102 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE sections ADD CONSTRAINT sections_portfolio_id_section_code_key UNIQUE(portfolio_id, section_code)",
     ],
   },
+  {
+    version: "056_user_changelog_read_state",
+    statements: ["ALTER TABLE users ADD COLUMN last_seen_changelog_entry_id TEXT"],
+  },
+  {
+    version: "057_sectionless_exercises",
+    sqliteForeignKeysDisabled: true,
+    statements: [
+      `CREATE TABLE exercises_057 (
+        id TEXT PRIMARY KEY,
+        portfolio_id TEXT NOT NULL REFERENCES portfolios(id),
+        section_id TEXT REFERENCES sections(id),
+        exercise_code TEXT NOT NULL,
+        exercise_number INTEGER NOT NULL,
+        exercise_suffix TEXT NOT NULL,
+        visible INTEGER NOT NULL DEFAULT 0,
+        is_indexed INTEGER NOT NULL DEFAULT 1,
+        visibility_mode TEXT NOT NULL DEFAULT 'inherit' CHECK(visibility_mode IN ('inherit', 'hidden', 'visible')),
+        publish_from TEXT,
+        publish_until TEXT,
+        last_seen_at TEXT,
+        show_alternative_to_students INTEGER NOT NULL DEFAULT 1,
+        archived_at TEXT,
+        custom_note TEXT,
+        note_position TEXT NOT NULL DEFAULT 'above_solution' CHECK(note_position IN ('above_solution', 'below_solution')),
+        note_label TEXT,
+        level_source TEXT CHECK(level_source IS NULL OR level_source IN ('opwarmer', 'basis', 'uitdaging', 'verdieping')),
+        level_override_mode TEXT NOT NULL DEFAULT 'inherit' CHECK(level_override_mode IN ('inherit', 'level', 'none')),
+        level_override TEXT CHECK((level_override IS NULL OR level_override IN ('opwarmer', 'basis', 'uitdaging', 'verdieping'))
+          AND (level_override_mode <> 'level' OR level_override IS NOT NULL)),
+        UNIQUE(section_id, exercise_code)
+      )`,
+      `INSERT INTO exercises_057 (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix,
+        visible, is_indexed, visibility_mode, publish_from, publish_until, last_seen_at,
+        show_alternative_to_students, archived_at, custom_note, note_position, note_label,
+        level_source, level_override_mode, level_override)
+        SELECT id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix,
+          visible, is_indexed, visibility_mode, publish_from, publish_until, last_seen_at,
+          show_alternative_to_students, archived_at, custom_note, note_position, note_label,
+          level_source, level_override_mode, level_override FROM exercises`,
+      "DROP TABLE exercises",
+      "ALTER TABLE exercises_057 RENAME TO exercises",
+      "CREATE UNIQUE INDEX exercises_direct_code_unique ON exercises(portfolio_id, exercise_code) WHERE section_id IS NULL",
+    ],
+    postgresStatements: [
+      "ALTER TABLE exercises ALTER COLUMN section_id DROP NOT NULL",
+      "CREATE UNIQUE INDEX exercises_direct_code_unique ON exercises(portfolio_id, exercise_code) WHERE section_id IS NULL",
+    ],
+  },
+  {
+    version: "058_source_themes",
+    statements: [
+      `CREATE TABLE themes_058 (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id),
+        name TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        source_scope TEXT,
+        source_id TEXT,
+        source_folder_name TEXT,
+        source_relative_path TEXT,
+        CHECK((source_scope IS NULL AND source_id IS NULL AND source_folder_name IS NULL AND source_relative_path IS NULL)
+          OR (source_scope IS NOT NULL AND source_id IS NOT NULL AND source_folder_name IS NOT NULL AND source_relative_path IS NOT NULL))
+      )`,
+      `INSERT INTO themes_058 (id, learning_space_id, name, sort_order, created_at, updated_at)
+        SELECT id, learning_space_id, name, sort_order, created_at, updated_at FROM themes`,
+      "DROP TABLE themes",
+      "ALTER TABLE themes_058 RENAME TO themes",
+      "CREATE INDEX themes_learning_space_index ON themes(learning_space_id, sort_order)",
+      "CREATE UNIQUE INDEX themes_manual_name_unique ON themes(learning_space_id, name) WHERE source_scope IS NULL",
+      "CREATE UNIQUE INDEX themes_source_identity_unique ON themes(learning_space_id, source_scope, source_id) WHERE source_scope IS NOT NULL",
+    ],
+    postgresStatements: [
+      "ALTER TABLE themes ADD COLUMN source_scope TEXT",
+      "ALTER TABLE themes ADD COLUMN source_id TEXT",
+      "ALTER TABLE themes ADD COLUMN source_folder_name TEXT",
+      "ALTER TABLE themes ADD COLUMN source_relative_path TEXT",
+      "ALTER TABLE themes DROP CONSTRAINT themes_learning_space_id_name_key",
+      `ALTER TABLE themes ADD CONSTRAINT themes_source_metadata_complete CHECK(
+        (source_scope IS NULL AND source_id IS NULL AND source_folder_name IS NULL AND source_relative_path IS NULL)
+        OR (source_scope IS NOT NULL AND source_id IS NOT NULL AND source_folder_name IS NOT NULL AND source_relative_path IS NOT NULL))`,
+      "CREATE UNIQUE INDEX themes_manual_name_unique ON themes(learning_space_id, name) WHERE source_scope IS NULL",
+      "CREATE UNIQUE INDEX themes_source_identity_unique ON themes(learning_space_id, source_scope, source_id) WHERE source_scope IS NOT NULL",
+    ],
+  },
+  {
+    version: "059_learning_space_hierarchy_terminology",
+    statements: [
+      "ALTER TABLE learning_spaces ADD COLUMN theme_label_singular TEXT NOT NULL DEFAULT 'Thema'",
+      "ALTER TABLE learning_spaces ADD COLUMN theme_label_plural TEXT NOT NULL DEFAULT 'Thema''s'",
+      "ALTER TABLE learning_spaces ADD COLUMN section_label_singular TEXT NOT NULL DEFAULT 'Onderdeel'",
+      "ALTER TABLE learning_spaces ADD COLUMN section_label_plural TEXT NOT NULL DEFAULT 'Onderdelen'",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

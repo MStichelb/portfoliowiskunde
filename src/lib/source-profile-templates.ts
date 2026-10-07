@@ -359,7 +359,7 @@ function sourceProfileTemplateFromRow(row: DatabaseRow): SourceProfileTemplate {
   };
 }
 
-async function getSourceProfileTemplate(templateId: string): Promise<SourceProfileTemplate> {
+export async function getSourceProfileTemplate(templateId: string): Promise<SourceProfileTemplate> {
   const result = await (await getDatabase()).execute({ sql: "SELECT * FROM source_profile_templates WHERE id = ? AND archived_at IS NULL", args: [templateId] });
   if (!result.rows[0]) throw new Error("Bronprofielsjabloon niet gevonden.");
   return sourceProfileTemplateFromRow(result.rows[0]);

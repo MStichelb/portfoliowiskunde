@@ -80,10 +80,17 @@ export interface IndexedSection {
   exercises: IndexedExercise[];
 }
 
+export interface IndexedSourceTheme {
+  name: string;
+  relativePath: string;
+  sourceId: string;
+}
+
 export interface IndexedPortfolio {
   code: string;
   title: string;
   relativePath: string;
+  sourceTheme?: IndexedSourceTheme;
   assignmentPdfPath: string | null;
   assignmentPdfSourceId: string | null;
   hintsDocumentPath: string | null;
@@ -91,6 +98,8 @@ export interface IndexedPortfolio {
   finalSolutionsPdfPath: string | null;
   finalSolutionsPdfSourceId: string | null;
   resourceAssets: IndexedPortfolioResourceAsset[];
+  /** Exercises directly inside the portfolio, without a section. Omitted in legacy fixtures. */
+  exercises?: IndexedExercise[];
   sections: IndexedSection[];
   warnings: IndexWarning[];
 }

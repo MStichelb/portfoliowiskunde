@@ -4,8 +4,8 @@ import type { ReactNode } from "react";
 
 import { ArchiveVisibilityToggle } from "@/app/components/archive-visibility-toggle";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
-import { SourceProfileExerciseResourcesViewer } from "@/app/components/source-profile-exercise-resources-editor";
-import { SourceProfileGlobalResourcesViewer } from "@/app/components/source-profile-global-resources-editor";
+import { SourceProfileReadonlyView } from "@/app/components/source-profile-readonly-view";
+import { loadSourceProfilePresentationSpaces } from "@/lib/source-profile-presentation-loader";
 import { SourceProfileManageDialog } from "@/app/components/source-profile-manage-dialog";
 import { SourceProfileOwnerFilter } from "@/app/components/source-profile-owner-filter";
 import { SourceProfileSectionTabs, type SourceProfileSectionTab } from "@/app/components/source-profile-section-tabs";
@@ -17,7 +17,7 @@ import { archiveManagedSourceProfileAction, archiveSourceProfileTemplateAction, 
 
 export const dynamic = "force-dynamic";
 
-interface Query { tab?: string; owner?: string; archive?: string; templateArchive?: string; profile?: string; copyProfile?: string; linkProfile?: string; error?: string; saved?: string; template?: string; templateError?: string; templateModal?: string; templateSaved?: string }
+interface Query { space?: string; tab?: string; owner?: string; archive?: string; templateArchive?: string; profile?: string; copyProfile?: string; linkProfile?: string; error?: string; saved?: string; template?: string; templateError?: string; templateModal?: string; templateSaved?: string }
 
 export default async function SourceProfilesPage({ searchParams }: { searchParams: Promise<Query> }) {
   const user = await requireAdminUser();
@@ -31,6 +31,8 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
   const relatedProfiles = user.role === "superadmin" ? overview.otherUserProfiles : overview.editorAccessibleActiveProfiles;
   const profiles = [...overview.ownedProfiles, ...relatedProfiles];
   const selectedProfile = profiles.find((profile) => profile.id === query.profile) ?? null;
+  const presentationSpaces = selectedProfile ? await loadSourceProfilePresentationSpaces(user, selectedProfile.usages) : [];
+  const contextSpaceId = presentationSpaces.some((space) => space.id === query.space) ? query.space : undefined;
   const copyProfile = profiles.find((profile) => profile.id === query.copyProfile && profile.canCopy) ?? null;
   const linkProfile = profiles.find((profile) => profile.id === query.linkProfile && profile.canLink) ?? null;
   const selectedOwnerId = user.role === "superadmin" && overview.otherProfileOwners.some((owner) => owner.id === query.owner) ? query.owner! : null;
@@ -61,16 +63,9 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
     <SourceProfileSectionTabs ownedSection={ownedSection} editorSection={editorSection} templateSection={templateSection} secondTabLabel={user.role === "superadmin" ? "Andere gebruikers" : "Uit leeromgevingen"} initialTab={initialSection(query, relatedProfiles)} />
 
     {selectedProfile ? selectedProfile.canRename
-      ? <SourceProfileManageDialog profile={selectedProfile} saveAction={saveManagedSourceProfileAction} archiveAction={archiveManagedSourceProfileAction} error={query.error} />
-      : <div className="confirm-backdrop" role="presentation"><div className="source-profile-dialog source-profile-dialog-wide" role="dialog" aria-modal="true" aria-labelledby="manage-source-profile-title">
-        <div className="source-profile-dialog-heading"><h2 id="manage-source-profile-title">Bronprofiel bekijken</h2><CloseLink /></div>
-        <div className="source-profile-central-usage"><strong>{selectedProfile.name}</strong><span>{selectedProfile.isInactive ? "Inactief" : `Gebruikt in: ${sourceProfileUsageLabel(selectedProfile.usages)}`}</span>{selectedProfile.ownerName ? <small>Eigenaar: {selectedProfile.ownerName}</small> : null}</div>
-        <div className="source-profile-dialog-form"><p>Je kunt dit profiel bekijken{selectedProfile.canCopy ? " en onafhankelijk kopiëren" : ""}, maar niet wijzigen of koppelen.</p></div>
-        <SourceProfileGlobalResourcesViewer resources={selectedProfile.config.globalResources} />
-        <SourceProfileExerciseResourcesViewer
-          resources={selectedProfile.config.exerciseResources}
-          exerciseMode={selectedProfile.config.scanner.exercise.exerciseMode}
-        />
+      ? <SourceProfileManageDialog profile={selectedProfile} saveAction={saveManagedSourceProfileAction} archiveAction={archiveManagedSourceProfileAction} error={query.error} presentationSpaces={presentationSpaces} contextSpaceId={contextSpaceId} />
+      : <div className="confirm-backdrop source-profile-editor-backdrop" role="presentation"><div className="source-profile-dialog source-profile-dialog-wide" role="dialog" aria-modal="true" aria-labelledby="manage-source-profile-title">
+        <SourceProfileReadonlyView closeAction={<CloseLink />} profile={selectedProfile} presentationSpaces={presentationSpaces} contextSpaceId={contextSpaceId} />
         <div className="source-profile-dialog-actions"><Link className="secondary-button link-button" href="/admin/bronprofielen">Sluiten</Link></div>
       </div></div> : null}
 
@@ -102,13 +97,13 @@ function profileFeedback(value: string | undefined): string | null {
   if (value === "restored") return "Bronprofiel hersteld.";
   if (value === "deleted") return "Bronprofiel permanent verwijderd.";
   if (value === "resourcesUpdated") return "Globale documenten opgeslagen.";
-  if (value === "exerciseResourcesUpdated") return "Onderdelen per oefening opgeslagen.";
+  if (value === "exerciseResourcesUpdated") return "Materialen opgeslagen.";
   if (value === "profileUpdated") return "Bronprofiel opgeslagen.";
   if (value === "profileSplit") return "Onafhankelijke profielkopie gemaakt en actief gezet in de gekozen leeromgeving.";
   return null;
 }
 function templateModal(value: string | undefined): SourceProfileTemplateModal | null { return value === "create" || value === "manage" || value === "default" || value === "copy" ? value : null; }
-function templateFeedback(value: string | undefined): string | null { if (value === "created") return "Bronprofielsjabloon gemaakt."; if (value === "updated") return "Bronprofielsjabloon bijgewerkt."; if (value === "duplicated") return "Bronprofielsjabloon onafhankelijk gedupliceerd."; if (value === "default") return "Standaardsjabloon gewijzigd voor toekomstige leeromgevingen."; if (value === "archived") return "Bronprofielsjabloon gearchiveerd."; if (value === "restored") return "Bronprofielsjabloon hersteld."; if (value === "deleted") return "Bronprofielsjabloon permanent verwijderd."; if (value === "resourcesUpdated") return "Globale documenten van het sjabloon opgeslagen."; if (value === "exerciseResourcesUpdated") return "Onderdelen per oefening van het sjabloon opgeslagen."; return null; }
+function templateFeedback(value: string | undefined): string | null { if (value === "created") return "Bronprofielsjabloon gemaakt."; if (value === "updated") return "Bronprofielsjabloon bijgewerkt."; if (value === "duplicated") return "Bronprofielsjabloon onafhankelijk gedupliceerd."; if (value === "default") return "Standaardsjabloon gewijzigd voor toekomstige leeromgevingen."; if (value === "archived") return "Bronprofielsjabloon gearchiveerd."; if (value === "restored") return "Bronprofielsjabloon hersteld."; if (value === "deleted") return "Bronprofielsjabloon permanent verwijderd."; if (value === "resourcesUpdated") return "Globale documenten van het sjabloon opgeslagen."; if (value === "exerciseResourcesUpdated") return "Materialen van het sjabloon opgeslagen."; return null; }
 function initialSection(query: Query, editorProfiles: ManagedSourceProfile[]): SourceProfileSectionTab {
   if (query.tab === "editor" || query.tab === "templates" || query.tab === "owned") return query.tab;
   if (query.templateModal || query.template || query.templateError || query.templateSaved) return "templates";
