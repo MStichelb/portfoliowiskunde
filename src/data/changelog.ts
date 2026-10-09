@@ -28,6 +28,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-10-bronmappen-verplaatsen-hernoemen",
+  date: "2026-10-10",
+  category: "improved",
+  title: "Instellingen behouden bij hernoemen en verplaatsen",
+  description: "Wanneer een eerder gesynchroniseerde portfoliomap in dezelfde OneDrive- of Google Drive-bron wordt hernoemd of verplaatst, blijven de portfolio-instellingen en bestaande oefeninginstellingen behouden, ook als de portfoliocode wijzigt. De indeling in thema's volgt de bron. Hernoemde themamappen behouden hun aangepaste weergavenaam en volgorde. Bij een onduidelijke koppeling blijft de laatst geldige index behouden.",
+  audiences: ["teacher", "superadmin"],
+  notify: false,
+}, {
   id: "2026-10-08-actiemeldingen",
   date: "2026-10-08",
   category: "improved",

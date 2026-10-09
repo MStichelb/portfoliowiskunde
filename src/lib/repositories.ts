@@ -56,6 +56,7 @@ import { getActiveSourceProfileConfigForLearningSpace, getSourceProfileIndexCont
 import { SourceConfigurationError, StaleSynchronizationError } from "@/lib/source-errors";
 import { prepareSourceBindingWrites } from "@/lib/source-bindings";
 import type { SourceEntityBinding } from "@/lib/source-identity";
+import { planSourceReconciliation } from "@/lib/source-reconciliation";
 import { requireActiveSubject } from "@/lib/subjects";
 import { DEFAULT_LEARNING_SPACE_COLOR } from "@/lib/ui-colors";
 import {
@@ -1188,45 +1189,32 @@ export async function persistIndex(
   const startedAt = new Date().toISOString();
   const runId = randomUUID();
   const warnings = [...portfolios.flatMap((portfolio) => portfolio.warnings)];
-  const portfolioCodeCounts = new Map<string, number>();
-  for (const portfolio of portfolios) portfolioCodeCounts.set(portfolio.code, (portfolioCodeCounts.get(portfolio.code) ?? 0) + 1);
-  const indexablePortfolios = portfolios.filter((portfolio) => portfolioCodeCounts.get(portfolio.code) === 1);
   const profileConfig = options.publicationGuard?.snapshot.sourceProfileConfig
     ?? await getActiveSourceProfileConfigForLearningSpace(spaceId);
   const synchronizesThemes = profileConfig.scanner.portfolio.themeMode === "folder";
+  const publicationSource = source ?? await getActiveLearningSpaceSource(spaceId);
+  const legacyDefaultSpaceId = await getSetting("legacy_default_learning_space_id");
+  const reconciliation = await planSourceReconciliation(database, {
+    learningSpaceId: spaceId, providerType, source: publicationSource, portfolios, synchronizesThemes,
+    newPortfolioId: (code) => legacyDefaultSpaceId === spaceId ? `portfolio-${code}` : stableId("portfolio", spaceId, code),
+  });
+  const resolvedPortfolioIds = new Map(reconciliation.portfolios.map((item) => [item.incoming.code, item.id]));
+  const indexablePortfolios = reconciliation.portfolios.map((item) => item.incoming);
+  const resolvedThemeIds = new Map(reconciliation.portfolios.map((item) => [item.incoming.code, item.themeId]));
   const themeStatements: InStatement[] = [];
-  const sourceThemeIds = new Map<string, string>();
-  if (synchronizesThemes) {
-    const themeSource = source ?? await getActiveLearningSpaceSource(spaceId);
-    if (!themeSource) throw new Error("De synchronisatiebron voor thema's ontbreekt.");
-    const scope = themeSource.id;
-    const existingThemes = await getThemes(spaceId);
-    const themesByReference = new Map(existingThemes
-      .filter((theme) => theme.sourceTheme?.scope === scope)
-      .map((theme) => [theme.sourceTheme!.sourceId, theme]));
-    let sortOrder = Math.max(0, ...existingThemes.map((theme) => theme.sortOrder));
-    for (const portfolio of portfolios) {
-      const incoming = portfolio.sourceTheme;
-      if (!incoming || sourceThemeIds.has(incoming.sourceId)) continue;
-      const existing = themesByReference.get(incoming.sourceId);
-      const id = existing?.id ?? randomUUID();
-      sourceThemeIds.set(incoming.sourceId, id);
-      if (!existing) {
-        sortOrder += 10;
-        themeStatements.push({
-          sql: `INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at,
-            source_scope, source_id, source_folder_name, source_relative_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          args: [id, spaceId, incoming.name, sortOrder, startedAt, startedAt, scope, incoming.sourceId, incoming.name, incoming.relativePath],
-        });
-      } else if (existing.sourceTheme!.name !== incoming.name || existing.sourceTheme!.relativePath !== incoming.relativePath) {
-        themeStatements.push({
-          sql: "UPDATE themes SET source_folder_name = ?, source_relative_path = ?, updated_at = ? WHERE id = ?",
-          args: [incoming.name, incoming.relativePath, startedAt, id],
-        });
-      }
-    }
+  for (const theme of reconciliation.themes) {
+    if (theme.match === "new") themeStatements.push({
+      sql: `INSERT INTO themes (id, learning_space_id, name, sort_order, created_at, updated_at,
+        source_scope, source_id, source_folder_name, source_relative_path) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [theme.id, spaceId, theme.source.name, theme.sortOrder, startedAt, startedAt,
+        theme.scope, theme.source.sourceId, theme.source.name, theme.source.relativePath],
+    });
+    else if (theme.sourceChanged) themeStatements.push({
+      sql: "UPDATE themes SET source_folder_name = ?, source_relative_path = ?, updated_at = ? WHERE id = ?",
+      args: [theme.source.name, theme.source.relativePath, startedAt, theme.id],
+    });
   }
-  const [existingAssets, existingVariants, existingResourceAssets, existingPortfolios, existingExercises, existingErrorThreads, existingErrorIssues] = await Promise.all([
+  const [existingAssets, existingVariants, existingResourceAssets, existingExercises, existingErrorThreads, existingErrorIssues] = await Promise.all([
     database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.source_id,
       solution_assets.file_name, solution_assets.extension, solution_assets.step, solution_assets.last_modified_at, solution_assets.source_version,
       solution_assets.is_indexed, solution_assets.archived_at, solution_variants.kind, solution_variants.exercise_id
@@ -1240,21 +1228,13 @@ export async function persistIndex(
     database.execute({ sql: `SELECT id, portfolio_id, exercise_id, resource_scope, resource_id,
       source_id, relative_path, file_name, extension, step, source_version, is_indexed, archived_at
       FROM source_resource_assets WHERE learning_space_id = ?`, args: [spaceId] }),
-    database.execute({ sql: "SELECT id, portfolio_code FROM portfolios WHERE learning_space_id = ?", args: [spaceId] }),
     database.execute({ sql: `SELECT exercises.* FROM exercises JOIN portfolios ON portfolios.id = exercises.portfolio_id
       WHERE portfolios.learning_space_id = ?`, args: [spaceId] }),
     database.execute({ sql: "SELECT id, exercise_id FROM error_report_threads WHERE learning_space_id = ?", args: [spaceId] }),
     database.execute({ sql: `SELECT id, exercise_id, document_kind, variant_kind FROM error_report_issues
       WHERE learning_space_id = ?`, args: [spaceId] }),
   ]);
-  const portfolioIds = new Map(existingPortfolios.rows.map((row) => [text(row, "portfolio_code"), text(row, "id")]));
-  const legacyDefaultSpaceId = await getSetting("legacy_default_learning_space_id");
-  const resolvedPortfolioIds = new Map(indexablePortfolios.map((portfolio) => [
-    portfolio.code,
-    portfolioIds.get(portfolio.code) ?? (legacyDefaultSpaceId === spaceId ? `portfolio-${portfolio.code}` : stableId("portfolio", spaceId, portfolio.code)),
-  ]));
-  const bindingSource = indexablePortfolios.some((portfolio) => portfolio.sourceIdentityContext)
-    ? source ?? await getActiveLearningSpaceSource(spaceId) : null;
+  const bindingSource = publicationSource;
   const bindings: SourceEntityBinding[] = [];
   for (const portfolio of indexablePortfolios) {
     const identity = portfolio.sourceIdentityContext;
@@ -1562,7 +1542,7 @@ export async function persistIndex(
     });
 
     if (synchronizesThemes) {
-      const themeId = portfolio.sourceTheme ? sourceThemeIds.get(portfolio.sourceTheme.sourceId)! : null;
+      const themeId = resolvedThemeIds.get(portfolio.code)!;
       statements.push(themeId ? {
         sql: "UPDATE portfolios SET theme_id = ? WHERE id = ? AND (theme_id IS NULL OR theme_id <> ?)",
         args: [themeId, portfolioId, themeId],

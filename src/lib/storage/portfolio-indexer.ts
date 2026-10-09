@@ -95,7 +95,9 @@ export async function indexSource(
         severity: "warning",
         path: entry.relativePath,
         message: `Dubbele portfoliocode ${parsedPortfolio.code} herkend in mappen: ${duplicateNames.join(", ")}. Geen van deze portfolio's wordt gesynchroniseerd.`,
-      }), ...(sourceTheme ? { sourceTheme } : {}) });
+      }), ...(entry.sourceId ? { sourceId: entry.sourceId } : {}),
+        ...(provider.identityContext ? { sourceIdentityContext: provider.identityContext } : {}),
+        ...(sourceTheme ? { sourceTheme } : {}) });
       continue;
     }
     portfolios.push({ ...await indexPortfolio(

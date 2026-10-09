@@ -140,9 +140,17 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     expect(bindings).toHaveLength(2);
     await persistIndex([sourceBindingFixture()], "onedrive", space.id, { sourceId: source.id });
     expect(await getSourceEntityBindings(database, space.id)).toEqual(bindings);
-    const before = (await database.execute({ sql: "SELECT * FROM portfolios WHERE learning_space_id = ?", args: [space.id] })).rows;
-    const changedCode = sourceBindingFixture("92"); changedCode.sourceId = sourceBindingFixture().sourceId;
-    await expect(persistIndex([changedCode], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow("bronidentiteit");
+    const changedCode = sourceBindingFixture(); changedCode.code = "92";
+    changedCode.relativePath = "Moved/Portfolio 92 Nieuw";
+    await persistIndex([changedCode], "onedrive", space.id, { sourceId: source.id });
+    const renamed = (await database.execute({ sql: "SELECT * FROM portfolios WHERE learning_space_id = ?", args: [space.id] })).rows;
+    expect(renamed).toHaveLength(1);
+    expect(renamed[0]).toMatchObject({ id: bindings.find((binding) => binding.entityType === "portfolio")!.entityId,
+      portfolio_code: "92", relative_path: changedCode.relativePath });
+    expect(await getSourceEntityBindings(database, space.id)).toEqual(bindings);
+    const before = renamed;
+    const recreated = structuredClone(changedCode); recreated.sourceId = "replacement-folder";
+    await expect(persistIndex([recreated], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow("bronidentiteit");
     expect((await database.execute({ sql: "SELECT * FROM portfolios WHERE learning_space_id = ?", args: [space.id] })).rows).toEqual(before);
     const portfolio = bindings.find((binding) => binding.entityType === "portfolio")!;
     const section = bindings.find((binding) => binding.entityType === "section")!;
@@ -175,9 +183,78 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     expect(await getSourceEntityBindings(database, space.id)).toEqual(bindings);
     expect((await database.execute({ sql: "SELECT * FROM portfolios WHERE learning_space_id = ?", args: [space.id] })).rows).toEqual(before);
     await database.execute({ sql: "INSERT INTO learning_space_sources (id, learning_space_id, role, provider_type, is_active, created_at, updated_at) VALUES (?, ?, 'mirror', 'onedrive', 0, 'now', 'now')", args: [`mirror-${suffix}`, space.id] });
-    await persistIndex([sourceBindingFixture()], "onedrive", space.id, { sourceId: `mirror-${suffix}` });
+    await persistIndex([changedCode], "onedrive", space.id, { sourceId: `mirror-${suffix}` });
     expect(await getSourceEntityBindings(database, space.id)).toHaveLength(4);
-  });
+  }, 120_000);
+
+  it("reconciles native portfolio/theme moves and code changes with metadata, child IDs and atomic rejection", async () => {
+    const suffix = randomUUID();
+    const owner = await createUser({ displayName: `Reconciliation ${suffix}`, role: "teacher" });
+    const space = await createLearningSpaceForOwner({ subjectId: "subject-wiskunde", name: "Reconciliation", slug: `reconcile-${suffix}`,
+      shortLabel: "R", sourceType: "local", localSourcePath: null }, owner.id);
+    const database = await getDatabase();
+    const source = (await getActiveLearningSpaceSource(space.id))!;
+    const config = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
+    config.scanner.portfolio.themeMode = "folder";
+    await database.execute({ sql: "UPDATE learning_space_sources SET provider_type = 'onedrive' WHERE id = ?", args: [source.id] });
+    await database.execute({ sql: "UPDATE source_profiles SET config_json = ? WHERE id IN (SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = ?)", args: [JSON.stringify(config), space.id] });
+    const indexed = sourceBindingFixture();
+    indexed.sourceTheme = { sourceId: "theme-a", name: "Analyse", relativePath: "Analyse" };
+    await persistIndex([indexed], "onedrive", space.id, { sourceId: source.id });
+    const original = (await getAdminPortfolios(space.id))[0];
+    const oldTheme = (await getThemes(space.id))[0];
+    const sectionId = original.sections[0].id;
+    const exerciseId = original.sections[0].exercises[0].id;
+    await database.batch([
+      { sql: "UPDATE portfolios SET title_override = 'Eigen titel', visible = 0, publication_limited = 1, publish_from = '2099-01-01', publish_until = '2099-12-31', card_color = '#abcdef', custom_text = 'Bewaren', custom_text_position = 'below_documents' WHERE id = ?", args: [original.id] },
+      { sql: "UPDATE themes SET name = 'Eigen thema', sort_order = 80 WHERE id = ?", args: [oldTheme.id] },
+      { sql: "UPDATE exercises SET custom_note = 'Bewaren', visibility_mode = 'hidden' WHERE id = ?", args: [exerciseId] },
+      { sql: "INSERT INTO error_reports (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, message, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'standard', '[]', 'Bewaar', 'TODO', 'old', 'old')", args: [`report-${suffix}`, original.id, sectionId, exerciseId] },
+    ]);
+    indexed.sourceTheme = { sourceId: "theme-a", name: "Functies", relativePath: "Functies" };
+    indexed.code = "92"; indexed.title = "Nieuwe bron"; indexed.relativePath = "Functies/Portfolio 92 Nieuw";
+    indexed.sections[0].relativePath = `${indexed.relativePath}/1.1 Onderdeel`;
+    await persistIndex([indexed], "onedrive", space.id, { sourceId: source.id });
+    expect((await getThemes(space.id))[0]).toMatchObject({ id: oldTheme.id, name: "Eigen thema", sortOrder: 80,
+      sourceTheme: { sourceId: "theme-a", name: "Functies", relativePath: "Functies" } });
+    for (const theme of ["theme-b", null, "theme-a"]) {
+      indexed.sourceTheme = theme ? { sourceId: theme, name: theme, relativePath: theme } : undefined;
+      indexed.relativePath = `${theme ? `${theme}/` : ""}Portfolio 92 Nieuw`;
+      await persistIndex([indexed], "onedrive", space.id, { sourceId: source.id });
+      const current = (await getAdminPortfolios(space.id))[0];
+      expect(current).toMatchObject({ id: original.id, title: "Eigen titel", visible: false, customText: "Bewaren", code: "92" });
+      expect(current.sections[0].id).toBe(sectionId); expect(current.sections[0].exercises[0].id).toBe(exerciseId);
+      expect(current.themeId).toBe(theme ? (await getThemes(space.id)).find((item) => item.sourceTheme?.sourceId === theme)!.id : null);
+    }
+    expect((await database.execute({ sql: "SELECT publication_limited, publish_from, publish_until, card_color, custom_text_position FROM portfolios WHERE id = ?", args: [original.id] })).rows[0])
+      .toMatchObject({ publication_limited: 1, publish_from: "2099-01-01", publish_until: "2099-12-31", card_color: "#abcdef", custom_text_position: "below_documents" });
+    expect((await database.execute({ sql: "SELECT id, custom_note, visibility_mode FROM exercises WHERE id = ?", args: [exerciseId] })).rows[0])
+      .toMatchObject({ id: exerciseId, custom_note: "Bewaren", visibility_mode: "hidden" });
+    expect((await database.execute({ sql: "SELECT portfolio_id, section_id, exercise_id FROM error_reports WHERE id = ?", args: [`report-${suffix}`] })).rows[0])
+      .toEqual({ portfolio_id: original.id, section_id: sectionId, exercise_id: exerciseId });
+    const snapshot = async () => Promise.all([
+      ...["portfolios", "themes", "source_entity_bindings", "sync_runs", "sync_warnings", "error_report_threads", "error_report_issues"].map((table) => {
+        const sql = table === "sync_warnings" ? "SELECT * FROM sync_warnings WHERE sync_run_id IN (SELECT id FROM sync_runs WHERE learning_space_id = ?) ORDER BY id"
+          : `SELECT * FROM ${table} WHERE learning_space_id = ? ORDER BY id`;
+        return database.execute({ sql, args: [space.id] }).then((result) => result.rows);
+      }),
+      ...["sections", "exercises", "error_reports"].map((table) => database.execute({ sql: `SELECT * FROM ${table} WHERE portfolio_id = ? ORDER BY id`, args: [original.id] }).then((result) => result.rows)),
+    ]);
+    const before = await snapshot();
+    const replacement = structuredClone(indexed); replacement.sourceId = "replacement";
+    await expect(persistIndex([replacement], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow("bronidentiteit");
+    const doubleClaim = structuredClone(indexed); doubleClaim.code = "93";
+    await expect(persistIndex([indexed, doubleClaim], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow("bronidentiteit");
+    const conflictingTheme = sourceBindingFixture("94"); conflictingTheme.sourceTheme = { sourceId: "theme-a", name: "Contradiction", relativePath: "Elsewhere" };
+    await expect(persistIndex([indexed, conflictingTheme], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow("bronidentiteit");
+    expect(await snapshot()).toEqual(before);
+    // A valid rename and new theme are planned; the entity constraint fails during publication.
+    const invalid = structuredClone(indexed); invalid.code = "93"; invalid.title = null as unknown as string;
+    invalid.sourceTheme = { sourceId: "rollback-theme", name: "Nieuw", relativePath: "Nieuw" };
+    await expect(persistIndex([invalid], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow();
+    expect(await snapshot()).toEqual(before);
+    expect(await getThemes(space.id)).toHaveLength(2);
+  }, 120_000);
 
   it("creates wizard profile choices and skipped sources in the same owner transaction", async () => {
     const suffix = randomUUID();

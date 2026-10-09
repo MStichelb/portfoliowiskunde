@@ -69,7 +69,7 @@ export async function prepareSourceBindingWrites(
     const previous = existingByEntity.get(key);
     if (previous) {
       // Path identities can follow the entity chosen by existing code matching.
-      // Native identity changes require later reconciliation, never an overwrite.
+      // Reconciliation may retain the entity, but never overwrite its native identity.
       if (String(previous.native_item_id) !== binding.nativeItemId) statements.push({
         sql: "UPDATE source_entity_bindings SET native_item_id = ?, updated_at = ? WHERE id = ? AND identity_kind = 'path'",
         args: [binding.nativeItemId, timestamp, String(previous.id)],

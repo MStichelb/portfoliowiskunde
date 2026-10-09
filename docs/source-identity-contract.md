@@ -1,8 +1,9 @@
-# Source identity contract (Fase 5B)
+# Source identity contract (Fase 5B/5C)
 
 Een bronbinding koppelt een bestaande app-entiteit aan de identiteit uit een
-actuele scan. Een provider-ID wordt nooit een app-ID. De huidige codegestuurde
-entitymatching blijft ongewijzigd; deze infrastructuur kiest geen entities.
+actuele scan. Een provider-ID wordt nooit een app-ID. De centrale read-only
+planner `planSourceReconciliation` kiest vóór publicatie de theme- en portfolio-ID
+op basis van dit contract. Section/exercise/resource-matching blijft intact.
 
 ## Contract
 
@@ -57,9 +58,8 @@ races; een mislukte batch rolt de gehele indexpublicatie terug.
 
 Pathbindings mogen het bestaande codegematchte record volgen bij een
 padwijziging. Dat is geen native renameherkenning. Een bekende native binding
-mag in 5B niet worden overgeschreven of gebruikt om een andere code te matchen.
-Een codewijziging met dezelfde native ID faalt daarom veilig tot 5C de
-reconciliation expliciet implementeert.
+wordt nooit overschreven; 5C gebruikt haar als bewijs om dezelfde portfolio-ID
+te behouden wanneer bronpad, titel, code of thematoewijzing verandert.
 
 ## Resourcescope uitgesteld
 
@@ -71,10 +71,52 @@ source/providercontext alsnog expliciet opslaan en de huidige unscoped unieke
 sleutels beoordelen. De nieuwe folderbindings lossen die bestaande assetgrens
 niet op. Theme-identiteit en resource-item-ID's worden niet gedupliceerd.
 
-## Gebruik door 5C
+## Reconciliation in 5C
 
-5C kan de opgeslagen portfolio/sectionbindings en het actuele indexcontract
-gebruiken, met alle contextvelden als matchscope. Alleen native contexten geven
-een garantie over provider rename/move. Bestaande records zonder binding blijven
-geldig; er is geen garantie dat een wijziging vóór de eerste betrouwbare scan
-achteraf kan worden herkend.
+`planSourceReconciliation` laadt uitsluitend de portfolios, themes en bindings
+van de actuele LearningSpace. De expliciete theme/portfolio-plannen bevatten
+IDs, matchreden, bronwijzigingen en thematoewijzing; de planner schrijft niets.
+`persistIndex` voert het plan uit in de bestaande guarded transactionele batch.
+De bindinghelper valideert en plant daarna uitsluitend opslag van de gekozen
+portfolio- en ongewijzigd codegematchte section-IDs.
+
+Portfolio-prioriteit:
+
+1. Exacte native binding binnen LearningSpace + configured source + provider +
+   namespace, met juist entiteittype.
+2. Bestaande logische portfoliocode zonder strijdige native binding in die scope.
+   Dit ondersteunt conservatief de eerste binding en het bestaande mirrorpad.
+3. Nieuwe portfolio; geen naam-, pad-, hash- of tijdheuristieken.
+
+Een native match behoudt portfolio-ID en alle appmetadata. De source code,
+titel, het pad en (in foldermodus) theme-ID mogen veranderen. Children blijven
+binnen dezelfde portfolio-ID hun bestaande matching gebruiken; hun native
+bindings worden hier niet gebruikt om sectioncodes te veranderen. Een oude
+gegenereerde app-ID wordt niet opnieuw gebruikt voor een nieuwe portfolio
+wanneer de oorspronkelijke portfolio intussen een andere code draagt.
+
+Codehergebruik door een andere native map wordt geblokkeerd zolang de code
+bezet is. Dat geldt ook voor ontbrekende portfolios en codewissels tussen twee
+bestaande portfolios. De huidige unieke codes blijven daardoor intact zonder
+migration of metadataoverdracht. Een volledig nieuwe, vrije code creëert een
+nieuw record. Buiten de exacte scope wordt een native ID nooit gebruikt om een
+codewijziging te herkennen. Mirrorbindings bewijzen geen upstream-continuïteit.
+
+Themes gebruiken hun bestaande `(LearningSpace, configured source, source_id)`
+identiteit. Gelijke referentie behoudt ID, handmatige naam en volgorde; alleen
+bronnaam/pad veranderen. Een nieuwe referentie met dezelfde naam creëert een
+nieuw theme. LocalFS-referenties zijn exacte paden en bieden geen renamebewijs.
+Het themeschema heeft geen providernamespacekolom: als opgeslagen bindings een
+contextwisseling binnen dezelfde configured source aantonen, weigert de planner
+bestaande themareferenties opnieuw te interpreteren. Een contextwisseling vóór
+de eerste betrouwbare binding kan niet achteraf bewezen worden.
+
+Dubbele native claims, strijdige themebeschrijvingen, verkeerd entiteittype,
+gemengde scancontexten, bezette codes en meervoudige claims op een app-ID weigeren
+de volledige publicatie vóór writes. Het bestaande sync-foutpad rapporteert dit
+als configuratiefout; de laatst geldige index blijft behouden. Een SQL-fout later
+in de batch rolt ook theme- en bindingwrites terug.
+
+Geen nieuwe migration. Geen extra garanties voor LocalFS, wijzigingen vóór de
+eerste betrouwbare scan of provider/root/accountwissels. Native section/exercise-
+reconciliation en expliciete resourcescope blijven buiten 5C (grens naar 5D).

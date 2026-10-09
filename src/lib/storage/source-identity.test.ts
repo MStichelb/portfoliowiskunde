@@ -45,6 +45,20 @@ describe("provider folder identity through the indexer", () => {
     expect(GoogleDriveProvider.fromSpaceConnection({ folderId: "root-a" }).identityContext).toBeUndefined();
   });
 
+  it("retains native identity on duplicate-code candidates so publication can reject the complete ambiguous scan", async () => {
+    const provider = OneDriveProvider.fromSpaceConnection({ driveId: "drive-a", folderId: "root-a" }, {
+      graphJson: async <T>() => ({ value: [
+        { id: "first-folder", name: "Portfolio 1 Eerste", folder: {} },
+        { id: "second-folder", name: "Portfolio 1 Tweede", folder: {} },
+      ] }) as T,
+    });
+    const indexed = await indexSource(provider);
+    expect(indexed).toHaveLength(2);
+    expect(indexed.map((portfolio) => portfolio.sourceId)).toEqual(["first-folder", "second-folder"]);
+    expect(indexed.every((portfolio) => portfolio.sourceIdentityContext === provider.identityContext)).toBe(true);
+    expect(indexed.every((portfolio) => portfolio.warnings.some((warning) => warning.message.includes("Dubbele portfoliocode")))).toBe(true);
+  });
+
   it("passes LocalFS current paths but explicitly denies stable native identity", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "local-folder-identity-"));
     try {
