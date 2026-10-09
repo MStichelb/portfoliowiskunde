@@ -1,5 +1,6 @@
 import type { ExerciseResourceSemanticRole, GlobalResourceSemanticRole } from "@/lib/source-profile-config";
 import type { ExerciseLevel } from "@/lib/exercise-level";
+import type { StorageIdentityContext } from "@/lib/source-identity";
 
 export type SolutionVariantKind = "standard" | "alternative";
 
@@ -77,6 +78,7 @@ export interface IndexedSection {
   sortOrder: number;
   title: string;
   relativePath: string;
+  sourceId?: string;
   exercises: IndexedExercise[];
 }
 
@@ -90,6 +92,8 @@ export interface IndexedPortfolio {
   code: string;
   title: string;
   relativePath: string;
+  sourceId?: string;
+  sourceIdentityContext?: StorageIdentityContext;
   sourceTheme?: IndexedSourceTheme;
   assignmentPdfPath: string | null;
   assignmentPdfSourceId: string | null;

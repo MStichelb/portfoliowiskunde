@@ -85,7 +85,7 @@ describe("source theme synchronization", () => {
       sql: "UPDATE source_profiles SET config_json = ? WHERE id IN (SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = 'space-6')",
       args: [JSON.stringify(config)],
     });
-    await expect(deleteThemeAction(request(source.id))).rejects.toThrow("bepaald door de bronmappen");
+    await expect(deleteThemeAction(request(source.id))).resolves.toEqual({ error: "Het thema kon niet worden verwijderd. Probeer opnieuw." });
     expect(await getThemes("space-6")).toEqual([source]);
     expect((await getAdminPortfolios("space-6")).map((item) => item.themeId)).toEqual([source.id, null]);
   });
@@ -127,7 +127,7 @@ describe("source theme synchronization", () => {
     await setPortfolioTheme(root.id, "space-6", manual.id);
     if (themeMode === "folder") {
       expect((await getAdminPortfolios("space-6"))[1].themeId).toBeNull();
-      await expect(deleteThemeAction(themeRequest(sourceThemeId!, null))).rejects.toThrow("bepaald door de bronmappen");
+      await expect(deleteThemeAction(themeRequest(sourceThemeId!, null))).resolves.toEqual({ error: "Het thema kon niet worden verwijderd. Probeer opnieuw." });
       expect((await getThemes("space-6")).some((theme) => theme.id === sourceThemeId)).toBe(true);
     }
     await persistIndex(indexed, "local", "space-6");

@@ -42,6 +42,8 @@ import { createSubject, renameSubject } from "./subjects";
 
 import { getActiveSourceProfileForLearningSpace } from "./source-profiles";
 import { getDefaultSourceProfileTemplate } from "./source-profile-templates";
+import { getSourceEntityBindings } from "./source-bindings";
+import { nativeBindingContext, sourceBindingFixture } from "@/test/source-binding-fixture";
 
 const postgresUrl = process.env.POSTGRES_TEST_DATABASE_URL?.trim();
 const describeWithPostgres = postgresUrl ? describe : describe.skip;
@@ -65,7 +67,7 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     resetDatabaseForTests();
   });
 
-  it("upgrades a populated checkpoint through 055-059 without losing data or references", async () => {
+  it("upgrades a populated checkpoint through 055-060 without losing data or references", async () => {
     const schema = `release_upgrade_${randomUUID().replaceAll("-", "")}`;
     const sql = postgres(postgresUrl!, { max: 1, prepare: false, onnotice: () => {} });
     const session = await sql.reserve();
@@ -100,6 +102,11 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
       const before = new Map<string, Record<string, unknown>[]>();
       for (const table of tables) before.set(table, [...await session.unsafe(`SELECT * FROM ${table}`)]);
       for (let version = 55; version <= 59; version++) await apply(version);
+      const checkpoint059 = new Map<string, Record<string, unknown>[]>();
+      for (const table of tables) checkpoint059.set(table, [...await session.unsafe(`SELECT * FROM ${table}`)]);
+      await apply(60);
+      for (const table of tables) expect([...await session.unsafe(`SELECT * FROM ${table}`)]).toEqual(checkpoint059.get(table));
+      expect(await session.unsafe("SELECT * FROM source_entity_bindings")).toHaveLength(0);
       for (const table of tables) {
         const after = await session.unsafe(`SELECT * FROM ${table}`);
         expect(after).toHaveLength(before.get(table)!.length);
@@ -119,6 +126,58 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
       await sql.end({ timeout: 3 });
     }
   }, 120_000);
+
+  it("stores scoped native bindings, enforces constraints and rolls back a failing publication", async () => {
+    const suffix = randomUUID();
+    const owner = await createUser({ displayName: `Binding owner ${suffix}`, role: "teacher" });
+    const space = await createLearningSpaceForOwner({ subjectId: "subject-wiskunde", name: "Binding test", slug: `binding-${suffix}`,
+      shortLabel: "B", sourceType: "local", localSourcePath: null }, owner.id);
+    const database = await getDatabase();
+    const source = (await getActiveLearningSpaceSource(space.id))!;
+    await database.execute({ sql: "UPDATE learning_space_sources SET provider_type = 'onedrive' WHERE id = ?", args: [source.id] });
+    await persistIndex([sourceBindingFixture()], "onedrive", space.id, { sourceId: source.id });
+    const bindings = await getSourceEntityBindings(database, space.id);
+    expect(bindings).toHaveLength(2);
+    await persistIndex([sourceBindingFixture()], "onedrive", space.id, { sourceId: source.id });
+    expect(await getSourceEntityBindings(database, space.id)).toEqual(bindings);
+    const before = (await database.execute({ sql: "SELECT * FROM portfolios WHERE learning_space_id = ?", args: [space.id] })).rows;
+    const changedCode = sourceBindingFixture("92"); changedCode.sourceId = sourceBindingFixture().sourceId;
+    await expect(persistIndex([changedCode], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow("bronidentiteit");
+    expect((await database.execute({ sql: "SELECT * FROM portfolios WHERE learning_space_id = ?", args: [space.id] })).rows).toEqual(before);
+    const portfolio = bindings.find((binding) => binding.entityType === "portfolio")!;
+    const section = bindings.find((binding) => binding.entityType === "section")!;
+    const insert = (id: string, sourceId: string, portfolioId: string, sectionId: string | null, nativeId: string, kind = "native") => ({
+      sql: `INSERT INTO source_entity_bindings (id, learning_space_id, learning_space_source_id, provider_type, provider_namespace,
+        identity_kind, entity_type, portfolio_id, section_id, native_item_id, created_at, updated_at)
+        VALUES (?, ?, ?, 'onedrive', ?, ?, ?, ?, ?, ?, 'now', 'now')`,
+      args: [id, space.id, sourceId, nativeBindingContext.providerNamespace, kind, sectionId ? "section" : "portfolio", portfolioId, sectionId, nativeId],
+    });
+    await expect(database.execute(insert(`native-${suffix}`, source.id, portfolio.entityId, section.entityId, portfolio.nativeItemId))).rejects.toThrow();
+    await expect(database.execute(insert(`entity-${suffix}`, source.id, portfolio.entityId, null, "other-native"))).rejects.toThrow();
+    await expect(database.execute(insert(`source-${suffix}`, "space-5:primary", portfolio.entityId, section.entityId, "other-native"))).rejects.toThrow();
+    await expect(database.execute(insert(`parent-${suffix}`, source.id, "missing-portfolio", null, "other-native"))).rejects.toThrow();
+    await expect(database.execute(insert(`kind-${suffix}`, source.id, portfolio.entityId, section.entityId, "other-native", "path"))).rejects.toThrow();
+    await expect(database.batch([
+      { sql: "UPDATE source_entity_bindings SET updated_at = 'must-rollback' WHERE learning_space_id = ?", args: [space.id] },
+      insert(`rollback-${suffix}`, source.id, portfolio.entityId, null, "other-native"),
+    ])).rejects.toThrow();
+    expect((await database.execute({ sql: "SELECT updated_at FROM source_entity_bindings WHERE learning_space_id = ?", args: [space.id] })).rows)
+      .not.toContainEqual({ updated_at: "must-rollback" });
+    const newBinding = insert(`insert-rollback-${suffix}`, source.id, portfolio.entityId, null, "other-native");
+    newBinding.args[3] = "rollback-namespace";
+    await expect(database.batch([newBinding,
+      { sql: "UPDATE portfolios SET title = NULL WHERE id = ?", args: [portfolio.entityId] },
+    ])).rejects.toThrow();
+    expect(await getSourceEntityBindings(database, space.id)).toEqual(bindings);
+    // An invalid entity write also leaves the complete index and its bindings intact.
+    const invalid = sourceBindingFixture("93"); invalid.title = null as unknown as string;
+    await expect(persistIndex([invalid], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow();
+    expect(await getSourceEntityBindings(database, space.id)).toEqual(bindings);
+    expect((await database.execute({ sql: "SELECT * FROM portfolios WHERE learning_space_id = ?", args: [space.id] })).rows).toEqual(before);
+    await database.execute({ sql: "INSERT INTO learning_space_sources (id, learning_space_id, role, provider_type, is_active, created_at, updated_at) VALUES (?, ?, 'mirror', 'onedrive', 0, 'now', 'now')", args: [`mirror-${suffix}`, space.id] });
+    await persistIndex([sourceBindingFixture()], "onedrive", space.id, { sourceId: `mirror-${suffix}` });
+    expect(await getSourceEntityBindings(database, space.id)).toHaveLength(4);
+  });
 
   it("creates wizard profile choices and skipped sources in the same owner transaction", async () => {
     const suffix = randomUUID();

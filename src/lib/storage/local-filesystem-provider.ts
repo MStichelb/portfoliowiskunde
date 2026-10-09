@@ -1,6 +1,7 @@
 import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
+import type { StorageIdentityContext } from "@/lib/source-identity";
 
 import { resolveByteRange } from "@/lib/byte-range";
 import { SourceFileNotFoundError } from "@/lib/source-errors";
@@ -9,9 +10,11 @@ import type { OpenFileOptions, OpenedFile, StorageEntry, StorageProvider } from 
 export class LocalFilesystemProvider implements StorageProvider {
   readonly id = "local-filesystem";
   private readonly root: string;
+  readonly identityContext: StorageIdentityContext;
 
   constructor(root: string) {
     this.root = path.resolve(root);
+    this.identityContext = { providerType: "local", providerNamespace: JSON.stringify(["root", this.root]), identityKind: "path" };
   }
 
   async list(relativePath = ""): Promise<StorageEntry[]> {

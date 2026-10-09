@@ -54,6 +54,8 @@ import {
 } from "@/lib/source-profile-config";
 import { getActiveSourceProfileConfigForLearningSpace, getSourceProfileIndexContextForLearningSpace } from "@/lib/source-profiles";
 import { SourceConfigurationError, StaleSynchronizationError } from "@/lib/source-errors";
+import { prepareSourceBindingWrites } from "@/lib/source-bindings";
+import type { SourceEntityBinding } from "@/lib/source-identity";
 import { requireActiveSubject } from "@/lib/subjects";
 import { DEFAULT_LEARNING_SPACE_COLOR } from "@/lib/ui-colors";
 import {
@@ -1251,6 +1253,24 @@ export async function persistIndex(
     portfolio.code,
     portfolioIds.get(portfolio.code) ?? (legacyDefaultSpaceId === spaceId ? `portfolio-${portfolio.code}` : stableId("portfolio", spaceId, portfolio.code)),
   ]));
+  const bindingSource = indexablePortfolios.some((portfolio) => portfolio.sourceIdentityContext)
+    ? source ?? await getActiveLearningSpaceSource(spaceId) : null;
+  const bindings: SourceEntityBinding[] = [];
+  for (const portfolio of indexablePortfolios) {
+    const identity = portfolio.sourceIdentityContext;
+    if (!identity) continue; // Legacy/unbound records remain valid; no inferred backfill.
+    if (!bindingSource || bindingSource.learningSpaceId !== spaceId || bindingSource.providerType !== providerType
+      || identity.providerType !== providerType) throw new SourceConfigurationError("De bronidentiteit hoort niet bij de ingestelde synchronisatiebron.");
+    const context = { ...identity, learningSpaceId: spaceId, configuredSourceId: bindingSource.id };
+    const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
+    if (portfolio.sourceId) bindings.push({ ...context, nativeItemId: portfolio.sourceId,
+      entityType: "portfolio", entityId: portfolioId, portfolioId });
+    for (const section of portfolio.sections) {
+      if (section.sourceId) bindings.push({ ...context, nativeItemId: section.sourceId,
+        entityType: "section", entityId: indexedSectionId(portfolioId, section.code), portfolioId });
+    }
+  }
+  const bindingStatements = await prepareSourceBindingWrites(database, spaceId, bindings, startedAt);
   const existingExerciseRows = existingExercises.rows.map((row) => ({
     row,
     id: text(row, "id"),
@@ -1748,6 +1768,7 @@ export async function persistIndex(
     }
   }
 
+  statements.push(...bindingStatements);
   const missingGeneric = existingResourceAssetRows.filter((asset) => asset.isIndexed && asset.archivedAt === null
     && !seenResourceAssetIds.has(asset.id));
   const missingGenericExercisePaths = new Set(missingGeneric.filter((asset) => asset.scope === "exercise" && asset.exerciseId)

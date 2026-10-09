@@ -1308,6 +1308,42 @@ export const migrations: DatabaseMigration[] = [
       "ALTER TABLE learning_spaces ADD COLUMN section_label_plural TEXT NOT NULL DEFAULT 'Onderdelen'",
     ],
   },
+  {
+    version: "060_source_entity_bindings",
+    statements: [
+      "CREATE UNIQUE INDEX learning_space_sources_binding_parent ON learning_space_sources(id, learning_space_id)",
+      "CREATE UNIQUE INDEX portfolios_binding_parent ON portfolios(id, learning_space_id)",
+      "CREATE UNIQUE INDEX sections_binding_parent ON sections(id, portfolio_id)",
+      `CREATE TABLE source_entity_bindings (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL,
+        learning_space_source_id TEXT NOT NULL,
+        provider_type TEXT NOT NULL CHECK(provider_type IN ('local', 'onedrive', 'google_drive')),
+        provider_namespace TEXT NOT NULL CHECK(length(trim(provider_namespace)) > 0),
+        identity_kind TEXT NOT NULL CHECK(
+          (provider_type = 'local' AND identity_kind = 'path')
+          OR (provider_type IN ('onedrive', 'google_drive') AND identity_kind = 'native')),
+        entity_type TEXT NOT NULL CHECK(entity_type IN ('portfolio', 'section')),
+        portfolio_id TEXT NOT NULL,
+        section_id TEXT,
+        native_item_id TEXT NOT NULL CHECK(length(trim(native_item_id)) > 0),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK((entity_type = 'portfolio' AND section_id IS NULL) OR (entity_type = 'section' AND section_id IS NOT NULL)),
+        FOREIGN KEY(learning_space_source_id, learning_space_id)
+          REFERENCES learning_space_sources(id, learning_space_id) ON DELETE CASCADE,
+        FOREIGN KEY(portfolio_id, learning_space_id)
+          REFERENCES portfolios(id, learning_space_id) ON DELETE CASCADE,
+        FOREIGN KEY(section_id, portfolio_id)
+          REFERENCES sections(id, portfolio_id) ON DELETE CASCADE,
+        UNIQUE(learning_space_id, learning_space_source_id, provider_type, provider_namespace, native_item_id)
+      )`,
+      `CREATE UNIQUE INDEX source_entity_bindings_portfolio_unique ON source_entity_bindings(
+        learning_space_id, learning_space_source_id, provider_type, provider_namespace, portfolio_id) WHERE entity_type = 'portfolio'`,
+      `CREATE UNIQUE INDEX source_entity_bindings_section_unique ON source_entity_bindings(
+        learning_space_id, learning_space_source_id, provider_type, provider_namespace, section_id) WHERE entity_type = 'section'`,
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

@@ -1,4 +1,5 @@
 import { resolveByteRange } from "@/lib/byte-range";
+import type { StorageIdentityContext } from "@/lib/source-identity";
 import type { OpenFileOptions, OpenedFile, StorageEntry, StorageProvider } from "@/lib/storage/provider";
 import { SourceAccessError, SourceConfigurationError, SourceFileNotFoundError, SourceTransientError } from "@/lib/source-errors";
 
@@ -33,6 +34,7 @@ interface GoogleDriveProviderDependencies {
 
 export class GoogleDriveProvider implements StorageProvider {
   readonly id = "google-drive";
+  readonly identityContext?: StorageIdentityContext;
   private readonly directories = new Map<string, string>();
   private readonly fetchImplementation: typeof fetch;
   private readonly getAccessToken: () => Promise<string>;
@@ -41,17 +43,18 @@ export class GoogleDriveProvider implements StorageProvider {
   private rootVerified = false;
   private mirrorCompletedAt: string | undefined;
 
-  private constructor(private readonly rootFolderId: string, dependencies: GoogleDriveProviderDependencies = {}) {
+  private constructor(private readonly rootFolderId: string, dependencies: GoogleDriveProviderDependencies = {}, accountId?: string) {
     if (!isGoogleDriveId(rootFolderId)) throw new SourceConfigurationError("De Google Drive folder-ID is ongeldig.");
     this.directories.set("", rootFolderId);
+    if (accountId) this.identityContext = { providerType: "google_drive", providerNamespace: JSON.stringify(["account", accountId, "root", rootFolderId]), identityKind: "native" };
     this.fetchImplementation = dependencies.fetch ?? fetch;
     this.getAccessToken = dependencies.getAccessToken ?? (() => import("@/lib/google-drive-auth").then((module) => module.getGoogleDriveAccessToken()));
     this.sleep = dependencies.sleep ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
     this.maxRetries = dependencies.maxRetries ?? 2;
   }
 
-  static fromSpaceConnection(connection: { folderId: string }, dependencies: GoogleDriveProviderDependencies = {}): GoogleDriveProvider {
-    return new GoogleDriveProvider(connection.folderId, dependencies);
+  static fromSpaceConnection(connection: { folderId: string; accountId?: string }, dependencies: GoogleDriveProviderDependencies = {}): GoogleDriveProvider {
+    return new GoogleDriveProvider(connection.folderId, dependencies, connection.accountId);
   }
 
   async assertReadyForIndex(): Promise<void> {

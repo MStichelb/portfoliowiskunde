@@ -11,7 +11,7 @@ import {
 } from "@/lib/repositories";
 import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 import { SourceConfigurationError } from "@/lib/source-errors";
-import { getGoogleServiceAccountConfigurationProblem } from "@/lib/google-service-account-config";
+import { getGoogleServiceAccountConfigurationProblem, getGoogleServiceAccountCredentials } from "@/lib/google-service-account-config";
 import { getStorageConnection } from "@/lib/storage-connections";
 
 export { DEFAULT_LOCAL_SOURCE_PATH };
@@ -65,7 +65,8 @@ async function providerForSource(space: LearningSpace, source: LearningSpaceSour
     if (problem) throw new SourceConfigurationError(problem);
     if (!source.googleDriveFolderId) throw new SourceConfigurationError("Google Drive is nog niet geconfigureerd voor deze bron.");
     const { GoogleDriveProvider } = await import("@/lib/storage/google-drive-provider");
-    return { provider: GoogleDriveProvider.fromSpaceConnection({ folderId: source.googleDriveFolderId }), type: "google_drive" };
+    return { provider: GoogleDriveProvider.fromSpaceConnection({ folderId: source.googleDriveFolderId,
+      accountId: getGoogleServiceAccountCredentials().client_email }), type: "google_drive" };
   }
   if (process.env.NODE_ENV === "production") {
     throw new SourceConfigurationError("Lokale bestanden (test) zijn alleen beschikbaar voor lokale ontwikkeling. Configureer OneDrive of Google Drive voor productie.");

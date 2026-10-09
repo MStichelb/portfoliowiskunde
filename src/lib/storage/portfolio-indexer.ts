@@ -160,6 +160,8 @@ async function indexPortfolio(
     code,
     title,
     relativePath: directory.relativePath,
+    ...(directory.sourceId ? { sourceId: directory.sourceId } : {}),
+    ...(provider.identityContext ? { sourceIdentityContext: provider.identityContext } : {}),
     assignmentPdfPath: assignmentDocument?.relativePath ?? null,
     assignmentPdfSourceId: assignmentDocument?.sourceId ?? null,
     hintsDocumentPath: hintsDocument?.relativePath ?? null,
@@ -193,6 +195,7 @@ interface ExerciseContext {
   sortOrder: number;
   title: string;
   relativePath: string;
+  sourceId?: string;
 }
 
 function discoverExerciseContexts(
@@ -208,7 +211,8 @@ function sectionContexts(entries: readonly StorageEntry[], portfolioPath: string
     if (entry.kind !== "directory") return [];
     const section = parseSectionDirectory(entry.name);
     if (!section) return [];
-    return [{ code: section.code, title: section.title, relativePath: entry.relativePath, sourceName: entry.name }];
+    return [{ code: section.code, title: section.title, relativePath: entry.relativePath, sourceName: entry.name,
+      ...(entry.sourceId ? { sourceId: entry.sourceId } : {}) }];
   });
   const namesByCode = new Map<string, string[]>();
   for (const section of sections) {

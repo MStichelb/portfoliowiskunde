@@ -1,4 +1,5 @@
 import { resolveByteRange } from "@/lib/byte-range";
+import type { StorageIdentityContext } from "@/lib/source-identity";
 import type { OpenFileOptions, OpenedFile, StorageEntry, StorageProvider } from "@/lib/storage/provider";
 import { SourceAccessError, SourceFileNotFoundError } from "@/lib/source-errors";
 import { getOneDriveConnection, graphJson, openGraphFile, readGraphFile, type GraphDriveItem } from "@/lib/onedrive";
@@ -16,12 +17,14 @@ interface OneDriveProviderDependencies {
 
 export class OneDriveProvider implements StorageProvider {
   readonly id = "onedrive";
+  readonly identityContext: StorageIdentityContext;
   private readonly directories = new Map<string, string>();
   private readonly graphJsonImplementation: typeof graphJson;
   private readonly openGraphFileImplementation: typeof openGraphFile;
   private readonly readGraphFileImplementation: typeof readGraphFile;
 
   private constructor(private readonly driveId: string, rootFolderId: string, storageConnectionId: string | null, dependencies: OneDriveProviderDependencies = {}) {
+    this.identityContext = { providerType: "onedrive", providerNamespace: JSON.stringify(["drive", driveId, "root", rootFolderId]), identityKind: "native" };
     this.directories.set("", rootFolderId);
     this.graphJsonImplementation = dependencies.graphJson ?? ((path) => graphJson(path, storageConnectionId ?? undefined));
     this.openGraphFileImplementation = dependencies.openGraphFile ?? ((driveId, itemId, range, signal) => openGraphFile(driveId, itemId, range, signal, {}, storageConnectionId ?? undefined));

@@ -54,7 +54,9 @@ describe("LearningSpace provider selection", () => {
     await expect(getStorageProviderWithType("space-5")).resolves.toMatchObject({ type: "onedrive", provider: { id: "onedrive" } });
 
     await updateLearningSpace("space-5", { subjectId: "subject-wiskunde", name: "5de jaar", slug: "5", shortLabel: "5", sortOrder: 50, sourceType: "google_drive", googleDriveFolderId: "google-root-id" });
-    await expect(getStorageProviderWithType("space-5")).resolves.toMatchObject({ type: "google_drive", provider: { id: "google-drive" } });
+    await expect(getStorageProviderWithType("space-5")).resolves.toMatchObject({ type: "google_drive", provider: { id: "google-drive",
+      identityContext: { providerType: "google_drive", identityKind: "native",
+        providerNamespace: JSON.stringify(["account", "portfolio-reader@portfolio-test.iam.gserviceaccount.com", "root", "google-root-id"]) } } });
   });
 
   it("resolves the active source for ordinary synchronization after a role switch", async () => {

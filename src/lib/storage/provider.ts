@@ -1,3 +1,5 @@
+import type { StorageIdentityContext } from "@/lib/source-identity";
+
 export interface StorageEntry {
   name: string;
   relativePath: string;
@@ -30,6 +32,8 @@ export interface OpenedFile {
 
 export interface StorageProvider {
   readonly id: string;
+  /** Absent for legacy providers: never infer native identity from their paths. */
+  readonly identityContext?: StorageIdentityContext;
   assertReadyForIndex?(): Promise<void>;
   getReadinessMetadata?(): { mirrorCompletedAt?: string };
   list(relativePath?: string): Promise<StorageEntry[]>;

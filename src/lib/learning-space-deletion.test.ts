@@ -88,6 +88,7 @@ describe("permanent LearningSpace deletion ownership", () => {
       }
       expect((await database.execute({ sql: "SELECT id FROM themes WHERE learning_space_id = ? AND source_scope IS NOT NULL", args: [a.id] })).rows).toHaveLength(1);
       expect((await database.execute({ sql: "SELECT id FROM source_resource_assets WHERE learning_space_id = ?", args: [a.id] })).rows.length).toBeGreaterThan(0);
+      expect((await database.execute({ sql: "SELECT id FROM source_entity_bindings WHERE learning_space_id = ?", args: [a.id] })).rows).toHaveLength(2);
     }
     // Inspect the current migrated schema, including space-owned config and access tables.
     const tables = (await database.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")).rows;
@@ -138,6 +139,12 @@ describe("permanent LearningSpace deletion ownership", () => {
       "sections.portfolio_id->portfolios.id",
       "solution_assets.variant_id->solution_variants.id",
       "solution_variants.exercise_id->exercises.id",
+      "source_entity_bindings.learning_space_id->learning_space_sources.learning_space_id",
+      "source_entity_bindings.learning_space_id->portfolios.learning_space_id",
+      "source_entity_bindings.learning_space_source_id->learning_space_sources.id",
+      "source_entity_bindings.portfolio_id->portfolios.id",
+      "source_entity_bindings.portfolio_id->sections.portfolio_id",
+      "source_entity_bindings.section_id->sections.id",
       "source_profile_template_defaults.default_template_id->source_profile_templates.id",
       "source_profiles.management_learning_space_id->learning_spaces.id",
       "source_profiles.owner_user_id->users.id",
