@@ -51,6 +51,25 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe("shared toast", () => {
+  it.each(["success", "error"] as const)("uses the same centered, shrink-safe layout for a multiline %s", (type) => {
+    const message = "Deze melding bevat meerdere regels tekst op een smal mobiel scherm, zodat ook het statusicoon en de sluitknop naast het volledige tekstblok moeten centreren.";
+    const tree = render(() => Toast({ type, message, onDismiss: dismissed }));
+    const children = nodes(tree);
+    expect(children.find((node) => node.props.className === "toast-message")?.props.children).toBe(message);
+    expect(children.find((node) => node.props.className === "toast-icon")?.props.size).toBe(20);
+    expect(children.find((node) => node.props.className === "toast-close")?.props["aria-label"]).toBe("Melding sluiten");
+    const css = readFileSync("src/app/globals.css", "utf8");
+    const rule = (selector: string) => css.slice(css.indexOf(`${selector} {`)).split("}")[0];
+    expect(rule(".toast")).toContain("align-items: center;");
+    expect(rule(".toast")).toContain("gap: 10px;");
+    expect(rule(".toast-icon")).toContain("flex: 0 0 20px;");
+    expect(rule(".toast-icon")).not.toContain("margin-top");
+    expect(rule(".toast-message")).toContain("min-width: 0;");
+    expect(rule(".toast-message")).toContain("overflow-wrap: anywhere;");
+    expect(rule(".toast-close")).toContain("align-items: center;");
+    expect(rule(".toast-close")).toContain("justify-content: center;");
+    expect(rule(`.toast-${type}`)).not.toMatch(/align-items|gap|padding|margin/);
+  });
   it("measures the navigation edge and observes mobile resizing, scrolling and modal changes", () => {
     const property = vi.fn(), disconnect = vi.fn(), observe = vi.fn();
     let bottom = 82;

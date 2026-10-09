@@ -266,10 +266,10 @@ html:has(.learning-space-settings-page, .learning-space-access-page) { scrollbar
 .error-message { color: #8b2b1c; font-weight: 700; }
 .success-message { color: #154d37; font-weight: 700; }
 .toast-stack { position: fixed; top: max(calc(var(--toast-header-bottom, 54px) + 12px), env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); margin: 0; padding: 0; border: 0; background: transparent; color: inherit; left: auto; bottom: auto; width: min(400px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; z-index: 2000; pointer-events: none; max-height: calc(100dvh - max(calc(var(--toast-header-bottom, 54px) + 12px), env(safe-area-inset-top)) - 16px); overflow-y: auto; }
-.toast { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid; border-radius: 12px; box-shadow: 0 4px 16px #152b2420; pointer-events: auto; animation: toast-in 160ms ease-out both; }
+.toast { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid; border-radius: 12px; box-shadow: 0 4px 16px #152b2420; pointer-events: auto; animation: toast-in 160ms ease-out both; }
 .toast-success { color: #154d37; background: #e8f4ed; border-color: #b5d8c3; }
 .toast-error { color: #8b2b1c; background: #fff0ed; border-color: #e8b8af; }
-.toast-icon { flex-shrink: 0; margin-top: 2px; }
+.toast-icon { display: block; flex: 0 0 20px; width: 20px; height: 20px; }
 .toast-message { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.4; }
 .toast-close { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; color: inherit; background: transparent; cursor: pointer; }
 .toast-close:hover { background: #0000000c; }
