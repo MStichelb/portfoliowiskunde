@@ -1,11 +1,11 @@
 import { randomUUID } from "node:crypto";
 
 import type { DatabaseClient, DatabaseRow, InStatement } from "@/lib/database";
-import type { SourceEntityBinding } from "@/lib/source-identity";
+import { sourceBindingContextKey, type SourceEntityBinding } from "@/lib/source-identity";
 import { SourceConfigurationError } from "@/lib/source-errors";
 
 function contextKey(binding: SourceEntityBinding): string {
-  return JSON.stringify([binding.learningSpaceId, binding.configuredSourceId, binding.providerType, binding.providerNamespace]);
+  return sourceBindingContextKey(binding);
 }
 
 function entityKey(binding: SourceEntityBinding): string {

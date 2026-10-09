@@ -5,7 +5,7 @@ import path from "node:path";
 import { DEFAULT_LOCAL_SOURCE_PATH } from "@/lib/app-config";
 import type { DatabaseRow, InStatement } from "@/lib/database";
 import { executeBatch, executeGuardedBatch, getDatabase } from "@/lib/database";
-import type { IndexedPortfolio, IndexedSourceTheme } from "@/lib/domain";
+import type { IndexedAsset, IndexedPortfolio, IndexedPortfolioResourceAsset, IndexedSourceTheme } from "@/lib/domain";
 import { listErrorReportExerciseIdentities, normalizeErrorReportExerciseCode } from "@/lib/error-report-exercise-code";
 import { ErrorReportRateLimitError } from "@/lib/error-report-rate-limit";
 import {
@@ -55,7 +55,8 @@ import {
 import { getActiveSourceProfileConfigForLearningSpace, getSourceProfileIndexContextForLearningSpace } from "@/lib/source-profiles";
 import { SourceConfigurationError, StaleSynchronizationError } from "@/lib/source-errors";
 import { prepareSourceBindingWrites } from "@/lib/source-bindings";
-import type { SourceEntityBinding } from "@/lib/source-identity";
+import type { SourceAssetBinding, SourceEntityBinding } from "@/lib/source-identity";
+import { prepareSourceAssetBindingWrites } from "@/lib/source-asset-bindings";
 import { planSourceReconciliation } from "@/lib/source-reconciliation";
 import { requireActiveSubject } from "@/lib/subjects";
 import { DEFAULT_LEARNING_SPACE_COLOR } from "@/lib/ui-colors";
@@ -1468,6 +1469,19 @@ export async function persistIndex(
       message: "De uitwerking hoort bij meerdere mogelijke historische bestanden. Het bestand is niet automatisch gekoppeld.",
     });
   };
+  const assetBindings: SourceAssetBinding[] = [];
+  const observeAssetIdentity = (portfolio: IndexedPortfolio, asset: IndexedAsset | IndexedPortfolioResourceAsset,
+    portfolioId: string, exerciseId: string | null, resourceAssetId: string | null, solutionAssetId: string | null = null, variantId: string | null = null) => {
+    const identity = asset.sourceIdentityContext;
+    if (!identity) return;
+    const folderIdentity = portfolio.sourceIdentityContext;
+    if (!publicationSource || identity.providerType !== providerType || publicationSource.providerType !== identity.providerType
+      || (folderIdentity && (identity.providerType !== folderIdentity.providerType || identity.providerNamespace !== folderIdentity.providerNamespace
+        || identity.identityKind !== folderIdentity.identityKind))) throw new SourceConfigurationError("De assetidentiteit hoort niet bij de ingestelde broncontext.");
+    assetBindings.push({ ...identity, learningSpaceId: spaceId, configuredSourceId: publicationSource.id,
+      nativeItemId: asset.sourceId, resourceScope: exerciseId === null ? "portfolio" : "exercise", resourceId: asset.resourceId,
+      portfolioId, exerciseId, resourceAssetId, solutionAssetId, variantId });
+  };
   let added = 0;
   let updated = 0;
 
@@ -1561,6 +1575,8 @@ export async function persistIndex(
         reportResourceConflict(exactKey, resourceAsset.relativePath);
         continue;
       }
+      observeAssetIdentity(portfolio, resourceAsset, portfolioId, null,
+        reconciliation?.kind === "reconcile" ? reconciliation.candidate.id : existingResourceAssetsByExactKey.get(exactKey)?.id ?? resourceAssetId);
       if (reconciliation?.kind === "reconcile") {
         reconciledResourceAssetIds.add(reconciliation.candidate.id);
         seenResourceAssetIds.add(reconciliation.candidate.id);
@@ -1646,6 +1662,8 @@ export async function persistIndex(
             reportResourceConflict(exactKey, asset.relativePath);
             continue;
           }
+          observeAssetIdentity(portfolio, asset, portfolioId, exerciseId,
+            reconciliation?.kind === "reconcile" ? reconciliation.candidate.id : existingResourceAssetsByExactKey.get(exactKey)?.id ?? resourceAssetId);
           if (reconciliation?.kind === "reconcile") {
             reconciledResourceAssetIds.add(reconciliation.candidate.id);
             seenResourceAssetIds.add(reconciliation.candidate.id);
@@ -1708,6 +1726,8 @@ export async function persistIndex(
               reportSolutionConflict(pathKey, asset.relativePath);
               continue;
             }
+            observeAssetIdentity(portfolio, asset, portfolioId, exerciseId, null,
+              reconciliation?.kind === "reconcile" ? reconciliation.candidate.id : existingSolutionAssetsByPathKey.get(pathKey)?.id ?? stableId("asset", variantId, asset.relativePath), variantId);
             if (reconciliation?.kind === "reconcile") {
               reconciledSolutionAssetIds.add(reconciliation.candidate.id);
               seenAssetKeys.add(assetKey(variantId, reconciliation.candidate.relativePath));
@@ -1748,7 +1768,16 @@ export async function persistIndex(
     }
   }
 
-  statements.push(...bindingStatements);
+  const movedBindingExercises = new Map([...duplicateExerciseResolutions].map(([id, resolution]) => [id, resolution.retainedId]));
+  const movedBindingVariants = new Map(existingVariantRows.flatMap((variant) => {
+    const retainedId = movedBindingExercises.get(variant.exerciseId);
+    if (!retainedId) return [];
+    const retained = existingVariantRows.find((candidate) => candidate.exerciseId === retainedId && candidate.kind === variant.kind);
+    return [[variant.id, retained?.id ?? `${retainedId}-${variant.kind}`] as const];
+  }));
+  const assetBindingStatements = await prepareSourceAssetBindingWrites(database, spaceId, assetBindings, startedAt,
+    { exercises: movedBindingExercises, variants: movedBindingVariants });
+  statements.push(...bindingStatements, ...assetBindingStatements);
   const missingGeneric = existingResourceAssetRows.filter((asset) => asset.isIndexed && asset.archivedAt === null
     && !seenResourceAssetIds.has(asset.id));
   const missingGenericExercisePaths = new Set(missingGeneric.filter((asset) => asset.scope === "exercise" && asset.exerciseId)

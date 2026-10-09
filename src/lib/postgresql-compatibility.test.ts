@@ -43,7 +43,8 @@ import { createSubject, renameSubject } from "./subjects";
 import { getActiveSourceProfileForLearningSpace } from "./source-profiles";
 import { getDefaultSourceProfileTemplate } from "./source-profile-templates";
 import { getSourceEntityBindings } from "./source-bindings";
-import { nativeBindingContext, sourceBindingFixture } from "@/test/source-binding-fixture";
+import { getSourceAssetBindings } from "./source-asset-bindings";
+import { nativeBindingContext, sourceBindingFixture, sourceAssetBindingFixture, sourceAssetBindingInsert } from "@/test/source-binding-fixture";
 
 const postgresUrl = process.env.POSTGRES_TEST_DATABASE_URL?.trim();
 const describeWithPostgres = postgresUrl ? describe : describe.skip;
@@ -67,7 +68,7 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     resetDatabaseForTests();
   });
 
-  it("upgrades a populated checkpoint through 055-060 without losing data or references", async () => {
+  it("upgrades a populated checkpoint through 055-061 without losing data or references", async () => {
     const schema = `release_upgrade_${randomUUID().replaceAll("-", "")}`;
     const sql = postgres(postgresUrl!, { max: 1, prepare: false, onnotice: () => {} });
     const session = await sql.reserve();
@@ -95,10 +96,12 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
           VALUES ('legacy-e', 'legacy-p', 'legacy-s', '1', 1, '', 'Eigen notitie', 'Tip', 'below_solution', 'hidden', 'basis', 'level', 'uitdaging');
         INSERT INTO solution_variants (id, exercise_id, kind, label) VALUES ('legacy-v', 'legacy-e', 'standard', 'Uitwerking');
         INSERT INTO solution_assets (id, variant_id, relative_path, file_name, extension, step) VALUES ('legacy-a', 'legacy-v', 'test.png', 'test.png', 'png', 1);
+        INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id, semantic_role, source_id, relative_path, file_name, extension, last_seen_at)
+          VALUES ('legacy-generic', 'space-6', 'legacy-p', 'legacy-e', 'exercise', 'worked-solution', 'worked_solution', 'old-item', 'test.png', 'test.png', 'png', 'old');
         INSERT INTO error_reports (id, portfolio_id, section_id, exercise_id, variant_kind, asset_snapshot, message, status, created_at, updated_at)
           VALUES ('legacy-report', 'legacy-p', 'legacy-s', 'legacy-e', 'standard', '[]', 'Bewaar melding', 'TODO', '2026-10-08', '2026-10-08');
       `);
-      const tables = ["portfolios", "sections", "exercises", "solution_variants", "solution_assets", "error_reports", "themes", "learning_spaces", "users", "source_profiles", "learning_space_source_profiles", "learning_space_sources", "learning_space_members"];
+      const tables = ["portfolios", "sections", "exercises", "solution_variants", "solution_assets", "error_reports", "themes", "learning_spaces", "users", "source_profiles", "learning_space_source_profiles", "learning_space_sources", "learning_space_members", "source_resource_assets"];
       const before = new Map<string, Record<string, unknown>[]>();
       for (const table of tables) before.set(table, [...await session.unsafe(`SELECT * FROM ${table}`)]);
       for (let version = 55; version <= 59; version++) await apply(version);
@@ -107,6 +110,9 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
       await apply(60);
       for (const table of tables) expect([...await session.unsafe(`SELECT * FROM ${table}`)]).toEqual(checkpoint059.get(table));
       expect(await session.unsafe("SELECT * FROM source_entity_bindings")).toHaveLength(0);
+      await apply(61);
+      for (const table of tables) expect([...await session.unsafe(`SELECT * FROM ${table}`)]).toEqual(checkpoint059.get(table));
+      expect(await session.unsafe("SELECT * FROM source_asset_bindings")).toHaveLength(0);
       for (const table of tables) {
         const after = await session.unsafe(`SELECT * FROM ${table}`);
         expect(after).toHaveLength(before.get(table)!.length);
@@ -254,6 +260,59 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     await expect(persistIndex([invalid], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow();
     expect(await snapshot()).toEqual(before);
     expect(await getThemes(space.id)).toHaveLength(2);
+  }, 120_000);
+
+  it("stores asset source scopes with typed FKs, idempotency, namespace separation and full rollback", async () => {
+    const suffix = randomUUID(); const database = await getDatabase();
+    const owner = await createUser({ displayName: `Asset scope ${suffix}`, role: "teacher" });
+    const space = await createLearningSpaceForOwner({ subjectId: "subject-wiskunde", name: "Asset scope", slug: `asset-${suffix}`, shortLabel: "A", sourceType: "local", localSourcePath: null }, owner.id);
+    const source = (await getActiveLearningSpaceSource(space.id))!;
+    await database.execute({ sql: "UPDATE learning_space_sources SET provider_type = 'onedrive' WHERE id = ?", args: [source.id] });
+    const indexed = sourceAssetBindingFixture();
+    await persistIndex([indexed], "onedrive", space.id, { sourceId: source.id });
+    const bindings = await getSourceAssetBindings(database, space.id); expect(bindings).toHaveLength(2);
+    const pair = bindings.find((binding) => binding.solutionAssetId)!;
+    const document = bindings.find((binding) => binding.resourceScope === "portfolio")!;
+    const snapshot = async () => Promise.all([
+      ...["portfolios", "source_resource_assets", "source_asset_bindings", "source_entity_bindings", "sync_runs"].map((table) => database.execute({ sql: `SELECT * FROM ${table} WHERE learning_space_id = ? ORDER BY id`, args: [space.id] }).then((result) => result.rows)),
+      database.execute({ sql: "SELECT * FROM solution_assets WHERE variant_id = ? ORDER BY id", args: [pair.variantId] }).then((result) => result.rows),
+      database.execute({ sql: "SELECT * FROM exercises WHERE portfolio_id = ? ORDER BY id", args: [pair.portfolioId] }).then((result) => result.rows),
+    ]);
+    const scopedRows = (await database.execute({ sql: "SELECT * FROM source_asset_bindings WHERE learning_space_id = ? ORDER BY id", args: [space.id] })).rows;
+    await persistIndex([indexed], "onedrive", space.id, { sourceId: source.id });
+    expect((await database.execute({ sql: "SELECT * FROM source_asset_bindings WHERE learning_space_id = ? ORDER BY id", args: [space.id] })).rows).toEqual(scopedRows);
+    expect(await getSourceAssetBindings(database, space.id)).toEqual(bindings);
+    const mirrorId = `asset-mirror-${suffix}`;
+    await database.execute({ sql: "INSERT INTO learning_space_sources (id, learning_space_id, role, provider_type, is_active, created_at, updated_at) VALUES (?, ?, 'mirror', 'onedrive', 0, 'old', 'old')", args: [mirrorId, space.id] });
+    await persistIndex([indexed], "onedrive", space.id, { sourceId: mirrorId });
+    await persistIndex([sourceAssetBindingFixture("91", { ...nativeBindingContext, providerNamespace: "another-root" })], "onedrive", space.id, { sourceId: mirrorId });
+    expect(await getSourceAssetBindings(database, space.id)).toHaveLength(6);
+    expect(new Set((await getSourceAssetBindings(database, space.id)).filter((binding) => binding.solutionAssetId).map((binding) => binding.solutionAssetId)).size).toBe(1);
+    const other = sourceAssetBindingFixture("92");
+    for (const asset of [...other.resourceAssets, ...other.sections[0].exercises[0].assets]) asset.sourceId += "-other";
+    await persistIndex([indexed, other], "onedrive", space.id, { sourceId: source.id });
+    const otherPair = (await getSourceAssetBindings(database, space.id)).find((binding) => binding.nativeItemId === "raw-solution-id-other")!;
+    await database.execute(sourceAssetBindingInsert(`other-parent-${suffix}`, { ...otherPair,
+      nativeItemId: pair.nativeItemId, providerNamespace: "isolated-other-parent" }));
+    expect(otherPair.solutionAssetId).not.toBe(pair.solutionAssetId);
+    const before = await snapshot();
+    const invalid = [pair, { ...pair, configuredSourceId: "space-5:primary" }, { ...pair, learningSpaceId: "space-5" },
+      { ...pair, portfolioId: "missing" }, { ...pair, exerciseId: "missing" }, { ...pair, resourceId: "other" },
+      { ...pair, resourceAssetId: document.resourceAssetId }, { ...pair, solutionAssetId: "missing" }, { ...pair, variantId: "missing" },
+      { ...pair, identityKind: "path" as const }, { ...pair, resourceAssetId: null, solutionAssetId: null, variantId: null }];
+    for (const [index, binding] of invalid.entries()) await expect(database.execute(sourceAssetBindingInsert(`invalid-${suffix}-${index}`, binding))).rejects.toThrow();
+    expect(await snapshot()).toEqual(before);
+    await expect(database.batch([
+      { sql: "UPDATE exercises SET custom_note = 'must-rollback' WHERE id = ?", args: [pair.exerciseId] },
+      sourceAssetBindingInsert(`rollback-${suffix}`, { ...pair, providerNamespace: "rollback", solutionAssetId: "missing" }),
+    ])).rejects.toThrow();
+    expect(await snapshot()).toEqual(before);
+    const conflicting = structuredClone(indexed); conflicting.sections[0].exercises[0].code = "2";
+    await expect(persistIndex([conflicting], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow();
+    expect(await snapshot()).toEqual(before);
+    const invalidEntity = structuredClone(indexed); invalidEntity.title = null as unknown as string;
+    await expect(persistIndex([invalidEntity], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow();
+    expect(await snapshot()).toEqual(before);
   }, 120_000);
 
   it("creates wizard profile choices and skipped sources in the same owner transaction", async () => {

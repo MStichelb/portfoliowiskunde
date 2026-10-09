@@ -1,3 +1,4 @@
+import type { StorageIdentityContext } from "@/lib/source-identity";
 import type {
   IndexedAsset,
   IndexedExercise,
@@ -178,6 +179,7 @@ async function indexPortfolio(
       return [{
         resourceId: resource.id,
         semanticRole: resource.semanticRole,
+        ...(entry.sourceId && provider.identityContext ? { sourceIdentityContext: provider.identityContext } : {}),
         relativePath: entry.relativePath,
         sourceId: entry.sourceId ?? entry.relativePath,
         fileName: entry.name,
@@ -323,7 +325,7 @@ async function indexExerciseContext(
       assets: [],
     };
     sortedFiles.forEach((located, index) => {
-      exercise.assets.push(toIndexedExerciseAsset(located.file, portfolioCode, group.identity, group.resource, index + 1, legacyExerciseVariants));
+      exercise.assets.push(toIndexedExerciseAsset(located.file, portfolioCode, group.identity, group.resource, index + 1, legacyExerciseVariants, provider.identityContext));
       const perResource = resourceSources.get(group.identity.exerciseCode) ?? new Map<string, ExerciseLevelDetectionSource[]>();
       const sources = perResource.get(group.resource.id) ?? [];
       sources.push({ name: located.file.name, directorySegments: located.directorySegments });
@@ -628,6 +630,7 @@ function toIndexedExerciseAsset(
   resource: ExerciseResourceConfig,
   step: number,
   legacyExerciseVariants: ReadonlyMap<string, SolutionVariantKind>,
+  sourceIdentityContext?: StorageIdentityContext,
 ): IndexedAsset {
   const descriptor = fileNameParts(file.name);
   if (!descriptor) throw new Error(`Bestand zonder extensie kon niet worden geïndexeerd: ${file.relativePath}`);
@@ -644,6 +647,7 @@ function toIndexedExerciseAsset(
     resourceId: resource.id,
     semanticRole: resource.semanticRole,
     legacyVariant: legacyExerciseVariants.get(resource.id) ?? null,
+    ...(file.sourceId && sourceIdentityContext ? { sourceIdentityContext } : {}),
     relativePath: file.relativePath,
     sourceId: file.sourceId ?? file.relativePath,
     fileName: file.name,

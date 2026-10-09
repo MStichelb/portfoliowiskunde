@@ -89,6 +89,7 @@ describe("permanent LearningSpace deletion ownership", () => {
       expect((await database.execute({ sql: "SELECT id FROM themes WHERE learning_space_id = ? AND source_scope IS NOT NULL", args: [a.id] })).rows).toHaveLength(1);
       expect((await database.execute({ sql: "SELECT id FROM source_resource_assets WHERE learning_space_id = ?", args: [a.id] })).rows.length).toBeGreaterThan(0);
       expect((await database.execute({ sql: "SELECT id FROM source_entity_bindings WHERE learning_space_id = ?", args: [a.id] })).rows).toHaveLength(2);
+      expect((await database.execute({ sql: "SELECT id FROM source_asset_bindings WHERE learning_space_id = ?", args: [a.id] })).rows.length).toBeGreaterThan(0);
     }
     // Inspect the current migrated schema, including space-owned config and access tables.
     const tables = (await database.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")).rows;
@@ -139,6 +140,23 @@ describe("permanent LearningSpace deletion ownership", () => {
       "sections.portfolio_id->portfolios.id",
       "solution_assets.variant_id->solution_variants.id",
       "solution_variants.exercise_id->exercises.id",
+      "source_asset_bindings.exercise_id->exercises.id",
+      "source_asset_bindings.exercise_id->solution_variants.exercise_id",
+      "source_asset_bindings.exercise_id->source_resource_assets.exercise_id",
+      "source_asset_bindings.learning_space_id->learning_space_sources.learning_space_id",
+      "source_asset_bindings.learning_space_id->portfolios.learning_space_id",
+      "source_asset_bindings.learning_space_id->source_resource_assets.learning_space_id",
+      "source_asset_bindings.learning_space_source_id->learning_space_sources.id",
+      "source_asset_bindings.portfolio_id->exercises.portfolio_id",
+      "source_asset_bindings.portfolio_id->portfolios.id",
+      "source_asset_bindings.portfolio_id->source_resource_assets.portfolio_id",
+      "source_asset_bindings.resource_asset_id->source_resource_assets.id",
+      "source_asset_bindings.resource_asset_id->source_resource_assets.id",
+      "source_asset_bindings.resource_id->source_resource_assets.resource_id",
+      "source_asset_bindings.resource_scope->source_resource_assets.resource_scope",
+      "source_asset_bindings.solution_asset_id->solution_assets.id",
+      "source_asset_bindings.variant_id->solution_assets.variant_id",
+      "source_asset_bindings.variant_id->solution_variants.id",
       "source_entity_bindings.learning_space_id->learning_space_sources.learning_space_id",
       "source_entity_bindings.learning_space_id->portfolios.learning_space_id",
       "source_entity_bindings.learning_space_source_id->learning_space_sources.id",

@@ -1344,6 +1344,51 @@ export const migrations: DatabaseMigration[] = [
         learning_space_id, learning_space_source_id, provider_type, provider_namespace, section_id) WHERE entity_type = 'section'`,
     ],
   },
+  {
+    version: "061_source_asset_bindings",
+    statements: [
+      "CREATE UNIQUE INDEX exercises_asset_binding_parent ON exercises(id, portfolio_id)",
+      "CREATE UNIQUE INDEX resource_assets_binding_parent ON source_resource_assets(id, learning_space_id, portfolio_id, resource_scope, resource_id)",
+      "CREATE UNIQUE INDEX resource_assets_binding_exercise ON source_resource_assets(id, exercise_id)",
+      "CREATE UNIQUE INDEX solution_assets_binding_parent ON solution_assets(id, variant_id)",
+      "CREATE UNIQUE INDEX solution_variants_binding_parent ON solution_variants(id, exercise_id)",
+      `CREATE TABLE source_asset_bindings (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL,
+        learning_space_source_id TEXT NOT NULL,
+        provider_type TEXT NOT NULL CHECK(provider_type IN ('local', 'onedrive', 'google_drive')),
+        provider_namespace TEXT NOT NULL CHECK(length(trim(provider_namespace)) > 0),
+        identity_kind TEXT NOT NULL CHECK((provider_type = 'local' AND identity_kind = 'path')
+          OR (provider_type IN ('onedrive', 'google_drive') AND identity_kind = 'native')),
+        native_item_id TEXT NOT NULL CHECK(length(trim(native_item_id)) > 0),
+        resource_scope TEXT NOT NULL CHECK(resource_scope IN ('portfolio', 'exercise')),
+        resource_id TEXT NOT NULL CHECK(length(trim(resource_id)) > 0),
+        portfolio_id TEXT NOT NULL,
+        exercise_id TEXT,
+        resource_asset_id TEXT,
+        solution_asset_id TEXT,
+        variant_id TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK(resource_asset_id IS NOT NULL OR solution_asset_id IS NOT NULL),
+        CHECK((resource_scope = 'portfolio' AND exercise_id IS NULL AND solution_asset_id IS NULL AND variant_id IS NULL)
+          OR (resource_scope = 'exercise' AND exercise_id IS NOT NULL)),
+        CHECK((solution_asset_id IS NULL AND variant_id IS NULL) OR (solution_asset_id IS NOT NULL AND variant_id IS NOT NULL)),
+        FOREIGN KEY(learning_space_source_id, learning_space_id)
+          REFERENCES learning_space_sources(id, learning_space_id) ON DELETE CASCADE,
+        FOREIGN KEY(portfolio_id, learning_space_id) REFERENCES portfolios(id, learning_space_id) ON DELETE CASCADE,
+        FOREIGN KEY(exercise_id, portfolio_id) REFERENCES exercises(id, portfolio_id) ON DELETE CASCADE,
+        FOREIGN KEY(resource_asset_id, learning_space_id, portfolio_id, resource_scope, resource_id)
+          REFERENCES source_resource_assets(id, learning_space_id, portfolio_id, resource_scope, resource_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+        FOREIGN KEY(resource_asset_id, exercise_id) REFERENCES source_resource_assets(id, exercise_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+        FOREIGN KEY(solution_asset_id, variant_id) REFERENCES solution_assets(id, variant_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+        FOREIGN KEY(variant_id, exercise_id) REFERENCES solution_variants(id, exercise_id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
+        UNIQUE(learning_space_id, learning_space_source_id, provider_type, provider_namespace, resource_scope, resource_id, native_item_id)
+      )`,
+      "CREATE INDEX source_asset_bindings_resource_index ON source_asset_bindings(resource_asset_id)",
+      "CREATE INDEX source_asset_bindings_solution_index ON source_asset_bindings(solution_asset_id)",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

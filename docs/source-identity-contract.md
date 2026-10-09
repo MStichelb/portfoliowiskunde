@@ -1,4 +1,4 @@
-# Source identity contract (Fase 5B/5C)
+# Source identity contract (Fase 5B/5C/5D1)
 
 Een bronbinding koppelt een bestaande app-entiteit aan de identiteit uit een
 actuele scan. Een provider-ID wordt nooit een app-ID. De centrale read-only
@@ -61,15 +61,61 @@ padwijziging. Dat is geen native renameherkenning. Een bekende native binding
 wordt nooit overschreven; 5C gebruikt haar als bewijs om dezelfde portfolio-ID
 te behouden wanneer bronpad, titel, code of thematoewijzing verandert.
 
-## Resourcescope uitgesteld
+## Resourcescope in 5D1
 
-Generieke en historische resources worden in 5B niet gebruikt om folderbindings
-of entities te kiezen. Hun huidige matching en schema blijven intact. Daardoor
-kan resource-scoping naar 5D worden uitgesteld zonder een nieuwe ongescopeerde
-matchroute te introduceren. Vóór native assetreconciliation moet 5D de ontbrekende
-source/providercontext alsnog expliciet opslaan en de huidige unscoped unieke
-sleutels beoordelen. De nieuwe folderbindings lossen die bestaande assetgrens
-niet op. Theme-identiteit en resource-item-ID's worden niet gedupliceerd.
+Er blijven twee assetmodellen bestaan:
+
+| Model | App-ID en huidige unieke sleutel | Parent en huidige matching |
+| --- | --- | --- |
+| `source_resource_assets` | PK `id`; uniek `(learning_space_id, resource_scope, resource_id, source_id)` | Portfolio, optioneel exercise; eerst bestaande raw-sourcekey, daarna bestaande unieke parent/resource/step/extensie-kandidaat. |
+| `solution_assets` | PK `id`; uniek `(variant_id, relative_path)`; nullable `source_id` | Variant → exercise → portfolio; eerst variant/pad, daarna bestaande unieke variant/step/extensie-kandidaat. |
+
+Beide modellen missen configured source, providertype en namespace. Migration
+061 voegt daarom één `source_asset_bindings`-tabel met ondersteunende FK-indexes
+toe. De tabel gebruikt hetzelfde `SourceBindingContext` als folderbindings.
+Iedere observatie bevat LearningSpace, configured source, providertype,
+namespace, capability, itemreferentie en resource-scope/resource-ID. Daarnaast
+verwijst zij via echte FK's naar portfolio/exercise en de bestaande generieke
+asset, historische solution-asset plus variant, of beide representaties.
+
+De unieke identitykey bestaat uit LearningSpace + configured source + provider
++ namespace + resource-scope + resource-ID + itemreferentie. Parent/app-ID's
+zijn claims bij die sleutel: dezelfde sleutel met een andere exercise,
+portfolio, variant of asset is een conflict. Hetzelfde raw item-ID in andere
+sourcecontexten kan afzonderlijke bindings hebben, ook naar verschillende
+app-assets. Verschillende sourcecontexten mogen tevens hetzelfde logische
+app-asset beschrijven; dit bewijst geen fysieke mirrorcontinuïteit.
+
+De indexer draagt uitsluitend expliciete itemreferenties plus providercontext
+door. Een bestaande padfallback zonder werkelijk provider-item-ID krijgt geen
+native binding. De repository voegt configured source en LearningSpace centraal
+toe en controleert de providercontext tegen de publicatiebron. LocalFS blijft
+local/path; OneDrive gebruikt drive/root en Google Drive account/root.
+
+Afwezigheid van een binding betekent legacy/unscoped. Migration 061 verandert
+geen bestaande rij, app-ID, variantrelatie of source-ID en doet geen backfill.
+Een actuele scan mag de IDs vastleggen die de bestaande matching al eenduidig
+koos. De scopehelper kiest zelf geen asset. Ambigue kandidaten worden door de
+bestaande conflictpaden overgeslagen en krijgen geen willekeurige binding.
+
+Bindingwrites staan in dezelfde guarded indextransactie als assetwrites.
+Identieke observaties schrijven geen nieuwe rij of timestamp. Composite FK's
+bewaken LearningSpace/source, portfolio/exercise, resourcecontext en
+solution/variant/exercise. De asset-parent-FK's zijn deferred, zodat reeds
+bewezen Fase-2-parentwijzigingen binnen dezelfde transactie kunnen afronden;
+de helper kopieert uitsluitend de bestaande exercise/variant-resoluties.
+Constraintfouten rollen de volledige publicatie terug. Cascade verwijdert
+afhankelijke bindings, zonder daarmee app-assets te verwijderen.
+
+5D1 gebruikt de bindings nog niet voor assetmatching. De bestaande raw-source-
+en padconstraints op app-assets blijven intact: onafhankelijke sourceclaims
+zijn onderscheidbaar in de bindinglaag, maar bestaande matching kan een raw-ID
+nog op hetzelfde app-record laten uitkomen. Incompatibele parentclaims worden
+dan geweigerd, niet omgezet in nieuwe app-assets. Ook bestaande step/extensie-
+fallbacks blijven bestaan; een observatie bewijst geen asset-rename of move.
+5D2 kan `getSourceAssetBindings` en de doorgedragen providercontext gebruiken
+als expliciete input voor veilige matching. Zij moet daarbij legacyambiguïteit,
+de bestaande app-assetsleutels en de twee representaties afzonderlijk beoordelen.
 
 ## Reconciliation in 5C
 

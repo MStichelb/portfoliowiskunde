@@ -18,6 +18,22 @@ export interface SourceEntityBinding extends SourceBindingContext {
   readonly portfolioId: string;
 }
 
+/** One provider observation, optionally covering both live asset representations. */
+export interface SourceAssetBinding extends SourceBindingContext {
+  readonly nativeItemId: string;
+  readonly resourceScope: "portfolio" | "exercise";
+  readonly resourceId: string;
+  readonly portfolioId: string;
+  readonly exerciseId: string | null;
+  readonly resourceAssetId: string | null;
+  readonly solutionAssetId: string | null;
+  readonly variantId: string | null;
+}
+
+export function sourceBindingContextKey(context: SourceBindingContext): string {
+  return JSON.stringify([context.learningSpaceId, context.configuredSourceId, context.providerType, context.providerNamespace]);
+}
+
 export function supportsStableNativeIdentity(context: StorageIdentityContext): boolean {
   return context.identityKind === "native" && context.providerType !== "local";
 }

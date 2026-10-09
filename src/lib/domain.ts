@@ -43,6 +43,7 @@ export interface IndexWarning {
 }
 
 export interface IndexedPortfolioResourceAsset {
+  sourceIdentityContext?: StorageIdentityContext;
   resourceId: string;
   semanticRole: GlobalResourceSemanticRole;
   relativePath: string;
@@ -54,6 +55,7 @@ export interface IndexedPortfolioResourceAsset {
 }
 
 export interface IndexedAsset {
+  sourceIdentityContext?: StorageIdentityContext;
   resourceId: string;
   semanticRole: ExerciseResourceSemanticRole;
   legacyVariant: SolutionVariantKind | null;
