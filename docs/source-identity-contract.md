@@ -1,4 +1,4 @@
-# Source identity contract (Fase 5B/5C/5D1)
+# Source identity contract (Fase 5B/5C/5D1/5D1b)
 
 Een bronbinding koppelt een bestaande app-entiteit aan de identiteit uit een
 actuele scan. Een provider-ID wordt nooit een app-ID. De centrale read-only
@@ -107,15 +107,63 @@ de helper kopieert uitsluitend de bestaande exercise/variant-resoluties.
 Constraintfouten rollen de volledige publicatie terug. Cascade verwijdert
 afhankelijke bindings, zonder daarmee app-assets te verwijderen.
 
-5D1 gebruikt de bindings nog niet voor assetmatching. De bestaande raw-source-
-en padconstraints op app-assets blijven intact: onafhankelijke sourceclaims
-zijn onderscheidbaar in de bindinglaag, maar bestaande matching kan een raw-ID
-nog op hetzelfde app-record laten uitkomen. Incompatibele parentclaims worden
-dan geweigerd, niet omgezet in nieuwe app-assets. Ook bestaande step/extensie-
-fallbacks blijven bestaan; een observatie bewijst geen asset-rename of move.
-5D2 kan `getSourceAssetBindings` en de doorgedragen providercontext gebruiken
-als expliciete input voor veilige matching. Zij moet daarbij legacyambiguïteit,
-de bestaande app-assetsleutels en de twee representaties afzonderlijk beoordelen.
+5D1 gebruikt de bindings nog niet voor assetmatching. Haar raw-source- en
+padconstraints op app-assets konden onafhankelijke sourceclaims nog op hetzelfde
+app-record laten uitkomen. Dit blokkeerde 5D2 en is in 5D1b fysiek gecorrigeerd.
+Step/extensie-fallbacks blijven bestaan; een observatie bewijst geen asset-rename
+of move. 5D2 kan `getSourceAssetBindings` en de doorgedragen providercontext
+gebruiken als expliciete input voor veilige matching.
+
+## Scoped assetopslag in 5D1b
+
+Migration 062 voegt aan beide assettabellen één nullable `storage_context_key`
+toe. De repository gebruikt de bestaande `sourceBindingContextKey`: een
+deterministische JSON-array van LearningSpace, configured source, provider en
+namespace. `source_id` blijft ongewijzigd de raw providerreferentie. Resource-
+scope/resource-ID en variant blijven buiten de contextkey hun eigen rol houden.
+
+Een contextkolom is kleiner dan vier extra contextvelden en hergebruikt één
+canonieke samenstelling. Alleen een verwijzing naar de bindinglaag volstaat
+niet: daarmee kan de database geen uniqueness op de app-assetrij afdwingen.
+
+Partial unique indexes maken het onderscheid expliciet, in beide databases:
+
+| Tabel | Legacy (`storage_context_key IS NULL`) | Scoped (`IS NOT NULL`) |
+| --- | --- | --- |
+| `source_resource_assets` | LearningSpace + resource-scope + resource-ID + raw source-ID | Dezelfde velden + storagecontext |
+| `solution_assets` | Variant + pad | Variant + storagecontext + pad; tevens variant + storagecontext + raw source-ID |
+
+Scoped solution-assets vereisen een niet-NULL itemreferentie. Legacy solution-
+assets behouden hun nullable `source_id`. De legacy partial indexes behouden de
+oude duplicatebeperking ondanks de nieuwe NULL-kolom. Binnen verschillende
+sourcecontexten kunnen hetzelfde raw ID en hetzelfde variant/pad afzonderlijke
+app-assets vertegenwoordigen.
+
+SQLite vervangt de twee tabellen transactioneel met de bestaande FK-off
+migrationvoorziening en herstelt alle bekende indexes; PostgreSQL voegt de
+kolom toe en vervangt de oude inline unique constraints. Alle bestaande kolommen,
+IDs, bindings en parentrelaties blijven behouden. Iedere bestaande asset krijgt
+NULL, ook als historische bindings bestaan: de migration kiest geen broncontext.
+
+De huidige matchingvolgorde blijft bestaan binnen de betreffende storagecontext.
+NULL-legacyrijen blijven beschikbaar voor de bestaande ondubbelzinnige matches;
+een actuele match kan hun context vastleggen en behoudt hun app-ID. Scoped rijen
+uit andere contexten zijn geen kandidaten. Nieuwe rij-IDs omvatten de context;
+een historische ID wordt nooit opnieuw gebruikt voor een andere partitionering.
+Writes gebruiken de reeds geselecteerde app-ID en laten databaseconstraints
+strijdige scoped claims transactioneel weigeren. De huidige publicatie behoudt
+haar bestaande lease/snapshotguard. Herhaalde publicatie maakt geen nieuwe IDs.
+
+Uitlezen/downloads blijven de raw `source_id` aan de provider doorgeven. Er is
+geen provider-API, rename/move-prioriteit of nieuwe fallback toegevoegd. De
+storagecontext wordt evenmin gebruikt om een exercise-identiteit af te leiden.
+
+Historische 5D1-bindings kunnen meerdere contexten naar hetzelfde app-ID verwijzen.
+Die blijven bewaard. Als na scopevastlegging een andere historische context een
+nieuwe app-rij zou moeten claimen, weigert de bestaande bindinghelper een
+tegenstrijdige herbinding; er wordt niets stil gesplitst of overgedragen. Dit is
+een conservatieve plannergrens voor 5D2, geen beperking van het fysieke schema.
+De aangetoonde raw-ID- en variant/pad-schemablokkers zijn met 062 opgeheven.
 
 ## Reconciliation in 5C
 

@@ -26,6 +26,7 @@ import {
   createTheme,
   getThemes,
   getAdminPortfolios,
+  getAdminResourceAsset,
   getIndexedSourceManifest,
   updateTheme,
   setPortfolioTheme,
@@ -44,31 +45,41 @@ import { getActiveSourceProfileForLearningSpace } from "./source-profiles";
 import { getDefaultSourceProfileTemplate } from "./source-profile-templates";
 import { getSourceEntityBindings } from "./source-bindings";
 import { getSourceAssetBindings } from "./source-asset-bindings";
+import { sourceBindingContextKey } from "./source-identity";
 import { nativeBindingContext, sourceBindingFixture, sourceAssetBindingFixture, sourceAssetBindingInsert } from "@/test/source-binding-fixture";
 
 const postgresUrl = process.env.POSTGRES_TEST_DATABASE_URL?.trim();
 const describeWithPostgres = postgresUrl ? describe : describe.skip;
 let originalDatabaseUrl: string | undefined;
 let originalDatabasePath: string | undefined;
+const runtimeSchema = `compatibility_${randomUUID().replaceAll("-", "")}`;
 
 describeWithPostgres("PostgreSQL production compatibility", () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     originalDatabaseUrl = process.env.DATABASE_URL;
     originalDatabasePath = process.env.PORTFOLIO_DATABASE_PATH;
-    process.env.DATABASE_URL = postgresUrl;
+    const admin = postgres(postgresUrl!, { max: 1, prepare: false, onnotice: () => {} });
+    try { await admin.unsafe(`CREATE SCHEMA ${runtimeSchema}`); }
+    finally { await admin.end({ timeout: 3 }); }
+    const runtimeUrl = new URL(postgresUrl!);
+    runtimeUrl.searchParams.set("options", `${runtimeUrl.searchParams.get("options") ?? ""} -c search_path=${runtimeSchema}`.trim());
+    process.env.DATABASE_URL = runtimeUrl.toString();
     delete process.env.PORTFOLIO_DATABASE_PATH;
     resetDatabaseForTests();
   });
 
-  afterAll(() => {
+  afterAll(async () => {
     if (originalDatabaseUrl === undefined) delete process.env.DATABASE_URL;
     else process.env.DATABASE_URL = originalDatabaseUrl;
     if (originalDatabasePath === undefined) delete process.env.PORTFOLIO_DATABASE_PATH;
     else process.env.PORTFOLIO_DATABASE_PATH = originalDatabasePath;
     resetDatabaseForTests();
+    const admin = postgres(postgresUrl!, { max: 1, prepare: false, onnotice: () => {} });
+    try { await admin.unsafe(`DROP SCHEMA IF EXISTS ${runtimeSchema} CASCADE`); }
+    finally { await admin.end({ timeout: 3 }); }
   });
 
-  it("upgrades a populated checkpoint through 055-061 without losing data or references", async () => {
+  it("upgrades a populated checkpoint through 055-062 without losing data or references", async () => {
     const schema = `release_upgrade_${randomUUID().replaceAll("-", "")}`;
     const sql = postgres(postgresUrl!, { max: 1, prepare: false, onnotice: () => {} });
     const session = await sql.reserve();
@@ -113,6 +124,18 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
       await apply(61);
       for (const table of tables) expect([...await session.unsafe(`SELECT * FROM ${table}`)]).toEqual(checkpoint059.get(table));
       expect(await session.unsafe("SELECT * FROM source_asset_bindings")).toHaveLength(0);
+      await session.unsafe(`INSERT INTO source_asset_bindings (id, learning_space_id, learning_space_source_id, provider_type,
+        provider_namespace, identity_kind, native_item_id, resource_scope, resource_id, portfolio_id, exercise_id,
+        resource_asset_id, solution_asset_id, variant_id, created_at, updated_at)
+        VALUES ('legacy-binding', 'space-6', 'space-6:primary', 'local', 'known-root', 'path', 'old-item', 'exercise',
+          'worked-solution', 'legacy-p', 'legacy-e', 'legacy-generic', 'legacy-a', 'legacy-v', 'old', 'old')`);
+      const oldBindings = [...await session.unsafe("SELECT * FROM source_asset_bindings")];
+      await apply(62);
+      expect([...await session.unsafe("SELECT * FROM source_asset_bindings")]).toEqual(oldBindings);
+      for (const table of tables) {
+        const after = [...await session.unsafe(`SELECT * FROM ${table}`)];
+        expect(after.map(({ storage_context_key, ...row }) => { if (["source_resource_assets", "solution_assets"].includes(table)) expect(storage_context_key).toBeNull(); return row; })).toEqual(checkpoint059.get(table));
+      }
       for (const table of tables) {
         const after = await session.unsafe(`SELECT * FROM ${table}`);
         expect(after).toHaveLength(before.get(table)!.length);
@@ -287,11 +310,12 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     await persistIndex([indexed], "onedrive", space.id, { sourceId: mirrorId });
     await persistIndex([sourceAssetBindingFixture("91", { ...nativeBindingContext, providerNamespace: "another-root" })], "onedrive", space.id, { sourceId: mirrorId });
     expect(await getSourceAssetBindings(database, space.id)).toHaveLength(6);
-    expect(new Set((await getSourceAssetBindings(database, space.id)).filter((binding) => binding.solutionAssetId).map((binding) => binding.solutionAssetId)).size).toBe(1);
-    const other = sourceAssetBindingFixture("92");
-    for (const asset of [...other.resourceAssets, ...other.sections[0].exercises[0].assets]) asset.sourceId += "-other";
-    await persistIndex([indexed, other], "onedrive", space.id, { sourceId: source.id });
-    const otherPair = (await getSourceAssetBindings(database, space.id)).find((binding) => binding.nativeItemId === "raw-solution-id-other")!;
+    expect(new Set((await getSourceAssetBindings(database, space.id)).filter((binding) => binding.solutionAssetId).map((binding) => binding.solutionAssetId)).size).toBe(3);
+    const other = sourceAssetBindingFixture("92", { ...nativeBindingContext, providerNamespace: "independent-parent-root" });
+    await persistIndex([other], "onedrive", space.id, { sourceId: mirrorId });
+    const otherPair = (await getSourceAssetBindings(database, space.id)).find((binding) => binding.nativeItemId === "raw-solution-id" && binding.providerNamespace === "independent-parent-root")!;
+    expect(otherPair.exerciseId).not.toBe(pair.exerciseId);
+    expect((await database.execute({ sql: "SELECT source_id FROM source_resource_assets WHERE id = ?", args: [otherPair.resourceAssetId] })).rows[0].source_id).toBe(pair.nativeItemId);
     await database.execute(sourceAssetBindingInsert(`other-parent-${suffix}`, { ...otherPair,
       nativeItemId: pair.nativeItemId, providerNamespace: "isolated-other-parent" }));
     expect(otherPair.solutionAssetId).not.toBe(pair.solutionAssetId);
@@ -313,6 +337,68 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     const invalidEntity = structuredClone(indexed); invalidEntity.title = null as unknown as string;
     await expect(persistIndex([invalidEntity], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow();
     expect(await snapshot()).toEqual(before);
+  }, 120_000);
+
+  it("enforces scoped storage and NULL legacy uniqueness while preserving raw provider IDs and rollback", async () => {
+    const suffix = randomUUID(); const database = await getDatabase();
+    const owner = await createUser({ displayName: `Storage ${suffix}`, role: "teacher" });
+    const space = await createLearningSpaceForOwner({ subjectId: "subject-wiskunde", name: "Scoped storage", slug: `storage-${suffix}`, shortLabel: "S", sourceType: "local", localSourcePath: null }, owner.id);
+    const source = (await getActiveLearningSpaceSource(space.id))!;
+    await database.execute({ sql: "UPDATE learning_space_sources SET provider_type = 'onedrive' WHERE id = ?", args: [source.id] });
+    const indexed = sourceAssetBindingFixture();
+    const legacy = structuredClone(indexed); delete legacy.sourceIdentityContext;
+    for (const asset of [...legacy.resourceAssets, ...legacy.sections[0].exercises[0].assets]) delete asset.sourceIdentityContext;
+    await persistIndex([legacy], "onedrive", space.id, { sourceId: source.id });
+    const original = (await database.execute({ sql: "SELECT id, source_id FROM source_resource_assets WHERE learning_space_id = ? ORDER BY id", args: [space.id] })).rows;
+    await persistIndex([indexed], "onedrive", space.id, { sourceId: source.id });
+    expect((await database.execute({ sql: "SELECT id, source_id FROM source_resource_assets WHERE learning_space_id = ? ORDER BY id", args: [space.id] })).rows).toEqual(original);
+    const bindings = await getSourceAssetBindings(database, space.id);
+    const pair = bindings.find((binding) => binding.solutionAssetId)!;
+    const context = sourceBindingContextKey(pair);
+    for (const binding of bindings) {
+      expect(await getAdminResourceAsset(binding.resourceAssetId!, space.id)).toMatchObject({ sourceId: binding.nativeItemId });
+      expect((await database.execute({ sql: "SELECT storage_context_key FROM source_resource_assets WHERE id = ?", args: [binding.resourceAssetId] })).rows[0].storage_context_key).toBe(context);
+    }
+    const copyGeneric = (id: string, key: string | null) => database.execute({
+      sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
+        semantic_role, source_id, relative_path, file_name, extension, step, last_seen_at, storage_context_key)
+        SELECT ?, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id, semantic_role, source_id,
+          relative_path, file_name, extension, step, last_seen_at, ? FROM source_resource_assets WHERE id = ?`,
+      args: [id, key, pair.resourceAssetId],
+    });
+    await expect(copyGeneric(`scoped-duplicate-${suffix}`, context)).rejects.toThrow();
+    await copyGeneric(`legacy-${suffix}`, null);
+    await expect(copyGeneric(`legacy-duplicate-${suffix}`, null)).rejects.toThrow();
+    await copyGeneric(`namespace-${suffix}`, sourceBindingContextKey({ ...pair, providerNamespace: "another-root" }));
+    await copyGeneric(`configured-source-${suffix}`, sourceBindingContextKey({ ...pair, configuredSourceId: `other-${suffix}` }));
+    const copySolution = (id: string, key: string | null, path: string, item: string | null) => database.execute({
+      sql: `INSERT INTO solution_assets (id, variant_id, relative_path, file_name, extension, step, source_id, storage_context_key)
+        SELECT ?, variant_id, ?, file_name, extension, step, ?, ? FROM solution_assets WHERE id = ?`,
+      args: [id, path, item, key, pair.solutionAssetId],
+    });
+    const solutionPath = (await database.execute({ sql: "SELECT relative_path FROM solution_assets WHERE id = ?", args: [pair.solutionAssetId] })).rows[0].relative_path as string;
+    await expect(copySolution(`same-path-${suffix}`, context, solutionPath, "other-native")).rejects.toThrow();
+    await expect(copySolution(`same-item-${suffix}`, context, "different.png", pair.nativeItemId)).rejects.toThrow();
+    await expect(copySolution(`missing-item-${suffix}`, context, "missing.png", null)).rejects.toThrow();
+    await copySolution(`legacy-solution-${suffix}`, null, solutionPath, null);
+    await expect(copySolution(`legacy-solution-duplicate-${suffix}`, null, solutionPath, null)).rejects.toThrow();
+    await copySolution(`namespace-solution-${suffix}`, sourceBindingContextKey({ ...pair, providerNamespace: "another-root" }), solutionPath, pair.nativeItemId);
+    const snapshot = async () => Promise.all([
+      database.execute({ sql: "SELECT * FROM source_resource_assets WHERE learning_space_id = ? ORDER BY id", args: [space.id] }).then((result) => result.rows),
+      database.execute({ sql: "SELECT * FROM solution_assets WHERE variant_id = ? ORDER BY id", args: [pair.variantId] }).then((result) => result.rows),
+      database.execute({ sql: "SELECT * FROM source_asset_bindings WHERE learning_space_id = ? ORDER BY id", args: [space.id] }).then((result) => result.rows),
+    ]);
+    const before = await snapshot();
+    await persistIndex([indexed], "onedrive", space.id, { sourceId: source.id });
+    const idsAfter = (await snapshot()).map((rows) => rows.map((row) => row.id));
+    expect(idsAfter).toEqual(before.map((rows) => rows.map((row) => row.id)));
+    const published = await snapshot();
+    await expect(database.batch([
+      { sql: "UPDATE source_resource_assets SET file_name = 'must-rollback' WHERE id = ?", args: [pair.resourceAssetId] },
+      { sql: `INSERT INTO solution_assets (id, variant_id, relative_path, file_name, extension, step, source_id, storage_context_key)
+        SELECT ?, variant_id, 'late.png', file_name, extension, step, source_id, storage_context_key FROM solution_assets WHERE id = ?`, args: [`late-${suffix}`, pair.solutionAssetId] },
+    ])).rejects.toThrow();
+    expect(await snapshot()).toEqual(published);
   }, 120_000);
 
   it("creates wizard profile choices and skipped sources in the same owner transaction", async () => {

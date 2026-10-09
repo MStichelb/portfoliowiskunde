@@ -55,7 +55,7 @@ import {
 import { getActiveSourceProfileConfigForLearningSpace, getSourceProfileIndexContextForLearningSpace } from "@/lib/source-profiles";
 import { SourceConfigurationError, StaleSynchronizationError } from "@/lib/source-errors";
 import { prepareSourceBindingWrites } from "@/lib/source-bindings";
-import type { SourceAssetBinding, SourceEntityBinding } from "@/lib/source-identity";
+import { sourceBindingContextKey, type SourceAssetBinding, type SourceEntityBinding } from "@/lib/source-identity";
 import { prepareSourceAssetBindingWrites } from "@/lib/source-asset-bindings";
 import { planSourceReconciliation } from "@/lib/source-reconciliation";
 import { requireActiveSubject } from "@/lib/subjects";
@@ -392,6 +392,7 @@ interface ExistingVariantRow {
 }
 
 interface ExistingSolutionAssetRow {
+  storageContextKey: string | null;
   id: string;
   variantId: string;
   exerciseId: string;
@@ -481,13 +482,13 @@ function hasAmbiguousSolutionMerge(
     if (!duplicateVariant) continue;
     const retainedAssets = retainedVariant ? assets.filter((asset) => asset.variantId === retainedVariant.id) : [];
     const duplicateAssets = assets.filter((asset) => asset.variantId === duplicateVariant.id);
-    const retainedByLogicalKey = groupBy(retainedAssets, (asset) => `${asset.step}\u0000${asset.extension.toLowerCase()}`);
-    const duplicateByLogicalKey = groupBy(duplicateAssets, (asset) => `${asset.step}\u0000${asset.extension.toLowerCase()}`);
+    const retainedByLogicalKey = groupBy(retainedAssets, (asset) => `${asset.storageContextKey ?? ""}\u0000${asset.step}\u0000${asset.extension.toLowerCase()}`);
+    const duplicateByLogicalKey = groupBy(duplicateAssets, (asset) => `${asset.storageContextKey ?? ""}\u0000${asset.step}\u0000${asset.extension.toLowerCase()}`);
     if ([...retainedByLogicalKey.values(), ...duplicateByLogicalKey.values()].some((group) => group.length > 1)) return true;
     for (const duplicateAsset of duplicateAssets) {
-      const logicalKey = `${duplicateAsset.step}\u0000${duplicateAsset.extension.toLowerCase()}`;
-      if (retainedAssets.some((asset) => asset.relativePath === duplicateAsset.relativePath
-        && `${asset.step}\u0000${asset.extension.toLowerCase()}` !== logicalKey)) return true;
+      const logicalKey = `${duplicateAsset.storageContextKey ?? ""}\u0000${duplicateAsset.step}\u0000${duplicateAsset.extension.toLowerCase()}`;
+      if (retainedAssets.some((asset) => asset.relativePath === duplicateAsset.relativePath && asset.storageContextKey === duplicateAsset.storageContextKey
+        && `${asset.storageContextKey ?? ""}\u0000${asset.step}\u0000${asset.extension.toLowerCase()}` !== logicalKey)) return true;
     }
   }
   return false;
@@ -515,7 +516,7 @@ function planSolutionAssetMerge(
       const retainedAssets = rows.filter((asset) => asset.variantId === actualRetainedVariantId);
       const duplicateAssets = rows.filter((asset) => asset.variantId === duplicateVariant.id);
       for (const duplicateAsset of duplicateAssets) {
-        const retainedAsset = retainedAssets.find((asset) => asset.step === duplicateAsset.step
+        const retainedAsset = retainedAssets.find((asset) => asset.storageContextKey === duplicateAsset.storageContextKey && asset.step === duplicateAsset.step
           && asset.extension.toLowerCase() === duplicateAsset.extension.toLowerCase());
         if (retainedAsset) {
           statements.push(
@@ -1216,7 +1217,7 @@ export async function persistIndex(
     });
   }
   const [existingAssets, existingVariants, existingResourceAssets, existingExercises, existingErrorThreads, existingErrorIssues] = await Promise.all([
-    database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.source_id,
+    database.execute({ sql: `SELECT solution_assets.id, solution_assets.variant_id, solution_assets.relative_path, solution_assets.source_id, solution_assets.storage_context_key,
       solution_assets.file_name, solution_assets.extension, solution_assets.step, solution_assets.last_modified_at, solution_assets.source_version,
       solution_assets.is_indexed, solution_assets.archived_at, solution_variants.kind, solution_variants.exercise_id
     FROM solution_assets JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
@@ -1227,7 +1228,7 @@ export async function persistIndex(
       FROM solution_variants JOIN exercises ON exercises.id = solution_variants.exercise_id
       JOIN portfolios ON portfolios.id = exercises.portfolio_id WHERE portfolios.learning_space_id = ?`, args: [spaceId] }),
     database.execute({ sql: `SELECT id, portfolio_id, exercise_id, resource_scope, resource_id,
-      source_id, relative_path, file_name, extension, step, source_version, is_indexed, archived_at
+      source_id, relative_path, file_name, extension, step, source_version, is_indexed, archived_at, storage_context_key
       FROM source_resource_assets WHERE learning_space_id = ?`, args: [spaceId] }),
     database.execute({ sql: `SELECT exercises.* FROM exercises JOIN portfolios ON portfolios.id = exercises.portfolio_id
       WHERE portfolios.learning_space_id = ?`, args: [spaceId] }),
@@ -1284,7 +1285,7 @@ export async function persistIndex(
     id: text(row, "id"), exerciseId: text(row, "exercise_id"), kind: text(row, "kind"), label: text(row, "label"),
   }));
   const rawSolutionAssetRows = existingAssets.rows.map((row) => ({
-    id: text(row, "id"), variantId: text(row, "variant_id"), exerciseId: text(row, "exercise_id"),
+    id: text(row, "id"), variantId: text(row, "variant_id"), exerciseId: text(row, "exercise_id"), storageContextKey: nullableText(row, "storage_context_key"),
     relativePath: text(row, "relative_path"), sourceId: text(row, "source_id"), fileName: text(row, "file_name"),
     extension: text(row, "extension"), step: Number(row.step), variant: text(row, "kind"),
     lastModifiedAt: nullableText(row, "last_modified_at"), sourceVersion: nullableText(row, "source_version"), isIndexed: bool(row.is_indexed),
@@ -1360,20 +1361,42 @@ export async function persistIndex(
       }
     }
   }
-  const assetKey = (variantId: string, relativePath: string) => `${variantId}\u0000${relativePath}`;
-  const solutionAssetLogicalKey = (variantId: string, step: number, extension: string) => `${variantId}\u0000${step}\u0000${extension.toLowerCase()}`;
-  const resourceAssetExactKey = (scope: string, resourceId: string, sourceAssetId: string) => `${scope}\u0000${resourceId}\u0000${sourceAssetId}`;
-  const resourceAssetLogicalKey = (scope: string, parentId: string, resourceId: string, step: number, extension: string) =>
-    `${scope}\u0000${parentId}\u0000${resourceId}\u0000${step}\u0000${extension.toLowerCase()}`;
+  const storageContexts = new Set<string | null>([null]);
+  const assetStorageContextKey = (asset: IndexedAsset | IndexedPortfolioResourceAsset): string | null => {
+    const identity = asset.sourceIdentityContext;
+    if (!identity) return null;
+    if (!publicationSource || identity.providerType !== providerType || publicationSource.providerType !== identity.providerType) {
+      throw new SourceConfigurationError("De assetidentiteit hoort niet bij de ingestelde broncontext.");
+    }
+    return sourceBindingContextKey({ ...identity, learningSpaceId: spaceId, configuredSourceId: publicationSource.id });
+  };
+  for (const portfolio of indexablePortfolios) {
+    for (const asset of [...portfolio.resourceAssets, ...indexedExerciseContexts(portfolio, resolvedPortfolioIds.get(portfolio.code)!)
+      .flatMap((context) => context.exercises.flatMap((exercise) => exercise.assets))]) storageContexts.add(assetStorageContextKey(asset));
+  }
+  // Keep existing exact/logical matching, partitioned by storage context. Legacy NULL rows remain eligible.
+  const storageEntries = <T extends { storageContextKey: string | null }>(rows: readonly T[], key: (row: T, context: string | null) => string) => {
+    const entries = rows.map((row) => [key(row, row.storageContextKey), row] as const);
+    const exact = new Map(entries);
+    for (const row of rows.filter((row) => row.storageContextKey === null)) {
+      for (const context of storageContexts) if (context !== null && !exact.has(key(row, context))) entries.push([key(row, context), row]);
+    }
+    return entries;
+  };
+  const assetKey = (variantId: string, relativePath: string, context: string | null = null) => JSON.stringify([context, variantId, relativePath]);
+  const solutionAssetLogicalKey = (variantId: string, step: number, extension: string, context: string | null = null) => JSON.stringify([context, variantId, step, extension.toLowerCase()]);
+  const resourceAssetExactKey = (scope: string, resourceId: string, sourceAssetId: string, context: string | null = null) => JSON.stringify([context, scope, resourceId, sourceAssetId]);
+  const resourceAssetLogicalKey = (scope: string, parentId: string, resourceId: string, step: number, extension: string, context: string | null = null) =>
+    JSON.stringify([context, scope, parentId, resourceId, step, extension.toLowerCase()]);
   const solutionMergePlan = planSolutionAssetMerge(duplicateExerciseResolutions, existingVariantRows, rawSolutionAssetRows, startedAt);
   const existingSolutionAssetRows = solutionMergePlan.rows;
   const activeSolutionAssetRows = existingSolutionAssetRows.filter((asset) => asset.isIndexed);
-  const existingAssetVersions = new Map(activeSolutionAssetRows.map((asset) => [assetKey(asset.variantId, asset.relativePath), asset]));
-  const existingSolutionAssetsByPathKey = new Map(existingSolutionAssetRows.map((asset) => [assetKey(asset.variantId, asset.relativePath), asset]));
-  const existingSolutionAssetsByLogicalKey = groupBy(activeSolutionAssetRows, (asset) => solutionAssetLogicalKey(asset.variantId, asset.step, asset.extension));
+  const existingAssetVersions = new Map(storageEntries(activeSolutionAssetRows, (asset, context) => assetKey(asset.variantId, asset.relativePath, context)));
+  const existingSolutionAssetsByPathKey = new Map(storageEntries(existingSolutionAssetRows, (asset, context) => assetKey(asset.variantId, asset.relativePath, context)));
+  const existingSolutionAssetsByLogicalKey = groupBy(storageEntries(activeSolutionAssetRows, (asset, context) => solutionAssetLogicalKey(asset.variantId, asset.step, asset.extension, context)), ([key]) => key);
   const existingResourceAssetRows = existingResourceAssets.rows.map((row) => ({
     id: text(row, "id"), portfolioId: text(row, "portfolio_id"), exerciseId: nullableText(row, "exercise_id"),
-    scope: text(row, "resource_scope"), resourceId: text(row, "resource_id"), sourceId: text(row, "source_id"),
+    scope: text(row, "resource_scope"), resourceId: text(row, "resource_id"), sourceId: text(row, "source_id"), storageContextKey: nullableText(row, "storage_context_key"),
     relativePath: text(row, "relative_path"), fileName: text(row, "file_name"), extension: text(row, "extension"),
     step: Number(row.step), sourceVersion: nullableText(row, "source_version"), isIndexed: bool(row.is_indexed),
     archivedAt: nullableText(row, "archived_at"),
@@ -1381,11 +1404,17 @@ export async function persistIndex(
     ...asset,
     exerciseId: asset.exerciseId ? duplicateExerciseResolutions.get(asset.exerciseId)?.retainedId ?? asset.exerciseId : null,
   }));
-  const existingResourceAssetsByExactKey = new Map(existingResourceAssetRows.map((asset) => [resourceAssetExactKey(asset.scope, asset.resourceId, asset.sourceId), asset]));
-  const activeResourceAssetsByExactKey = new Map(existingResourceAssetRows.filter((asset) => asset.isIndexed).map((asset) => [resourceAssetExactKey(asset.scope, asset.resourceId, asset.sourceId), asset]));
-  const existingResourceAssetsByLogicalKey = groupBy(existingResourceAssetRows.filter((asset) => asset.isIndexed), (asset) => resourceAssetLogicalKey(
-    asset.scope, asset.scope === "portfolio" ? asset.portfolioId : asset.exerciseId ?? "", asset.resourceId, asset.step, asset.extension,
-  ));
+  const existingResourceAssetsByExactKey = new Map(storageEntries(existingResourceAssetRows, (asset, context) => resourceAssetExactKey(asset.scope, asset.resourceId, asset.sourceId, context)));
+  const activeResourceAssetsByExactKey = new Map(storageEntries(existingResourceAssetRows.filter((asset) => asset.isIndexed), (asset, context) => resourceAssetExactKey(asset.scope, asset.resourceId, asset.sourceId, context)));
+  const existingResourceAssetsByLogicalKey = groupBy(storageEntries(existingResourceAssetRows.filter((asset) => asset.isIndexed), (asset, context) => resourceAssetLogicalKey(
+    asset.scope, asset.scope === "portfolio" ? asset.portfolioId : asset.exerciseId ?? "", asset.resourceId, asset.step, asset.extension, context,
+  )), ([key]) => key);
+  const existingStorageAssetIds = new Set([...existingResourceAssetRows, ...existingSolutionAssetRows].map((asset) => asset.id));
+  const newStorageAssetId = (prefix: string, parts: string[], context: string | null) => {
+    const id = stableId(prefix, ...parts, ...(context ? [context] : []));
+    // A historic ID may already belong to another partition; never overwrite it.
+    return existingStorageAssetIds.has(id) ? `${prefix}-${randomUUID()}` : id;
+  };
   const incomingSolutionAssetCounts = new Map<string, number>();
   const incomingSolutionPathCounts = new Map<string, number>();
   const incomingResourceAssetCounts = new Map<string, number>();
@@ -1393,26 +1422,26 @@ export async function persistIndex(
   for (const portfolio of indexablePortfolios) {
     const portfolioId = resolvedPortfolioIds.get(portfolio.code)!;
     for (const asset of portfolio.resourceAssets) {
-      incrementCount(incomingResourceAssetCounts, resourceAssetLogicalKey("portfolio", portfolioId, asset.resourceId, 1, asset.extension));
-      incrementCount(incomingResourceExactCounts, resourceAssetExactKey("portfolio", asset.resourceId, asset.sourceId));
+      incrementCount(incomingResourceAssetCounts, resourceAssetLogicalKey("portfolio", portfolioId, asset.resourceId, 1, asset.extension, assetStorageContextKey(asset)));
+      incrementCount(incomingResourceExactCounts, resourceAssetExactKey("portfolio", asset.resourceId, asset.sourceId, assetStorageContextKey(asset)));
     }
     for (const context of indexedExerciseContexts(portfolio, portfolioId)) {
       const sectionId = context.sectionId;
       for (const exercise of context.exercises) {
         const exerciseId = resolvedExerciseId(portfolioId, sectionId, exercise.code);
         for (const asset of exercise.assets) {
-          incrementCount(incomingResourceAssetCounts, resourceAssetLogicalKey("exercise", exerciseId, asset.resourceId, asset.parsed.step, asset.parsed.extension));
-          incrementCount(incomingResourceExactCounts, resourceAssetExactKey("exercise", asset.resourceId, asset.sourceId));
+          incrementCount(incomingResourceAssetCounts, resourceAssetLogicalKey("exercise", exerciseId, asset.resourceId, asset.parsed.step, asset.parsed.extension, assetStorageContextKey(asset)));
+          incrementCount(incomingResourceExactCounts, resourceAssetExactKey("exercise", asset.resourceId, asset.sourceId, assetStorageContextKey(asset)));
           if (asset.legacyVariant) {
             const variantId = `${exerciseId}-${asset.legacyVariant}`;
-            incrementCount(incomingSolutionAssetCounts, solutionAssetLogicalKey(variantId, asset.parsed.step, asset.parsed.extension));
-            incrementCount(incomingSolutionPathCounts, assetKey(variantId, asset.relativePath));
+            incrementCount(incomingSolutionAssetCounts, solutionAssetLogicalKey(variantId, asset.parsed.step, asset.parsed.extension, assetStorageContextKey(asset)));
+            incrementCount(incomingSolutionPathCounts, assetKey(variantId, asset.relativePath, assetStorageContextKey(asset)));
           }
         }
       }
     }
   }
-  const seenAssetKeys = new Set<string>();
+  const seenSolutionAssetIds = new Set<string>();
   const seenResourceAssetIds = new Set<string>();
   const publishedGenericExercisePaths = new Set<string>();
   const seenVariantIds = new Set<string>();
@@ -1421,16 +1450,19 @@ export async function persistIndex(
   const reportedResourceConflicts = new Set<string>();
   const reportedSolutionConflicts = new Set<string>();
   const resourceReconciliationCandidate = (exactKey: string, logicalKey: string) => {
-    if ((incomingResourceExactCounts.get(exactKey) ?? 0) > 1) return { kind: "conflict" as const };
+    if ((incomingResourceExactCounts.get(exactKey) ?? 0) > 1) {
+      if (JSON.parse(exactKey)[0] !== null) throw new SourceConfigurationError("Meerdere assets claimen dezelfde storage-identiteit. De bestaande index is behouden.");
+      return { kind: "conflict" as const };
+    }
     if (activeResourceAssetsByExactKey.has(exactKey) || incomingResourceAssetCounts.get(logicalKey) !== 1) return null;
-    const candidates = (existingResourceAssetsByLogicalKey.get(logicalKey) ?? []).filter((asset) => !reconciledResourceAssetIds.has(asset.id));
+    const candidates = (existingResourceAssetsByLogicalKey.get(logicalKey) ?? []).map(([, asset]) => asset).filter((asset) => !reconciledResourceAssetIds.has(asset.id));
     if (candidates.length !== 1) return candidates.length > 1 ? { kind: "conflict" as const } : null;
     const candidate = candidates[0];
     const occupied = existingResourceAssetsByExactKey.get(exactKey);
     if (!occupied || occupied.id === candidate.id) return { kind: "reconcile" as const, candidate, stale: null };
     const occupiedLogicalKey = resourceAssetLogicalKey(
       occupied.scope, occupied.scope === "portfolio" ? occupied.portfolioId : occupied.exerciseId ?? "",
-      occupied.resourceId, occupied.step, occupied.extension,
+      occupied.resourceId, occupied.step, occupied.extension, JSON.parse(logicalKey)[0] as string | null,
     );
     if (occupied.isIndexed || occupiedLogicalKey !== logicalKey) return { kind: "conflict" as const };
     return { kind: "reconcile" as const, candidate, stale: occupied };
@@ -1445,14 +1477,17 @@ export async function persistIndex(
     });
   };
   const solutionReconciliationCandidate = (pathKey: string, logicalKey: string) => {
-    if ((incomingSolutionPathCounts.get(pathKey) ?? 0) > 1) return { kind: "conflict" as const };
+    if ((incomingSolutionPathCounts.get(pathKey) ?? 0) > 1) {
+      if (JSON.parse(pathKey)[0] !== null) throw new SourceConfigurationError("Meerdere bestanden claimen dezelfde storage-identiteit. De bestaande index is behouden.");
+      return { kind: "conflict" as const };
+    }
     if (existingAssetVersions.has(pathKey)) return null;
     const occupied = existingSolutionAssetsByPathKey.get(pathKey);
-    if (occupied && solutionAssetLogicalKey(occupied.variantId, occupied.step, occupied.extension) !== logicalKey) {
+    if (occupied && solutionAssetLogicalKey(occupied.variantId, occupied.step, occupied.extension, JSON.parse(logicalKey)[0] as string | null) !== logicalKey) {
       return { kind: "conflict" as const };
     }
     if (incomingSolutionAssetCounts.get(logicalKey) !== 1) return null;
-    const candidates = (existingSolutionAssetsByLogicalKey.get(logicalKey) ?? [])
+    const candidates = (existingSolutionAssetsByLogicalKey.get(logicalKey) ?? []).map(([, asset]) => asset)
       .filter((asset) => !reconciledSolutionAssetIds.has(asset.id));
     if (candidates.length !== 1) return candidates.length > 1 ? { kind: "conflict" as const } : null;
     const candidate = candidates[0];
@@ -1567,9 +1602,9 @@ export async function persistIndex(
     }
 
     for (const resourceAsset of portfolio.resourceAssets) {
-      const resourceAssetId = stableId("source-resource-asset", spaceId, "portfolio", resourceAsset.resourceId, resourceAsset.sourceId);
-      const logicalKey = resourceAssetLogicalKey("portfolio", portfolioId, resourceAsset.resourceId, 1, resourceAsset.extension);
-      const exactKey = resourceAssetExactKey("portfolio", resourceAsset.resourceId, resourceAsset.sourceId);
+      const resourceAssetId = newStorageAssetId("source-resource-asset", [spaceId, "portfolio", resourceAsset.resourceId, resourceAsset.sourceId], assetStorageContextKey(resourceAsset));
+      const logicalKey = resourceAssetLogicalKey("portfolio", portfolioId, resourceAsset.resourceId, 1, resourceAsset.extension, assetStorageContextKey(resourceAsset));
+      const exactKey = resourceAssetExactKey("portfolio", resourceAsset.resourceId, resourceAsset.sourceId, assetStorageContextKey(resourceAsset));
       const reconciliation = resourceReconciliationCandidate(exactKey, logicalKey);
       if (reconciliation?.kind === "conflict") {
         reportResourceConflict(exactKey, resourceAsset.relativePath);
@@ -1588,9 +1623,9 @@ export async function persistIndex(
         statements.push({
           sql: `UPDATE source_resource_assets SET portfolio_id = ?, exercise_id = NULL, semantic_role = ?, source_id = ?,
             relative_path = ?, file_name = ?, extension = ?, step = 1, last_modified_at = ?, source_version = ?,
-            is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = ? WHERE id = ?`,
+            is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = ?, storage_context_key = ? WHERE id = ?`,
           args: [portfolioId, resourceAsset.semanticRole, resourceAsset.sourceId, resourceAsset.relativePath, resourceAsset.fileName,
-            resourceAsset.extension, resourceAsset.lastModifiedAt, resourceAsset.sourceVersion, startedAt, reconciliation.candidate.id],
+            resourceAsset.extension, resourceAsset.lastModifiedAt, resourceAsset.sourceVersion, startedAt, assetStorageContextKey(resourceAsset), reconciliation.candidate.id],
         });
       } else {
         const previous = activeResourceAssetsByExactKey.get(exactKey);
@@ -1600,16 +1635,16 @@ export async function persistIndex(
         statements.push({
           sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
             semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed,
-            missing_since, archived_at, last_seen_at)
-            VALUES (?, ?, ?, NULL, 'portfolio', ?, ?, ?, ?, ?, ?, 1, ?, ?, 1, NULL, NULL, ?)
-            ON CONFLICT(learning_space_id, resource_scope, resource_id, source_id) DO UPDATE SET
+            missing_since, archived_at, last_seen_at, storage_context_key)
+            VALUES (?, ?, ?, NULL, 'portfolio', ?, ?, ?, ?, ?, ?, 1, ?, ?, 1, NULL, NULL, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET storage_context_key = excluded.storage_context_key,
               portfolio_id = excluded.portfolio_id, exercise_id = NULL, semantic_role = excluded.semantic_role,
               relative_path = excluded.relative_path, file_name = excluded.file_name, extension = excluded.extension,
               step = 1, last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
               is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
-          args: [resourceAssetId, spaceId, portfolioId, resourceAsset.resourceId, resourceAsset.semanticRole, resourceAsset.sourceId,
+          args: [existingResourceAssetsByExactKey.get(exactKey)?.id ?? resourceAssetId, spaceId, portfolioId, resourceAsset.resourceId, resourceAsset.semanticRole, resourceAsset.sourceId,
             resourceAsset.relativePath, resourceAsset.fileName, resourceAsset.extension, resourceAsset.lastModifiedAt,
-            resourceAsset.sourceVersion, startedAt],
+            resourceAsset.sourceVersion, startedAt, assetStorageContextKey(resourceAsset)],
         });
       }
     }
@@ -1654,9 +1689,9 @@ export async function persistIndex(
         });
 
         for (const asset of exercise.assets) {
-          const resourceAssetId = stableId("source-resource-asset", spaceId, "exercise", asset.resourceId, asset.sourceId);
-          const logicalKey = resourceAssetLogicalKey("exercise", exerciseId, asset.resourceId, asset.parsed.step, asset.parsed.extension);
-          const exactKey = resourceAssetExactKey("exercise", asset.resourceId, asset.sourceId);
+          const resourceAssetId = newStorageAssetId("source-resource-asset", [spaceId, "exercise", asset.resourceId, asset.sourceId], assetStorageContextKey(asset));
+          const logicalKey = resourceAssetLogicalKey("exercise", exerciseId, asset.resourceId, asset.parsed.step, asset.parsed.extension, assetStorageContextKey(asset));
+          const exactKey = resourceAssetExactKey("exercise", asset.resourceId, asset.sourceId, assetStorageContextKey(asset));
           const reconciliation = resourceReconciliationCandidate(exactKey, logicalKey);
           if (reconciliation?.kind === "conflict") {
             reportResourceConflict(exactKey, asset.relativePath);
@@ -1676,9 +1711,9 @@ export async function persistIndex(
             statements.push({
               sql: `UPDATE source_resource_assets SET portfolio_id = ?, exercise_id = ?, semantic_role = ?, source_id = ?,
                 relative_path = ?, file_name = ?, extension = ?, step = ?, last_modified_at = ?, source_version = ?,
-                is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = ? WHERE id = ?`,
+                is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = ?, storage_context_key = ? WHERE id = ?`,
               args: [portfolioId, exerciseId, asset.semanticRole, asset.sourceId, asset.relativePath, asset.fileName,
-                asset.parsed.extension, asset.parsed.step, asset.lastModifiedAt, asset.sourceVersion, startedAt, reconciliation.candidate.id],
+                asset.parsed.extension, asset.parsed.step, asset.lastModifiedAt, asset.sourceVersion, startedAt, assetStorageContextKey(asset), reconciliation.candidate.id],
             });
           } else {
             const previous = activeResourceAssetsByExactKey.get(exactKey);
@@ -1686,23 +1721,24 @@ export async function persistIndex(
             publishedGenericExercisePaths.add(`${exerciseId}\u0000${asset.relativePath}`);
             if (!previous) {
               const legacyPrevious = activeSolutionAssetRows.find((candidate) => candidate.exerciseId === exerciseId
-                && candidate.relativePath === asset.relativePath);
+                && candidate.relativePath === asset.relativePath
+                && (candidate.storageContextKey === null || candidate.storageContextKey === assetStorageContextKey(asset)));
               if (!legacyPrevious) added += 1;
               else if (legacyPrevious.sourceVersion !== asset.sourceVersion) updated += 1;
             } else if (previous.sourceVersion !== asset.sourceVersion) updated += 1;
             statements.push({
               sql: `INSERT INTO source_resource_assets (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id,
                 semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed,
-                missing_since, archived_at, last_seen_at)
-                VALUES (?, ?, ?, ?, 'exercise', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, NULL, ?)
-                ON CONFLICT(learning_space_id, resource_scope, resource_id, source_id) DO UPDATE SET
+                missing_since, archived_at, last_seen_at, storage_context_key)
+                VALUES (?, ?, ?, ?, 'exercise', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, NULL, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET storage_context_key = excluded.storage_context_key,
                   portfolio_id = excluded.portfolio_id, exercise_id = excluded.exercise_id, semantic_role = excluded.semantic_role,
                   relative_path = excluded.relative_path, file_name = excluded.file_name, extension = excluded.extension,
                   step = excluded.step, last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
                   is_indexed = 1, missing_since = NULL, archived_at = NULL, last_seen_at = excluded.last_seen_at`,
-              args: [resourceAssetId, spaceId, portfolioId, exerciseId, asset.resourceId, asset.semanticRole, asset.sourceId,
+              args: [existingResourceAssetsByExactKey.get(exactKey)?.id ?? resourceAssetId, spaceId, portfolioId, exerciseId, asset.resourceId, asset.semanticRole, asset.sourceId,
                 asset.relativePath, asset.fileName, asset.parsed.extension, asset.parsed.step, asset.lastModifiedAt,
-                asset.sourceVersion, startedAt],
+                asset.sourceVersion, startedAt, assetStorageContextKey(asset)],
             });
           }
         }
@@ -1718,19 +1754,20 @@ export async function persistIndex(
             args: [variantId, exerciseId, variant, variant === "standard" ? "Standaard" : "Alternatief"],
           });
           for (const asset of variantAssets) {
-            const pathKey = assetKey(variantId, asset.relativePath);
+            const pathKey = assetKey(variantId, asset.relativePath, assetStorageContextKey(asset));
             const previousAtPath = existingAssetVersions.get(pathKey);
-            const logicalKey = solutionAssetLogicalKey(variantId, asset.parsed.step, asset.parsed.extension);
+            const logicalKey = solutionAssetLogicalKey(variantId, asset.parsed.step, asset.parsed.extension, assetStorageContextKey(asset));
             const reconciliation = solutionReconciliationCandidate(pathKey, logicalKey);
             if (reconciliation?.kind === "conflict") {
               reportSolutionConflict(pathKey, asset.relativePath);
               continue;
             }
-            observeAssetIdentity(portfolio, asset, portfolioId, exerciseId, null,
-              reconciliation?.kind === "reconcile" ? reconciliation.candidate.id : existingSolutionAssetsByPathKey.get(pathKey)?.id ?? stableId("asset", variantId, asset.relativePath), variantId);
+            const assetId = reconciliation?.kind === "reconcile" ? reconciliation.candidate.id
+              : existingSolutionAssetsByPathKey.get(pathKey)?.id ?? newStorageAssetId("asset", [variantId, asset.relativePath], assetStorageContextKey(asset));
+            observeAssetIdentity(portfolio, asset, portfolioId, exerciseId, null, assetId, variantId);
             if (reconciliation?.kind === "reconcile") {
               reconciledSolutionAssetIds.add(reconciliation.candidate.id);
-              seenAssetKeys.add(assetKey(variantId, reconciliation.candidate.relativePath));
+              seenSolutionAssetIds.add(reconciliation.candidate.id);
               if (!publishedGenericExercisePaths.has(`${exerciseId}\u0000${asset.relativePath}`)) updated += 1;
               if (reconciliation.stale) statements.push({
                 sql: "DELETE FROM solution_assets WHERE id = ? AND is_indexed = 0",
@@ -1738,29 +1775,28 @@ export async function persistIndex(
               });
               statements.push({
                 sql: `UPDATE solution_assets SET relative_path = ?, source_id = ?, file_name = ?, extension = ?, step = ?,
-                  last_modified_at = ?, source_version = ?, is_indexed = 1, archived_at = NULL, missing_since = NULL WHERE id = ?`,
+                  last_modified_at = ?, source_version = ?, is_indexed = 1, archived_at = NULL, missing_since = NULL, storage_context_key = ? WHERE id = ?`,
                 args: [asset.relativePath, asset.sourceId, asset.fileName, asset.parsed.extension, asset.parsed.step,
-                  asset.lastModifiedAt, asset.sourceVersion, reconciliation.candidate.id],
+                  asset.lastModifiedAt, asset.sourceVersion, assetStorageContextKey(asset), reconciliation.candidate.id],
               });
               continue;
             }
 
-            const assetId = stableId("asset", variantId, asset.relativePath);
-            seenAssetKeys.add(pathKey);
+            seenSolutionAssetIds.add(existingSolutionAssetsByPathKey.get(pathKey)?.id ?? assetId);
             if (!publishedGenericExercisePaths.has(`${exerciseId}\u0000${asset.relativePath}`)) {
               if (previousAtPath === undefined) added += 1;
               else if (previousAtPath.sourceVersion !== asset.sourceVersion) updated += 1;
             }
             statements.push({
               sql: `INSERT INTO solution_assets (id, variant_id, relative_path, source_id, file_name, extension, step,
-                last_modified_at, source_version, is_indexed, missing_since)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL)
-                ON CONFLICT(variant_id, relative_path) DO UPDATE SET source_id = excluded.source_id,
+                last_modified_at, source_version, is_indexed, missing_since, storage_context_key)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, NULL, ?)
+                ON CONFLICT(id) DO UPDATE SET storage_context_key = excluded.storage_context_key, source_id = excluded.source_id,
                   file_name = excluded.file_name, extension = excluded.extension, step = excluded.step,
                   last_modified_at = excluded.last_modified_at, source_version = excluded.source_version,
                   is_indexed = 1, archived_at = NULL, missing_since = NULL`,
-              args: [assetId, variantId, asset.relativePath, asset.sourceId, asset.fileName, asset.parsed.extension,
-                asset.parsed.step, asset.lastModifiedAt, asset.sourceVersion],
+              args: [existingSolutionAssetsByPathKey.get(pathKey)?.id ?? assetId, variantId, asset.relativePath, asset.sourceId, asset.fileName, asset.parsed.extension,
+                asset.parsed.step, asset.lastModifiedAt, asset.sourceVersion, assetStorageContextKey(asset)],
             });
           }
         }
@@ -1782,10 +1818,9 @@ export async function persistIndex(
     && !seenResourceAssetIds.has(asset.id));
   const missingGenericExercisePaths = new Set(missingGeneric.filter((asset) => asset.scope === "exercise" && asset.exerciseId)
     .map((asset) => `${asset.exerciseId}\u0000${asset.relativePath}`));
-  const allMissingLegacy = [...existingAssetVersions.entries()].filter(([key]) => !seenAssetKeys.has(key)).map(([key, asset]) => {
-    const [variantId, relativePath] = key.split("\u0000");
-    return { id: asset.id, relativePath, fileName: asset.fileName, variant: asset.variant, variantStillPresent: seenVariantIds.has(variantId) };
-  });
+  const allMissingLegacy = activeSolutionAssetRows.filter((asset) => !seenSolutionAssetIds.has(asset.id)).map((asset) => ({
+    id: asset.id, relativePath: asset.relativePath, fileName: asset.fileName, variant: asset.variant, variantStillPresent: seenVariantIds.has(asset.variantId),
+  }));
   const missingLegacy = allMissingLegacy.filter((asset) => {
     const source = activeSolutionAssetRows.find((candidate) => candidate.id === asset.id);
     return !source || !missingGenericExercisePaths.has(`${source.exerciseId}\u0000${source.relativePath}`);

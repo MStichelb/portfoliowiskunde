@@ -1389,6 +1389,95 @@ export const migrations: DatabaseMigration[] = [
       "CREATE INDEX source_asset_bindings_solution_index ON source_asset_bindings(solution_asset_id)",
     ],
   },
+  {
+    version: "062_scoped_asset_storage",
+    sqliteForeignKeysDisabled: true,
+    statements: [
+      `CREATE TABLE source_resource_assets_v062 (
+        id TEXT PRIMARY KEY,
+        learning_space_id TEXT NOT NULL REFERENCES learning_spaces(id) ON DELETE CASCADE,
+        portfolio_id TEXT NOT NULL REFERENCES portfolios(id) ON DELETE CASCADE,
+        exercise_id TEXT REFERENCES exercises(id) ON DELETE CASCADE,
+        resource_scope TEXT NOT NULL CHECK(resource_scope IN ('portfolio', 'exercise')),
+        resource_id TEXT NOT NULL,
+        semantic_role TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        relative_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        extension TEXT NOT NULL,
+        step INTEGER NOT NULL DEFAULT 1,
+        last_modified_at TEXT,
+        source_version TEXT,
+        is_indexed INTEGER NOT NULL DEFAULT 1,
+        missing_since TEXT,
+        archived_at TEXT,
+        last_seen_at TEXT NOT NULL,
+        storage_context_key TEXT CHECK(storage_context_key IS NULL OR length(trim(storage_context_key)) > 0),
+        CHECK((resource_scope = 'portfolio' AND exercise_id IS NULL) OR (resource_scope = 'exercise' AND exercise_id IS NOT NULL))
+      )`,
+      "INSERT INTO source_resource_assets_v062 (id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id, semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed, missing_since, archived_at, last_seen_at) SELECT id, learning_space_id, portfolio_id, exercise_id, resource_scope, resource_id, semantic_role, source_id, relative_path, file_name, extension, step, last_modified_at, source_version, is_indexed, missing_since, archived_at, last_seen_at FROM source_resource_assets",
+      "DROP TABLE source_resource_assets",
+      "ALTER TABLE source_resource_assets_v062 RENAME TO source_resource_assets",
+      `CREATE TABLE solution_assets_v062 (
+        id TEXT PRIMARY KEY,
+        variant_id TEXT NOT NULL REFERENCES solution_variants(id),
+        relative_path TEXT NOT NULL,
+        file_name TEXT NOT NULL,
+        extension TEXT NOT NULL,
+        step INTEGER NOT NULL,
+        source_id TEXT,
+        last_modified_at TEXT,
+        source_version TEXT,
+        is_indexed INTEGER NOT NULL DEFAULT 1,
+        missing_since TEXT,
+        archived_at TEXT,
+        storage_context_key TEXT CHECK(storage_context_key IS NULL OR length(trim(storage_context_key)) > 0),
+        CHECK(storage_context_key IS NULL OR source_id IS NOT NULL)
+      )`,
+      "INSERT INTO solution_assets_v062 (id, variant_id, relative_path, file_name, extension, step, source_id, last_modified_at, source_version, is_indexed, missing_since, archived_at) SELECT id, variant_id, relative_path, file_name, extension, step, source_id, last_modified_at, source_version, is_indexed, missing_since, archived_at FROM solution_assets",
+      "DROP TABLE solution_assets",
+      "ALTER TABLE solution_assets_v062 RENAME TO solution_assets",
+      "CREATE INDEX source_resource_assets_portfolio_index ON source_resource_assets(portfolio_id, resource_scope, resource_id, is_indexed)",
+      "CREATE INDEX source_resource_assets_exercise_index ON source_resource_assets(exercise_id, resource_id, is_indexed)",
+      "CREATE INDEX source_resource_assets_source_index ON source_resource_assets(learning_space_id, source_id)",
+      "CREATE UNIQUE INDEX resource_assets_binding_parent ON source_resource_assets(id, learning_space_id, portfolio_id, resource_scope, resource_id)",
+      "CREATE UNIQUE INDEX resource_assets_binding_exercise ON source_resource_assets(id, exercise_id)",
+      "CREATE UNIQUE INDEX solution_assets_binding_parent ON solution_assets(id, variant_id)",
+      "CREATE INDEX solution_assets_source_id_index ON solution_assets(source_id)",
+      "CREATE UNIQUE INDEX resource_assets_legacy_identity ON source_resource_assets(learning_space_id, resource_scope, resource_id, source_id) WHERE storage_context_key IS NULL",
+      "CREATE UNIQUE INDEX resource_assets_scoped_identity ON source_resource_assets(learning_space_id, storage_context_key, resource_scope, resource_id, source_id) WHERE storage_context_key IS NOT NULL",
+      "CREATE INDEX solution_assets_variant_index ON solution_assets(variant_id)",
+      "CREATE UNIQUE INDEX solution_assets_legacy_path ON solution_assets(variant_id, relative_path) WHERE storage_context_key IS NULL",
+      "CREATE UNIQUE INDEX solution_assets_scoped_path ON solution_assets(variant_id, storage_context_key, relative_path) WHERE storage_context_key IS NOT NULL",
+      "CREATE UNIQUE INDEX solution_assets_scoped_identity ON solution_assets(variant_id, storage_context_key, source_id) WHERE storage_context_key IS NOT NULL AND source_id IS NOT NULL",
+    ],
+    postgresStatements: [
+      "ALTER TABLE source_resource_assets ADD COLUMN storage_context_key TEXT CHECK(storage_context_key IS NULL OR length(trim(storage_context_key)) > 0)",
+      `DO $$ DECLARE constraint_name TEXT; BEGIN
+        SELECT c.conname INTO STRICT constraint_name FROM pg_constraint c
+        WHERE c.conrelid = 'source_resource_assets'::regclass AND c.contype = 'u'
+          AND (SELECT array_agg(a.attname::text ORDER BY k.position)
+            FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, position)
+            JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum) = ARRAY['learning_space_id', 'resource_scope', 'resource_id', 'source_id']::text[];
+        EXECUTE format('ALTER TABLE source_resource_assets DROP CONSTRAINT %I', constraint_name);
+      END $$`,
+      "ALTER TABLE solution_assets ADD COLUMN storage_context_key TEXT CHECK(storage_context_key IS NULL OR (length(trim(storage_context_key)) > 0 AND source_id IS NOT NULL))",
+      `DO $$ DECLARE constraint_name TEXT; BEGIN
+        SELECT c.conname INTO STRICT constraint_name FROM pg_constraint c
+        WHERE c.conrelid = 'solution_assets'::regclass AND c.contype = 'u'
+          AND (SELECT array_agg(a.attname::text ORDER BY k.position)
+            FROM unnest(c.conkey) WITH ORDINALITY AS k(attnum, position)
+            JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum) = ARRAY['variant_id', 'relative_path']::text[];
+        EXECUTE format('ALTER TABLE solution_assets DROP CONSTRAINT %I', constraint_name);
+      END $$`,
+      "CREATE UNIQUE INDEX resource_assets_legacy_identity ON source_resource_assets(learning_space_id, resource_scope, resource_id, source_id) WHERE storage_context_key IS NULL",
+      "CREATE UNIQUE INDEX resource_assets_scoped_identity ON source_resource_assets(learning_space_id, storage_context_key, resource_scope, resource_id, source_id) WHERE storage_context_key IS NOT NULL",
+      "CREATE INDEX solution_assets_variant_index ON solution_assets(variant_id)",
+      "CREATE UNIQUE INDEX solution_assets_legacy_path ON solution_assets(variant_id, relative_path) WHERE storage_context_key IS NULL",
+      "CREATE UNIQUE INDEX solution_assets_scoped_path ON solution_assets(variant_id, storage_context_key, relative_path) WHERE storage_context_key IS NOT NULL",
+      "CREATE UNIQUE INDEX solution_assets_scoped_identity ON solution_assets(variant_id, storage_context_key, source_id) WHERE storage_context_key IS NOT NULL AND source_id IS NOT NULL",
+    ],
+  },
 ];
 
 function sqlText(value: string): string {

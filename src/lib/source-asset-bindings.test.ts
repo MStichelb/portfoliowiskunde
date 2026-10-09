@@ -71,7 +71,7 @@ describe("source asset identity storage", () => {
     await persistIndex([sourceAssetBindingFixture("91", { ...nativeBindingContext, providerNamespace: "another-drive-root" })], "onedrive", "space-6", { sourceId: "asset-mirror" });
     await persistIndex([indexed], "onedrive", "space-5");
     expect(await getSourceAssetBindings(database, "space-6")).toHaveLength(6);
-    expect((await database.execute("SELECT id FROM source_resource_assets WHERE learning_space_id = 'space-6' ORDER BY id")).rows).toEqual(originalIds);
+    expect((await database.execute("SELECT id FROM source_resource_assets WHERE learning_space_id = 'space-6' ORDER BY id")).rows).toEqual(expect.arrayContaining(originalIds));
     expect(new Set((await getSourceAssetBindings(database, "space-6")).map((binding) => binding.configuredSourceId + binding.providerNamespace)).size).toBe(3);
     expect((await getSourceAssetBindings(database, "space-5"))[0].resourceAssetId).not.toBe((await getSourceAssetBindings(database, "space-6"))[0].resourceAssetId);
     await database.execute("UPDATE learning_space_sources SET provider_type = 'google_drive' WHERE id = 'asset-mirror'");
@@ -241,7 +241,10 @@ describe("060 to 061 asset source scope migration", () => {
     const tables = (await legacy.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'schema_migrations' ORDER BY name")).rows.map((row) => String(row.name));
     const before = await Promise.all(tables.map(async (table) => (await legacy.execute(`SELECT * FROM ${table} ORDER BY 1`)).rows)); legacy.close();
     process.env.PORTFOLIO_DATABASE_PATH = file; resetDatabaseForTests(); const database = await getDatabase();
-    for (const [index, table] of tables.entries()) expect((await database.execute(`SELECT * FROM ${table} ORDER BY 1`)).rows, table).toEqual(before[index]);
+    for (const [index, table] of tables.entries()) {
+      const rows = (await database.execute(`SELECT * FROM ${table} ORDER BY 1`)).rows;
+      expect(rows.map(({ storage_context_key, ...row }) => { if (["source_resource_assets", "solution_assets"].includes(table)) expect(storage_context_key).toBeNull(); return row; }), table).toEqual(before[index]);
+    }
     expect(await getSourceAssetBindings(database, "space-6")).toEqual([]);
     expect((await database.execute("PRAGMA foreign_key_check")).rows).toEqual([]);
     expect((await getAdminPortfolios("space-6"))[0].exercises![0].assets[0].id).toBe("legacy-a");
