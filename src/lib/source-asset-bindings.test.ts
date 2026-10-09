@@ -108,7 +108,7 @@ describe("source asset identity storage", () => {
     expect(await getSourceAssetBindings(database, "space-6")).toHaveLength(2);
   });
 
-  it("does not bind any of several legacy candidates when existing matching reports ambiguity", async () => {
+  it("rejects ambiguous legacy matching without binding or partial publication", async () => {
     const database = await setup(); const indexed = sourceAssetBindingFixture();
     indexed.resourceAssets = [];
     const asset = indexed.sections[0].exercises[0].assets[0];
@@ -124,11 +124,12 @@ describe("source asset identity storage", () => {
     const beforeSolutionIds = (await database.execute("SELECT id FROM solution_assets ORDER BY id")).rows;
     asset.sourceIdentityContext = nativeBindingContext; asset.sourceId = "new-item";
     asset.relativePath = "renamed.png"; asset.fileName = "renamed.png";
-    await persistIndex([indexed], "onedrive", "space-6");
+    const before = await state();
+    await expect(persistIndex([indexed], "onedrive", "space-6")).rejects.toThrow("legacy");
+    expect(await state()).toEqual(before);
     expect(await getSourceAssetBindings(database, "space-6")).toEqual([]);
     expect((await database.execute("SELECT id FROM source_resource_assets ORDER BY id")).rows).toEqual(beforeIds);
     expect((await database.execute("SELECT id FROM solution_assets ORDER BY id")).rows).toEqual(beforeSolutionIds);
-    expect((await database.execute("SELECT message FROM sync_warnings")).rows.some((row) => String(row.message).includes("meerdere mogelijke"))).toBe(true);
   });
 
   it("retains asset scope through the existing root/section exercise moves without changing matching", async () => {
@@ -156,6 +157,9 @@ describe("source asset identity storage", () => {
         semantic_role, source_id, relative_path, file_name, extension, step, last_seen_at)
         VALUES ('duplicate-resource-2', 'space-6', ?, ?, 'exercise', 'worked-solution', 'worked_solution', 'raw-step-2',
           'Nieuw/step2.png', 'step2.png', 'png', 2, 'old')`, args: [pair.portfolioId, duplicateId] },
+      // Current and historical scopes both observed this file before the proven Fase-2 move.
+      sourceAssetBindingInsert("duplicate-current-scope", { ...pair, nativeItemId: "raw-step-2",
+        exerciseId: duplicateId, resourceAssetId: "duplicate-resource-2", solutionAssetId: "duplicate-step-2", variantId: `${duplicateId}-standard` }),
       sourceAssetBindingInsert("duplicate-historical-scope", { ...pair, nativeItemId: "raw-step-2", providerNamespace: "historical-root",
         exerciseId: duplicateId, resourceAssetId: "duplicate-resource-2", solutionAssetId: "duplicate-step-2", variantId: `${duplicateId}-standard` }),
       { sql: "UPDATE exercises SET is_indexed = 0 WHERE id = ?", args: [pair.exerciseId] },

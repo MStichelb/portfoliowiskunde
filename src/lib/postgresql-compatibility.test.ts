@@ -47,6 +47,7 @@ import { getSourceEntityBindings } from "./source-bindings";
 import { getSourceAssetBindings } from "./source-asset-bindings";
 import { sourceBindingContextKey } from "./source-identity";
 import { nativeBindingContext, sourceBindingFixture, sourceAssetBindingFixture, sourceAssetBindingInsert } from "@/test/source-binding-fixture";
+import { sourceChildState, verifyHistoricalChildContexts, verifyNativeChildContinuity } from "@/test/source-child-reconciliation-scenarios";
 
 const postgresUrl = process.env.POSTGRES_TEST_DATABASE_URL?.trim();
 const describeWithPostgres = postgresUrl ? describe : describe.skip;
@@ -78,6 +79,46 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     try { await admin.unsafe(`DROP SCHEMA IF EXISTS ${runtimeSchema} CASCADE`); }
     finally { await admin.end({ timeout: 3 }); }
   });
+
+  it("reconciles native children, swapped paths and steps, Fase-2 moves and reports with prewrite conflicts and late rollback", async () => {
+    const database = await getDatabase(); const suffix = randomUUID();
+    const owner = await createUser({ displayName: `Child reconciliation ${suffix}`, role: "teacher" });
+    const space = await createLearningSpaceForOwner({ subjectId: "subject-wiskunde", name: "Child reconciliation", slug: `children-${suffix}`, shortLabel: "C", sourceType: "local", localSourcePath: null }, owner.id);
+    const source = (await getActiveLearningSpaceSource(space.id))!;
+    await database.execute({ sql: "UPDATE learning_space_sources SET provider_type = 'onedrive' WHERE id = ?", args: [source.id] });
+    const indexed = await verifyNativeChildContinuity(database, space.id, source.id);
+    const before = await sourceChildState(database, space.id);
+    const wrongParent = structuredClone(indexed);
+    wrongParent.sections[0].exercises[0].assets[0].legacyVariant = "alternative";
+    await expect(persistIndex([wrongParent], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow("bronidentiteit");
+    expect(await sourceChildState(database, space.id)).toEqual(before);
+    const occupiedCode = structuredClone(indexed); occupiedCode.sections[0].code = "2.4";
+    await expect(persistIndex([occupiedCode], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow("bezet");
+    expect(await sourceChildState(database, space.id)).toEqual(before);
+    const assets = indexed.sections[0].exercises[0].assets;
+    [assets[0].relativePath, assets[1].relativePath] = [assets[1].relativePath, assets[0].relativePath];
+    indexed.sections[0].code = "4";
+    await database.execute(`CREATE FUNCTION reject_child_publication() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN IF NEW.id = TG_ARGV[0] THEN RAISE EXCEPTION 'late child failure'; END IF; RETURN NEW; END $$`);
+    await database.execute(`CREATE TRIGGER reject_child_publication BEFORE UPDATE ON learning_space_sources
+      FOR EACH ROW EXECUTE FUNCTION reject_child_publication('${source.id.replaceAll("'", "''")}')`);
+    try {
+      await expect(persistIndex([indexed], "onedrive", space.id, { sourceId: source.id })).rejects.toThrow("late child failure");
+      expect(await sourceChildState(database, space.id)).toEqual(before);
+    } finally {
+      await database.execute("DROP TRIGGER reject_child_publication ON learning_space_sources");
+      await database.execute("DROP FUNCTION reject_child_publication()");
+    }
+  }, 120_000);
+
+  it("reconnects exact historical native asset contexts to the same IDs while keeping new contexts independent", async () => {
+    const database = await getDatabase(); const suffix = randomUUID();
+    const owner = await createUser({ displayName: `Historical child contexts ${suffix}`, role: "teacher" });
+    const space = await createLearningSpaceForOwner({ subjectId: "subject-wiskunde", name: "Historical children", slug: `history-${suffix}`, shortLabel: "H", sourceType: "local", localSourcePath: null }, owner.id);
+    const source = (await getActiveLearningSpaceSource(space.id))!;
+    await database.execute({ sql: "UPDATE learning_space_sources SET provider_type = 'onedrive' WHERE id = ?", args: [source.id] });
+    await verifyHistoricalChildContexts(database, space.id, source.id);
+  }, 120_000);
 
   it("upgrades a populated checkpoint through 055-062 without losing data or references", async () => {
     const schema = `release_upgrade_${randomUUID().replaceAll("-", "")}`;
@@ -350,10 +391,17 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     for (const asset of [...legacy.resourceAssets, ...legacy.sections[0].exercises[0].assets]) delete asset.sourceIdentityContext;
     await persistIndex([legacy], "onedrive", space.id, { sourceId: source.id });
     const original = (await database.execute({ sql: "SELECT id, source_id FROM source_resource_assets WHERE learning_space_id = ? ORDER BY id", args: [space.id] })).rows;
+    const legacySolution = (await database.execute({ sql: `SELECT solution_assets.id FROM solution_assets
+      JOIN solution_variants ON solution_variants.id = solution_assets.variant_id
+      JOIN exercises ON exercises.id = solution_variants.exercise_id
+      JOIN portfolios ON portfolios.id = exercises.portfolio_id WHERE portfolios.learning_space_id = ?`, args: [space.id] })).rows[0];
+    await database.execute({ sql: "UPDATE solution_assets SET source_id = NULL WHERE id = ?", args: [String(legacySolution.id)] });
     await persistIndex([indexed], "onedrive", space.id, { sourceId: source.id });
     expect((await database.execute({ sql: "SELECT id, source_id FROM source_resource_assets WHERE learning_space_id = ? ORDER BY id", args: [space.id] })).rows).toEqual(original);
     const bindings = await getSourceAssetBindings(database, space.id);
     const pair = bindings.find((binding) => binding.solutionAssetId)!;
+    expect(pair.solutionAssetId).toBe(legacySolution.id);
+    expect((await database.execute({ sql: "SELECT source_id FROM solution_assets WHERE id = ?", args: [pair.solutionAssetId] })).rows[0].source_id).toBe(pair.nativeItemId);
     const context = sourceBindingContextKey(pair);
     for (const binding of bindings) {
       expect(await getAdminResourceAsset(binding.resourceAssetId!, space.id)).toMatchObject({ sourceId: binding.nativeItemId });

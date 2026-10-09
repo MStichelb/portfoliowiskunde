@@ -1,9 +1,10 @@
-# Source identity contract (Fase 5B/5C/5D1/5D1b)
+# Source identity contract (Fase 5B/5C/5D1/5D1b/5D2)
 
 Een bronbinding koppelt een bestaande app-entiteit aan de identiteit uit een
 actuele scan. Een provider-ID wordt nooit een app-ID. De centrale read-only
-planner `planSourceReconciliation` kiest vóór publicatie de theme- en portfolio-ID
-op basis van dit contract. Section/exercise/resource-matching blijft intact.
+planner `planSourceReconciliation` kiest vóór publicatie de theme-, portfolio-,
+section-, exercise- en asset-IDs op basis van dit contract. Oefeningen gebruiken
+de bestaande Fase-2-reconciliation; beide live assetmodellen blijven behouden.
 
 ## Contract
 
@@ -214,3 +215,63 @@ in de batch rolt ook theme- en bindingwrites terug.
 Geen nieuwe migration. Geen extra garanties voor LocalFS, wijzigingen vóór de
 eerste betrouwbare scan of provider/root/accountwissels. Native section/exercise-
 reconciliation en expliciete resourcescope blijven buiten 5C (grens naar 5D).
+
+## Child reconciliation in 5D2
+
+`planSourceReconciliation` plant nu ook sections, oefeningen en beide live
+assetmodellen. `planSourceChildren` is de interne read-only childfase van deze
+centrale planner; het bevat de verplaatste bestaande Fase-2-oefenings- en
+metadata-mergecode. `persistIndex` voert uitsluitend de gekozen IDs en geplande
+merges uit in de bestaande transactionele, eventueel guarded batch.
+
+Sections krijgen eerst hun exacte native binding uit 060, daarna hun unieke
+code binnen dezelfde portfolio zonder strijdige native binding. Een native
+match behoudt section-ID en publicatie-/zichtbaarheidsmetadata bij gewijzigde
+code, titel en pad. Een bezette code wordt conservatief geweigerd, ook bij een
+codewissel. Dezelfde native section onder een andere portfolio wordt afgewezen.
+
+Oefeningen blijven volgens Fase 2 uniek per portfolio en exerciseCode. Daardoor
+behouden root/section- en section/section-verplaatsingen hun app-ID, metadata en
+foutmeldingen. Asset-ID, bestandspad en inhoud bewijzen geen oefeningsidentiteit.
+Een gewijzigde oefeningscode biedt geen continuïteit; een bestand dat daardoor
+een andere exerciseparent claimt, blokkeert publicatie. Dubbele kandidaten en
+conflicterende metadata/rapporten/uitwerkingen blokkeren nu de volledige batch.
+Een Fase-2-merge mag geen al gebonden solution-asset-ID verwijderen.
+
+Assetprioriteit is exacte gescopeerde native binding, daarna een veilige exacte
+storage-/parentmatch, daarna de bestaande unieke legacy logische fallback.
+Generieke keys bevatten storagecontext, resource-scope en resource-ID; de
+parent wordt afzonderlijk gevalideerd. Solutionkeys bevatten variant en
+storagecontext met pad of, als veilige unieke fallback, stap en extensie.
+Gebonden native assets zijn nooit kandidaten voor een zwakkere fallback.
+Een nieuw native bestand kan een gebonden bestand niet via stap of pad
+overnemen. Native matches volgen wel gewijzigde naam, pad, stap en volgorde,
+ook bij meerdere bestanden met dezelfde extensie of missing/return.
+
+Bindings bewijzen uitsluitend identiteit binnen LearningSpace, configured
+source, provider en namespace. Alle historische bindings blijven behouden.
+Een exacte historische native binding mag dezelfde app-assetrij opnieuw kiezen,
+ook als haar huidige `storage_context_key` bij een andere historische context
+hoort. De huidige storagecontext en bronvelden volgen dan die bewezen match;
+andere historische bindings worden niet herschreven. Een nieuwe context zonder
+exacte binding krijgt geen continuïteit via alleen raw ID of pad. Een NULL-rij
+met al bestaande native bindings is daarom evenmin een vrije legacy kandidaat.
+Historische padbindings begrenzen ook na migration 062 hun broncontext; NULL
+maakt die assets niet ongebonden voor een nieuwe context.
+Twee inkomende native claims op hetzelfde app-ID worden vooraf afgewezen.
+
+Native assetbindings mogen geen portfolio-, exercise-, variant- of
+resourcegrens oversteken. Alleen reeds bewezen Fase-2-exercise- en variantmerges
+normaliseren hun historische parents. De planner weigert alle overige
+parentconflicten, dubbele claims en dubbelzinnige fallbacks vóór de eerste write.
+Voor bewezen native padwissels worden niet-deferrable unieke sleutels tijdelijk
+vrijgemaakt binnen dezelfde publicatietransactie. Tijdelijke pads/contexten
+worden niet gepubliceerd; app-ID en raw provider-ID worden niet vervangen.
+Bezetting zonder bewezen vrijgave wordt geweigerd. Ook een latere SQL-fout
+rolt de volledige batch, tijdelijke sleutels en bindingwrites terug.
+
+Geen migration, nieuwe providercapability of fuzzy matching. LocalFS houdt
+uitsluitend het bestaande code-/padgedrag; paden worden geen stabiele native
+identiteit. Mirrors en andere roots/accounts bieden geen veronderstelde
+continuïteit. Cross-portfolio sectionmoves, cross-exercise/-variant assetmoves
+en extra herstel-/bevestigingsflows blijven buiten deze batch en de 5E-grens.

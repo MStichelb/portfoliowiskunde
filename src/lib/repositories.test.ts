@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { getDatabase, resetDatabaseForTests } from "./database";
+import { sourceChildState } from "@/test/source-child-reconciliation-scenarios";
 import type { IndexedPortfolio } from "./domain";
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "./source-profile-config";
 import { adminExercisePortfolioHref } from "./admin-routes";
@@ -546,14 +547,10 @@ describe("persistIndex", () => {
       { sql: "INSERT INTO sections (id, portfolio_id, section_code, sort_order, title, relative_path) VALUES (?, ?, '2', 2, 'Andere sectie', 'H1B_Stelsels/2 Andere sectie')", args: [secondSectionId, portfolioId] },
       { sql: "INSERT INTO exercises (id, portfolio_id, section_id, exercise_code, exercise_number, exercise_suffix) VALUES (?, ?, ?, '20a', 20, 'a')", args: [`${secondSectionId}-exercise-20a`, portfolioId, secondSectionId] },
     ]);
-    const originalIds = (await database.execute("SELECT id FROM exercises WHERE exercise_code = '20a' ORDER BY id")).rows.map((row) => String(row.id));
+    const before = await sourceChildState(database, "space-6");
+    await expect(persistIndex([exerciseMoveFixture(3, "uitdaging", "ambiguous-new")], "local", "space-6")).rejects.toThrow("meerdere mogelijke parents");
+    expect(await sourceChildState(database, "space-6")).toEqual(before);
 
-    await persistIndex([exerciseMoveFixture(3, "uitdaging", "ambiguous-new")], "local", "space-6");
-
-    const rows = await database.execute("SELECT id, is_indexed FROM exercises WHERE exercise_code = '20a' ORDER BY id");
-    expect(rows.rows.filter((row) => Number(row.is_indexed) === 1)).toHaveLength(1);
-    expect(originalIds).not.toContain(String(rows.rows.find((row) => Number(row.is_indexed) === 1)?.id));
-    expect((await getLatestWarnings("space-6")).some((warning) => warning.message.includes("niet automatisch verplaatst"))).toBe(true);
   });
 
   it("does not transfer exercise metadata by source content when the exercise code changes", async () => {
@@ -576,6 +573,11 @@ describe("persistIndex", () => {
       exerciseNumber: 21,
       exerciseCode: "21a",
     };
+    const before = await sourceChildState(database, "space-6");
+    await expect(persistIndex([renumbered], "local", "space-6")).rejects.toThrow("andere parent");
+    expect(await sourceChildState(database, "space-6")).toEqual(before);
+    // A genuinely new file can populate the new code without inheriting exercise metadata.
+    exercise.assets[0].sourceId = "new-physical-source";
     await persistIndex([renumbered], "local", "space-6");
 
     const current = (await database.execute("SELECT id, exercise_code, custom_note, is_indexed FROM exercises ORDER BY exercise_code")).rows;
@@ -816,18 +818,20 @@ describe("persistIndex", () => {
         current.source_version == null ? null : String(current.source_version), "2026-10-02T10:00:00.000Z", "2026-10-02T10:05:00.000Z"],
     });
 
+    const before = await sourceChildState(database, "space-6");
     await expect(persistIndex([renameReconciliationFixture({
       portfolioPath: "H1B_Stelsels",
       sectionPath: "H1B_Stelsels/2 Stelsels",
       fileName: "PF1B-Oef15-B.png",
       sourceId: "returning-source",
       levelSource: "basis",
-    })], "local", "space-6")).resolves.toMatchObject({ missing: 1 });
+    })], "local", "space-6")).rejects.toThrow("legacy");
+
+    expect(await sourceChildState(database, "space-6")).toEqual(before);
 
     const rows = await database.execute("SELECT id, step, source_id FROM solution_assets ORDER BY id");
     expect(rows.rows).toHaveLength(2);
     expect(rows.rows).toContainEqual(expect.objectContaining({ id: "archived-unrelated-solution", step: 2, source_id: "unrelated-source" }));
-    expect((await getLatestWarnings("space-6")).some((warning) => warning.message.includes("meerdere mogelijke historische bestanden"))).toBe(true);
   });
 
   it("keeps different resource identities separate while reconciling their renamed source metadata", async () => {
@@ -889,10 +893,11 @@ describe("persistIndex", () => {
       }],
     });
 
-    await expect(persistIndex([indexed], "local", "space-6")).resolves.toMatchObject({ missing: 0 });
     const database = await getDatabase();
-    expect(Number((await database.execute("SELECT COUNT(*) AS count FROM source_resource_assets WHERE resource_scope = 'exercise'")).rows[0].count)).toBe(0);
-    expect((await getLatestWarnings("space-6")).filter((warning) => warning.message.includes("meerdere mogelijke onderdelen"))).toHaveLength(1);
+    const before = await sourceChildState(database, "space-6");
+    await expect(persistIndex([indexed], "local", "space-6")).rejects.toThrow("storage-identiteit");
+    expect(await sourceChildState(database, "space-6")).toEqual(before);
+
   });
 
   it("coordinates synchronization with an expiring database lease", async () => {

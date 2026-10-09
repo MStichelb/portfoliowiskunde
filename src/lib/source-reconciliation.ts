@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseClient } from "@/lib/database";
 import type { IndexedPortfolio, IndexedSourceTheme } from "@/lib/domain";
 import { getSourceEntityBindings } from "@/lib/source-bindings";
+import { planSourceChildren } from "@/lib/source-child-reconciliation";
+import { normalizeSectionCode } from "@/lib/parser";
 import { SourceConfigurationError } from "@/lib/source-errors";
 import { supportsStableNativeIdentity, type SourceEntityBinding, type StorageIdentityContext } from "@/lib/source-identity";
 
@@ -34,6 +36,8 @@ export interface PortfolioReconciliation {
 export interface SourceReconciliationPlan {
   themes: ThemeReconciliation[];
   portfolios: PortfolioReconciliation[];
+  sectionIds: Map<string, string>;
+  children: Awaited<ReturnType<typeof planSourceChildren>>;
 }
 
 function conflict(detail: string): never {
@@ -45,9 +49,7 @@ function inContext(binding: SourceEntityBinding, source: ReconciliationSource, i
     && binding.providerType === identity.providerType && binding.providerNamespace === identity.providerNamespace;
 }
 
-/** Read-only: resolve theme/portfolio identity before any publication statements execute.
- * Children keep their existing matching inside the resolved portfolio ID.
- */
+/** Resolve every entity and asset read-only before any publication statements execute. */
 export async function planSourceReconciliation(
   database: DatabaseClient,
   input: {
@@ -57,6 +59,7 @@ export async function planSourceReconciliation(
     portfolios: readonly IndexedPortfolio[];
     synchronizesThemes: boolean;
     newPortfolioId: (code: string) => string;
+    timestamp?: string;
   },
 ): Promise<SourceReconciliationPlan> {
   const { learningSpaceId, providerType, source, portfolios, synchronizesThemes } = input;
@@ -172,5 +175,47 @@ export async function planSourceReconciliation(
       sourceChanged: !existing || existing.title !== incoming.title || existing.relative_path !== incoming.relativePath,
       themeChanged: !!existing && (existing.theme_id ?? null) !== themeId, themeId });
   }
-  return { themes, portfolios: resolutions };
+  const storedSections = await database.execute({
+    sql: "SELECT sections.id, sections.portfolio_id, sections.section_code FROM sections JOIN portfolios ON portfolios.id = sections.portfolio_id WHERE portfolios.learning_space_id = ?",
+    args: [learningSpaceId],
+  });
+  const sectionsById = new Map(storedSections.rows.map((row) => [String(row.id), row]));
+  const sectionIds = new Map<string, string>();
+  const claimedSections = new Set<string>();
+  const claimedFolders = new Set(incomingNativeIds);
+  for (const portfolio of resolutions) {
+    const identity = portfolio.incoming.sourceIdentityContext;
+    const native = identity && supportsStableNativeIdentity(identity);
+    for (const section of portfolio.incoming.sections) {
+      const key = JSON.stringify([portfolio.id, section.code]);
+      if (sectionIds.has(key)) conflict("meerdere onderdelen gebruiken dezelfde code binnen een portfolio");
+      if (native && section.sourceId) {
+        if (claimedFolders.has(section.sourceId)) conflict("één native map claimt meerdere entiteiten");
+        claimedFolders.add(section.sourceId);
+      }
+      const binding = native && section.sourceId ? bindingsByNativeId.get(section.sourceId) : undefined;
+      if (binding && (binding.entityType !== "section" || binding.portfolioId !== portfolio.id || binding.identityKind !== "native")) {
+        conflict("de native onderdeelmap heeft een ander entiteittype of portfolio");
+      }
+      const exact = binding ? sectionsById.get(binding.entityId) : undefined;
+      if (binding && (!exact || exact.portfolio_id !== portfolio.id)) conflict("de onderdeelbinding mist haar geldige parent");
+      const logical = storedSections.rows.find((row) => row.portfolio_id === portfolio.id && row.section_code === section.code);
+      if (exact && logical && exact.id !== logical.id) conflict(`onderdeelcode ${section.code} is al bezet`);
+      if (!exact && logical) {
+        const previous = scopedBindings.find((candidate) => candidate.entityType === "section" && candidate.entityId === String(logical.id));
+        if (native && previous && previous.nativeItemId !== section.sourceId) conflict("de onderdeelcode hoort bij een andere native map");
+        if (!identity && source && bindings.some((candidate) => candidate.configuredSourceId === source.id
+          && candidate.entityId === String(logical.id) && candidate.identityKind === "native")) conflict("een gebonden onderdeel mist de native providercontext");
+      }
+      const existing = exact ?? logical;
+      let id = existing ? String(existing.id) : `${portfolio.id}-section-${normalizeSectionCode(section.code)}`;
+      if (!existing && sectionsById.has(id)) id = randomUUID();
+      if (claimedSections.has(id)) conflict("meerdere onderdelen claimen hetzelfde app-ID");
+      claimedSections.add(id);
+      sectionIds.set(key, id);
+    }
+  }
+  const children = await planSourceChildren(database, { learningSpaceId, providerType, source, portfolios: resolutions,
+    sectionIds, timestamp: input.timestamp ?? new Date().toISOString() });
+  return { themes, portfolios: resolutions, sectionIds, children };
 }

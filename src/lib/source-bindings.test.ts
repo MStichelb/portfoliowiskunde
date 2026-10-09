@@ -99,7 +99,7 @@ describe("source entity binding storage", () => {
     expect((await getSourceEntityBindings(database, "space-5"))[0].entityId).not.toBe(bindings[0].entityId);
   });
 
-  it.each(["changed-native-id", "changed-section-code", "duplicate-native", "wrong-provider", "wrong-source", "invalid-local-capability"])(
+  it.each(["changed-native-id", "changed-section-native-id", "duplicate-native", "wrong-provider", "wrong-source", "invalid-local-capability"])(
     "rejects %s before any index writes", async (scenario) => {
       await setup();
       await persistIndex([sourceBindingFixture()], "onedrive", "space-6");
@@ -108,7 +108,7 @@ describe("source entity binding storage", () => {
       const input = [indexed];
       let sourceId: string | undefined;
       if (scenario === "changed-native-id") indexed.sourceId = "replacement-folder";
-      if (scenario === "changed-section-code") indexed.sections[0].code = "2";
+      if (scenario === "changed-section-native-id") indexed.sections[0].sourceId = "replacement-section-folder";
       if (scenario === "duplicate-native") input.push({ ...sourceBindingFixture("92"), sourceId: indexed.sourceId });
       if (scenario === "wrong-provider") indexed.sourceIdentityContext = { ...nativeBindingContext, providerType: "google_drive" };
       if (scenario === "wrong-source") sourceId = (await getActiveLearningSpaceSource("space-5"))!.id;
