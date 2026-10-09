@@ -5,6 +5,8 @@ import { useActionState, useCallback, useEffect, useId, useReducer, useRef } fro
 
 import { deleteErrorReportTeacherResponseAction, saveErrorReportTeacherResponseAction, type ResponseActionState } from "@/app/admin/actions";
 import { ConfirmActionButton } from "@/app/components/confirm-action-button";
+import { useToast } from "./flash-toast";
+import { useMutationFeedback } from "./mutation-feedback-form";
 import { SubmitButton } from "@/app/components/submit-button";
 import { ERROR_REPORT_TEACHER_RESPONSE_MAX_LENGTH } from "@/lib/error-report-teacher-response";
 import { DEFAULT_EXERCISE_LABEL_SINGULAR, formatTerminologyLabel } from "@/lib/collection-terminology";
@@ -26,8 +28,18 @@ export function ErrorReportResponseButton({ reportId, exerciseCode, exerciseLabe
   initiallyDeleteConfirmOpen?: boolean;
 }) {
   const [open, setOpen] = useReducer((_open: boolean, next: boolean) => next, initiallyOpen);
-  const [state, action] = useActionState(saveErrorReportTeacherResponseAction, initialState);
-  const [deleteState, deleteAction] = useActionState(deleteErrorReportTeacherResponseAction, initialState);
+  const show = useToast();
+  const run = useMutationFeedback();
+  const submit = (serverAction: typeof saveErrorReportTeacherResponseAction, deleting: boolean) => async (previous: ResponseActionState, data: FormData) => {
+    const outcome = await run(async () => ({ state: await serverAction(previous, data) }));
+    if (!outcome.ok) return { ...previous, error: null };
+    const result = outcome.result!.state;
+    if (result.technical && result.error) show({ type: "error", message: result.error });
+    else if (result.successCount > previous.successCount) show({ type: "success", message: deleting ? "Bericht verwijderd." : data.get("markHandled") === "true" ? "Bericht opgeslagen en melding afgewerkt." : "Bericht opgeslagen." });
+    return result;
+  };
+  const [state, action] = useActionState(submit(saveErrorReportTeacherResponseAction, false), initialState);
+  const [deleteState, deleteAction] = useActionState(submit(deleteErrorReportTeacherResponseAction, true), initialState);
   const successCount = state.successCount + deleteState.successCount;
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -73,13 +85,13 @@ export function ErrorReportResponseButton({ reportId, exerciseCode, exerciseLabe
           <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
         </div>
         <p className="report-response-context">{exerciseLabel} {exerciseCode} · {locationLabel} · {reporterLabel}</p>
-        <form action={action} className="report-response-form">
+        <form onReset={(event) => event.preventDefault()} action={action} className="report-response-form">
           <input type="hidden" name="id" value={reportId} />
           <label htmlFor={textareaId}>Bericht
             <textarea id={textareaId} name="teacherResponse" defaultValue={teacherResponse ?? ""} maxLength={ERROR_REPORT_TEACHER_RESPONSE_MAX_LENGTH} rows={5} />
           </label>
           <small>Dit bericht wordt zichtbaar voor de leerling zodra de melding is afgewerkt.</small>
-          {state.error || deleteState.error ? <p className="form-error" role="alert">{state.error ?? deleteState.error}</p> : null}
+          {state.error && !state.technical ? <p className="form-error inline-validation" role="alert">{state.error}</p> : null}
           <div className="report-response-dialog-actions">
             <div>{hasResponse ? <ConfirmActionButton
               action={deleteAction}

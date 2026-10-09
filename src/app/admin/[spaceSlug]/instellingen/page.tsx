@@ -1,3 +1,4 @@
+import { FlashToast } from "@/app/components/flash-toast";
 import { notFound } from "next/navigation";
 
 import { AdminSpaceHeader } from "@/app/components/admin-space-header";
@@ -29,7 +30,7 @@ export default async function LearningSpaceSettingsPage({ params, searchParams }
   return <main className="page-shell admin-page admin-space-page learning-space-settings-page">
     <AdminSpaceHeader current={space} section="settings" user={user} canConfigure={canConfigure} />
     {!space.isActive ? <p className="archived-message" role="status">Gearchiveerd. Deze leeromgeving is niet publiek zichtbaar en wordt niet gesynchroniseerd.</p> : null}
-    {query.saved === "1" ? <p className="success-message save-feedback" role="status">Instellingen opgeslagen.</p> : null}
+    {query.saved === "1" ? <FlashToast type="success" message="Instellingen opgeslagen." feedbackKey="saved" /> : null}
     <LearningSpaceSettingsNavigation>
       <LearningSpaceSettingsForm
         space={space}

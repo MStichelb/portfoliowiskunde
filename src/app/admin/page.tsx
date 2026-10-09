@@ -1,3 +1,4 @@
+import { FlashToast } from "@/app/components/flash-toast";
 import { Link2, Settings, SlidersHorizontal, Users } from "lucide-react";
 import Link from "next/link";
 
@@ -43,10 +44,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       <div><p className="eyebrow">Beheer</p><h1>Leeromgevingen</h1><p>Kies een leeromgeving om portfolio&apos;s binnen deze leeromgeving te beheren.</p></div>
       <div className="admin-actions"><Link className="secondary-button link-button" href="/admin/bronprofielen"><SlidersHorizontal size={17} aria-hidden />Bronprofielen</Link><Link className="secondary-button link-button" href="/admin/verbindingen"><Link2 size={17} aria-hidden />Verbindingen</Link>{user.role === "superadmin" ? <><Link className="secondary-button link-button" href="/admin/gebruikers"><Users size={17} aria-hidden />Gebruikers</Link><Link className="secondary-button link-button" href="/admin/systeem"><Settings size={17} aria-hidden />Systeem</Link></> : null}<LearningSpaceCreateModal action={createLearningSpaceAction} subjects={subjects} options={creationOptions} initialOpen={params.create === "1"} error={createErrorMessage(params.createError)} /></div>
     </header>
-    {params.smartschool === "linked" ? <p className="success-message" role="status">Smartschool-account gekoppeld.</p> : null}
-    {params.smartschool && params.smartschool !== "linked" ? <p className="error-message" role="alert">De Smartschool-koppeling is niet gelukt.</p> : null}
-    {params.created === "1" ? <p className="success-message" role="status">Leeromgeving toegevoegd.</p> : null}
-    {adminErrorMessage(params.error) ? <p className="error-message" role="alert">{adminErrorMessage(params.error)}</p> : null}
+    {params.smartschool === "linked" ? <FlashToast type="success" message="Smartschool-account gekoppeld." feedbackKey="smartschool" /> : null}
+    {params.smartschool && params.smartschool !== "linked" ? <FlashToast type="error" message="De Smartschool-koppeling is niet gelukt." feedbackKey="smartschool" /> : null}
+    {params.created === "1" ? <FlashToast type="success" message="Leeromgeving toegevoegd." feedbackKey="created" /> : null}
+    {adminErrorMessage(params.error) ? <FlashToast type="error" message={adminErrorMessage(params.error)!} feedbackKey="error" /> : null}
     <AdminLearningSpaceOverview cards={cards} orderItems={orderItems} orderAction={savePersonalLearningSpaceOrderAction} />
   </main>;
 }

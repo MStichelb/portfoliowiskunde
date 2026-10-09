@@ -1,3 +1,4 @@
+import { MutationFeedbackForm } from "@/app/components/mutation-feedback-form";
 import { Info, Save, Trash2 } from "lucide-react";
 import { PortfolioInfoDialog } from "@/app/components/portfolio-info-dialog";
 import infoStyles from "@/app/components/portfolio-resource-admin.module.css";
@@ -48,16 +49,16 @@ export default async function ThemesPage({ params }: { params: Promise<{ spaceSl
         return <article className="theme-editor-card" key={theme.id}>
           <div className="theme-item-summary"><span className="theme-origin-label">{theme.sourceTheme ? "Uit bronmap" : "Handmatig"}</span><span>· {countLabel(members.length)}</span></div>
           <div className="theme-edit-row">
-            <form id={`theme-${theme.id}`} action={saveThemeAction} className="theme-name-form">
+            <MutationFeedbackForm id={`theme-${theme.id}`} action={saveThemeAction} className="theme-name-form" successMessage="Thema opgeslagen." errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
               <input type="hidden" name="id" value={theme.id} />
               <input type="hidden" name="learningSpaceId" value={space.id} />
               <label htmlFor={`theme-name-${theme.id}`}>Weergavenaam<span className="sr-only"> ({inline})</span></label>
               <input id={`theme-name-${theme.id}`} name="name" defaultValue={theme.name} required maxLength={100} />
               <button className="icon-button" type="submit" aria-label={`${singular} opslaan`} title={`${singular} opslaan`}><Save size={16} aria-hidden /></button>
-            </form>
+            </MutationFeedbackForm>
             <div className="theme-row-actions">
               <OrderControls action={moveThemeAction} fields={{ id: theme.id, learningSpaceId: space.id }} canMoveUp={index > 0} canMoveDown={index < themes.length - 1} itemLabel={singular} />
-              <ConfirmActionButton action={deleteThemeAction} fields={{ id: theme.id, learningSpaceId: space.id }} className="icon-button danger-icon-button" label={<Trash2 size={16} aria-hidden />} confirmTitle={`${singular} verwijderen`} confirmText={`“${theme.name}” wordt verwijderd. ${collectionPlural} blijven bestaan en komen onder ${rootLabel}.`} disabled={Boolean(theme.sourceTheme)} disabledTitle={theme.sourceTheme ? `${singular} uit de bronmap kan hier niet worden verwijderd.` : undefined} />
+              <ConfirmActionButton action={deleteThemeAction} errorMessage="Verwijderen is niet gelukt. Probeer opnieuw." fields={{ id: theme.id, learningSpaceId: space.id }} className="icon-button danger-icon-button" label={<Trash2 size={16} aria-hidden />} confirmTitle={`${singular} verwijderen`} confirmText={`“${theme.name}” wordt verwijderd. ${collectionPlural} blijven bestaan en komen onder ${rootLabel}.`} disabled={Boolean(theme.sourceTheme)} disabledTitle={theme.sourceTheme ? `${singular} uit de bronmap kan hier niet worden verwijderd.` : undefined} />
             </div>
           </div>
           {theme.sourceTheme ? <p className="theme-source-description">Bronmap: {theme.sourceTheme.name}</p> : !members.length ? <p className="theme-source-description">Nog geen {formatTerminologyLabel(collectionPlural, "inline")} gekoppeld.</p> : null}

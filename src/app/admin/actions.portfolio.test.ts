@@ -61,14 +61,14 @@ describe("savePortfolioAction custom message", () => {
     expect(mocks.setPortfolioTheme).toHaveBeenCalledWith("portfolio-1", "space-5", null);
 
     vi.clearAllMocks();
-    await expect(savePortfolioAction(portfolioForm("Bericht", "between_documents"))).rejects.toThrow("Ongeldige portfolio-invoer");
+    await expect(savePortfolioAction(portfolioForm("Bericht", "between_documents"))).resolves.toMatchObject({ validationError: "Controleer de titel, kleur en het bericht." });
     expect(mocks.setPortfolioCustomMessage).not.toHaveBeenCalled();
   });
 
   it("weigert een onbekend of verkeerd gekoppeld thema voor andere settings worden opgeslagen", async () => {
     mocks.setPortfolioTheme.mockRejectedValueOnce(new Error("Thema niet gevonden."));
 
-    await expect(savePortfolioAction(portfolioForm("Bericht", "above_documents", "theme-other-space"))).rejects.toThrow("Thema niet gevonden");
+    await expect(savePortfolioAction(portfolioForm("Bericht", "above_documents", "theme-other-space"))).resolves.toMatchObject({ error: "De portfolio-instellingen konden niet worden opgeslagen. Probeer opnieuw." });
     expect(mocks.setPortfolioTheme).toHaveBeenCalledWith("portfolio-1", "space-5", "theme-other-space");
     expect(mocks.setPortfolioTitle).not.toHaveBeenCalled();
     expect(mocks.setPortfolioCustomMessage).not.toHaveBeenCalled();
@@ -110,7 +110,7 @@ describe("savePortfolioExternalLinksAction", () => {
     formData.set("portfolioId", "portfolio-1");
     formData.set("externalLink:video", "javascript:alert(1)");
 
-    await expect(savePortfolioExternalLinksAction(formData)).rejects.toThrow("geldige http(s)-URL");
+    await expect(savePortfolioExternalLinksAction(formData)).resolves.toMatchObject({ validationError: expect.stringContaining("geldige http(s)-URL") });
     expect(mocks.setPortfolioExternalLinks).not.toHaveBeenCalled();
   });
 });

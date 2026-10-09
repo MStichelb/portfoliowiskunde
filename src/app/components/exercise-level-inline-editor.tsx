@@ -1,5 +1,7 @@
 "use client";
 
+import { MutationFeedbackForm } from "./mutation-feedback-form";
+
 import { Check, Info, Minus, Pencil, Sparkles } from "lucide-react";
 import { useId, useRef, useState, type ReactNode } from "react";
 
@@ -31,7 +33,7 @@ export function ExerciseLevelInlineEditor({
   effectiveLevel: ExerciseLevel | null;
   presentation?: ExerciseLevelPresentation;
   returnContext?: ExerciseNoteReturnContext;
-  action: (formData: FormData) => void | Promise<void>;
+  action: (formData: FormData) => unknown | Promise<unknown>;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -74,7 +76,7 @@ export function ExerciseLevelInlineEditor({
       aria-label="Niveau kiezen"
       onToggle={(event) => setOpen(event.currentTarget.matches(":popover-open"))}
     >
-      <form action={action}>
+      <MutationFeedbackForm action={action} errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
         <input type="hidden" name="id" value={exerciseId} />
         <input type="hidden" name="learningSpaceId" value={learningSpaceId} />
         <input type="hidden" name="returnContext" value={returnContext} />
@@ -87,7 +89,7 @@ export function ExerciseLevelInlineEditor({
           label={presentation[level].displayName}
           icon={<ExerciseLevelBadge level={level} presentation={presentation} />}
         />)}
-      </form>
+      </MutationFeedbackForm>
       <div className="exercise-level-popover-context">
         <Info size={16} aria-hidden />
         <div>
@@ -107,7 +109,7 @@ function LevelChoice({ value, selected, label, icon, description }: { value: str
   </button>;
 }
 
-function positionPopover(trigger: HTMLButtonElement | null, popover: HTMLDivElement): void {
+export function positionPopover(trigger: HTMLButtonElement | null, popover: HTMLDivElement): void {
   if (!trigger) return;
   const gap = 6;
   const edge = 12;

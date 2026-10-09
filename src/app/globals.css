@@ -265,6 +265,19 @@ html:has(.learning-space-settings-page, .learning-space-access-page) { scrollbar
 .settings-section > form + form { margin-top: 12px; }
 .error-message { color: #8b2b1c; font-weight: 700; }
 .success-message { color: #154d37; font-weight: 700; }
+.toast-stack { position: fixed; top: max(calc(var(--toast-header-bottom, 54px) + 12px), env(safe-area-inset-top)); right: max(16px, env(safe-area-inset-right)); margin: 0; padding: 0; border: 0; background: transparent; color: inherit; left: auto; bottom: auto; width: min(400px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 10px; z-index: 2000; pointer-events: none; max-height: calc(100dvh - max(calc(var(--toast-header-bottom, 54px) + 12px), env(safe-area-inset-top)) - 16px); overflow-y: auto; }
+.toast { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid; border-radius: 12px; box-shadow: 0 4px 16px #152b2420; pointer-events: auto; animation: toast-in 160ms ease-out both; }
+.toast-success { color: #154d37; background: #e8f4ed; border-color: #b5d8c3; }
+.toast-error { color: #8b2b1c; background: #fff0ed; border-color: #e8b8af; }
+.toast-icon { flex-shrink: 0; margin-top: 2px; }
+.toast-message { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.4; }
+.toast-close { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 6px; color: inherit; background: transparent; cursor: pointer; }
+.toast-close:hover { background: #0000000c; }
+.toast-close:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.toast-closing { animation: toast-out 160ms ease-in both; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes toast-out { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .toast, .toast-closing { animation: none; } .toast-closing { opacity: 0; } }
 .emergency-access-control { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px; border: 1px solid #d5ddda; border-radius: 5px; background: #f7f9f8; }
 .emergency-access-control > div:first-child { min-width: 0; }
 .emergency-access-control strong { display: inline-flex; align-items: center; gap: 7px; }
@@ -877,8 +890,8 @@ html:has(.learning-space-settings-page, .learning-space-access-page) { scrollbar
 .management-badges, .connection-badges { display: flex; flex-wrap: wrap; gap: 6px; }
 .management-badges > span, .connection-badge { min-height: 28px; padding: 4px 8px; border-radius: 999px; background: #edf1ef; font-size: 13px; font-weight: 700; }
 .management-badges > .teacher-role-badge-owner {
-  background: #dff3e4;
-  color: #245c32;
+  background: #edf1ef;
+  color: #68757b;
 }
 
 .management-badges > .teacher-role-badge-editor {
@@ -1012,20 +1025,24 @@ html:has(.learning-space-settings-page, .learning-space-access-page) { scrollbar
 .teacher-access-add-form { grid-template-columns: minmax(220px, 1fr) minmax(130px, .45fr) auto; margin-bottom: 18px; }
 .teacher-access-add-form button { grid-column: auto; }
 .teacher-access-row-actions { display: flex; align-items: center; gap: 7px; }
-.teacher-role-action { display: inline-flex; width: 160px; height: 34px; padding: 0 10px; align-items: center; justify-content: left; gap: 7px; white-space: nowrap; }
+.teacher-role-trigger { padding: 0; }
+.teacher-role-popover { width: min(220px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; }
+.teacher-role-popover-label { display: block; padding: 4px 8px 8px; font-size: 13px; }
 
 .teacher-role-badge {
   display: inline-flex;
+  min-height: 28px;
+  font-size: 13px;
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
   border-radius: 999px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .teacher-role-badge-owner {
-  background: #dff3e4;
-  color: #245c32;
+  background: #edf1ef;
+  color: #68757b;
 }
 
 .teacher-role-badge-editor {
@@ -1552,3 +1569,6 @@ body:has(.changelog-drawer[open]) { overflow: hidden; }
 .theme-manual-help p { margin: 0; }
 .theme-manual-help a { flex-shrink: 0; }
 @media (max-width: 640px) { .theme-edit-row { flex-wrap: wrap; } .theme-edit-row .theme-name-form { flex-basis: 100%; } .theme-edit-row .theme-row-actions { margin-left: auto; } }
+
+.inline-validation { display: block; width: fit-content; max-width: 100%; margin: 6px 0; padding: 6px 9px; border-left: 3px solid #a52a35; background: #fff1f2; color: #842029; font-size: 14px; line-height: 1.4; }
+.creation-wizard-footer .form-message, .source-profile-dialog .form-message, .learning-space-settings-form > .form-message { width: fit-content; max-width: 100%; padding: 6px 9px; margin: 6px 0; font-size: 14px; line-height: 1.4; }

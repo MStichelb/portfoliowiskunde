@@ -12,6 +12,15 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 Local development and the default test suite use SQLite/libSQL, while production uses PostgreSQL. Every shared migration and runtime query must be valid in both databases. Do not use SQLite-only SQL in shared code, and do not rely on untyped nullable placeholders such as `? IS NULL` or parameter-to-parameter comparisons; branch to a typed SQL statement instead. Any database-sensitive change requires validation with the normal database/migration tests and `corepack pnpm test:postgres` against a dedicated PostgreSQL test database.
 
+## Feedback-UX
+
+- Tijdelijke actiefeedback gebruikt het gedeelde toast-systeem, zonder route-specifieke success/errorbanners. Beoordeel bij elke nieuwe mutatie zowel succes- als foutfeedback.
+- Afgeronde acties zoals opslaan, toevoegen, verwijderen, kopiëren, synchroniseren en betekenisvolle bulkacties krijgen waar zinvol een success-toast. Direct zichtbare lichte mutaties zoals toggles, pinnen, eenvoudige rol-/niveaukeuzes en sortering mogen stil slagen.
+- Elke opgeslagen mutatie heeft een begrijpelijk foutpad: stil succes kan, stille mislukking niet. Technische/opslag-/serverfouten worden persistente error-toasts.
+- Veld- en formuliervalidatie blijft compact en toegankelijk bij het betreffende veld/formulier, met minimale layoutverschuiving, tot correctie of opnieuw opslaan.
+- Permanente toestand en inhoudelijke waarschuwingen (archief, setup, bron, sync, publicatie, bestanden) blijven inline. Gebruik een dialoog of inhoudelijk blok voor langere herstelstappen of uitleg.
+- Success-toasts verdwijnen na 5 seconden; error-toasts blijven tot handmatig sluiten. Positie, styling, iconen, timers en gedrag worden centraal beheerd. Toasts staan onder de globale navigatie/header en overlappen nooit interactieve headercontrols zoals Uitloggen.
+
 ## Changelog discipline
 
 For every code change, before finalizing, explicitly evaluate whether `src/data/changelog.ts` should be updated.

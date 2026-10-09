@@ -1,5 +1,7 @@
 "use client";
 
+import { MutationFeedbackForm } from "./mutation-feedback-form";
+
 import { Square, SquareCheckBig, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 
@@ -49,7 +51,7 @@ export function ExerciseNoteButton({ exerciseId, exerciseCode, exerciseLabelSing
           <h2 id={titleId}>Notitie bij {exerciseLabel} {exerciseCode}</h2>
           <button ref={closeRef} className="icon-button" type="button" onClick={close} aria-label="Sluiten" title="Sluiten"><X size={18} aria-hidden /></button>
         </div>
-        <form id={formId} action={saveExerciseNoteAction} className="exercise-note-form">
+        <MutationFeedbackForm id={formId} action={saveExerciseNoteAction} className="exercise-note-form" errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
           <input type="hidden" name="id" value={exerciseId} />
           <input type="hidden" name="returnContext" value={returnContext} />
           <label>Label (optioneel)<input type="text" name="noteLabel" defaultValue={noteLabel ?? ""} maxLength={EXERCISE_NOTE_LABEL_MAX_LENGTH} placeholder="Bijv. Hint, Opmerking, Instructie..." /></label>
@@ -58,9 +60,9 @@ export function ExerciseNoteButton({ exerciseId, exerciseCode, exerciseLabelSing
             <label><input type="radio" name="notePosition" value="above_solution" defaultChecked={notePosition === "above_solution"} /><span>Boven uitwerking</span></label>
             <label><input type="radio" name="notePosition" value="below_solution" defaultChecked={notePosition === "below_solution"} /><span>Onder uitwerking</span></label>
           </div></fieldset>
-        </form>
+        </MutationFeedbackForm>
         <div className="exercise-note-dialog-actions">
-          <div>{hasNote ? <ConfirmActionButton action={deleteExerciseNoteAction} fields={{ id: exerciseId, returnContext }} className="danger-button" label={<><Trash2 size={16} aria-hidden />Notitie verwijderen</>} confirmTitle="Notitie verwijderen?" confirmText="Deze notitie wordt permanent verwijderd." /> : null}</div>
+          <div>{hasNote ? <ConfirmActionButton action={deleteExerciseNoteAction} errorMessage="Verwijderen is niet gelukt. Probeer opnieuw." fields={{ id: exerciseId, returnContext }} className="danger-button" label={<><Trash2 size={16} aria-hidden />Notitie verwijderen</>} confirmTitle="Notitie verwijderen?" confirmText="Deze notitie wordt permanent verwijderd." /> : null}</div>
           <div><button className="primary-button" type="submit" form={formId}>Opslaan</button></div>
         </div>
       </div>

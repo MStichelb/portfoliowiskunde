@@ -1,3 +1,4 @@
+import { FlashToast } from "@/app/components/flash-toast";
 import { Archive, ArrowLeft, CheckCircle2, Plus, RotateCcw, Save, Trash2 } from "lucide-react";
 import Link from "next/link";
 
@@ -21,8 +22,8 @@ export default async function SubjectsPage({ searchParams }: { searchParams: Pro
   return <main className="page-shell admin-page subjects-page">
     <Link className="secondary-button compact-back-button" href="/admin/systeem"><ArrowLeft size={16} aria-hidden />Terug naar Systeem</Link>
     <header className="page-header"><p className="eyebrow">Systeem</p><h1>Vakken</h1><p>Beheer de appbrede vakken en hun volgorde. Gearchiveerde vakken blijven gekoppeld aan bestaande leeromgevingen.</p></header>
-    {savedMessage(params.saved) ? <p className="success-message" role="status">{savedMessage(params.saved)}</p> : null}
-    {params.error ? <p className="form-message" role="alert">{params.error}</p> : null}
+    {savedMessage(params.saved) ? <FlashToast type="success" message={savedMessage(params.saved)!} feedbackKey="saved" /> : null}
+    {params.error ? <FlashToast type="error" message={params.error} feedbackKey="error" /> : null}
 
     <section className="admin-card subject-create-card" aria-labelledby="subject-create-heading">
       <div className="card-heading"><div><h2 id="subject-create-heading">Vak toevoegen</h2><p>De interne identiteit wordt automatisch aangemaakt en blijft stabiel.</p></div></div>

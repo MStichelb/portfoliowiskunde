@@ -6,7 +6,7 @@ import { requireAdminUser } from "@/lib/auth";
 import { AuthorizationError, getAccessibleLearningSpaceIds } from "@/lib/authorization";
 import { saveUserLearningSpaceOrder } from "@/lib/user-learning-space-order";
 
-export async function savePersonalLearningSpaceOrderAction(formData: FormData): Promise<void> {
+export async function savePersonalLearningSpaceOrderAction(formData: FormData) {
   const user = await requireAdminUser();
   const orderedIds = formData.getAll("learningSpaceId")
     .map((value) => String(value).trim())
@@ -17,7 +17,11 @@ export async function savePersonalLearningSpaceOrderAction(formData: FormData): 
     throw new AuthorizationError("De gekozen volgorde bevat een ontoegankelijke of ontbrekende leeromgeving.");
   }
 
-  await saveUserLearningSpaceOrder(user.id, orderedIds);
+  try {
+    await saveUserLearningSpaceOrder(user.id, orderedIds);
+  } catch {
+    return { error: "De persoonlijke volgorde kon niet worden opgeslagen. Probeer opnieuw." };
+  }
   revalidatePath("/", "layout");
   revalidatePath("/admin");
 }

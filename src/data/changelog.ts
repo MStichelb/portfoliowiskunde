@@ -28,6 +28,14 @@ export interface ChangelogEntry {
 }
 
 export const changelog: ChangelogEntry[] = [{
+  id: "2026-10-08-actiemeldingen",
+  date: "2026-10-08",
+  category: "improved",
+  title: "Actiemeldingen compact en sluitbaar",
+  description: "Bevestigingen na opslaan, toevoegen, synchroniseren en andere afgeronde beheeracties verschijnen rechtsboven onder de navigatie en verdwijnen na vijf seconden. Opslag- en serverfouten blijven staan tot je ze sluit. Invoerfouten blijven bij het formulier. Eerdere meldingen verschijnen niet opnieuw wanneer je tussen onderdelen wisselt.",
+  audiences: ["teacher", "superadmin"],
+  notify: false,
+}, {
   id: "2026-10-07-groeperingen-beheren",
   date: "2026-10-07",
   category: "improved",

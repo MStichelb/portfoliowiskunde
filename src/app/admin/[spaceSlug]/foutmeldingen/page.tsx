@@ -1,3 +1,4 @@
+import { ExerciseNoteFeedback } from "@/app/components/flash-toast";
 import { notFound } from "next/navigation";
 
 import { AdminSpaceHeader } from "@/app/components/admin-space-header";
@@ -20,7 +21,7 @@ export default async function SpaceReportsPage({ params }: { params: Promise<{ s
   const issues = await listErrorReportIssuesForThreads(threads.map((thread) => thread.id), space.id);
   const issuesByThread = Object.fromEntries(threads.map((thread) => [thread.id, issues.filter((issue) => issue.threadId === thread.id)]));
   return <main className="page-shell admin-page admin-space-page reports-page">
-    <AdminSpaceHeader current={space} section="reports" user={user} />
+    <ExerciseNoteFeedback /><AdminSpaceHeader current={space} section="reports" user={user} />
     <GroupedErrorReportThreadInbox threads={threads} issuesByThread={issuesByThread} learningSpaceId={space.id} oldDoneCount={oldDoneCount} spaceSlug={space.slug} collectionLabelSingular={space.collectionLabelSingular} exerciseLabelSingular={space.exerciseLabelSingular} />
   </main>;
 }

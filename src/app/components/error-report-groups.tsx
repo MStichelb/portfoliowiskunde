@@ -1,5 +1,7 @@
 "use client";
 
+import { MutationFeedbackForm } from "./mutation-feedback-form";
+
 import { Check, Pin, PinOff, RotateCcw, Search, Trash2, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useMemo, useReducer } from "react";
@@ -60,7 +62,7 @@ export function GroupedErrorReportThreadInbox({ threads, issuesByThread, learnin
     <details className="report-group done-group">
       <summary><h2>DONE <span>{done.length}</span></h2></summary>
       {oldDoneCount > 0 ? <div className="done-group-actions"><ConfirmActionButton
-        action={deleteOldDoneErrorThreadsAction}
+        action={deleteOldDoneErrorThreadsAction} successMessage="Oude afgewerkte meldingen verwijderd." errorMessage="De actie kon niet worden uitgevoerd. Probeer opnieuw."
         fields={{ learningSpaceId }}
         className="danger-button"
         label={<><Trash2 size={16} aria-hidden />Verwijder DONE ouder dan 2 weken</>}
@@ -136,12 +138,12 @@ function GroupedErrorReportThreadCard({ thread, issues, spaceSlug, collectionLab
       </div>
       <div className="report-actions">
         {previewHref ? <Link href={previewHref} className="icon-button" title={`${exerciseLabel} als admin bekijken`} aria-label={`${exerciseLabel} als admin bekijken`}><Search size={16} aria-hidden /></Link> : null}
-        {canToggleVisibility ? <form action={toggleReportedExerciseVisibilityAction}>
+        {canToggleVisibility ? <MutationFeedbackForm action={toggleReportedExerciseVisibilityAction} errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
           <input type="hidden" name="exerciseId" value={thread.exerciseId!} />
           <input type="hidden" name="portfolioId" value={thread.portfolioId} />
           <input type="hidden" name="visible" value={String(!thread.solutionConfiguredVisible)} />
           <button className="status-action" title="Zichtbaarheid wisselen" aria-label="Zichtbaarheid wisselen"><PublicationStatus status={thread.solutionStatus!} /></button>
-        </form> : null}
+        </MutationFeedbackForm> : null}
         {thread.exerciseId ? <ExerciseNoteButton
           exerciseId={thread.exerciseId}
           exerciseCode={thread.exerciseCode}
@@ -151,15 +153,15 @@ function GroupedErrorReportThreadCard({ thread, issues, spaceSlug, collectionLab
           notePosition={thread.notePosition ?? "above_solution"}
           returnContext="error-inbox"
         /> : null}
-        <form action={errorReportThreadPinAction}>
+        <MutationFeedbackForm action={errorReportThreadPinAction} errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
           <input type="hidden" name="threadId" value={thread.id} />
           <button className="icon-button" title={thread.pinned ? "Melding losmaken" : "Melding pinnen"} aria-label={thread.pinned ? "Melding losmaken" : "Melding pinnen"}>{thread.pinned ? <PinOff size={16} aria-hidden /> : <Pin size={16} aria-hidden />}</button>
-        </form>
-        <form action={errorReportThreadStatusAction}>
+        </MutationFeedbackForm>
+        <MutationFeedbackForm action={errorReportThreadStatusAction} errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
           <input type="hidden" name="threadId" value={thread.id} />
           <input type="hidden" name="status" value={todo ? "DONE" : "TODO"} />
           <button className="icon-button" title={todo ? "Markeren als afgewerkt" : "Terugzetten naar TO DO"} aria-label={todo ? "Markeren als afgewerkt" : "Terugzetten naar TO DO"}>{todo ? <Check size={16} aria-hidden /> : <RotateCcw size={16} aria-hidden />}</button>
-        </form>
+        </MutationFeedbackForm>
       </div>
     </div>
     <div className="report-location-summary" aria-label="Foutlocaties">
@@ -193,13 +195,13 @@ function ThreadReportDetails({ thread, issues, reportLabel, exerciseLabelSingula
             <p className="report-message">{report.message}</p>
             <div className="issue-report-actions">
               <ErrorReportResponseButton reportId={report.id} exerciseCode={thread.exerciseCode} exerciseLabelSingular={exerciseLabelSingular} locationLabel={errorReportLocationLabel(issue)} reporterLabel={reporterLabel} teacherResponse={report.teacherResponse} />
-              <form action={errorReportStatusAction}>
+              <MutationFeedbackForm action={errorReportStatusAction} errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
                 <input type="hidden" name="id" value={report.id} />
                 <input type="hidden" name="status" value={treated ? "OPEN" : "DONE"} />
                 <button className="icon-button report-item-action report-status-button" title={treated ? "Heropen melding" : "Markeer als afgewerkt"} aria-label={treated ? "Heropen melding" : "Markeer als afgewerkt"}>{treated ? <RotateCcw size={15} aria-hidden /> : <Check size={15} aria-hidden />}</button>
-              </form>
+              </MutationFeedbackForm>
               <ConfirmActionButton
-                action={deleteErrorReportAction}
+                action={deleteErrorReportAction} successMessage="Melding verwijderd." errorMessage="De actie kon niet worden uitgevoerd. Probeer opnieuw."
                 fields={{ id: report.id }}
                 className="icon-button report-item-action report-delete-button"
                 label={<Trash2 size={15} aria-hidden />}

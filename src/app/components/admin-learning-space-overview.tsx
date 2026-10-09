@@ -1,5 +1,7 @@
 "use client";
 
+import { useMutationFeedback } from "./mutation-feedback-form";
+
 import { Archive, ArrowDown, ArrowUp, Crown, GripVertical, Pencil, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useState, type DragEvent } from "react";
@@ -16,7 +18,7 @@ export interface LearningSpaceOrderItem {
 export function AdminLearningSpaceOverview({ cards, orderItems, orderAction }: {
   cards: AdminLearningSpaceCardData[];
   orderItems?: LearningSpaceOrderItem[];
-  orderAction?: (formData: FormData) => void | Promise<void>;
+  orderAction?: (formData: FormData) => unknown | Promise<unknown>;
 }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
@@ -39,9 +41,10 @@ export function AdminLearningSpaceOverview({ cards, orderItems, orderAction }: {
 
 export function AdminLearningSpaceOrderEditor({ cards, action, onCancel }: {
   cards: LearningSpaceOrderItem[];
-  action: (formData: FormData) => void | Promise<void>;
+  action: (formData: FormData) => unknown | Promise<unknown>;
   onCancel?: () => void;
 }) {
+  const run = useMutationFeedback();
   const [orderedCards, setOrderedCards] = useState(cards);
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
@@ -52,8 +55,8 @@ export function AdminLearningSpaceOrderEditor({ cards, action, onCancel }: {
     setDraggedId(null);
   };
   const saveAndClose = async (formData: FormData) => {
-    await action(formData);
-    onCancel?.();
+    const result = await run(() => action(formData), "Persoonlijke volgorde opgeslagen.");
+    if (result.ok) onCancel?.();
   };
 
   return <section className="admin-learning-space-overview learning-space-order-editor" aria-labelledby="learning-space-order-heading">

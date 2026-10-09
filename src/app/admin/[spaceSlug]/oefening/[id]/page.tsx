@@ -1,3 +1,5 @@
+import { ExerciseNoteFeedback } from "@/app/components/flash-toast";
+import { FlashToast } from "@/app/components/flash-toast";
 import { notFound } from "next/navigation";
 
 import { AdminExercisePreviewToolbar } from "@/app/components/admin-exercise-preview-toolbar";
@@ -26,11 +28,11 @@ export default async function LearningSpaceAdminExercisePage({ params, searchPar
   const levelSaved = (await searchParams)?.levelSaved === "1";
 
   return <main className="page-shell admin-page admin-space-page solution-page">
-    <AdminSpaceHeader current={space} section="portfolios" user={user} />
+    <ExerciseNoteFeedback /><AdminSpaceHeader current={space} section="portfolios" user={user} />
     <AdminExercisePreviewToolbar portfolioHref={adminExercisePortfolioHref(space.slug, exercise.portfolioId, exercise.id)} collectionLabelSingular={space.collectionLabelSingular} />
     <h2>{formatTerminologyLabel(space.exerciseLabelSingular, "standalone")} {exercise.code}</h2><p>{exercise.portfolioTitle}{exercise.sectionCode !== null ? ` - ${formatSectionLabel(exercise.sectionCode, exercise.sectionTitle ?? "")}` : ""}</p>
     <section className="admin-card exercise-admin-controls-card" aria-label={`Beheer ${formatTerminologyLabel(space.exerciseLabelSingular, "inline")} ${exercise.code}`}>
-      {levelSaved ? <p className="save-feedback" role="status">Niveau opgeslagen.</p> : null}
+      {levelSaved ? <FlashToast type="success" message="Niveau opgeslagen." feedbackKey="levelSaved" /> : null}
       <div className="admin-summary-table" role="region" aria-label={`Beheer ${formatTerminologyLabel(space.exerciseLabelSingular, "inline")} ${exercise.code}`} tabIndex={0}>
         <table>
           <thead><tr><th>Niveau</th><th>Notitie</th><th>Eigen status</th><th>Effectieve status</th><th>Alternatieve uitwerking tonen</th><th title="Uitwerking, alternatieve uitwerking">Aantal bestanden</th></tr></thead>

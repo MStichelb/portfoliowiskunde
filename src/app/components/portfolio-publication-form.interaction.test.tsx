@@ -2,9 +2,10 @@ import { Children, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0 }));
+const hooks = vi.hoisted(() => ({ show: vi.fn(), values: [] as unknown[], cursor: 0 }));
 vi.mock("react", async (importOriginal: () => Promise<typeof import("react")>) => ({
   ...await importOriginal(),
+  useContext: () => hooks.show,
   useState: (initial: unknown) => {
     const index = hooks.cursor++;
     if (!(index in hooks.values)) hooks.values[index] = initial;

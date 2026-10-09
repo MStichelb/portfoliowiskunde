@@ -1,3 +1,4 @@
+import { ActionValidationError } from "@/lib/action-validation-error";
 import "server-only";
 
 import { randomUUID } from "node:crypto";
@@ -381,9 +382,9 @@ export async function saveManagedSourceProfile(
   });
 
   if (input.mode === "copy") {
-    if (usageCount <= 1) throw new Error("Een onafhankelijke kopie vanuit deze bewerkflow is alleen nodig voor een gedeeld bronprofiel.");
+    if (usageCount <= 1) throw new ActionValidationError("Een onafhankelijke kopie vanuit deze bewerkflow is alleen nodig voor een gedeeld bronprofiel.");
     const targetLearningSpaceId = input.targetLearningSpaceId?.trim();
-    if (!targetLearningSpaceId) throw new Error("Kies voor welke leeromgeving je een onafhankelijke kopie wilt maken.");
+    if (!targetLearningSpaceId) throw new ActionValidationError("Kies voor welke leeromgeving je een onafhankelijke kopie wilt maken.");
 
     const assignment = await (await getDatabase()).execute({
       sql: "SELECT 1 FROM learning_space_source_profiles WHERE learning_space_id = ? AND source_profile_id = ?",
@@ -398,7 +399,7 @@ export async function saveManagedSourceProfile(
   }
 
   if (usageCount > 1 && input.mode !== "all") {
-    throw new Error("Kies of je dit gedeelde profiel voor alle gekoppelde leeromgevingen of als onafhankelijke kopie wilt opslaan.");
+    throw new ActionValidationError("Kies of je dit gedeelde profiel voor alle gekoppelde leeromgevingen of als onafhankelijke kopie wilt opslaan.");
   }
 
   const validName = await uniqueSourceProfileName(profile.ownerUserId, input.name, profile.id);

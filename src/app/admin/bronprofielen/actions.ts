@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { ActionValidationError } from "@/lib/action-validation-error";
+import { AuthorizationError } from "@/lib/authorization";
 import { ZodError } from "zod";
 
 import { requireAdminUser } from "@/lib/auth";
@@ -49,7 +51,8 @@ export async function linkManagedSourceProfileAction(formData: FormData): Promis
   try {
     await linkSourceProfileToLearningSpace(user, value(formData, "sourceProfileId"), value(formData, "targetLearningSpaceId"));
   } catch (error) {
-    redirect(`/admin/bronprofielen?linkProfile=${encodeURIComponent(value(formData, "sourceProfileId"))}&error=${encodeURIComponent(error instanceof Error ? error.message : "Het profiel kon niet worden gekoppeld.")}`);
+    const validation = isCorrectableProfileError(error);
+    redirect(`/admin/bronprofielen?linkProfile=${encodeURIComponent(value(formData, "sourceProfileId"))}&${validation ? "error" : "operationError"}=${encodeURIComponent(validation ? actionErrorMessage(error, "Controleer de gekozen leeromgeving.") : "Het profiel kon niet worden gekoppeld. Probeer opnieuw.")}`);
   }
   revalidatePath("/admin/bronprofielen");
   redirect("/admin/bronprofielen?saved=linked");
@@ -121,8 +124,9 @@ export async function saveManagedSourceProfileAction(formData: FormData): Promis
     });
     saved = result.mode === "copy" ? "profileSplit" : "profileUpdated";
   } catch (error) {
-    const message = actionErrorMessage(error, "Het bronprofiel kon niet worden opgeslagen.");
-    redirect(`/admin/bronprofielen?profile=${encodeURIComponent(sourceProfileId)}&error=${encodeURIComponent(message)}`);
+    const validation = isCorrectableProfileError(error);
+    const message = validation ? actionErrorMessage(error, "Controleer de profielinstellingen.") : "Het bronprofiel kon niet worden opgeslagen. Probeer opnieuw.";
+    redirect(`/admin/bronprofielen?profile=${encodeURIComponent(sourceProfileId)}&${validation ? "error" : "operationError"}=${encodeURIComponent(message)}`);
   }
   revalidatePath("/admin/bronprofielen");
   redirect(`/admin/bronprofielen?saved=${saved}`);
@@ -257,12 +261,17 @@ async function runTemplateAction(
   try {
     await mutation(user, templateId);
   } catch (error) {
-    const message = actionErrorMessage(error, "Het bronprofielsjabloon kon niet worden gewijzigd.");
+    const validation = isCorrectableProfileError(error);
+    const message = validation ? actionErrorMessage(error, "Controleer het sjabloon.") : "Het bronprofielsjabloon kon niet worden gewijzigd. Probeer opnieuw.";
     const target = templateId ? `&template=${encodeURIComponent(templateId)}` : "";
-    redirect(`/admin/bronprofielen?templateModal=${errorModal}${target}&templateError=${encodeURIComponent(message)}`);
+    redirect(`/admin/bronprofielen?templateModal=${errorModal}${target}&${validation ? "templateError" : "operationError"}=${encodeURIComponent(message)}`);
   }
   revalidatePath("/admin/bronprofielen");
   redirect(`/admin/bronprofielen?templateSaved=${saved}`);
+}
+
+function isCorrectableProfileError(error: unknown): boolean {
+  return error instanceof ZodError || error instanceof ActionValidationError || error instanceof AuthorizationError;
 }
 
 function actionErrorMessage(error: unknown, fallback: string): string {
@@ -276,31 +285,31 @@ function value(formData: FormData, key: string): string {
 
 function parseResources(formData: FormData): unknown {
   const raw = value(formData, "resourcesJson");
-  if (!raw) throw new Error("Globale documenten ontbreken.");
-  try { return JSON.parse(raw) as unknown; } catch { throw new Error("Globale documenten hebben een ongeldig formaat."); }
+  if (!raw) throw new ActionValidationError("Globale documenten ontbreken.");
+  try { return JSON.parse(raw) as unknown; } catch { throw new ActionValidationError("Globale documenten hebben een ongeldig formaat."); }
 }
 
 function parseExerciseScanner(formData: FormData): unknown {
   const raw = value(formData, "exerciseScannerJson");
-  if (!raw) throw new Error("Instellingen voor oefeningsherkenning ontbreken.");
-  try { return JSON.parse(raw) as unknown; } catch { throw new Error("Instellingen voor oefeningsherkenning hebben een ongeldig formaat."); }
+  if (!raw) throw new ActionValidationError("Instellingen voor oefeningsherkenning ontbreken.");
+  try { return JSON.parse(raw) as unknown; } catch { throw new ActionValidationError("Instellingen voor oefeningsherkenning hebben een ongeldig formaat."); }
 }
 
 function parseExerciseResources(formData: FormData): unknown {
   const raw = value(formData, "exerciseResourcesJson");
-  if (!raw) throw new Error("Onderdelen per oefening ontbreken.");
-  try { return JSON.parse(raw) as unknown; } catch { throw new Error("Onderdelen per oefening hebben een ongeldig formaat."); }
+  if (!raw) throw new ActionValidationError("Onderdelen per oefening ontbreken.");
+  try { return JSON.parse(raw) as unknown; } catch { throw new ActionValidationError("Onderdelen per oefening hebben een ongeldig formaat."); }
 }
 
 function parsePortfolioScanner(formData: FormData): unknown {
   const raw = value(formData, "portfolioScannerJson");
-  if (!raw) throw new Error("Instellingen voor portfolioherkenning ontbreken.");
-  try { return JSON.parse(raw) as unknown; } catch { throw new Error("Instellingen voor portfolioherkenning hebben een ongeldig formaat."); }
+  if (!raw) throw new ActionValidationError("Instellingen voor portfolioherkenning ontbreken.");
+  try { return JSON.parse(raw) as unknown; } catch { throw new ActionValidationError("Instellingen voor portfolioherkenning hebben een ongeldig formaat."); }
 }
 
 function parseLevelRecognition(formData: FormData): unknown {
   const raw = value(formData, "levelRecognitionJson");
   if (!raw) return { method: "none" };
-  try { return JSON.parse(raw) as unknown; } catch { throw new Error("Instellingen voor niveauherkenning hebben een ongeldig formaat."); }
+  try { return JSON.parse(raw) as unknown; } catch { throw new ActionValidationError("Instellingen voor niveauherkenning hebben een ongeldig formaat."); }
 }
 

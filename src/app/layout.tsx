@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Source_Sans_3 } from "next/font/google";
 
+import { ToastProvider } from "@/app/components/flash-toast";
 import { SiteNavigation } from "@/app/components/site-navigation";
 import { SessionRefresher } from "@/app/components/session-refresher";
 import { getAuthenticatedUser } from "@/lib/auth";
@@ -49,17 +50,19 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
   return (
     <html lang="nl" className={sourceSans3.variable}>
       <body>
-        <SiteNavigation
-          spaces={accessible.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
-          adminSpaces={manageable.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
-          directSpaces={direct.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
-          user={user ? { firstName: userFirstName(user), role: user.role } : null}
-          emergencyAccess={emergencyAccess.enabled}
-          changelogEntries={user ? getRecentChangelogForRole(user.role) : []}
-          hasUnreadChangelog={user ? hasUnreadChangelog(user.role, lastSeenChangelogId) : false}
-        />
-        {user ? <SessionRefresher /> : null}
-        {children}
+        <ToastProvider>
+          <SiteNavigation
+            spaces={accessible.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
+            adminSpaces={manageable.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
+            directSpaces={direct.map(({ slug, name, shortLabel }) => ({ slug, name, shortLabel }))}
+            user={user ? { firstName: userFirstName(user), role: user.role } : null}
+            emergencyAccess={emergencyAccess.enabled}
+            changelogEntries={user ? getRecentChangelogForRole(user.role) : []}
+            hasUnreadChangelog={user ? hasUnreadChangelog(user.role, lastSeenChangelogId) : false}
+          />
+          {user ? <SessionRefresher /> : null}
+          {children}
+        </ToastProvider>
       </body>
     </html>
   );

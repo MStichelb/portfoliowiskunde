@@ -1,6 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import { useToast } from "./flash-toast";
+import { useMutationFeedback } from "./mutation-feedback-form";
 import { CircleHelp } from "lucide-react";
 import Link from "next/link";
 
@@ -29,11 +31,18 @@ export function LearningSpaceSettingsForm({
   const [primaryProvider, setPrimaryProvider] = useState<StorageSourceType>(primary.providerType);
   const [mirrorEnabled, setMirrorEnabled] = useState(Boolean(space.mirrorSource));
   const [mirrorProvider, setMirrorProvider] = useState<StorageSourceType>(space.mirrorSource?.providerType ?? "google_drive");
-  const [state, actionState] = useActionState(action, { error: null });
+  const show = useToast();
+  const run = useMutationFeedback();
+  const [state, actionState] = useActionState(async (previous: AdminActionState, data: FormData) => {
+    const outcome = await run(async () => ({ state: await action(previous, data) }));
+    const result = outcome.result?.state ?? { error: null };
+    if (result.technical && result.error) show({ type: "error", message: result.error });
+    return result;
+  }, { error: null });
   const [cardColor, setCardColor] = useState(space.cardColor);
   const currentSubjectIsListed = subjects.some((subject) => subject.id === space.subjectId);
 
-  return <form action={actionState} className="learning-space-settings-form">
+  return <form onReset={(event) => event.preventDefault()} action={actionState} className="learning-space-settings-form">
     <input type="hidden" name="id" value={space.id} />
     <input type="hidden" name="sortOrder" value={space.sortOrder} />
 
@@ -174,7 +183,7 @@ export function LearningSpaceSettingsForm({
 
     </LearningSpaceSettingsPanel>
 
-    {state.error ? <p className="form-message" role="alert">{state.error}</p> : null}
+    {state.error && !state.technical ? <p className="form-message" role="alert">{state.error}</p> : null}
   </form>;
 }
 

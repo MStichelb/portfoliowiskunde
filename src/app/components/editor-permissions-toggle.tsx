@@ -1,5 +1,7 @@
 "use client";
 
+import { FlashToast } from "@/app/components/flash-toast";
+
 import { useState, useTransition } from "react";
 
 import type { EditorPermissionsActionState } from "@/app/admin/actions";
@@ -54,7 +56,7 @@ export function EditorPermissionsToggle({
     </button>
     <p className="editor-permissions-help">{helpText}</p>
     {isPending ? <small className="editor-permissions-feedback" role="status">Opslaan...</small> : null}
-    {error ? <p className="form-message editor-permissions-feedback" role="alert">{error}</p> : null}
+    {error ? <FlashToast type="error" message={error} /> : null}
   </section>;
 }
 

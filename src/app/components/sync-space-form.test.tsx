@@ -3,7 +3,7 @@ import { Children, isValidElement, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AdminActionState } from "@/app/admin/actions";
 
-const hooks = vi.hoisted(() => ({
+const hooks = vi.hoisted(() => ({ show: vi.fn(),
   state: { error: null } as AdminActionState,
   dismissed: null as AdminActionState | null,
   pending: false,
@@ -15,6 +15,7 @@ const hooks = vi.hoisted(() => ({
 vi.mock("react", async (importOriginal: () => Promise<typeof import("react")>) => ({
   ...await importOriginal(),
   useActionState: () => [hooks.state, hooks.action],
+  useContext: () => hooks.show,
   useState: () => [hooks.dismissed, (state: AdminActionState) => { hooks.dismissed = state; }],
   useRef: hooks.ref,
   useId: () => "sync-conflict",
@@ -134,11 +135,11 @@ describe("SyncSpaceForm", () => {
     "Er loopt al een synchronisatie voor deze leeromgeving.",
     "Deze leeromgeving is gearchiveerd en kan niet worden gesynchroniseerd.",
     "De ingestelde bronmap bestaat niet of is niet bereikbaar.",
-  ])("preserves the existing inline sync status: %s", (error: string) => {
+  ])("does not render transient sync failures inline: %s", (error: string) => {
     hooks.state = { error };
     const markup = render();
-    expect(markup).toContain('class="form-message" role="alert"');
-    expect(markup).toContain(error);
+    expect(markup).not.toContain('class="form-message" role="alert"');
+    expect(markup).not.toContain(error);
     expect(markup).not.toContain('role="dialog"');
   });
 });

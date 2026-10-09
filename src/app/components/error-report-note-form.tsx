@@ -3,6 +3,8 @@
 import { useActionState, useEffect, useReducer, useRef, useState } from "react";
 
 import { errorReportThreadNoteAction, type ThreadNoteActionState } from "@/app/admin/actions";
+import { useToast } from "./flash-toast";
+import { useMutationFeedback } from "./mutation-feedback-form";
 import { SubmitButton } from "@/app/components/submit-button";
 
 const initialState: ThreadNoteActionState = { error: null, successCount: 0 };
@@ -18,7 +20,16 @@ export function shouldCloseErrorReportNoteEditor(handledSuccessCount: number, su
 }
 
 export function ErrorReportNoteForm({ threadId, note }: { threadId: string; note: string }) {
-  const [state, action] = useActionState(errorReportThreadNoteAction, initialState);
+  const show = useToast();
+  const run = useMutationFeedback();
+  const [state, action] = useActionState(async (previous: ThreadNoteActionState, data: FormData) => {
+    const outcome = await run(async () => ({ state: await errorReportThreadNoteAction(previous, data) }));
+    if (!outcome.ok) return { ...previous, error: null };
+    const result = outcome.result!.state;
+    if (result.technical && result.error) show({ type: "error", message: result.error });
+    else if (result.successCount > previous.successCount) show({ type: "success", message: "Adminnotitie opgeslagen." });
+    return result;
+  }, initialState);
   const [editing, dispatch] = useReducer(errorReportNoteViewReducer, false);
   const [draft, setDraft] = useState(note);
   const handledSuccessCount = useRef(0);
@@ -49,7 +60,7 @@ export function ErrorReportNoteForm({ threadId, note }: { threadId: string; note
     <div className="report-note-actions">
       <SubmitButton className="secondary-button" pendingLabel="Opslaan...">Opslaan</SubmitButton>
       <button type="button" className="secondary-button" onClick={() => dispatch({ type: "close" })}>Annuleren</button>
-      {state.error ? <p className="form-error" role="alert">{state.error}</p> : null}
+      {state.error && !state.technical ? <p className="form-error inline-validation" role="alert">{state.error}</p> : null}
     </div>
   </form>;
 }

@@ -1,6 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/app/components/flash-toast", () => ({
+  useToast: () => vi.fn(),
+  ExerciseNoteFeedback: () => null,
+  FlashToast: ({ type, message, feedbackKey }: { type: string; message: string; feedbackKey?: string }) => <span data-toast={type} data-feedback-key={feedbackKey}>{message}</span>,
+}));
+
+
 const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   canManageLearningSpace: vi.fn(),

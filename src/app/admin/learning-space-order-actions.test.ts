@@ -32,6 +32,11 @@ describe("savePersonalLearningSpaceOrderAction", () => {
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/", "layout");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin");
   });
+  it("maps persistence failure after authorization without confirming a save", async () => {
+    mocks.saveUserLearningSpaceOrder.mockRejectedValueOnce(new Error("SQL secret"));
+    expect(await savePersonalLearningSpaceOrderAction(orderForm("space-6", "space-5"))).toEqual({ error: "De persoonlijke volgorde kon niet worden opgeslagen. Probeer opnieuw." });
+    expect(mocks.revalidatePath).not.toHaveBeenCalled();
+  });
 
   it.each([
     ["an inaccessible foreign ID", ["space-5", "space-foreign"]],

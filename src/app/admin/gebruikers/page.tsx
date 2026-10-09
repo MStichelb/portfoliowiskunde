@@ -1,3 +1,4 @@
+import { FlashToast } from "@/app/components/flash-toast";
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
@@ -35,8 +36,8 @@ export default async function UserManagementPage({ searchParams }: { searchParam
   return <main className="page-shell admin-page user-management-page">
     <Link className="secondary-button compact-back-button" href="/admin"><ArrowLeft size={16} aria-hidden />Terug naar beheer</Link>
     <header className="page-header"><p className="eyebrow">Globaal beheer</p><h1>Gebruikers</h1><p>Beheer lokale rollen, klas, publieke toegang en accountstatus. Smartschool kent nooit zelf applicatierollen toe.</p></header>
-    {params.saved ? <p className="success-message" role="status">Wijziging opgeslagen.</p> : null}
-    {params.error ? <p className="form-message" role="alert">{params.error}</p> : null}
+    {params.saved ? <FlashToast type="success" message="Wijziging opgeslagen." feedbackKey="saved" /> : null}
+    {params.error ? <FlashToast type="error" message={params.error} feedbackKey="error" /> : null}
     <UserManagementView users={users} spaces={spaces} memberships={memberships} access={access} storageConnections={storageConnections} groupUsers={groupUsers} classGroups={classGroups} teacherGroups={teacherGroups} teacherGroupId={teacherGroupId} params={params} />
   </main>;
 }

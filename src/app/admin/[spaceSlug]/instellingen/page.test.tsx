@@ -1,6 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/app/components/flash-toast", () => ({
+  useToast: () => vi.fn(),
+  ExerciseNoteFeedback: () => null,
+  FlashToast: ({ type, message, feedbackKey }: { type: string; message: string; feedbackKey?: string }) => <span data-toast={type} data-feedback-key={feedbackKey}>{message}</span>,
+}));
+
+
 import type { AppUser } from "@/lib/identity";
 import type { LearningSpace } from "@/lib/repositories";
 
@@ -53,6 +60,18 @@ describe("LearningSpace settings page", () => {
     mocks.getAdminLearningSpaceBySlug.mockResolvedValue(space);
     mocks.getSourceProfileForLearningSpaceCard.mockResolvedValue({ id: "profile-1", name: "Standaard portfolio" });
     mocks.listActiveSubjects.mockResolvedValue(subjects);
+  });
+
+  it("shows saved feedback through the toast and retains archived status inline", async () => {
+    mocks.getAdminLearningSpaceBySlug.mockResolvedValue({ ...space, isActive: false });
+    const markup = renderToStaticMarkup(await LearningSpaceSettingsPage({
+      params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve({ saved: "1" }),
+    }));
+    expect(markup).toContain('data-toast="success" data-feedback-key="saved"');
+    expect(markup).toContain("Instellingen opgeslagen.");
+    expect(markup).not.toContain("save-feedback");
+    expect(markup).toContain('class="archived-message" role="status"');
+    expect(markup).toContain("Gearchiveerd. Deze leeromgeving is niet publiek zichtbaar");
   });
 
   it("passes superadmin delete rights into settings while preserving the active source", async () => {

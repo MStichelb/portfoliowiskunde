@@ -1,3 +1,4 @@
+import { FlashToast } from "@/app/components/flash-toast";
 import { redirect } from "next/navigation";
 
 import { PageBanner } from "@/app/components/page-banner";
@@ -25,7 +26,7 @@ export default async function SmartschoolLoginPage({ searchParams }: { searchPar
   return <main className="page-shell narrow-page login-page">
     <PageBanner variant="main" />
     <h1>Aanmelden</h1>
-    {message ? <p className="error-message" role="alert">{message}</p> : null}
+    {message ? <FlashToast type="error" message={message} feedbackKey="error" /> : null}
     <a className="primary-button link-button smartschool-login-button" href={href}>Aanmelden met Smartschool</a>
   </main>;
 }

@@ -1,8 +1,9 @@
+import { MutationFeedbackForm } from "@/app/components/mutation-feedback-form";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { ReactNode } from "react";
 
 export function OrderControls({ action, fields, canMoveUp, canMoveDown, itemLabel }: {
-  action: (formData: FormData) => void | Promise<void>;
+  action: (formData: FormData) => unknown | Promise<unknown>;
   fields: Record<string, string>;
   canMoveUp: boolean;
   canMoveDown: boolean;
@@ -15,16 +16,16 @@ export function OrderControls({ action, fields, canMoveUp, canMoveDown, itemLabe
 }
 
 function OrderButton({ action, fields, direction, disabled, label, icon }: {
-  action: (formData: FormData) => void | Promise<void>;
+  action: (formData: FormData) => unknown | Promise<unknown>;
   fields: Record<string, string>;
   direction: "up" | "down";
   disabled: boolean;
   label: string;
   icon: ReactNode;
 }) {
-  return <form action={action}>
+  return <MutationFeedbackForm action={action} errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
     {Object.entries(fields).map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)}
     <input type="hidden" name="direction" value={direction} />
     <button className="icon-button" type="submit" disabled={disabled} aria-label={label} title={label}>{icon}</button>
-  </form>;
+  </MutationFeedbackForm>;
 }

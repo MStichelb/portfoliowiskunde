@@ -89,7 +89,7 @@ describe("error report thread management actions", () => {
     );
 
     expect(result).toEqual({
-      error: "De adminnotitie kon niet worden opgeslagen. Probeer opnieuw.",
+      technical: true, error: "De adminnotitie kon niet worden opgeslagen. Probeer opnieuw.",
       successCount: 2,
     });
   });
@@ -212,7 +212,7 @@ describe("error report lifecycle actions", () => {
       form({ id: "report-1", teacherResponse: "Blijft in editor" }),
     );
 
-    expect(result).toEqual({ error: "Het bericht kon niet worden opgeslagen. Probeer opnieuw.", successCount: 3 });
+    expect(result).toEqual({ technical: true, error: "Het bericht kon niet worden opgeslagen. Probeer opnieuw.", successCount: 3 });
   });
 
   it.each([

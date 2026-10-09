@@ -1,4 +1,7 @@
 "use client";
+
+import { useToast } from "./flash-toast";
+import { useMutationFeedback } from "./mutation-feedback-form";
 import { TriangleAlert } from "lucide-react";
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { bulkExercisePublicationAction } from "@/app/admin/actions";
@@ -30,7 +33,15 @@ export function toggleSectionSelection(selected: Set<string>, ids: string[]): Se
 export function ExerciseBulkTable({ portfolioId, learningSpaceId, levelPresentation, spaceSlug, sections, exercises = [], exerciseLabelSingular = DEFAULT_EXERCISE_LABEL_SINGULAR, exerciseLabelPlural = DEFAULT_EXERCISE_LABEL_PLURAL, sectionLabelSingular = DEFAULT_SECTION_LABEL_SINGULAR }: { portfolioId: string; learningSpaceId: string; levelPresentation?: ExerciseLevelPresentation; spaceSlug?: string; sections: BulkSection[]; exercises?: BulkExercise[]; exerciseLabelSingular?: string; exerciseLabelPlural?: string; sectionLabelSingular?: string }) {
   const ids = useMemo(() => [...exercises, ...sections.flatMap((section) => section.exercises)].map((exercise) => exercise.id), [sections, exercises]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [state, action] = useActionState(bulkExercisePublicationAction, { error: null });
+  const show = useToast();
+  const run = useMutationFeedback();
+  const [, action] = useActionState(async (previous: { error: string | null }, data: FormData) => {
+    const outcome = await run(async () => ({ state: await bulkExercisePublicationAction(previous, data) }));
+    if (!outcome.ok) return { error: null };
+    const result = outcome.result!.state;
+    show({ type: result.error ? "error" : "success", message: result.error ?? "Bulkbewerking opgeslagen." });
+    return result;
+  }, { error: null });
   const singular = formatTerminologyLabel(exerciseLabelSingular, "standalone");
   const plural = formatTerminologyLabel(exerciseLabelPlural, "standalone");
   const pluralInline = formatTerminologyLabel(exerciseLabelPlural, "inline");
@@ -55,9 +66,8 @@ export function ExerciseBulkTable({ portfolioId, learningSpaceId, levelPresentat
         <div><strong>{selected.size} geselecteerd</strong></div>
         <button className="secondary-button" type="button" onClick={() => setSelected(selected.size === ids.length ? new Set() : new Set(ids))}>Alles selecteren</button>
         <label>Status<select name="mode" defaultValue="visible"><option value="visible">Zichtbaar</option><option value="hidden">Verborgen</option></select></label>
-        <SubmitButton>Toepassen</SubmitButton>
+        <SubmitButton disabled={selected.size === 0}>Toepassen</SubmitButton>
       </div>
-      {state.error && <p className="form-message" role="alert">{state.error}</p>}
     </form>
     <div className="admin-summary-table" role="region" aria-label={exercises.length ? plural : `${plural} per ${formatTerminologyLabel(sectionLabelSingular, "inline")}`} tabIndex={0}>
       <table>

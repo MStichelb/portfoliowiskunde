@@ -1,6 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/app/components/flash-toast", () => ({
+  useToast: () => vi.fn(),
+  ExerciseNoteFeedback: () => null,
+  FlashToast: ({ type, message, feedbackKey }: { type: string; message: string; feedbackKey?: string }) => <span data-toast={type} data-feedback-key={feedbackKey}>{message}</span>,
+}));
+
+
 import type { AppUser } from "@/lib/identity";
 import type { LearningSpace } from "@/lib/repositories";
 
@@ -98,12 +105,17 @@ describe("LearningSpace access", () => {
     [{ studentSaved: "1" }, "individual", "Individuele toegang bijgewerkt."],
     [{ studentError: "Leerling mislukt" }, "individual", "Leerling mislukt"],
     [{ accessSaved: "1" }, "teachers", "Lerarentoegang bijgewerkt."],
-  ] as const)("keeps existing action feedback visible (%j)", async (query, section, feedback) => {
+    [{ accessError: "Rol wijzigen mislukt" }, "teachers", "Rol wijzigen mislukt"],
+  ] as const)("uses central flash feedback while retaining the selected section (%j)", async (query, section, feedback) => {
     mocks.requireAdminUser.mockResolvedValue(user("owner", "teacher"));
     const markup = renderToStaticMarkup(await LearningSpaceAccessPage({ params: Promise.resolve({ spaceSlug: "5" }), searchParams: Promise.resolve(query) }));
     const panels = [...markup.matchAll(/<div id="access-panel-([^"]+)"[^>]*>/g)];
     expect(panels.filter((panel) => !panel[0].includes('hidden=""')).map((panel) => panel[1])).toEqual([section]);
     expect(markup).toContain(feedback);
+    expect(markup).toContain(`data-feedback-key="${Object.keys(query)[0]}"`);
+    expect(markup).toContain(`data-toast="${Object.keys(query)[0].endsWith("Error") ? "error" : "success"}"`);
+    expect(markup).not.toContain("save-feedback");
+    expect(markup).not.toContain("success-message");
   });
 
   it.each([
@@ -152,6 +164,7 @@ describe("LearningSpace access", () => {
     expect(markup).not.toContain("Lerarentoegang verwijderen");
     expect(markup).not.toContain("<form");
     expect(markup).not.toContain("<select");
+    expect(markup).not.toContain("Klik op een rol om deze te wijzigen.");
     expect(mocks.listLearningSpaceTeacherCandidates).not.toHaveBeenCalled();
   });
 
@@ -186,13 +199,18 @@ describe("LearningSpace access", () => {
 
     expect(markup).toContain("Nieuwe Leraar");
     expect(markup).toContain("Toevoegen");
-    expect(markup).toContain("Maak kijker");
-    expect(markup).toContain("Maak bewerker");
+    expect(markup).toContain("Klik op een rol om deze te wijzigen. De eigenaar kan geen andere rol krijgen.");
+    expect(markup).not.toContain("Maak kijker");
+    expect(markup).not.toContain("Maak bewerker");
     expect(markup).not.toContain("Wijzigen");
     expect(markup).toContain("Lerarentoegang verwijderen?");
     expect(markup).toContain('<option value="viewer" selected="">Kijker</option>');
     expect(markup).toContain('<option value="editor">Bewerker</option>');
-    expect((markup.match(/class="secondary-button teacher-role-action"/g) ?? [])).toHaveLength(2);
+    expect((markup.match(/popover="auto"/g) ?? [])).toHaveLength(2);
+    expect(markup).toContain('aria-label="Rol van Elias Editor wijzigen"');
+    expect(markup).toContain('aria-label="Rol van Vera Viewer wijzigen"');
+    expect(markup).not.toContain('aria-label="Rol van Olivia Owner wijzigen"');
+    expect((markup.match(/role="menuitemradio" aria-checked="true"/g) ?? [])).toHaveLength(2);
     expect((markup.match(/<select/g) ?? [])).toHaveLength(4);
     expect(mocks.listLearningSpaceTeacherCandidates).toHaveBeenCalledWith(space.id);
     expect((markup.match(/aria-label="Lerarentoegang verwijderen\?"/g) ?? [])).toHaveLength(2);

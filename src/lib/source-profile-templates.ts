@@ -1,3 +1,4 @@
+import { ActionValidationError } from "@/lib/action-validation-error";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
@@ -405,9 +406,9 @@ async function validatedUniqueTemplateMetadata(
   excludeTemplateId?: string,
 ): Promise<{ name: string; description: string | null }> {
   const parsedName = sourceProfileTemplateNameSchema.safeParse(input.name);
-  if (!parsedName.success) throw new Error(parsedName.error.issues[0]?.message ?? "Ongeldige sjabloonnaam.");
+  if (!parsedName.success) throw new ActionValidationError(parsedName.error.issues[0]?.message ?? "Ongeldige sjabloonnaam.");
   const parsedDescription = sourceProfileTemplateDescriptionSchema.safeParse(input.description);
-  if (!parsedDescription.success) throw new Error(parsedDescription.error.issues[0]?.message ?? "Ongeldige sjabloonbeschrijving.");
+  if (!parsedDescription.success) throw new ActionValidationError(parsedDescription.error.issues[0]?.message ?? "Ongeldige sjabloonbeschrijving.");
   const database = await getDatabase();
   const duplicate = excludeTemplateId
     ? await database.execute({
@@ -419,7 +420,7 @@ async function validatedUniqueTemplateMetadata(
       sql: "SELECT 1 FROM source_profile_templates WHERE LOWER(TRIM(name)) = LOWER(?) LIMIT 1",
       args: [parsedName.data],
     });
-  if (duplicate.rows[0]) throw new Error(SOURCE_PROFILE_TEMPLATE_NAME_CONFLICT_MESSAGE);
+  if (duplicate.rows[0]) throw new ActionValidationError(SOURCE_PROFILE_TEMPLATE_NAME_CONFLICT_MESSAGE);
   return { name: parsedName.data, description: parsedDescription.data || null };
 }
 

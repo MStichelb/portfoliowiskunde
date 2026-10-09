@@ -1,3 +1,4 @@
+import { ActionValidationError } from "@/lib/action-validation-error";
 import { z } from "zod";
 
 import { getDatabase } from "@/lib/database";
@@ -8,7 +9,7 @@ export const SOURCE_PROFILE_NAME_CONFLICT_MESSAGE = "Je hebt al een bronprofiel 
 
 export async function uniqueSourceProfileName(ownerUserId: string, value: string, excludeProfileId?: string): Promise<string> {
   const result = sourceProfileNameSchema.safeParse(value);
-  if (!result.success) throw new Error(result.error.issues[0]?.message ?? "Ongeldige profielnaam.");
+  if (!result.success) throw new ActionValidationError(result.error.issues[0]?.message ?? "Ongeldige profielnaam.");
   const name = result.data;
   const database = await getDatabase();
   const duplicate = excludeProfileId
@@ -24,12 +25,12 @@ export async function uniqueSourceProfileName(ownerUserId: string, value: string
         LIMIT 1`,
       args: [ownerUserId, name],
     });
-  if (duplicate.rows[0]) throw new Error(SOURCE_PROFILE_NAME_CONFLICT_MESSAGE);
+  if (duplicate.rows[0]) throw new ActionValidationError(SOURCE_PROFILE_NAME_CONFLICT_MESSAGE);
   return name;
 }
 
 export function rethrowUniqueNameConflict(error: unknown, indexName: string, message: string): never {
-  if (isUniqueIndexViolation(error, indexName)) throw new Error(message);
+  if (isUniqueIndexViolation(error, indexName)) throw new ActionValidationError(message);
   throw error;
 }
 

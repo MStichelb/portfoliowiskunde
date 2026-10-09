@@ -1,3 +1,4 @@
+import { FlashToast } from "@/app/components/flash-toast";
 import { ArrowLeft, Copy, Eye, Link2, Pencil, RotateCcw, SlidersHorizontal, Trash2, X } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
@@ -17,7 +18,7 @@ import { archiveManagedSourceProfileAction, archiveSourceProfileTemplateAction, 
 
 export const dynamic = "force-dynamic";
 
-interface Query { space?: string; tab?: string; owner?: string; archive?: string; templateArchive?: string; profile?: string; copyProfile?: string; linkProfile?: string; error?: string; saved?: string; template?: string; templateError?: string; templateModal?: string; templateSaved?: string }
+interface Query { operationError?: string; space?: string; tab?: string; owner?: string; archive?: string; templateArchive?: string; profile?: string; copyProfile?: string; linkProfile?: string; error?: string; saved?: string; template?: string; templateError?: string; templateModal?: string; templateSaved?: string }
 
 export default async function SourceProfilesPage({ searchParams }: { searchParams: Promise<Query> }) {
   const user = await requireAdminUser();
@@ -57,9 +58,11 @@ export default async function SourceProfilesPage({ searchParams }: { searchParam
   return <main className="page-shell admin-page source-profiles-page">
     <Link className="secondary-button compact-back-button" href="/admin"><ArrowLeft size={16} aria-hidden />Terug naar beheer</Link>
     <header className="page-header"><p className="eyebrow">Beheer</p><h1>Bronprofielen</h1><p>Bekijk en beheer concrete bronprofielen en appbrede sjablonen.</p></header>
-    {profileFeedback(query.saved) ? <p className="success-message" role="status">{profileFeedback(query.saved)}</p> : null}
-    {query.error && !selectedProfile && !copyProfile && !linkProfile ? <p className="form-message" role="alert">{query.error}</p> : null}
-    {templateFeedback(query.templateSaved) ? <p className="success-message" role="status">{templateFeedback(query.templateSaved)}</p> : null}
+    {profileFeedback(query.saved) ? <FlashToast type="success" message={profileFeedback(query.saved)!} feedbackKey="saved" /> : null}
+    {query.operationError ? <FlashToast type="error" message={query.operationError} feedbackKey="operationError" /> : null}
+    {query.error && !selectedProfile && !copyProfile && !linkProfile ? <FlashToast type="error" message={query.error} feedbackKey="error" /> : null}
+    {templateFeedback(query.templateSaved) ? <FlashToast type="success" message={templateFeedback(query.templateSaved)!} feedbackKey="templateSaved" /> : null}
+    {query.templateError && !templateModal(query.templateModal) ? <FlashToast type="error" message={query.templateError} feedbackKey="templateError" /> : null}
     <SourceProfileSectionTabs ownedSection={ownedSection} editorSection={editorSection} templateSection={templateSection} secondTabLabel={user.role === "superadmin" ? "Andere gebruikers" : "Uit leeromgevingen"} initialTab={initialSection(query, relatedProfiles)} />
 
     {selectedProfile ? selectedProfile.canRename

@@ -1,9 +1,12 @@
 "use client";
 
+import { useToast } from "@/app/components/flash-toast";
+
 import { ArrowLeftRight, CheckCircle2, Search, TriangleAlert } from "lucide-react";
 import { useActionState } from "react";
 
 import { compareSourcesAction, switchSourceAction, type SourceSwitchActionState } from "@/app/admin/actions";
+import { useMutationFeedback } from "./mutation-feedback-form";
 import { SubmitButton } from "@/app/components/submit-button";
 import type { IndexWarning } from "@/lib/domain";
 import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/lib/repositories";
@@ -11,10 +14,19 @@ import type { LearningSpace, LearningSpaceSource, StorageSourceType } from "@/li
 const initialState: SourceSwitchActionState = { error: null };
 
 export function SourceSwitchPanel({ space }: { space: LearningSpace }) {
+  const show = useToast();
+  const run = useMutationFeedback();
+  const submit = (serverAction: typeof compareSourcesAction) => async (previous: SourceSwitchActionState, data: FormData) => {
+    const outcome = await run(async () => ({ state: await serverAction(previous, data) }));
+    const result = outcome.result?.state ?? { error: null };
+    if (result.technical && result.error) show({ type: "error", message: result.error });
+    if (result.switched) show({ type: "success", message: "Actieve bron gewijzigd. De nieuwe index is volledig opgeslagen." });
+    return result;
+  };
   const active = space.sources.find((source) => source.isActive) ?? null;
   const target = space.sources.find((source) => !source.isActive) ?? null;
-  const [comparisonState, compareAction] = useActionState(compareSourcesAction, initialState);
-  const [switchState, switchAction] = useActionState(switchSourceAction, initialState);
+  const [comparisonState, compareAction] = useActionState(submit(compareSourcesAction), initialState);
+  const [switchState, switchAction] = useActionState(submit(switchSourceAction), initialState);
   if (!active || !target) return <section className="settings-card source-switch-card" aria-labelledby="active-source-heading">
     <h2 id="active-source-heading">Actieve bron</h2>
     <p><strong>{active ? sourceName(active) : "Geen actieve bron"}</strong></p>
@@ -42,7 +54,7 @@ export function SourceSwitchPanel({ space }: { space: LearningSpace }) {
       <input type="hidden" name="targetSourceId" value={target.id} />
       <SubmitButton className="secondary-button" pendingLabel="Bronnen controleren..."><Search size={17} aria-hidden />Bronnen vergelijken</SubmitButton>
     </form>
-    {comparisonState.error ? <p className="form-message" role="alert">{comparisonState.error}</p> : null}
+    {comparisonState.error && !comparisonState.technical ? <p className="form-message" role="alert">{comparisonState.error}</p> : null}
     {preview ? <SourceComparisonView state={comparisonState} /> : null}
 
     {preview ? <form action={switchAction} className="source-switch-confirmation">
@@ -55,8 +67,7 @@ export function SourceSwitchPanel({ space }: { space: LearningSpace }) {
         : "De geïndexeerde bronstructuur loopt gelijk. Bevestig om de actieve bron te wijzigen."}</p>
       <SubmitButton pendingLabel="Opnieuw controleren en omschakelen...">{switchLabel}</SubmitButton>
     </form> : null}
-    {switchState.error ? <p className="form-message" role="alert">{switchState.error}</p> : null}
-    {switchState.switched ? <p className="success-message" role="status">Actieve bron gewijzigd. De nieuwe index is volledig opgeslagen.</p> : null}
+    {switchState.error && !switchState.technical ? <p className="form-message" role="alert">{switchState.error}</p> : null}
   </section>;
 }
 

@@ -196,7 +196,7 @@ describe("moveThemeAction authorization", () => {
     expect(mocks.moveTheme).not.toHaveBeenCalled();
   });
 
-  it.each([createThemeAction, saveThemeAction, deleteThemeAction])("blocks theme mutations before persistence without management permission", async (action: (form: FormData) => Promise<void>) => {
+  it.each([createThemeAction, saveThemeAction, deleteThemeAction])("blocks theme mutations before persistence without management permission", async (action: (form: FormData) => Promise<unknown>) => {
     mocks.requireLearningSpaceManagement.mockRejectedValueOnce(new Error("Geen beheerrechten"));
     const form = themeMoveForm("theme-1", "space-5", "up");
     form.set("name", "Eigen naam");

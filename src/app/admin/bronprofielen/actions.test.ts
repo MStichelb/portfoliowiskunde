@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AuthorizationError } from "@/lib/authorization";
+import { ActionValidationError } from "@/lib/action-validation-error";
 import { ZodError } from "zod";
 
 const mocks = vi.hoisted(() => ({
@@ -142,14 +144,14 @@ describe("central source profile actions", () => {
   });
 
   it("reopens the matching template modal on validation or authorization errors", async () => {
-    mocks.createSourceProfileTemplate.mockRejectedValue(new Error("Alleen een hoofdbeheerder kan appbrede bronprofielsjablonen beheren."));
+    mocks.createSourceProfileTemplate.mockRejectedValue(new AuthorizationError("Alleen een hoofdbeheerder kan appbrede bronprofielsjablonen beheren."));
     await expect(createSourceProfileTemplateAction(templateForm("", "Verboden"))).rejects.toThrow("templateModal=create");
 
-    mocks.updateSourceProfileTemplateMetadata.mockRejectedValue(new Error("Naam bestaat al."));
+    mocks.updateSourceProfileTemplateMetadata.mockRejectedValue(new ActionValidationError("Naam bestaat al."));
     await expect(updateSourceProfileTemplateAction(templateForm("template-1", "Dubbel"))).rejects.toThrow("templateModal=manage");
     expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("template=template-1"));
 
-    mocks.setDefaultSourceProfileTemplate.mockRejectedValue(new Error("Bronprofielsjabloon niet gevonden."));
+    mocks.setDefaultSourceProfileTemplate.mockRejectedValue(new ActionValidationError("Bronprofielsjabloon niet gevonden."));
     await expect(setDefaultSourceProfileTemplateAction(templateForm("foreign"))).rejects.toThrow("templateModal=default");
     expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("template=foreign"));
   });
@@ -324,3 +326,21 @@ function templateForm(templateId: string, name = "", description = ""): FormData
   data.set("description", description);
   return data;
 }
+
+
+describe("operational source-profile feedback", () => {
+  it("keeps the profile editor open but sends unexpected storage failures to a safe toast", async () => {
+    mocks.saveManagedSourceProfile.mockRejectedValueOnce(new Error("SQL password=secret"));
+    const data = form("profile-1", "Profiel");
+    data.set("resourcesJson", "[]"); data.set("portfolioScannerJson", "{}"); data.set("exerciseScannerJson", "{}"); data.set("exerciseResourcesJson", "[]");
+    await expect(saveManagedSourceProfileAction(data)).rejects.toThrow("operationError=");
+    expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("profile=profile-1"));
+    expect(mocks.redirect).toHaveBeenLastCalledWith(expect.not.stringContaining("secret"));
+  });
+  it("keeps a template dialog open while reporting storage failure through a toast", async () => {
+    mocks.createSourceProfileTemplate.mockRejectedValueOnce(new Error("SQL password=secret"));
+    await expect(createSourceProfileTemplateAction(templateForm("", "Sjabloon"))).rejects.toThrow("operationError=");
+    expect(mocks.redirect).toHaveBeenLastCalledWith(expect.stringContaining("templateModal=create"));
+    expect(mocks.redirect).toHaveBeenLastCalledWith(expect.not.stringContaining("secret"));
+  });
+});

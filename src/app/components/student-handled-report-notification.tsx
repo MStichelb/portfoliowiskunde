@@ -1,3 +1,4 @@
+import { MutationFeedbackForm } from "@/app/components/mutation-feedback-form";
 import { X } from "lucide-react";
 import Link from "next/link";
 
@@ -17,9 +18,9 @@ export function StudentHandledReportNotificationBanner({ notification }: { notif
   return <section className="student-report-notification" role="region" aria-label="Behandelde meldingen">
     <p>{message}</p>
     <Link href="/mijn-meldingen">{singular ? "Bekijk melding" : "Bekijk mijn meldingen"}</Link>
-    <form action={dismissHandledReportNotificationsAction}>
+    <MutationFeedbackForm action={dismissHandledReportNotificationsAction} errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
       {notification.reportIds.map((reportId) => <input key={reportId} type="hidden" name="reportId" value={reportId} />)}
       <button type="submit" aria-label="Melding sluiten" title="Melding sluiten"><X size={16} aria-hidden /></button>
-    </form>
+    </MutationFeedbackForm>
   </section>;
 }

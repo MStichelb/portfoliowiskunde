@@ -1,6 +1,13 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/app/components/flash-toast", () => ({
+  useToast: () => vi.fn(),
+  ExerciseNoteFeedback: () => null,
+  FlashToast: ({ type, message, feedbackKey }: { type: string; message: string; feedbackKey?: string }) => <span data-toast={type} data-feedback-key={feedbackKey}>{message}</span>,
+}));
+
+
 import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "@/lib/source-profile-config";
 import type { AppUser } from "@/lib/identity";
 import type { ManagedSourceProfile, SourceProfileCopyTarget } from "@/lib/source-profiles";
@@ -43,6 +50,13 @@ describe("central source profile page", () => {
     mocks.loadPresentationSpaces.mockResolvedValue([]);
     mocks.getSourceProfileOverview.mockResolvedValue({ ownedProfiles: [profile()], editorAccessibleActiveProfiles: [], otherUserProfiles: [], otherProfileOwners: [], copyTargets: [copyTarget()] });
     mocks.listSourceProfileTemplates.mockResolvedValue([template()]);
+  });
+
+  it("shows template lifecycle failures as persistent flash feedback", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("superadmin"));
+    const markup = renderToStaticMarkup(await SourceProfilesPage({ searchParams: Promise.resolve({ tab: "templates", templateError: "Verwijderen mislukt" }) }));
+    expect(markup).toContain('data-toast="error" data-feedback-key="templateError"');
+    expect(markup).toContain("Verwijderen mislukt");
   });
 
   it("uses an authorized LearningSpace context from a profile link and ignores a forged context", async () => {

@@ -65,14 +65,14 @@ import {
 import { DEFAULT_LEARNING_SPACE_COLOR, DEFAULT_LEARNING_SPACE_DESCRIPTION, DEFAULT_PORTFOLIO_COLOR, isHexColor, normalizeHexColor } from "@/lib/ui-colors";
 import { compareLearningSpaceSources, switchLearningSpaceSource, type SourceSwitchPreview } from "@/lib/source-switch";
 import { synchronizeSource } from "@/lib/sync";
-import { userFacingSourceError } from "@/lib/source-errors";
+import { SourceConfigurationError, userFacingSourceError } from "@/lib/source-errors";
 import { ensureStorageConnection } from "@/lib/storage-connections";
 import { SubjectSelectionError } from "@/lib/subjects";
 
 const childModeSchema = z.enum(["hidden", "visible"]);
 const portfolioModeSchema = z.enum(["hidden", "visible"]);
-export interface AdminActionState { error: string | null; }
-export interface PortfolioSettingsResult { themeId: string | null; }
+export interface AdminActionState { error: string | null; technical?: boolean; success?: boolean; }
+export interface PortfolioSettingsResult { themeId: string | null; error?: string; validationError?: string; }
 export interface SourceSwitchActionState extends AdminActionState { preview?: SourceSwitchPreview; switched?: boolean; }
 export interface EditorPermissionsActionState { saved: boolean; error: string | null; }
 
@@ -99,10 +99,11 @@ export async function syncSpaceAction(_previousState: AdminActionState, formData
   } catch (error) {
     const message = userFacingSourceError(error);
     if (message) return { error: message };
-    throw error;
+    if (error instanceof Error && /^Oefeningscode .+ komt meerdere keren voor binnen portfolio /.test(error.message)) return { error: error.message };
+    return { error: "Synchroniseren is niet gelukt. Probeer opnieuw of controleer de verbinding met de bron." };
   }
   revalidatePath("/admin");
-  return { error: null };
+  return { error: null, success: true };
 }
 
 export async function compareSourcesAction(_previousState: SourceSwitchActionState, formData: FormData): Promise<SourceSwitchActionState> {
@@ -114,7 +115,7 @@ export async function compareSourcesAction(_previousState: SourceSwitchActionSta
     const preview = await compareLearningSpaceSources(learningSpaceId, targetSourceId);
     return { error: null, preview };
   } catch (error) {
-    return { error: userFacingSourceError(error) ?? (error instanceof Error ? error.message : "De bron kon niet worden gecontroleerd.") };
+    return { error: userFacingSourceError(error) ?? "De bron kon niet worden gecontroleerd. Probeer opnieuw.", technical: !(error instanceof SourceConfigurationError) };
   }
 }
 
@@ -131,15 +132,15 @@ export async function switchSourceAction(_previousState: SourceSwitchActionState
     if (space) revalidatePath(`/admin/${encodeURIComponent(space.slug)}`);
     return { error: null, preview: result, switched: result.switched };
   } catch (error) {
-    return { error: userFacingSourceError(error) ?? (error instanceof Error ? error.message : "Overschakelen is niet gelukt.") };
+    return { error: userFacingSourceError(error) ?? "Overschakelen is niet gelukt. Probeer opnieuw.", technical: !(error instanceof SourceConfigurationError) };
   }
 }
 
 export async function archiveMissingIndexAction(formData: FormData) {
   const learningSpaceId = stringValue(formData, "learningSpaceId");
   await requireSpaceManagement(learningSpaceId);
-  if (!await getLearningSpace(learningSpaceId)) return;
-  await archiveMissingIndexItems(learningSpaceId);
+  if (!await getLearningSpace(learningSpaceId)) return { error: "Leeromgeving niet gevonden." };
+  try { await archiveMissingIndexItems(learningSpaceId); } catch { return { error: "De index kon niet worden opgeschoond. Probeer opnieuw." }; }
   revalidatePath("/admin");
 }
 
@@ -186,9 +187,13 @@ export async function saveLearningSpaceAction(_previousState: AdminActionState, 
   let input: ReturnType<typeof learningSpaceInput>;
   try {
     input = learningSpaceInput(formData);
-    input = await assignOwnedStorageConnections(input, admin.id, existing);
   } catch (error) {
     return { error: error instanceof Error ? error.message : "De instellingen zijn ongeldig." };
+  }
+  try { input = await assignOwnedStorageConnections(input, admin.id, existing); }
+  catch (error) {
+    if (error instanceof Error && error.message === "Storageverbinding behoort niet aan deze gebruiker.") return { error: error.message };
+    return { error: "De bronverbinding kon niet worden opgeslagen. Probeer opnieuw.", technical: true };
   }
   const matchingSlug = await getAdminLearningSpaceBySlug(input.slug);
   if (matchingSlug && matchingSlug.id !== id) return { error: "Deze URL is al in gebruik. Kies een andere URL." };
@@ -198,7 +203,7 @@ export async function saveLearningSpaceAction(_previousState: AdminActionState, 
     if (error instanceof SubjectSelectionError) return { error: error.message };
     if (error instanceof CollectionTerminologyError) return { error: error.message };
     if (isUniqueConstraintError(error)) return { error: "Deze URL is al in gebruik. Kies een andere URL." };
-    throw error;
+    return { error: "De instellingen konden niet worden opgeslagen. Probeer opnieuw.", technical: true };
   }
   revalidatePath("/admin");
   redirect(`/admin/${encodeURIComponent(input.slug)}/instellingen?saved=1`);
@@ -297,8 +302,9 @@ export async function createThemeAction(formData: FormData) {
   const learningSpaceId = stringValue(formData, "learningSpaceId");
   await requireSpaceManagement(learningSpaceId);
   const name = stringValue(formData, "name");
-  if (!name || !await getLearningSpace(learningSpaceId)) throw new Error("Ongeldig thema.");
-  await createTheme(learningSpaceId, name);
+  if (!name) return { validationError: "Geef het thema een naam." };
+  if (!await getLearningSpace(learningSpaceId)) throw new Error("Leeromgeving niet gevonden.");
+  try { await createTheme(learningSpaceId, name); } catch { return { error: "Het thema kon niet worden toegevoegd. Probeer opnieuw." }; }
   revalidatePath("/admin");
 }
 
@@ -307,8 +313,9 @@ export async function saveThemeAction(formData: FormData) {
   const learningSpaceId = stringValue(formData, "learningSpaceId");
   await requireSpaceManagement(learningSpaceId);
   const name = stringValue(formData, "name");
-  if (!id || !name || !await getLearningSpace(learningSpaceId)) throw new Error("Ongeldig thema.");
-  await updateTheme(id, learningSpaceId, name);
+  if (!name) return { validationError: "Geef het thema een naam." };
+  if (!id || !await getLearningSpace(learningSpaceId)) throw new Error("Thema niet gevonden.");
+  try { await updateTheme(id, learningSpaceId, name); } catch { return { error: "Het thema kon niet worden opgeslagen. Probeer opnieuw." }; }
   revalidatePath("/admin");
 }
 
@@ -318,7 +325,7 @@ export async function moveThemeAction(formData: FormData) {
   await requireSpaceManagement(learningSpaceId);
   const direction = z.enum(["up", "down"]).safeParse(stringValue(formData, "direction"));
   if (!id || !direction.success || !await getLearningSpace(learningSpaceId)) throw new Error("Thema niet gevonden.");
-  await moveTheme(id, learningSpaceId, direction.data);
+  try { await moveTheme(id, learningSpaceId, direction.data); } catch { return { error: "Het thema kon niet worden verplaatst. Probeer opnieuw." }; }
   revalidatePath("/admin");
 }
 
@@ -327,7 +334,7 @@ export async function deleteThemeAction(formData: FormData) {
   const learningSpaceId = stringValue(formData, "learningSpaceId");
   await requireSpaceManagement(learningSpaceId);
   if (!id || !await getLearningSpace(learningSpaceId)) throw new Error("Thema niet gevonden.");
-  await deleteTheme(id, learningSpaceId);
+  try { await deleteTheme(id, learningSpaceId); } catch { return { error: "Het thema kon niet worden verwijderd. Probeer opnieuw." }; }
   revalidatePath("/admin");
 }
 
@@ -352,18 +359,22 @@ export async function savePortfolioAction(formData: FormData): Promise<Portfolio
   const themeId = stringValue(formData, "themeId") || null;
   const limited = stringValue(formData, "publicationMode") === "limited";
   const cardColorInput = stringValue(formData, "cardColor");
-  if (!id || !mode.success || !customMessage.success || title.length > 180 || !isHexColor(cardColorInput)) throw new Error("Ongeldige portfolio-invoer.");
+  if (!id || !mode.success || !customMessage.success || title.length > 180 || !isHexColor(cardColorInput)) return { themeId, validationError: "Controleer de titel, kleur en het bericht." };
   const existing = await getAdminPortfolioAny(id);
   if (!existing) throw new Error("Portfolio niet gevonden.");
   await requireSpaceManagement(existing.learningSpaceId);
-  const window = limited ? parsePublicationWindow(formData) : { publishFrom: existing.publishFrom, publishUntil: existing.publishUntil };
-  await setPortfolioTheme(id, existing.learningSpaceId, themeId);
-  await Promise.all([
-    setPortfolioTitle(id, title),
-    setPortfolioCardColor(id, normalizeHexColor(cardColorInput, DEFAULT_PORTFOLIO_COLOR)),
-    setPortfolioPublication(id, mode.data, limited, window.publishFrom, window.publishUntil),
-    setPortfolioCustomMessage(id, customMessage.data.customText, customMessage.data.customTextPosition),
-  ]);
+  let window: { publishFrom: string | null; publishUntil: string | null };
+  try { window = limited ? parsePublicationWindow(formData) : { publishFrom: existing.publishFrom, publishUntil: existing.publishUntil }; }
+  catch (error) { return { validationError: error instanceof Error ? error.message : "Controleer de planning.", themeId: existing.themeId }; }
+  try {
+    await setPortfolioTheme(id, existing.learningSpaceId, themeId);
+    await Promise.all([
+      setPortfolioTitle(id, title),
+      setPortfolioCardColor(id, normalizeHexColor(cardColorInput, DEFAULT_PORTFOLIO_COLOR)),
+      setPortfolioPublication(id, mode.data, limited, window.publishFrom, window.publishUntil),
+      setPortfolioCustomMessage(id, customMessage.data.customText, customMessage.data.customTextPosition),
+    ]);
+  } catch { return { themeId: existing.themeId, error: "De portfolio-instellingen konden niet worden opgeslagen. Probeer opnieuw." }; }
   refreshPublicationPaths(id);
   const saved = await getAdminPortfolioAny(id);
   if (!saved) throw new Error("Portfolio niet gevonden.");
@@ -375,11 +386,16 @@ export async function savePortfolioExternalLinksAction(formData: FormData) {
   const portfolio = await requirePortfolioManagement(portfolioId);
 
   const resources = portfolio.globalResources.filter((resource) => resource.kind === "external_link");
-  const links = resources.map((resource) => ({
-    resourceId: resource.id,
-    url: normalizeExternalResourceUrl(String(formData.get(`externalLink:${resource.id}`) ?? ""), resource.label),
-  }));
-  await setPortfolioExternalLinks(portfolio.id, links);
+  let links: Array<{ resourceId: string; url: string | null }>;
+  try {
+    links = resources.map((resource) => ({
+      resourceId: resource.id,
+      url: normalizeExternalResourceUrl(String(formData.get(`externalLink:${resource.id}`) ?? ""), resource.label),
+    }));
+  } catch (error) {
+    return { validationError: error instanceof Error ? error.message : "Gebruik een geldige http(s)-URL." };
+  }
+  try { await setPortfolioExternalLinks(portfolio.id, links); } catch { return { error: "De externe links konden niet worden opgeslagen. Probeer opnieuw." }; }
   refreshPublicationPaths(portfolio.id);
 }
 
@@ -393,8 +409,10 @@ export async function saveSectionPublicationAction(formData: FormData) {
   if (portfolio) await requireSpaceManagement(portfolio.learningSpaceId);
   const existing = portfolio?.sections.find((section) => section.id === id);
   if (!existing) throw new Error("Onderdeel niet gevonden.");
-  const window = limited ? parsePublicationWindow(formData) : { publishFrom: existing.publishFrom, publishUntil: existing.publishUntil };
-  await setSectionPublication(id, mode.data, limited, window.publishFrom, window.publishUntil);
+  let window: { publishFrom: string | null; publishUntil: string | null };
+  try { window = limited ? parsePublicationWindow(formData) : { publishFrom: existing.publishFrom, publishUntil: existing.publishUntil }; }
+  catch (error) { return { validationError: error instanceof Error ? error.message : "Controleer de planning." }; }
+  try { await setSectionPublication(id, mode.data, limited, window.publishFrom, window.publishUntil); } catch { return { error: "De planning kon niet worden opgeslagen. Probeer opnieuw." }; }
   refreshPublicationPaths(portfolioId);
 }
 
@@ -417,7 +435,7 @@ export async function bulkExercisePublicationAction(_previousState: { error: str
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Ongeldige planning." };
   }
-  await setExercisePublication(exerciseIds, mode.data, window.publishFrom, window.publishUntil);
+  try { await setExercisePublication(exerciseIds, mode.data, window.publishFrom, window.publishUntil); } catch { return { error: "De bulkbewerking kon niet worden opgeslagen. Probeer opnieuw." }; }
   refreshPublicationPaths(portfolioId);
   return { error: null };
 }
@@ -453,7 +471,7 @@ export async function toggleExerciseVisibilityAction(formData: FormData) {
   const portfolio = await getAdminPortfolioAny(portfolioId);
   if (portfolio) await requireSpaceManagement(portfolio.learningSpaceId);
   if (!id || !portfolio || ![...(portfolio.exercises ?? []), ...portfolio.sections.flatMap((section) => section.exercises)].some((exercise) => exercise.id === id)) throw new Error("Oefening niet gevonden.");
-  await setExerciseVisibility(id, visible);
+  try { await setExerciseVisibility(id, visible); } catch { return { error: "De zichtbaarheid kon niet worden opgeslagen. Probeer opnieuw." }; }
   refreshPublicationPaths(portfolioId);
   revalidatePath("/admin/meldingen");
 }
@@ -466,7 +484,7 @@ export async function toggleExerciseAlternativeVisibilityAction(formData: FormDa
   if (portfolio) await requireSpaceManagement(portfolio.learningSpaceId);
   const exercise = portfolio ? [...(portfolio.exercises ?? []), ...portfolio.sections.flatMap((section) => section.exercises)].find((item) => item.id === id) : undefined;
   if (!exercise || !exercise.assets.some((asset) => asset.variant === "alternative" && asset.isIndexed)) throw new Error("Alternatieve uitwerking niet gevonden.");
-  await setExerciseAlternativeVisibility(id, visible);
+  try { await setExerciseAlternativeVisibility(id, visible); } catch { return { error: "De alternatieve uitwerking kon niet worden ingesteld. Probeer opnieuw." }; }
   refreshPublicationPaths(portfolioId);
 }
 
@@ -477,11 +495,13 @@ export async function saveExerciseNoteAction(formData: FormData) {
     customNote: String(formData.get("customNote") ?? ""),
     notePosition: stringValue(formData, "notePosition"),
   });
-  if (!id || !note.success) throw new Error("Ongeldige oefeningnotitie.");
+  if (!id || !note.success) return { validationError: "Controleer de lengte en positie van de oefennotitie." };
   const { exercise, space } = await requireExerciseNoteManagement(id);
-  await setExerciseNote(id, note.data.customNote, note.data.noteLabel, note.data.notePosition);
+  try { await setExerciseNote(id, note.data.customNote, note.data.noteLabel, note.data.notePosition); } catch { return { error: "De oefennotitie kon niet worden opgeslagen. Probeer opnieuw." }; }
   refreshExerciseNotePaths(exercise, space.slug);
-  redirect(adminExerciseNoteReturnHref(space.slug, exercise.portfolioId, exercise.id, stringValue(formData, "returnContext")));
+  const destination = new URL(adminExerciseNoteReturnHref(space.slug, exercise.portfolioId, exercise.id, stringValue(formData, "returnContext")), "http://local");
+  destination.searchParams.set("noteFeedback", "saved");
+  redirect(`${destination.pathname}${destination.search}${destination.hash}`);
 }
 
 export async function saveExerciseLevelAction(formData: FormData) {
@@ -497,7 +517,7 @@ export async function saveExerciseLevelAction(formData: FormData) {
   else if (choice.startsWith("level:")) input = validateExerciseLevelOverrideInput({ mode: "level", level: choice.slice("level:".length) });
   else throw new Error("Ongeldige modus voor het oefeningniveau.");
 
-  await setExerciseLevelOverride(exercise.id, input);
+  try { await setExerciseLevelOverride(exercise.id, input); } catch { return { error: "Het oefenniveau kon niet worden opgeslagen. Probeer opnieuw." }; }
   const space = await getLearningSpace(learningSpaceId);
   if (!space) throw new Error("Leeromgeving niet gevonden.");
   revalidatePath("/admin");
@@ -513,9 +533,11 @@ export async function deleteExerciseNoteAction(formData: FormData) {
   const id = stringValue(formData, "id");
   if (!id) throw new Error("Oefening niet gevonden.");
   const { exercise, space } = await requireExerciseNoteManagement(id);
-  await setExerciseNote(id, null, null, "above_solution");
+  try { await setExerciseNote(id, null, null, "above_solution"); } catch { return { error: "De oefennotitie kon niet worden verwijderd. Probeer opnieuw." }; }
   refreshExerciseNotePaths(exercise, space.slug);
-  redirect(adminExerciseNoteReturnHref(space.slug, exercise.portfolioId, exercise.id, stringValue(formData, "returnContext")));
+  const destination = new URL(adminExerciseNoteReturnHref(space.slug, exercise.portfolioId, exercise.id, stringValue(formData, "returnContext")), "http://local");
+  destination.searchParams.set("noteFeedback", "deleted");
+  redirect(`${destination.pathname}${destination.search}${destination.hash}`);
 }
 
 export async function logoutAction() {
@@ -528,14 +550,14 @@ export async function errorReportThreadStatusAction(formData: FormData) {
   const learningSpaceId = await requireErrorReportThreadManagement(threadId);
   const status = stringValue(formData, "status");
   if (status !== "TODO" && status !== "DONE") throw new Error("Ongeldige meldingsstatus.");
-  await setErrorReportThreadStatus(threadId, status);
+  try { await setErrorReportThreadStatus(threadId, status); } catch { return { error: "De meldingsstatus kon niet worden opgeslagen. Probeer opnieuw." }; }
   await refreshErrorReportIssuePaths(learningSpaceId, true);
 }
 
 export async function errorReportThreadPinAction(formData: FormData) {
   const threadId = stringValue(formData, "threadId");
   const learningSpaceId = await requireErrorReportThreadManagement(threadId);
-  await toggleErrorReportThreadPin(threadId);
+  try { await toggleErrorReportThreadPin(threadId); } catch { return { error: "De melding kon niet worden vastgezet of losgemaakt. Probeer opnieuw." }; }
   await refreshErrorReportIssuePaths(learningSpaceId);
 }
 
@@ -544,12 +566,13 @@ export interface ThreadNoteActionState extends AdminActionState { successCount: 
 export async function errorReportThreadNoteAction(previousState: ThreadNoteActionState, formData: FormData): Promise<ThreadNoteActionState> {
   const threadId = stringValue(formData, "threadId");
   const learningSpaceId = await requireErrorReportThreadManagement(threadId);
+  const note = stringValue(formData, "note");
   try {
-    await saveErrorReportThreadNote(threadId, stringValue(formData, "note"));
+    await saveErrorReportThreadNote(threadId, note);
     await refreshErrorReportIssuePaths(learningSpaceId);
     return { error: null, successCount: previousState.successCount + 1 };
   } catch {
-    return { error: "De adminnotitie kon niet worden opgeslagen. Probeer opnieuw.", successCount: previousState.successCount };
+    return { technical: true, error: "De adminnotitie kon niet worden opgeslagen. Probeer opnieuw.", successCount: previousState.successCount };
   }
 }
 
@@ -566,7 +589,7 @@ export async function saveErrorReportTeacherResponseAction(previousState: Respon
     await refreshErrorReportIssuePaths(learningSpaceId, true);
     return { error: null, successCount: previousState.successCount + 1 };
   } catch {
-    return { error: "Het bericht kon niet worden opgeslagen. Probeer opnieuw.", successCount: previousState.successCount };
+    return { technical: true, error: "Het bericht kon niet worden opgeslagen. Probeer opnieuw.", successCount: previousState.successCount };
   }
 }
 
@@ -575,7 +598,7 @@ export async function errorReportStatusAction(formData: FormData) {
   const learningSpaceId = await requireErrorReportManagement(id);
   const status = stringValue(formData, "status");
   if (status !== "OPEN" && status !== "DONE") throw new Error("Ongeldige meldingsstatus.");
-  await setErrorReportHandled(id, status === "DONE");
+  try { await setErrorReportHandled(id, status === "DONE"); } catch { return { error: "De meldingsstatus kon niet worden opgeslagen. Probeer opnieuw." }; }
   await refreshErrorReportIssuePaths(learningSpaceId, true);
 }
 
@@ -587,7 +610,7 @@ export async function deleteErrorReportTeacherResponseAction(previousState: Resp
     await refreshErrorReportIssuePaths(learningSpaceId, true);
     return { error: null, successCount: previousState.successCount + 1 };
   } catch {
-    return { error: "Het bericht kon niet worden verwijderd. Probeer opnieuw.", successCount: previousState.successCount };
+    return { technical: true, error: "Het bericht kon niet worden verwijderd. Probeer opnieuw.", successCount: previousState.successCount };
   }
 }
 
@@ -595,14 +618,14 @@ export async function deleteErrorReportAction(formData: FormData) {
   const id = stringValue(formData, "id");
   const learningSpaceId = await requireErrorReportManagement(id);
   if (!id) return;
-  await deleteErrorReport(id);
+  try { await deleteErrorReport(id); } catch { return { error: "De melding kon niet worden verwijderd. Probeer opnieuw." }; }
   await refreshErrorReportIssuePaths(learningSpaceId, true);
 }
 
 export async function deleteOldDoneErrorThreadsAction(formData: FormData) {
   const learningSpaceId = stringValue(formData, "learningSpaceId");
   await requireSpaceManagement(learningSpaceId);
-  await deleteOldDoneErrorThreads(undefined, learningSpaceId);
+  try { await deleteOldDoneErrorThreads(undefined, learningSpaceId); } catch { return { error: "De oude meldingen konden niet worden verwijderd. Probeer opnieuw." }; }
   await refreshErrorReportIssuePaths(learningSpaceId);
 }
 
@@ -624,7 +647,7 @@ export async function toggleReportedExerciseVisibilityAction(formData: FormData)
   if (!id || !portfolioId) return;
   const portfolio = await getAdminPortfolioAny(portfolioId);
   if (!portfolio || ![...(portfolio.exercises ?? []), ...portfolio.sections.flatMap((section) => section.exercises)].some((exercise) => exercise.id === id)) throw new Error("Oefening niet gevonden.");
-  await setExerciseVisibility(id, visible);
+  try { await setExerciseVisibility(id, visible); } catch { return { error: "De zichtbaarheid kon niet worden opgeslagen. Probeer opnieuw." }; }
   refreshPublicationPaths(portfolioId);
   revalidatePath("/admin/meldingen");
 }

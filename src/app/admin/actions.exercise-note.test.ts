@@ -43,7 +43,7 @@ describe("exercise note actions", () => {
     expect(mocks.getAdminExercise).toHaveBeenCalledWith("exercise-1");
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.objectContaining({ id: "teacher-1" }), "space-5");
     expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", "Eerste regel\nTweede regel", "Hint", "below_solution");
-    expect(mocks.redirect).toHaveBeenCalledWith("/admin/5wis/portfolio/portfolio-1#exercise-exercise-1");
+    expect(mocks.redirect).toHaveBeenCalledWith("/admin/5wis/portfolio/portfolio-1?noteFeedback=saved#exercise-exercise-1");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin/5wis/foutmeldingen");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/5wis/oefening/exercise-1");
   });
@@ -55,24 +55,24 @@ describe("exercise note actions", () => {
 
   it("returns save and delete from the error inbox to that same trusted context", async () => {
     await saveExerciseNoteAction(noteForm("Inboxnotitie", "above_solution", "", "error-inbox"));
-    expect(mocks.redirect).toHaveBeenLastCalledWith("/admin/5wis/foutmeldingen");
+    expect(mocks.redirect).toHaveBeenLastCalledWith("/admin/5wis/foutmeldingen?noteFeedback=saved");
 
     const deleteForm = new FormData();
     deleteForm.set("id", "exercise-1");
     deleteForm.set("returnContext", "error-inbox");
     await deleteExerciseNoteAction(deleteForm);
-    expect(mocks.redirect).toHaveBeenLastCalledWith("/admin/5wis/foutmeldingen");
+    expect(mocks.redirect).toHaveBeenLastCalledWith("/admin/5wis/foutmeldingen?noteFeedback=deleted");
   });
 
   it("falls back to the portfolio for an untrusted return context", async () => {
     await saveExerciseNoteAction(noteForm("Notitie", "above_solution", "", "https://evil.example"));
-    expect(mocks.redirect).toHaveBeenCalledWith("/admin/5wis/portfolio/portfolio-1#exercise-exercise-1");
+    expect(mocks.redirect).toHaveBeenCalledWith("/admin/5wis/portfolio/portfolio-1?noteFeedback=saved#exercise-exercise-1");
   });
 
   it("rejects invalid note content or position before mutation", async () => {
-    await expect(saveExerciseNoteAction(noteForm("A".repeat(2_001), "above_solution"))).rejects.toThrow("Ongeldige oefeningnotitie");
-    await expect(saveExerciseNoteAction(noteForm("Notitie", "above_solution", "A".repeat(41)))).rejects.toThrow("Ongeldige oefeningnotitie");
-    await expect(saveExerciseNoteAction(noteForm("Notitie", "between_assets"))).rejects.toThrow("Ongeldige oefeningnotitie");
+    await expect(saveExerciseNoteAction(noteForm("A".repeat(2_001), "above_solution"))).resolves.toMatchObject({ validationError: "Controleer de lengte en positie van de oefennotitie." });
+    await expect(saveExerciseNoteAction(noteForm("Notitie", "above_solution", "A".repeat(41)))).resolves.toMatchObject({ validationError: "Controleer de lengte en positie van de oefennotitie." });
+    await expect(saveExerciseNoteAction(noteForm("Notitie", "between_assets"))).resolves.toMatchObject({ validationError: "Controleer de lengte en positie van de oefennotitie." });
     expect(mocks.setExerciseNote).not.toHaveBeenCalled();
   });
 
@@ -94,7 +94,7 @@ describe("exercise note actions", () => {
     expect(mocks.setExerciseNote).toHaveBeenCalledWith("exercise-1", null, null, "above_solution");
     expect(mocks.requireLearningSpaceManagement).toHaveBeenCalledWith(expect.anything(), "space-5");
     expect(mocks.revalidatePath).toHaveBeenCalledWith("/admin/5wis/foutmeldingen");
-    expect(mocks.redirect).toHaveBeenCalledWith("/admin/5wis/portfolio/portfolio-1#exercise-exercise-1");
+    expect(mocks.redirect).toHaveBeenCalledWith("/admin/5wis/portfolio/portfolio-1?noteFeedback=deleted#exercise-exercise-1");
   });
 });
 

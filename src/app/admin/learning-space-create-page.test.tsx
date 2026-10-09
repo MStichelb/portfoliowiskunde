@@ -1,6 +1,12 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/app/components/flash-toast", () => ({
+  useToast: () => vi.fn(),
+  ExerciseNoteFeedback: () => null,
+  FlashToast: ({ type, message, feedbackKey }: { type: string; message: string; feedbackKey?: string }) => <span data-toast={type} data-feedback-key={feedbackKey}>{message}</span>,
+}));
+
 const mocks = vi.hoisted(() => ({
   requireAdminUser: vi.fn(),
   getManageableLearningSpaceIds: vi.fn(),
@@ -15,6 +21,9 @@ vi.mock("@/lib/authorization", () => ({
   getAccessibleLearningSpaceIds: mocks.getAccessibleLearningSpaceIds,
 }));
 vi.mock("@/lib/repositories", () => ({ getLearningSpaces: mocks.getLearningSpaces }));
+vi.mock("@/lib/user-management", () => ({ listManagedMemberships: vi.fn(async () => []), listManagedGroupMappings: vi.fn(async () => []) }));
+vi.mock("@/lib/user-learning-space-order", () => ({ orderLearningSpacesForUser: vi.fn(async (_id, spaces) => spaces) }));
+vi.mock("./learning-space-order-actions", () => ({ savePersonalLearningSpaceOrderAction: vi.fn() }));
 vi.mock("@/lib/learning-space-creation-options", () => ({ getLearningSpaceCreationOptions: vi.fn(async () => ({ templates: [], copies: [], links: [] })) }));
 vi.mock("@/lib/subjects", () => ({ listActiveSubjects: mocks.listActiveSubjects }));
 vi.mock("@/app/components/page-banner", () => ({ PageBanner: () => null }));
@@ -29,6 +38,15 @@ describe("admin LearningSpace creation entry point", () => {
     mocks.getManageableLearningSpaceIds.mockResolvedValue([]);
     mocks.getAccessibleLearningSpaceIds.mockResolvedValue([]);
     mocks.listActiveSubjects.mockResolvedValue([{ id: "subject-wiskunde", name: "Wiskunde", sortOrder: 10, isActive: true }]);
+  });
+
+  it("routes action success and errors to the shared toast", async () => {
+    mocks.requireAdminUser.mockResolvedValue(user("teacher"));
+    const markup = renderToStaticMarkup(await AdminPage({ searchParams: Promise.resolve({ created: "1", smartschool: "linked", error: "delete-failed" }) }));
+    expect(markup).toContain('data-toast="success" data-feedback-key="created"');
+    expect(markup).toContain('data-toast="success" data-feedback-key="smartschool"');
+    expect(markup).toContain('data-toast="error" data-feedback-key="error"');
+    expect(markup).not.toMatch(/success-message|error-message/);
   });
 
   it.each(["teacher", "superadmin"] as const)("shows the creation trigger to an active %s", async (role) => {

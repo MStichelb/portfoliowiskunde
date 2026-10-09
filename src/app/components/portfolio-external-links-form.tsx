@@ -1,3 +1,4 @@
+import { MutationFeedbackForm } from "@/app/components/mutation-feedback-form";
 import type { PortfolioGlobalResource } from "@/lib/repositories";
 import { X } from "lucide-react";
 
@@ -5,7 +6,7 @@ import { ConfiguredResourceIcon } from "./configured-resource-icon";
 import styles from "./portfolio-resource-admin.module.css";
 import { portfolioExternalLinkDialogId } from "./portfolio-resource-dialog-ids";
 
-type ServerAction = (formData: FormData) => void | Promise<void>;
+type ServerAction = (formData: FormData) => unknown | Promise<unknown>;
 
 export function PortfolioExternalLinksForm({
   portfolioId,
@@ -35,7 +36,7 @@ export function PortfolioExternalLinksForm({
             </a>
           </div>
 
-          <form action={action} className={styles.linkForm}>
+          <MutationFeedbackForm action={action} className={styles.linkForm} successMessage="Externe links opgeslagen." errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
             <input type="hidden" name="portfolioId" value={portfolioId} />
             {links.filter((link) => link.id !== resource.id).map((link) => <input
               type="hidden"
@@ -61,7 +62,7 @@ export function PortfolioExternalLinksForm({
               {resource.url ? <a className="secondary-button" href={resource.url} target="_blank" rel="noreferrer">Link openen</a> : null}
               <a className="secondary-button" href="#">Annuleren</a>
             </div>
-          </form>
+          </MutationFeedbackForm>
         </section>
       </div>;
     })}

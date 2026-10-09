@@ -1,11 +1,12 @@
 import { isValidElement, type ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const hooks = vi.hoisted(() => ({ index: 0, showModal: vi.fn(), close: vi.fn(), focus: vi.fn(), pending: vi.fn() }));
+const hooks = vi.hoisted(() => ({ show: vi.fn(), index: 0, showModal: vi.fn(), close: vi.fn(), focus: vi.fn(), pending: vi.fn() }));
 vi.mock("react", async (original) => ({
   ...await original<typeof import("react")>(),
   useId: () => "create-title",
   useRef: () => ({ current: hooks.index++ === 0 ? { showModal: hooks.showModal, close: hooks.close } : { focus: hooks.focus } }),
+  useContext: () => hooks.show,
   useState: () => [false, hooks.pending],
 }));
 import { ThemeCreateModal } from "./theme-create-modal";
@@ -49,11 +50,13 @@ describe("theme creation modal", () => {
     await (tree.find((node) => node.type === "form")!.props.action as (form: FormData) => Promise<void>)(data);
     expect(action).toHaveBeenCalledWith(data);
     expect(hooks.close).toHaveBeenCalledOnce();
+    expect(hooks.show).toHaveBeenCalledWith({ type: "success", message: "Deel toegevoegd." });
   });
   it("preserves action errors and leaves the dialog open on failure", async () => {
     const action = vi.fn(async () => { throw new Error("Naam bestaat al"); });
     const tree = render(action);
-    await expect((tree.find((node) => node.type === "form")!.props.action as (form: FormData) => Promise<void>)(new FormData())).rejects.toThrow("Naam bestaat al");
+    await (tree.find((node) => node.type === "form")!.props.action as (form: FormData) => Promise<void>)(new FormData());
+    expect(hooks.show).toHaveBeenCalledWith({ type: "error", message: "Deel kon niet worden toegevoegd. Probeer opnieuw." });
     expect(hooks.close).not.toHaveBeenCalled();
     expect(hooks.pending).toHaveBeenLastCalledWith(false);
   });

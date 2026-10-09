@@ -1,5 +1,6 @@
 "use client";
 
+import { useToast } from "./flash-toast";
 import { History, X } from "lucide-react";
 import Link from "next/link";
 import { useId, useRef, useState } from "react";
@@ -12,18 +13,17 @@ export function ChangelogDrawer({ entries, hasUnread }: { entries: ChangelogEntr
   const titleId = useId();
   const [seen, setSeen] = useState(false);
   const [open, setOpen] = useState(false);
-  const [saveFailed, setSaveFailed] = useState(false);
+  const showToast = useToast();
   const unread = hasUnread && !seen;
 
   async function show() {
     dialog.current?.showModal();
     setOpen(true);
-    setSaveFailed(false);
     try {
       const response = await fetch("/api/changelog/seen", { method: "POST" });
       if (!response.ok) throw new Error("Leesstatus opslaan mislukt");
       setSeen(true);
-    } catch { setSaveFailed(true); }
+    } catch { showToast({ type: "error", message: "De leesstatus kon niet worden opgeslagen. Je kunt de wijzigingen blijven lezen; probeer later opnieuw." }); }
   }
   function close() { dialog.current?.close(); }
 
@@ -35,7 +35,6 @@ export function ChangelogDrawer({ entries, hasUnread }: { entries: ChangelogEntr
       <div className="changelog-drawer-content">
         <header className="changelog-drawer-heading"><h2 id={titleId}>Recente wijzigingen</h2><button className="site-nav-icon" autoFocus type="button" onClick={close} aria-label="Changelog sluiten"><X size={20} aria-hidden /></button></header>
         <ChangelogEntries entries={entries} />
-        {saveFailed ? <p role="status" className="changelog-save-error">Je kunt de wijzigingen lezen. De leesstatus kon niet worden opgeslagen; open de changelog later opnieuw.</p> : null}
         <Link className="changelog-full-link" href="/changelog" onClick={close}>Volledige changelog bekijken →</Link>
       </div>
     </dialog>

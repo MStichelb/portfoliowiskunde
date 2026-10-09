@@ -1,5 +1,7 @@
 "use client";
 
+import { FlashToast } from "@/app/components/flash-toast";
+
 import { Bell, ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 
@@ -68,9 +70,11 @@ export function PortfolioErrorReportForm({
   }
 
   return <section className="report-disclosure">
+    {status === "sent" ? <FlashToast type="success" message="Bedankt. Je melding is doorgestuurd." /> : null}
+    {status === "error" ? <FlashToast type="error" message={errorMessage} /> : null}
     <h2 className="report-disclosure-heading"><button type="button" className="report-disclosure-trigger" aria-expanded={open} aria-controls={contentId} onClick={() => setOpen((current) => !current)}><Bell size={20} aria-hidden /><span>Foutje gezien? Meld het.</span><ChevronDown className="report-disclosure-chevron" size={19} aria-hidden /></button></h2>
     {open ? <div id={contentId} className="report-disclosure-content">
-      {status === "sent" ? <p className="success-message" role="status">Bedankt. Je melding is doorgestuurd.</p> : <form action={submit} className="report-form">
+      {status === "sent" ? null : <form action={submit} className="report-form">
         <label>Document<select name="documentKind" value={documentKind} onChange={(event) => setDocumentKind(event.target.value as ErrorReportDocumentKind)}>{documents.map((document) => <option key={document} value={document}>{documentLabel(document)}</option>)}</select></label>
         <label>{exerciseLabel}<input name="exerciseCode" value={exerciseCode} onChange={(event) => setExerciseCode(event.target.value)} list={exerciseListId} required maxLength={20} autoComplete="off" /></label>
         <datalist id={exerciseListId}>{exercises.map((exercise) => <option key={exercise.id} value={exercise.code}>{exerciseLabel} {exercise.code}</option>)}</datalist>
@@ -78,7 +82,6 @@ export function PortfolioErrorReportForm({
         <label>Wat heb je opgemerkt?<textarea name="message" required minLength={3} maxLength={2000} /></label>
         <label className="honeypot">Website<input name="website" tabIndex={-1} autoComplete="off" /></label>
         <button className="secondary-button" disabled={status === "sending"}>{status === "sending" ? "Versturen..." : "Melding versturen"}</button>
-        {status === "error" ? <p className="error-message" role="alert">{errorMessage}</p> : null}
       </form>}
     </div> : null}
   </section>;

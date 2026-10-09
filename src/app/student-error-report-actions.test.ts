@@ -21,4 +21,15 @@ describe("dismissHandledReportNotificationsAction", () => {
     expect(mocks.dismiss).toHaveBeenCalledWith(["report-1", "report-2"]);
     expect(mocks.refresh).toHaveBeenCalledOnce();
   });
+  it("maps operational failures without refreshing or exposing storage details", async () => {
+    mocks.dismiss.mockRejectedValueOnce(new Error("SQL password=secret"));
+    expect(await dismissHandledReportNotificationsAction(new FormData())).toEqual({ error: "De melding kon niet worden gesloten. Probeer opnieuw." });
+    expect(mocks.refresh).not.toHaveBeenCalled();
+  });
+  it("preserves an authentication redirect", async () => {
+    const redirect = Object.assign(new Error("redirect"), { digest: "NEXT_REDIRECT;replace;/aanmelden;303;" });
+    mocks.dismiss.mockRejectedValueOnce(redirect);
+    await expect(dismissHandledReportNotificationsAction(new FormData())).rejects.toBe(redirect);
+    expect(mocks.refresh).not.toHaveBeenCalled();
+  });
 });

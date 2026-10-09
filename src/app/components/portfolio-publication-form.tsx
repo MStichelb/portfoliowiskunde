@@ -1,5 +1,7 @@
 "use client";
 
+import { useMutationFeedback } from "./mutation-feedback-form";
+
 import { Eye, EyeOff, Hourglass } from "lucide-react";
 import { useState } from "react";
 
@@ -29,13 +31,16 @@ interface PortfolioPublicationFormProps {
 }
 
 export function PortfolioPublicationForm({ id, title, cardColor, visible, limited, publishFrom, publishUntil, customText, customTextPosition, themeId, themeMode = "none", collectionLabel = "portfolio", themeLabelSingular = DEFAULT_THEME_LABEL_SINGULAR, themes, miscellaneousLabel, action }: PortfolioPublicationFormProps) {
+  const run = useMutationFeedback();
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [mode, setMode] = useState<"visible" | "limited" | "hidden">(!visible ? "hidden" : limited ? "limited" : "visible");
   const [color, setColor] = useState(cardColor);
   const [messagePosition, setMessagePosition] = useState(customTextPosition);
   const [selectedThemeId, setSelectedThemeId] = useState(themeId ?? "");
   const save = async (formData: FormData) => {
-    const saved = await action(formData);
-    if (saved) setSelectedThemeId(saved.themeId ?? "");
+    const outcome = await run(() => action(formData), "Portfolio-instellingen opgeslagen.");
+    setValidationError(outcome.validationError ?? null);
+    if (outcome.ok && outcome.result) setSelectedThemeId(outcome.result.themeId ?? "");
   };
   return <form action={save} onReset={(event) => event.preventDefault()} className="portfolio-settings-form">
     <input type="hidden" name="id" value={id} />
@@ -60,6 +65,7 @@ export function PortfolioPublicationForm({ id, title, cardColor, visible, limite
       <button type="button" aria-pressed={messagePosition === "above_documents"} className={messagePosition === "above_documents" ? "selected" : ""} onClick={() => setMessagePosition("above_documents")}>Boven de documentknoppen</button>
       <button type="button" aria-pressed={messagePosition === "below_documents"} className={messagePosition === "below_documents" ? "selected" : ""} onClick={() => setMessagePosition("below_documents")}>Onder de documentknoppen</button>
     </div></fieldset>
+    {validationError ? <p className="form-error inline-validation field-wide" role="alert">{validationError}</p> : null}
     <div className="portfolio-settings-actions field-wide"><SubmitButton pendingLabel="Opslaan...">Instellingen opslaan</SubmitButton></div>
   </form>;
 }

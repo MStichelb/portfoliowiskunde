@@ -1,3 +1,4 @@
+import { FlashToast } from "@/app/components/flash-toast";
 import { ArrowLeft, CheckCircle2, CircleAlert, CircleHelp, Cloud, KeyRound, School } from "lucide-react";
 import Link from "next/link";
 
@@ -33,9 +34,9 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
   return <main className="page-shell admin-page personal-connections-page">
     <Link className="secondary-button compact-back-button" href="/admin"><ArrowLeft size={16} aria-hidden />Terug naar beheer</Link>
     <header className="page-header"><p className="eyebrow">Beheer</p><h1>Verbindingen</h1><p>Beheer persoonlijke en applicatiebrede koppelingen op één centrale plaats.</p></header>
-    {onedrive === "connected" ? <p className="success-message" role="status">OneDrive is verbonden.</p> : null}
-    {onedrive === "authorization-failed" || onedrive === "connection-failed" ? <p className="form-message" role="alert">OneDrive verbinden is niet gelukt. Probeer opnieuw of controleer de Microsoft-configuratie.</p> : null}
-    {emergency ? <p className="success-message" role="status">Publieke noodtoegang is {emergency === "enabled" ? "ingeschakeld" : "uitgeschakeld"}.</p> : null}
+    {onedrive === "connected" ? <FlashToast type="success" message="OneDrive is verbonden." feedbackKey="onedrive" /> : null}
+    {onedrive === "authorization-failed" || onedrive === "connection-failed" ? <FlashToast type="error" message="OneDrive verbinden is niet gelukt. Probeer opnieuw of controleer de Microsoft-configuratie." feedbackKey="onedrive" /> : null}
+    {emergency ? <FlashToast type="success" message={`Publieke noodtoegang is ${emergency === "enabled" ? "ingeschakeld" : "uitgeschakeld"}.`} feedbackKey="emergency" /> : null}
     <section className="admin-card connections-card" aria-labelledby="onedrive-heading">
       <div className="card-heading"><div><h2 id="onedrive-heading" className="heading-with-icon"><KeyRound size={20} aria-hidden />OneDrive</h2><p>Deze persoonlijke verbinding behoort uitsluitend aan jouw account.</p></div></div>
       <div className="connection-list"><div className="connection-row"><ConnectionStatus ok={connected} label={connected ? "OneDrive verbonden" : "OneDrive niet verbonden"} detail={configurationProblem} /><OneDriveConnectLink authorized={authorized} /></div></div>
