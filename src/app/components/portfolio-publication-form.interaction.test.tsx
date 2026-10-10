@@ -15,9 +15,32 @@ vi.mock("react", async (importOriginal: () => Promise<typeof import("react")>) =
 
 import { PortfolioPublicationForm } from "./portfolio-publication-form";
 
-beforeEach(() => { hooks.values = []; hooks.cursor = 0; });
+beforeEach(() => { vi.clearAllMocks(); hooks.values = []; hooks.cursor = 0; });
 
 describe("portfolio theme selection after save", () => {
+  it("uses the configured collection term in the success toast", async () => {
+    const props = { ...formProps(async () => ({ themeId: null })), collectionLabel: "bUNDEL" };
+    await PortfolioPublicationForm(props).props.action(new FormData());
+    expect(hooks.show).toHaveBeenCalledWith({ type: "success", message: "Instellingen voor bundel opgeslagen." });
+  });
+
+  it("hides a null choice without calling the mutation and shows options when they become available", () => {
+    const action = vi.fn();
+    const props = { ...formProps(action), themes: [] };
+    expect(themeSelect(PortfolioPublicationForm(props))).toBeUndefined();
+    expect(action).not.toHaveBeenCalled();
+    hooks.cursor = 0;
+    expect(themeSelect(PortfolioPublicationForm({ ...props, themes: [{ id: "analysis", name: "Analyse" }] })))
+      .toMatchObject({ value: "", disabled: false });
+  });
+
+  it.each(["none", "folder"] as const)("retains the stored assignment without options in %s mode", (themeMode) => {
+    const action = vi.fn();
+    const props = { ...formProps(action), themes: [], themeId: "stored-theme", themeMode };
+    expect(themeSelect(PortfolioPublicationForm(props))).toMatchObject({ value: "stored-theme", disabled: themeMode === "folder" });
+    expect(action).not.toHaveBeenCalled();
+  });
+
   it.each([["systems", "systems"], [null, "systems"], ["systems", "analysis"]] as const)("preserves the stored theme through save, native reset and remount (%s -> %s)", async (initial: string | null, target: string) => {
     const action = vi.fn(async (data: FormData) => ({ themeId: String(data.get("themeId")) }));
     const props = { ...formProps(action), themeId: initial };

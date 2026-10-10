@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   savePortfolioExternalLinksAction: vi.fn(),
   saveSectionPublicationAction: vi.fn(),
   bulkTable: vi.fn(),
+  sectionForm: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
@@ -47,7 +48,7 @@ vi.mock("@/app/components/portfolio-external-links-form", () => ({
   },
 }));
 vi.mock("@/app/components/publication-status", () => ({ PublicationStatus: () => <span>Status</span> }));
-vi.mock("@/app/components/section-publication-form", () => ({ SectionPublicationForm: () => <div>Onderdeelinstellingen</div> }));
+vi.mock("@/app/components/section-publication-form", () => ({ SectionPublicationForm: (props: unknown) => { mocks.sectionForm(props); return <div>Onderdeelinstellingen</div>; } }));
 vi.mock("@/app/components/exercise-bulk-table", () => ({ ExerciseBulkTable: (props: unknown) => { mocks.bulkTable(props); return <div>Oefeningenlijst</div>; } }));
 
 import LearningSpacePortfolioAdminPage from "./page";
@@ -178,6 +179,7 @@ describe("LearningSpace portfolio settings page", () => {
     expect(markup).toContain("Opgaven");
     expect(markup).toContain(">Secties</h2>");
     expect(mocks.portfolioForm).toHaveBeenCalledWith(expect.objectContaining({ themeLabelSingular: "Deel" }));
+    expect(mocks.sectionForm).toHaveBeenCalledWith(expect.objectContaining({ sectionLabelSingular: "Sectie" }));
     expect(mocks.bulkTable).toHaveBeenCalledWith(expect.objectContaining({ sectionLabelSingular: "Sectie" }));
     expect(markup).toContain("1.1 Basis");
     expect(markup).not.toContain("1.1. Basis");

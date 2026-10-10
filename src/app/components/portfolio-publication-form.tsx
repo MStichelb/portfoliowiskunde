@@ -37,8 +37,9 @@ export function PortfolioPublicationForm({ id, title, cardColor, visible, limite
   const [color, setColor] = useState(cardColor);
   const [messagePosition, setMessagePosition] = useState(customTextPosition);
   const [selectedThemeId, setSelectedThemeId] = useState(themeId ?? "");
+  const showThemeField = themes.length > 0 || Boolean(themeId || selectedThemeId);
   const save = async (formData: FormData) => {
-    const outcome = await run(() => action(formData), "Portfolio-instellingen opgeslagen.");
+    const outcome = await run(() => action(formData), `Instellingen voor ${formatTerminologyLabel(collectionLabel, "inline")} opgeslagen.`);
     setValidationError(outcome.validationError ?? null);
     if (outcome.ok && outcome.result) setSelectedThemeId(outcome.result.themeId ?? "");
   };
@@ -50,7 +51,7 @@ export function PortfolioPublicationForm({ id, title, cardColor, visible, limite
     <label className="field-wide">Titel<input name="title" defaultValue={title} maxLength={180} /></label>
     <div className="portfolio-metadata-row field-wide">
       <label className="color-field">Kleur<span><input name="cardColor" type="color" value={color} onChange={(event) => setColor(event.target.value.toUpperCase())} /><code>{color.toUpperCase()}</code></span><small>Accentkleur van het kaartje op de publieke pagina.</small></label>
-      <label className="portfolio-theme-field">{formatTerminologyLabel(themeLabelSingular, "standalone")}<select name="themeId" value={themeMode === "folder" ? themeId ?? "" : selectedThemeId} onChange={(event) => setSelectedThemeId(event.target.value)} disabled={themeMode === "folder"}><option value="">{miscellaneousLabel}</option>{themes.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select>{themeMode === "folder" ? <small>Bepaald door de bronmap. Verplaats de {collectionLabel} in de bron om de groepering te wijzigen.</small> : null}</label>
+      {showThemeField ? <label className="portfolio-theme-field">{formatTerminologyLabel(themeLabelSingular, "standalone")}<select name="themeId" value={themeMode === "folder" ? themeId ?? "" : selectedThemeId} onChange={(event) => setSelectedThemeId(event.target.value)} disabled={themeMode === "folder"}><option value="">{miscellaneousLabel}</option>{themes.map((theme) => <option key={theme.id} value={theme.id}>{theme.name}</option>)}</select>{themeMode === "folder" ? <small>Bepaald door de bronmap. Verplaats de {collectionLabel} in de bron om de groepering te wijzigen.</small> : null}</label> : null}
     </div>
     <div className="publication-row field-wide">
       <fieldset className="segmented-control"><legend>Publicatie</legend><div>

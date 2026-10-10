@@ -39,7 +39,7 @@ vi.mock("@/app/components/admin-space-header", () => ({
     return <header>Beheerheader</header>;
   },
 }));
-vi.mock("@/app/components/confirm-action-button", () => ({ ConfirmActionButton: () => <button>Opschonen</button> }));
+vi.mock("@/app/components/confirm-action-button", () => ({ ConfirmActionButton: ({ confirmText }: { confirmText: string }) => <button title={confirmText}>Opschonen</button> }));
 vi.mock("@/app/components/publication-status", () => ({ PublicationStatus: () => <span>Publicatiestatus</span> }));
 vi.mock("../actions", () => ({ archiveMissingIndexAction: vi.fn() }));
 
@@ -143,10 +143,19 @@ describe("LearningSpace portfolio management source status", () => {
 
     const markup = renderToStaticMarkup(await LearningSpaceAdminPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
 
-    expect(markup).toContain("1 verdwenen oefeningen en 3 verdwenen bestanden");
+    expect(markup).toContain("1 verdwenen oefening en 3 verdwenen bestanden");
     expect(markup).toContain("Opschonen");
     expect(markup).toContain('class="warning-count"');
     expect(markup).toContain("2 waarschuwingen");
+  });
+
+  it.each([[0, "opgaven"], [1, "opgave"], [2, "opgaven"]])("uses custom exercise terms in the cleanup notice and confirmation (%s)", async (count, label) => {
+    mocks.getAdminLearningSpaceBySlug.mockResolvedValue({ ...space, exerciseLabelSingular: "OpGavE", exerciseLabelPlural: "OPGAVEN" });
+    mocks.getMissingIndexCounts.mockResolvedValue({ exercises: count, assets: 3 });
+    const markup = renderToStaticMarkup(await LearningSpaceAdminPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
+    expect(markup).toContain(`${count} verdwenen ${label} en 3 verdwenen bestanden`);
+    expect(markup).toContain(`title="${count} ${label} en 3 bestanden verdwijnen uit het actieve overzicht.`);
+    expect(markup).not.toContain("oefeningen");
   });
 
   it("uses the configured collection terminology in the LearningSpace overview", async () => {

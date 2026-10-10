@@ -49,7 +49,7 @@ export default async function ThemesPage({ params }: { params: Promise<{ spaceSl
         return <article className="theme-editor-card" key={theme.id}>
           <div className="theme-item-summary"><span className="theme-origin-label">{theme.sourceTheme ? "Uit bronmap" : "Handmatig"}</span><span>· {countLabel(members.length)}</span></div>
           <div className="theme-edit-row">
-            <MutationFeedbackForm id={`theme-${theme.id}`} action={saveThemeAction} className="theme-name-form" successMessage="Thema opgeslagen." errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
+            <MutationFeedbackForm id={`theme-${theme.id}`} action={saveThemeAction} className="theme-name-form" successMessage={`${singular} opgeslagen.`} errorMessage="De wijziging kon niet worden opgeslagen. Probeer opnieuw.">
               <input type="hidden" name="id" value={theme.id} />
               <input type="hidden" name="learningSpaceId" value={space.id} />
               <label htmlFor={`theme-name-${theme.id}`}>Weergavenaam<span className="sr-only"> ({inline})</span></label>

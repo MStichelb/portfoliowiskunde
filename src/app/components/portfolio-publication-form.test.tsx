@@ -4,6 +4,27 @@ import { describe, expect, it } from "vitest";
 import { PortfolioPublicationForm } from "./portfolio-publication-form";
 
 describe("PortfolioPublicationForm", () => {
+  it.each(["none", "folder"] as const)("hides the empty root theme choice in %s mode", (themeMode) => {
+    const markup = renderToStaticMarkup(<PortfolioPublicationForm
+      id="root" title="Basis" cardColor="#E7EEF2" visible limited={false} publishFrom="" publishUntil=""
+      customText={null} customTextPosition="above_documents" themeId={null} themeMode={themeMode}
+      themes={[]} miscellaneousLabel="Overige bundels" action={() => undefined}
+    />);
+    expect(markup).not.toContain('name="themeId"');
+    expect(markup).not.toContain('portfolio-theme-field');
+    expect(markup).not.toContain("Overige bundels");
+    expect(markup).toContain('name="cardColor"');
+  });
+
+  it.each(["none", "folder"] as const)("keeps an existing assignment visible even with no supplied options in %s mode", (themeMode) => {
+    const markup = renderToStaticMarkup(<PortfolioPublicationForm
+      id="assigned" title="Basis" cardColor="#E7EEF2" visible limited={false} publishFrom="" publishUntil=""
+      customText={null} customTextPosition="above_documents" themeId="stored-theme" themeMode={themeMode}
+      themes={[]} miscellaneousLabel="Overige bundels" action={() => undefined}
+    />);
+    expect(markup).toContain('select name="themeId"');
+  });
+
   it.each(["none", "folder"] as const)("keeps the current theme visible with membership controlled by themeMode %s", (themeMode: "none" | "folder") => {
     const markup = renderToStaticMarkup(<PortfolioPublicationForm
       id="portfolio-1" title="Limieten" cardColor="#E7EEF2" visible limited={false} publishFrom="" publishUntil=""

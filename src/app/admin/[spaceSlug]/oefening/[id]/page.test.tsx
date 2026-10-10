@@ -42,6 +42,14 @@ import LearningSpaceAdminExercisePage from "./page";
 import { DEFAULT_EXERCISE_LEVEL_PRESENTATION } from "@/lib/exercise-level-presentation";
 
 describe("LearningSpace admin exercise terminology", () => {
+  it("uses the configured exercise term when the source item is missing", async () => {
+    mocks.getAdminExercise.mockResolvedValue({ ...(await mocks.getAdminExercise()), isIndexed: false });
+    const markup = renderToStaticMarkup(await LearningSpaceAdminExercisePage({ params: Promise.resolve({ spaceSlug: "fysica", id: "exercise-1c" }) }));
+    expect(markup).toContain("Opgave is niet meer aanwezig in de bronmap.");
+    expect(markup).toContain("De historische metadata blijft behouden tot je de index opschoont.");
+    expect(markup).not.toContain("Deze oefening");
+  });
+
   it("shows the portfolio and existing controls for a direct exercise without a null section label", async () => {
     mocks.getAdminExercise.mockResolvedValue({ ...(await mocks.getAdminExercise()), sectionCode: null, sectionTitle: null });
     const markup = renderToStaticMarkup(await LearningSpaceAdminExercisePage({ params: Promise.resolve({ spaceSlug: "fysica", id: "exercise-1c" }) }));

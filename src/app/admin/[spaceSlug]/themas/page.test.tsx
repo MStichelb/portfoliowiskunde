@@ -23,6 +23,10 @@ vi.mock("@/lib/repositories", () => ({
 }));
 vi.mock("@/lib/source-profiles", () => ({ getActiveSourceProfileConfigForLearningSpace: mocks.getSourceProfile }));
 vi.mock("next/navigation", () => ({ notFound: mocks.notFound }));
+vi.mock("@/app/components/mutation-feedback-form", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/app/components/mutation-feedback-form")>(),
+  MutationFeedbackForm: ({ successMessage, children }: { successMessage: string; children: React.ReactNode }) => <form data-success={successMessage}>{children}</form>,
+}));
 vi.mock("../../actions", () => ({
   createThemeAction: vi.fn(),
   deleteThemeAction: vi.fn(),
@@ -64,6 +68,7 @@ describe("LearningSpace themes page", () => {
     mocks.getThemes.mockResolvedValue([{ id: "theme-1", learningSpaceId: space.id, name: "Analyse", sortOrder: 10 }]);
     const markup = renderToStaticMarkup(await ThemesPage({ params: Promise.resolve({ spaceSlug: "5" }) }));
     expect(markup).toContain("Deel toevoegen");
+    expect(markup).toContain('data-success="Deel opgeslagen."');
     expect(markup).toContain(">Delen</h2>");
     expect(markup).toContain("Nog geen hoofdstukken gekoppeld.");
     expect(markup).toContain('aria-label="Deel opslaan"');

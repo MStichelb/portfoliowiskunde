@@ -48,7 +48,7 @@ export default async function LearningSpaceAdminExercisePage({ params, searchPar
       </div>
     </section>
     {!exercise.isIndexed
-      ? <p className="form-message" role="status">Deze oefening is niet meer aanwezig in de bronmap. De historische metadata blijft behouden tot je de index opschoont.</p>
+      ? <p className="form-message" role="status">{formatTerminologyLabel(space.exerciseLabelSingular, "standalone")} is niet meer aanwezig in de bronmap. De historische metadata blijft behouden tot je de index opschoont.</p>
       : resources.map((resource) => <Variant resource={resource} spaceSlug={space.slug} key={resource.id} />)}
   </main>;
 }
