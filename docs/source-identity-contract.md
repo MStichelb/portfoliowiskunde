@@ -1,4 +1,4 @@
-# Source identity contract (Fase 5B/5C/5D1/5D1b/5D2)
+# Source identity contract (Fase 5B/5C/5D1/5D1b/5D2/5E)
 
 Een bronbinding koppelt een bestaande app-entiteit aan de identiteit uit een
 actuele scan. Een provider-ID wordt nooit een app-ID. De centrale read-only
@@ -275,3 +275,66 @@ uitsluitend het bestaande code-/padgedrag; paden worden geen stabiele native
 identiteit. Mirrors en andere roots/accounts bieden geen veronderstelde
 continuïteit. Cross-portfolio sectionmoves, cross-exercise/-variant assetmoves
 en extra herstel-/bevestigingsflows blijven buiten deze batch en de 5E-grens.
+
+## Conflict- en regressiehardening in 5E
+
+De beslisketen blijft: provider → indexer → expliciete source identity →
+`planSourceReconciliation` met `planSourceChildren` → bindingvalidatie → één
+transactionele `persistIndex`-batch → missingstatus → bestaande readmodels.
+`archiveMissingIndexItems` is een afzonderlijke, expliciete beheeractie met een
+eigen transactie. Publicatie archiveert verdwenen records niet automatisch.
+
+Dubbele portfolio- en genormaliseerde onderdeelcodes blokkeren nu al de indexer,
+ook voor LocalFS en legacy providers. De planner controleert dezelfde claims
+voor rechtstreekse repositoryaanroepen. Het vroegere overslaan met een warning
+kon een gedeeltelijke scan publiceren en bestaande inhoud missing maken.
+
+| Niveau | Conflicten en toegelaten onderscheid | Bewijs |
+| --- | --- | --- |
+| Thema | Dezelfde bronreferentie met verschillende namen/paden of een claim als portfolio/section blokkeert. Een nieuwe native referentie met dezelfde naam krijgt een afzonderlijk thema zonder de handmatige naam/volgorde over te nemen. Databaseuniqueness verhindert dubbele opgeslagen bronreferenties. | `source-reconciliation.test.ts`, `source-theme-sync.test.ts`, PostgreSQL compatibility |
+| Portfolio | Dubbele native/logische claims, andere bekende native ID bij dezelfde code, bezette nieuwe code en rename+move naar bezette code blokkeren. | `source-reconciliation.test.ts`, `source-reconciliation-hardening.test.ts` |
+| Section | Dubbele native/genormaliseerde codes, bezette nieuwe code, andere bekende native ID en cross-portfolio parent blokkeren. | `source-child-reconciliation.test.ts`, hardening |
+| Exercise | Dubbele incoming portfolio/oefencode, meerdere oude kandidaten, conflicterende metadata/rapporten/solutions en assetclaims die een andere exercise willen kiezen blokkeren. Root/section-moves gebruiken uitsluitend de bestaande Fase-2-regels. | `repositories.test.ts`, child reconciliation |
+| Generieke assets | Dubbele scoped identities/app-ID-claims, incompatibele resource/portfolio/exercise en ambigue legacy fallback blokkeren. Identieke raw IDs in verschillende geldige storagecontexten blijven afzonderlijk. | `source-asset-bindings.test.ts`, `source-asset-storage.test.ts`, child reconciliation, hardening |
+| Solution-assets | Dubbele scoped identities/app-ID-claims, ambigue stap/extensie, bezet variant/pad en cross-variant/exercise blokkeren. Native rename/reorder/padwissels met dezelfde extensie behouden de bewezen IDs. | child reconciliation, gedeelde native continuity scenarios, PostgreSQL compatibility |
+
+Identityconflicten worden vóór writes geweigerd; late databaseconstraints rollen
+de hele batch terug. De gedeelde SQLite/PostgreSQL-hardeningtests voegen een
+echte uniquenessfout toe na portfolio/assetwrites, section/resourcewrites,
+exercise/solutionwrites, bindingwrites, missingupdates en archiveupdates. Zij
+vergelijken alle betrokken rijen, metadata, relations, warnings, sourceconfig,
+header, LearningSpace en lease exact vóór/na de mislukte transactie. Een extra
+late bindingconstraint test de echte guarded publicatie inclusief rollback van
+de leaseverlenging. Bestaande lease/snapshot-tests dekken verouderde workers.
+
+De volledige missing→archive→return-lifecycle controleert originele portfolio-,
+section-, exercise-, variant- en beide asset-IDs. Concrete eigendomsvelden worden
+vergeleken: naam/volgorde, zichtbaarheid, publicatievensters, titel/kleur/tekst,
+notes/labels/positie, leveloverride, alternatieve uitwerking en foutmeldingen.
+Bij terugkeer worden `archived_at` en asset-`missing_since` volgens de bestaande
+semantiek gewist; bindings blijven behouden. Een andere bekende native folder
+bij een bezette code wordt ook na archivering geweigerd. De eerste terugkeer
+kan in de bestaande syncstatistieken als toegevoegd tellen; dit betekent geen
+nieuwe app-ID. Identieke volgende syncs voegen niets toe.
+
+Scopeproeven gebruiken dezelfde raw IDs in andere LearningSpaces, configured
+sources, OneDrive drives/roots en Google providers/accounts/roots. Historical
+bindings leveren alleen continuïteit binnen hun exact bewezen context. Een
+Google mirror krijgt geen upstream OneDrive-identiteit. LocalFS blijft logisch
+codegematcht waar dit al de bedoeling was; een padclaim op een ander apprecord
+wordt conservatief geweigerd. Er is geen inode-, hash- of naamheuristiek.
+
+Niet-blocking warnings blijven voor ontbrekende/onherkende optionele bestanden,
+bronprofielherkenning zonder gekozen resource en onduidelijk bronniveau. Zij
+kiezen geen willekeurige identitykandidaat, behouden ontbrekende records en
+wijzigen geen handmatige metadata. Een mislukte echte sync bewaart afzonderlijk
+de bestaande failure-audit en invalid source validation, en geeft haar lease
+vrij. Die diagnostiek is bewust geen onderdeel van de teruggedraaide index;
+de laatst succesvol gepubliceerde inhoud/warnings blijven intact.
+
+Geen nieuwe migration, matchingfeature, UI, providergarantie of live provider-QA.
+De themeopslag blijft beperkt tot configured-source-scope; bekende gewijzigde
+native contexten worden conservatief geblokkeerd. Testdekking bewijst de lokale
+contracten en transacties, geen externe garantie dat een provider bij iedere
+fysieke move dezelfde ID teruggeeft. Een latere finalisatie kan uitsluitend de
+vrijgave van deze bestaande scope en de bijbehorende bewijsdocumentatie afronden.

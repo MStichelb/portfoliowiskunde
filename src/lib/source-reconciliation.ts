@@ -93,8 +93,8 @@ export async function planSourceReconciliation(
       incomingNativeIds.add(portfolio.sourceId);
     }
   }
-  // Preserve legacy duplicate-code warnings, but never partially publish an ambiguous native scan.
-  if (scanIdentity && supportsStableNativeIdentity(scanIdentity) && [...codeCounts.values()].some((count) => count > 1)) conflict("meerdere native portfoliomappen gebruiken dezelfde code");
+  // Ambiguous logical codes are unsafe for every provider, including legacy/path scans.
+  if ([...codeCounts.values()].some((count) => count > 1)) conflict("meerdere portfoliomappen gebruiken dezelfde code");
   const scopedBindings = source && scanIdentity ? bindings.filter((binding) => inContext(binding, source, scanIdentity!)) : [];
   const bindingsByNativeId = new Map(scopedBindings.map((binding) => [binding.nativeItemId, binding]));
   const portfolioBindingsById = new Map(scopedBindings.filter((binding) => binding.entityType === "portfolio").map((binding) => [binding.entityId, binding]));
@@ -182,13 +182,16 @@ export async function planSourceReconciliation(
   const sectionsById = new Map(storedSections.rows.map((row) => [String(row.id), row]));
   const sectionIds = new Map<string, string>();
   const claimedSections = new Set<string>();
+  const claimedSectionCodes = new Set<string>();
   const claimedFolders = new Set(incomingNativeIds);
   for (const portfolio of resolutions) {
     const identity = portfolio.incoming.sourceIdentityContext;
     const native = identity && supportsStableNativeIdentity(identity);
     for (const section of portfolio.incoming.sections) {
       const key = JSON.stringify([portfolio.id, section.code]);
-      if (sectionIds.has(key)) conflict("meerdere onderdelen gebruiken dezelfde code binnen een portfolio");
+      const logicalKey = JSON.stringify([portfolio.id, normalizeSectionCode(section.code)]);
+      if (claimedSectionCodes.has(logicalKey)) conflict("meerdere onderdelen gebruiken dezelfde code binnen een portfolio");
+      claimedSectionCodes.add(logicalKey);
       if (native && section.sourceId) {
         if (claimedFolders.has(section.sourceId)) conflict("één native map claimt meerdere entiteiten");
         claimedFolders.add(section.sourceId);

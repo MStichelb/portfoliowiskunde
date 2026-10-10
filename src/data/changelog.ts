@@ -32,7 +32,7 @@ export const changelog: ChangelogEntry[] = [{
   date: "2026-10-10",
   category: "improved",
   title: "Instellingen behouden bij hernoemen en verplaatsen",
-  description: "Wanneer eerder gesynchroniseerde portfolio- of onderdeelmappen in dezelfde OneDrive- of Google Drive-bron worden hernoemd of verplaatst, blijven hun instellingen behouden, ook als hun code wijzigt. Oefeningen die binnen hetzelfde portfolio naar een ander onderdeel of rechtstreeks naar de portfoliomap verhuizen, behouden hun instellingen en foutmeldingen. Hernoemde bestanden en gewijzigde stapvolgordes blijven bij de juiste uitwerking horen. De indeling in thema's volgt de bron; hernoemde themamappen behouden hun aangepaste weergavenaam en volgorde. Bij een onduidelijke koppeling blijft de laatst geldige index behouden.",
+  description: "Wanneer eerder gesynchroniseerde portfolio- of onderdeelmappen in dezelfde OneDrive- of Google Drive-bron worden hernoemd of verplaatst, blijven hun instellingen behouden, ook als hun code wijzigt. Oefeningen die binnen hetzelfde portfolio naar een ander onderdeel of rechtstreeks naar de portfoliomap verhuizen, behouden hun instellingen en foutmeldingen. Hernoemde bestanden en gewijzigde stapvolgordes blijven bij de juiste uitwerking horen. De indeling in thema's volgt de bron; hernoemde themamappen behouden hun aangepaste weergavenaam en volgorde. Bij een onduidelijke koppeling of dubbele portfolio- of onderdeelcodes stopt de synchronisatie en blijft de laatst geldige index behouden.",
   audiences: ["teacher", "superadmin"],
   notify: false,
 }, {

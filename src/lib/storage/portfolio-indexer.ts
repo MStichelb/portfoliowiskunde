@@ -1,3 +1,4 @@
+import { SourceConfigurationError } from "@/lib/source-errors";
 import type { StorageIdentityContext } from "@/lib/source-identity";
 import type {
   IndexedAsset,
@@ -92,14 +93,9 @@ export async function indexSource(
   for (const { entry, parsed: parsedPortfolio, sourceTheme } of candidates) {
     const duplicateNames = portfolioNamesByCode.get(parsedPortfolio.code) ?? [];
     if (duplicateNames.length > 1) {
-      portfolios.push({ ...conflictedPortfolio(entry, parsedPortfolio.code, parsedPortfolio.title, {
-        severity: "warning",
-        path: entry.relativePath,
-        message: `Dubbele portfoliocode ${parsedPortfolio.code} herkend in mappen: ${duplicateNames.join(", ")}. Geen van deze portfolio's wordt gesynchroniseerd.`,
-      }), ...(entry.sourceId ? { sourceId: entry.sourceId } : {}),
-        ...(provider.identityContext ? { sourceIdentityContext: provider.identityContext } : {}),
-        ...(sourceTheme ? { sourceTheme } : {}) });
-      continue;
+      throw new SourceConfigurationError(
+        `Dubbele portfoliocode ${parsedPortfolio.code} in mappen: ${duplicateNames.join(", ")}. Geef iedere portfoliomap een unieke code. De bestaande index is behouden.`,
+      );
     }
     portfolios.push({ ...await indexPortfolio(
       provider,
@@ -138,7 +134,7 @@ async function indexPortfolio(
   const hintsDocument = hintsResource ? matchedGlobalResources.get(hintsResource.id) : undefined;
   const finalSolutionsDocument = finalAnswerResource ? matchedGlobalResources.get(finalAnswerResource.id) : undefined;
 
-  const contexts = discoverExerciseContexts(directory, entries, warnings);
+  const contexts = sectionContexts(entries, directory.relativePath);
   const sections = await Promise.all(contexts.map(async (context) => ({
     ...context,
     exercises: await indexExerciseContext(
@@ -152,7 +148,7 @@ async function indexPortfolio(
     levelRecognition,
     ),
   })));
-  // Real sections (including conflicted ones) never participate in the portfolio's
+  // Real sections never participate in the portfolio's
   // direct exercise context. Keep the existing recognition/resource rules intact.
   const sectionPaths = new Set(entries.filter((entry) => entry.kind === "directory" && parseSectionDirectory(entry.name))
     .map((entry) => entry.relativePath));
@@ -202,15 +198,7 @@ interface ExerciseContext {
   sourceId?: string;
 }
 
-function discoverExerciseContexts(
-  portfolioDirectory: StorageEntry,
-  rootEntries: readonly StorageEntry[],
-  warnings: IndexWarning[],
-): ExerciseContext[] {
-  return sectionContexts(rootEntries, portfolioDirectory.relativePath, warnings);
-}
-
-function sectionContexts(entries: readonly StorageEntry[], portfolioPath: string, warnings: IndexWarning[]): ExerciseContext[] {
+function sectionContexts(entries: readonly StorageEntry[], portfolioPath: string): ExerciseContext[] {
   const sections = entries.flatMap((entry) => {
     if (entry.kind !== "directory") return [];
     const section = parseSectionDirectory(entry.name);
@@ -225,38 +213,13 @@ function sectionContexts(entries: readonly StorageEntry[], portfolioPath: string
   }
   const duplicateCodes = new Set([...namesByCode].filter(([, names]) => names.length > 1).map(([code]) => code));
   for (const code of [...duplicateCodes].sort(compareSectionCodes)) {
-    warnings.push({
-      severity: "warning",
-      path: portfolioPath,
-      message: `Dubbele onderdeelcode ${code} herkend in mappen: ${(namesByCode.get(code) ?? []).join(", ")}. Geen van deze onderdelen wordt gescand.`,
-    });
+    throw new SourceConfigurationError(
+      `Dubbele onderdeelcode ${code} in ${portfolioPath}: ${(namesByCode.get(code) ?? []).join(", ")}. Geef ieder onderdeel een unieke code. De bestaande index is behouden.`,
+    );
   }
   return sections
-    .filter((section) => !duplicateCodes.has(normalizeSectionCode(section.code)))
     .sort((left, right) => compareSectionCodes(left.code, right.code) || left.title.localeCompare(right.title, "nl"))
     .map(({ sourceName: _sourceName, ...section }, index) => ({ ...section, sortOrder: index + 1 }));
-}
-
-function conflictedPortfolio(
-  directory: StorageEntry,
-  code: string,
-  title: string,
-  warning: IndexWarning,
-): IndexedPortfolio {
-  return {
-    code,
-    title,
-    relativePath: directory.relativePath,
-    assignmentPdfPath: null,
-    assignmentPdfSourceId: null,
-    hintsDocumentPath: null,
-    hintsDocumentSourceId: null,
-    finalSolutionsPdfPath: null,
-    finalSolutionsPdfSourceId: null,
-    resourceAssets: [],
-    sections: [],
-    warnings: [warning],
-  };
 }
 
 interface LocatedExerciseFile {

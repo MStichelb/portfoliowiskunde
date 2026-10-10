@@ -81,19 +81,12 @@ describe("portfolio indexer", () => {
     expect(fixture.calls).not.toContain("Algebra");
   });
 
-  it("keeps globally duplicate portfolio codes conflicted across theme folders", async () => {
+  it("blocks globally duplicate portfolio codes across theme folders", async () => {
     const fixture = themeFolderFixture();
     fixture.tree.Algebra.push({ name: "Portfolio 1 - Dubbel", relativePath: "Algebra/Portfolio 1 - Dubbel", kind: "directory" });
     const config = structuredClone(BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG);
     config.scanner.portfolio.themeMode = "folder";
-    const duplicates = (await indexSource(fixture.provider, config)).filter((portfolio) => portfolio.code === "1");
-    expect(duplicates).toHaveLength(2);
-    expect(duplicates.map((portfolio) => portfolio.sourceTheme?.name).sort()).toEqual(["Algebra", "Analyse & functies"]);
-    for (const portfolio of duplicates) {
-      expect(portfolio.sections).toEqual([]);
-      expect(portfolio.warnings[0].message).toContain("Dubbele portfoliocode 1");
-      expect(portfolio.warnings[0].message).toContain("Algebra/Portfolio 1 - Dubbel");
-    }
+    await expect(indexSource(fixture.provider, config)).rejects.toThrow("Dubbele portfoliocode 1");
   });
 
   it("uses the configured portfolio marker inside themes without descending into other folders", async () => {
@@ -898,7 +891,7 @@ describe("portfolio indexer", () => {
     ]);
   });
 
-  it("waarschuwt en scant niets bij een dubbele genormaliseerde portfoliocode", async () => {
+  it("blokkeert de volledige scan bij een dubbele genormaliseerde portfoliocode", async () => {
     const duplicateProvider: StorageProvider = {
       id: "duplicate-portfolios",
       async list(relativePath = "") {
@@ -911,10 +904,7 @@ describe("portfolio indexer", () => {
       async readFile() { return Buffer.from(""); },
     };
 
-    const portfolios = await indexSource(duplicateProvider);
-    expect(portfolios).toHaveLength(2);
-    expect(portfolios.every((portfolio) => portfolio.code === "1A" && portfolio.sections.length === 0)).toBe(true);
-    expect(portfolios.every((portfolio) => portfolio.warnings.some((warning) => warning.message.includes("Dubbele portfoliocode 1A")))).toBe(true);
+    await expect(indexSource(duplicateProvider)).rejects.toThrow("Dubbele portfoliocode 1A");
   });
 
   it("detecteert ook hoofdlettervarianten van een hiërarchische portfoliocode als duplicaat", async () => {
@@ -930,13 +920,10 @@ describe("portfolio indexer", () => {
       async readFile() { return Buffer.from(""); },
     };
 
-    const portfolios = await indexSource(duplicateProvider);
-    expect(portfolios).toHaveLength(2);
-    expect(portfolios.every((portfolio) => portfolio.code === "A.1" && portfolio.sections.length === 0)).toBe(true);
-    expect(portfolios.every((portfolio) => portfolio.warnings.some((warning) => warning.message.includes("Dubbele portfoliocode A.1")))).toBe(true);
+    await expect(indexSource(duplicateProvider)).rejects.toThrow("Dubbele portfoliocode A.1");
   });
 
-  it("waarschuwt en negeert alle mappen met een dubbele genormaliseerde onderdeelcode", async () => {
+  it("blokkeert de volledige scan bij een dubbele genormaliseerde onderdeelcode", async () => {
     const portfolioPath = "Portfolio 31 Conflicten";
     const duplicateSectionProvider: StorageProvider = {
       id: "duplicate-sections",
@@ -951,9 +938,7 @@ describe("portfolio indexer", () => {
       async readFile() { return Buffer.from(""); },
     };
 
-    const [portfolio] = await indexSource(duplicateSectionProvider);
-    expect(portfolio.sections).toEqual([]);
-    expect(portfolio.warnings).toContainEqual(expect.objectContaining({ message: expect.stringContaining("Dubbele onderdeelcode 2.1") }));
+    await expect(indexSource(duplicateSectionProvider)).rejects.toThrow("Dubbele onderdeelcode 2.1");
   });
 
   it("waarschuwt bij een ambigu oefeningnummer in plaats van een letter uit de onderdeeltekst op te eten", async () => {

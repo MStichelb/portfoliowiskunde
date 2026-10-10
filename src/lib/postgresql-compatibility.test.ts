@@ -48,6 +48,7 @@ import { getSourceAssetBindings } from "./source-asset-bindings";
 import { sourceBindingContextKey } from "./source-identity";
 import { nativeBindingContext, sourceBindingFixture, sourceAssetBindingFixture, sourceAssetBindingInsert } from "@/test/source-binding-fixture";
 import { sourceChildState, verifyHistoricalChildContexts, verifyNativeChildContinuity } from "@/test/source-child-reconciliation-scenarios";
+import { rollbackStages, verifyReconciliationLifecycle, verifyReconciliationRollback, verifyReconciliationScopeIsolation } from "@/test/source-reconciliation-hardening-scenarios";
 
 const postgresUrl = process.env.POSTGRES_TEST_DATABASE_URL?.trim();
 const describeWithPostgres = postgresUrl ? describe : describe.skip;
@@ -79,6 +80,43 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     try { await admin.unsafe(`DROP SCHEMA IF EXISTS ${runtimeSchema} CASCADE`); }
     finally { await admin.end({ timeout: 3 }); }
   });
+
+  it.each(rollbackStages)("rolls back the complete publication after a real PostgreSQL constraint failure at %s", async (stage) => {
+    const database = await getDatabase(); const suffix = randomUUID();
+    const owner = await createUser({ displayName: `Hardening ${suffix}`, role: "teacher" });
+    const space = await createLearningSpaceForOwner({ subjectId: "subject-wiskunde", name: "Rollback hardening", slug: `rollback-${suffix}`, shortLabel: "R", sourceType: "local", localSourcePath: null }, owner.id);
+    const source = (await getActiveLearningSpaceSource(space.id))!;
+    await database.execute({ sql: "UPDATE learning_space_sources SET provider_type = 'onedrive' WHERE id = ?", args: [source.id] });
+    await verifyReconciliationRollback(database, space.id, source.id, stage);
+  }, 60_000);
+
+  it("restores archived identities and concrete metadata and repeats rename/move publication without drift on PostgreSQL", async () => {
+    const database = await getDatabase(); const suffix = randomUUID();
+    const owner = await createUser({ displayName: `Lifecycle ${suffix}`, role: "teacher" });
+    const space = await createLearningSpaceForOwner({ subjectId: "subject-wiskunde", name: "Lifecycle hardening", slug: `lifecycle-${suffix}`, shortLabel: "L", sourceType: "local", localSourcePath: null }, owner.id);
+    const source = (await getActiveLearningSpaceSource(space.id))!;
+    await database.execute({ sql: "UPDATE learning_space_sources SET provider_type = 'onedrive' WHERE id = ?", args: [source.id] });
+    await verifyReconciliationLifecycle(database, space.id, source.id);
+  }, 60_000);
+
+  it("isolates identical raw IDs across configured sources, OneDrive contexts and Google mirror contexts on PostgreSQL", async () => {
+    const database = await getDatabase(); const suffix = randomUUID();
+    const owner = await createUser({ displayName: `Scopes ${suffix}`, role: "teacher" });
+    const space = await createLearningSpaceForOwner({ subjectId: "subject-wiskunde", name: "Scope hardening", slug: `scopes-${suffix}`, shortLabel: "S", sourceType: "local", localSourcePath: null }, owner.id);
+    const source = (await getActiveLearningSpaceSource(space.id))!;
+    await database.execute({ sql: "UPDATE learning_space_sources SET provider_type = 'onedrive' WHERE id = ?", args: [source.id] });
+    const original = await verifyReconciliationScopeIsolation(database, space.id, source.id);
+    const other = await createLearningSpaceForOwner({ subjectId: "subject-wiskunde", name: "Other scope", slug: `other-scope-${suffix}`, shortLabel: "O", sourceType: "local", localSourcePath: null }, owner.id);
+    const otherSource = (await getActiveLearningSpaceSource(other.id))!;
+    await database.execute({ sql: "UPDATE learning_space_sources SET provider_type = 'onedrive' WHERE id = ?", args: [otherSource.id] });
+    await persistIndex([sourceAssetBindingFixture()], "onedrive", other.id, { sourceId: otherSource.id });
+    const otherBindings = await getSourceAssetBindings(database, other.id);
+    expect(otherBindings).toHaveLength(2);
+    for (const binding of otherBindings) {
+      expect(original.map((item) => item.resourceAssetId)).not.toContain(binding.resourceAssetId);
+      if (binding.solutionAssetId) expect(original.map((item) => item.solutionAssetId)).not.toContain(binding.solutionAssetId);
+    }
+  }, 60_000);
 
   it("reconciles native children, swapped paths and steps, Fase-2 moves and reports with prewrite conflicts and late rollback", async () => {
     const database = await getDatabase(); const suffix = randomUUID();

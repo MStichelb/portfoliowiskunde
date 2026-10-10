@@ -21,6 +21,9 @@ export async function sourceChildState(database: DatabaseClient, spaceId: string
     `SELECT * FROM solution_assets WHERE variant_id IN (${variantIds}) ORDER BY id`,
     ...["error_reports", "error_report_threads", "error_report_issues"].map((table) => `SELECT * FROM ${table} WHERE portfolio_id IN (${portfolioIds}) ORDER BY id`),
     "SELECT * FROM sync_warnings WHERE sync_run_id IN (SELECT id FROM sync_runs WHERE learning_space_id = ?) ORDER BY id",
+    "SELECT * FROM learning_spaces WHERE id = ?",
+    "SELECT * FROM sync_leases WHERE learning_space_id = ? ORDER BY owner_id",
+    "SELECT * FROM learning_space_source_profiles WHERE learning_space_id = ? ORDER BY source_profile_id",
   ];
   return Promise.all(statements.map((sql) => database.execute({ sql, args: [spaceId] }).then((result) => result.rows)));
 }
@@ -55,7 +58,7 @@ export async function verifyNativeChildContinuity(database: DatabaseClient, spac
     portfolios: [indexed], synchronizesThemes: false, newPortfolioId: () => "unused" });
   expect(plan.sectionIds.get(JSON.stringify([pair.portfolioId, "2.4"]))).toBe(sectionId);
   expect(await sourceChildState(database, spaceId)).toEqual(beforePlanning);
-  for (let repeat = 0; repeat < 2; repeat++) {
+  for (let repeat = 0; repeat < 3; repeat++) {
     await publish();
     expect(await getSourceAssetBindings(database, spaceId)).toEqual(originalBindings);
     for (const binding of originalBindings) {
@@ -79,11 +82,11 @@ export async function verifyNativeChildContinuity(database: DatabaseClient, spac
   exercise.assets = savedAssets; indexed.resourceAssets = savedDocuments; await publish();
   expect(await getSourceAssetBindings(database, spaceId)).toEqual(originalBindings);
   // Existing Fase-2 resolution follows the same exercise through root and another section.
-  indexed.exercises = [exercise]; indexed.sections = []; await publish();
+  indexed.exercises = [exercise]; indexed.sections = []; await publish(); await publish(); await publish();
   expect((await database.execute({ sql: "SELECT exercise_id, section_id FROM error_reports WHERE id = ?", args: [`report-${spaceId}`] })).rows[0])
     .toEqual({ exercise_id: pair.exerciseId, section_id: null });
   indexed.exercises = []; indexed.sections = [{ ...section, code: "3", sourceId: "new-section", exercises: [exercise] }];
-  await publish(); await publish();
+  await publish(); await publish(); await publish();
   expect((await database.execute({ sql: "SELECT * FROM exercises WHERE id = ?", args: [pair.exerciseId] })).rows[0]).toMatchObject(expectedOwned);
   expect((await database.execute({ sql: "SELECT exercise_id, section_id FROM error_reports WHERE id = ?", args: [`report-${spaceId}`] })).rows[0])
     .toEqual({ exercise_id: pair.exerciseId, section_id: `${pair.portfolioId}-section-3` });

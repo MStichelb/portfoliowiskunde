@@ -76,7 +76,7 @@ describe("central source reconciliation", () => {
       portfolios: [indexed], synchronizesThemes: true, newPortfolioId: (code) => `unused-${code}` });
     expect(plan.portfolios[0]).toMatchObject({ id: original.id, match: "native", codeChanged: true, sourceChanged: true, themeChanged: true });
     expect(await state()).toEqual(before);
-    for (let repeat = 0; repeat < 2; repeat++) await persistIndex([indexed], "onedrive", "space-6");
+    for (let repeat = 0; repeat < 3; repeat++) await persistIndex([indexed], "onedrive", "space-6");
     const after = await state();
     const refreshed = after[0][0];
     const sourceFields = new Set(["code", "portfolio_code", "title", "relative_path", "theme_id", "indexed_at", "last_seen_at"]);
@@ -100,7 +100,7 @@ describe("central source reconciliation", () => {
     await database.execute({ sql: "UPDATE themes SET name = 'Eigen weergavenaam', sort_order = 80 WHERE id = ?", args: [original.id] });
     indexed.sourceTheme = { sourceId: "theme-a", name: "Functies", relativePath: "Functies" };
     indexed.relativePath = "Functies/Portfolio 91 Bron";
-    await persistIndex([indexed], "onedrive", "space-6");
+    for (let repeat = 0; repeat < 3; repeat++) await persistIndex([indexed], "onedrive", "space-6");
     expect((await getThemes("space-6"))[0]).toMatchObject({ id: original.id, name: "Eigen weergavenaam", sortOrder: 80,
       sourceTheme: { sourceId: "theme-a", name: "Functies", relativePath: "Functies" } });
     indexed.sourceTheme = { ...indexed.sourceTheme, sourceId: "theme-new" };
@@ -117,7 +117,7 @@ describe("central source reconciliation", () => {
     for (const theme of ["theme-b", null, "theme-a"]) {
       indexed.sourceTheme = theme ? { sourceId: theme, name: theme, relativePath: theme } : undefined;
       indexed.relativePath = `${theme ? `${theme}/` : ""}Portfolio 91 Bron`;
-      await persistIndex([indexed], "onedrive", "space-6");
+      for (let repeat = 0; repeat < 3; repeat++) await persistIndex([indexed], "onedrive", "space-6");
       const current = (await getAdminPortfolios("space-6"))[0];
       expect(current.id).toBe(original.id);
       expect(current.sections[0].id).toBe(original.sections[0].id);

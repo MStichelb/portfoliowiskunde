@@ -22,6 +22,7 @@ import { BUILT_IN_DEFAULT_SOURCE_PROFILE_CONFIG } from "./source-profile-config"
 import { sourceManifestFromIndex } from "./source-comparison";
 import { LocalFilesystemProvider } from "./storage/local-filesystem-provider";
 import { indexSource } from "./storage/portfolio-indexer";
+import { sourceChildState } from "@/test/source-child-reconciliation-scenarios";
 import { deleteThemeAction, savePortfolioAction, setPortfolioThemeAction } from "@/app/admin/actions";
 
 let temporaryDirectory: string | undefined;
@@ -268,11 +269,17 @@ describe("source theme synchronization", () => {
     expect(other.sourceTheme!.sourceId).toBe(analysisTheme.sourceId);
   });
 
-  it("retains detected themes without creating ambiguous portfolio memberships", async () => {
-    await setupDatabase();
-    await persistIndex([fixture("1", analysisTheme), fixture("1", { ...analysisTheme, sourceId: "other-folder" })], "local", "space-6");
-    expect(await getThemes("space-6")).toHaveLength(2);
-    expect(await getAdminPortfolios("space-6")).toEqual([]);
+  it("rejects duplicate portfolio codes without partially publishing their detected themes", async () => {
+    const { database } = await setupDatabase();
+    await persistIndex([fixture("2", analysisTheme)], "local", "space-6");
+    const before = await sourceChildState(database, "space-6");
+    const batch = vi.spyOn(database, "batch");
+    try {
+      await expect(persistIndex([fixture("1", analysisTheme), fixture("1", { ...analysisTheme, sourceId: "other-folder" })], "local", "space-6"))
+        .rejects.toThrow("dezelfde code");
+      expect(batch).not.toHaveBeenCalled();
+      expect(await sourceChildState(database, "space-6")).toEqual(before);
+    } finally { batch.mockRestore(); }
   });
 
   it("rolls back themes together with a failing index publication", async () => {
