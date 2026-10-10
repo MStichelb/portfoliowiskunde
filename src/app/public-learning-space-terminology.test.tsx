@@ -55,6 +55,42 @@ const studentPortfolio = {
 };
 
 describe("public LearningSpace terminology", () => {
+  it.each(["empty", "mixed"])("omits empty section headings and grids in %s portfolios without duplicating exercises", async (structure: string) => {
+    const emptySection = { id: "empty-section", code: "2", title: "Leeg onderdeel", exercises: [] };
+    const direct = { id: "direct-visible", code: "3", visible: true, effectiveLevel: null };
+    const sections = structure === "empty" ? [emptySection] : [emptySection, ...studentPortfolio.sections];
+    const exercises = structure === "empty" ? [] : [direct];
+    const portfolio = { ...studentPortfolio, sections, exercises };
+    mocks.getStudentPortfolio.mockResolvedValue(portfolio);
+
+    const markup = renderToStaticMarkup(await LearningSpacePortfolioPage({ params: Promise.resolve({ spaceSlug: "fysica", id: "portfolio-1" }) }));
+
+    expect(markup).not.toContain("Leeg onderdeel");
+    expect(markup.match(/<h2>/g)?.length ?? 0).toBe(structure === "empty" ? 0 : 1);
+    expect(markup.match(/class="exercise-grid"/g)?.length ?? 0).toBe(structure === "empty" ? 0 : 2);
+    expect(portfolio.sections[0]).toEqual(emptySection);
+    if (structure === "mixed") {
+      expect(markup.match(/href="\/fysica\/oefening\/direct-visible"/g)).toHaveLength(1);
+      expect(markup.match(/href="\/fysica\/oefening\/exercise-1"/g)).toHaveLength(1);
+      expect(markup.match(/Niet beschikbaar/g)).toHaveLength(1);
+      expect(markup.indexOf("Oef. 3")).toBeLessThan(markup.indexOf("<h2>1. Basis</h2>"));
+      expect(markup).not.toContain("Zonder onderdeel");
+    }
+  });
+
+  it("keeps a section containing only unavailable exercise items", async () => {
+    mocks.getStudentPortfolio.mockResolvedValue({
+      ...studentPortfolio,
+      sections: [{ ...studentPortfolio.sections[0], exercises: [studentPortfolio.sections[0].exercises[1]] }],
+    });
+
+    const markup = renderToStaticMarkup(await LearningSpacePortfolioPage({ params: Promise.resolve({ spaceSlug: "fysica", id: "portfolio-1" }) }));
+
+    expect(markup).toContain("<h2>1. Basis</h2>");
+    expect(markup).toContain('<span class="exercise-hidden">Oef. 2<small>Niet beschikbaar</small>');
+    expect(markup).not.toContain('/fysica/oefening/exercise-2');
+  });
+
   it.each(["sections", "direct", "mixed"])("preserves source hierarchy and visibility for %s portfolios", async (structure: string) => {
     const direct = [
       { id: "direct-visible", code: "3", visible: true, effectiveLevel: "basis" },
