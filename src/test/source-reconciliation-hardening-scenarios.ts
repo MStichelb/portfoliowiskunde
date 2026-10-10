@@ -112,6 +112,12 @@ export async function verifyReconciliationLifecycle(database: DatabaseClient, sp
   ];
   const owned = () => Promise.all(ownedStatements.map((statement) => database.execute(statement).then((result) => result.rows)));
   const beforeOwned = await owned();
+  const ownership = () => Promise.all([
+    ...["learning_space_members", "individual_learning_space_access", "learning_space_group_mappings", "learning_space_source_profiles"].map((table) =>
+      database.execute({ sql: `SELECT * FROM ${table} WHERE learning_space_id = ? ORDER BY 1`, args: [spaceId] }).then((result) => result.rows)),
+    database.execute({ sql: "SELECT * FROM source_profiles WHERE id IN (SELECT source_profile_id FROM learning_space_source_profiles WHERE learning_space_id = ?) ORDER BY id", args: [spaceId] }).then((result) => result.rows),
+  ]);
+  const beforeOwnership = await ownership();
   const lifecycleStatements: InStatement[] = [
     ...["portfolios", "sections", "exercises"].map((table, index) => ({ sql: `SELECT id, is_indexed, archived_at FROM ${table} WHERE id = ?`, args: [[pair.portfolioId, sectionId, pair.exerciseId][index]] })),
     { sql: "SELECT id, is_indexed, archived_at FROM solution_variants WHERE id = ?", args: [pair.variantId] },
@@ -140,6 +146,7 @@ export async function verifyReconciliationLifecycle(database: DatabaseClient, sp
     expect(await publish()).toMatchObject(repeat === 0 ? { warnings: 0 } : { warnings: 0, added: 0 });
     expect(await lifecycle()).toEqual(beforeLifecycle);
     expect(await owned()).toEqual(beforeOwned);
+    expect(await ownership()).toEqual(beforeOwnership);
     expect(await getSourceAssetBindings(database, spaceId)).toEqual(bindings);
   }
   // Initial publication followed by a combined rename/move and two identical repeats.
@@ -154,6 +161,7 @@ export async function verifyReconciliationLifecycle(database: DatabaseClient, sp
     expect(await publish()).toMatchObject({ warnings: 0, added: 0 });
     expect(await lifecycle()).toEqual(beforeLifecycle);
     expect(await owned()).toEqual(beforeOwned);
+    expect(await ownership()).toEqual(beforeOwnership);
     expect(await getSourceAssetBindings(database, spaceId)).toEqual(bindings);
     const state = await sourceChildState(database, spaceId);
     const volatile = new Set(["indexed_at", "last_seen_at", "updated_at"]);

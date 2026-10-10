@@ -794,6 +794,20 @@ describeWithPostgres("PostgreSQL production compatibility", () => {
     expect((await getAdminPortfolios(space.id))[0].themeId).toBeNull();
     expect((await database.execute({ sql: "SELECT * FROM themes WHERE id = ?", args: [theme.id] })).rows[0]).toEqual(themeBefore);
   }, 60_000);
+  it("reopens the populated database through the real migrationrunner without replaying migrations or changing rows and indexes", async () => {
+    let database = await getDatabase();
+    const tables = (await database.execute("SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' ORDER BY table_name")).rows.map((row) => String(row.table_name));
+    const rows = async () => Promise.all(tables.map(async (table) => {
+      const result = await database.execute(`SELECT * FROM "${table.replaceAll('"', '""')}"`);
+      return result.rows.map((row) => JSON.stringify(row)).sort();
+    }));
+    const before = await rows();
+    const indexes = (await database.execute("SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = current_schema() ORDER BY indexname")).rows;
+    expect((await database.execute("SELECT version FROM schema_migrations ORDER BY version")).rows.map((row) => row.version)).toEqual(migrations.map((migration) => migration.version));
+    resetDatabaseForTests(); database = await getDatabase();
+    expect(await rows()).toEqual(before);
+    expect((await database.execute("SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = current_schema() ORDER BY indexname")).rows).toEqual(indexes);
+  }, 60_000);
 });
 
 function postgresExerciseMoveFixture(portfolioCode: string, sectionOrder: number, sourceId: string): IndexedPortfolio {

@@ -66,7 +66,7 @@ te behouden wanneer bronpad, titel, code of thematoewijzing verandert.
 
 Er blijven twee assetmodellen bestaan:
 
-| Model | App-ID en huidige unieke sleutel | Parent en huidige matching |
+| Model | App-ID en unieke sleutel vóór 062 | Parent en matching in 5D1 |
 | --- | --- | --- |
 | `source_resource_assets` | PK `id`; uniek `(learning_space_id, resource_scope, resource_id, source_id)` | Portfolio, optioneel exercise; eerst bestaande raw-sourcekey, daarna bestaande unieke parent/resource/step/extensie-kandidaat. |
 | `solution_assets` | PK `id`; uniek `(variant_id, relative_path)`; nullable `source_id` | Variant → exercise → portfolio; eerst variant/pad, daarna bestaande unieke variant/step/extensie-kandidaat. |
@@ -96,8 +96,9 @@ local/path; OneDrive gebruikt drive/root en Google Drive account/root.
 Afwezigheid van een binding betekent legacy/unscoped. Migration 061 verandert
 geen bestaande rij, app-ID, variantrelatie of source-ID en doet geen backfill.
 Een actuele scan mag de IDs vastleggen die de bestaande matching al eenduidig
-koos. De scopehelper kiest zelf geen asset. Ambigue kandidaten worden door de
-bestaande conflictpaden overgeslagen en krijgen geen willekeurige binding.
+koos. De scopehelper kiest zelf geen asset. In 5D1 werden ambigue kandidaten
+overgeslagen zonder willekeurige binding. Sinds 5D2 blokkeren zulke conflicten
+de volledige publicatie vóór writes.
 
 Bindingwrites staan in dezelfde guarded indextransactie als assetwrites.
 Identieke observaties schrijven geen nieuwe rij of timestamp. Composite FK's
@@ -111,9 +112,9 @@ afhankelijke bindings, zonder daarmee app-assets te verwijderen.
 5D1 gebruikt de bindings nog niet voor assetmatching. Haar raw-source- en
 padconstraints op app-assets konden onafhankelijke sourceclaims nog op hetzelfde
 app-record laten uitkomen. Dit blokkeerde 5D2 en is in 5D1b fysiek gecorrigeerd.
-Step/extensie-fallbacks blijven bestaan; een observatie bewijst geen asset-rename
-of move. 5D2 kan `getSourceAssetBindings` en de doorgedragen providercontext
-gebruiken als expliciete input voor veilige matching.
+Step/extensie-fallbacks blijven bestaan; een observatie alleen bewijst geen
+asset-rename of move. Sinds 5D2 gebruikt de planner `getSourceAssetBindings` en
+de doorgedragen providercontext als expliciete input voor veilige matching.
 
 ## Scoped assetopslag in 5D1b
 
@@ -160,10 +161,10 @@ geen provider-API, rename/move-prioriteit of nieuwe fallback toegevoegd. De
 storagecontext wordt evenmin gebruikt om een exercise-identiteit af te leiden.
 
 Historische 5D1-bindings kunnen meerdere contexten naar hetzelfde app-ID verwijzen.
-Die blijven bewaard. Als na scopevastlegging een andere historische context een
-nieuwe app-rij zou moeten claimen, weigert de bestaande bindinghelper een
-tegenstrijdige herbinding; er wordt niets stil gesplitst of overgedragen. Dit is
-een conservatieve plannergrens voor 5D2, geen beperking van het fysieke schema.
+Die blijven bewaard. Een binding mag niet stil naar een nieuwe app-rij worden
+overgedragen. Sinds 5D2 kiest een exacte historische native binding opnieuw haar
+bestaande app-ID, ook bij een gewijzigde huidige storagecontext. Een nieuwe
+context zonder exacte binding levert geen continuïteit via alleen raw ID of pad.
 De aangetoonde raw-ID- en variant/pad-schemablokkers zijn met 062 opgeheven.
 
 ## Reconciliation in 5C
@@ -335,6 +336,7 @@ de laatst succesvol gepubliceerde inhoud/warnings blijven intact.
 Geen nieuwe migration, matchingfeature, UI, providergarantie of live provider-QA.
 De themeopslag blijft beperkt tot configured-source-scope; bekende gewijzigde
 native contexten worden conservatief geblokkeerd. Testdekking bewijst de lokale
-contracten en transacties, geen externe garantie dat een provider bij iedere
-fysieke move dezelfde ID teruggeeft. Een latere finalisatie kan uitsluitend de
-vrijgave van deze bestaande scope en de bijbehorende bewijsdocumentatie afronden.
+contracten en transacties. OneDrive-item-ID-stabiliteit bij fysieke rename/move
+en Google Drive-native-ID-stabiliteit zijn niet live gevalideerd. Een mirror
+heeft eigen identiteit en bewijst geen upstreamcontinuïteit. LocalFS heeft geen
+stabiele renamegarantie: een pad is uitsluitend een locatie.
